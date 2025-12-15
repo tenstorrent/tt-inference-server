@@ -28,11 +28,13 @@ def parse_commits_from_docker_image(
 
     1. Format for LLMs: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
        Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
-
-    2. Format for media server: version-tt_metal_commit(40)
-       Example: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
-       (vllm_commit will be None for this format)
-
+    2. Format for media server: version-tt_metal_commit(40)-tt_inference_sha(7)-timestamp
+       Example: 0.4.0-d2f891d4af7a12911f9029bbf788462624fcf980-ca7e3d6-57576349393
+       (vllm_commit will be None for media server images)
+    
+    Note: Media server images are detected by checking if image name contains "tt-media-inference-server".
+    For media images, the third component in the tag is NOT a vllm commit, so we ignore it.
+    
     Args:
         docker_image: Full docker image string with tag
 
@@ -43,33 +45,25 @@ def parse_commits_from_docker_image(
         return None, None
 
     try:
-        # Extract tag portion after the last ':'
-        tag = docker_image.split(":")[-1]
+        # Extract image name, and check if this is a media server
+        image_name, tag = docker_image.rsplit(':', 1)
+        is_media_server = 'tt-media-inference-server' in image_name
 
-        # First try: Pattern to match format with both metal and vllm commits: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
         # Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
-        vllm_server_pattern = r"^([0-9.]+)-([0-9a-fA-F]{40})-([0-9a-fA-F]{7})-(\d+)$"
-        match = re.match(vllm_server_pattern, tag)
-
+        expected_tag_pattern = r'^([0-9.]+)-([0-9a-fA-F]{40})-([0-9a-fA-F]{7})-(\d+)$'
+        match = re.match(expected_tag_pattern, tag)
+        
         if match:
             version, tt_metal_commit, vllm_commit, timestamp = match.groups()
-            logger.info(
-                f"Parsed commits from docker image tag: tt-metal={tt_metal_commit}, vllm={vllm_commit}"
-            )
-            return tt_metal_commit, vllm_commit
-
-        # Second try: Pattern to match format with opnly metal commit: version-tt_metal_commit(40)
-        # Example: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
-        media_server_pattern = r"^([0-9.]+)-([0-9a-fA-F]{40})$"
-        match = re.match(media_server_pattern, tag)
-
-        if match:
-            version, tt_metal_commit = match.groups()
-            logger.info(
-                f"Parsed only tt-metal commit from docker image tag: tt-metal={tt_metal_commit}"
-            )
-            return tt_metal_commit, None
-
+            if is_media_server:
+                # For media server images, ignore the third component (tt_inference_sha) as it's not a vllm commit
+                logger.info(f"Parsed commits from media server docker image tag: tt-metal={tt_metal_commit}")
+                return tt_metal_commit, None
+            else:
+                # For vLLM images, return both commits
+                logger.info(f"Parsed commits from docker image tag: tt-metal={tt_metal_commit}, vllm={vllm_commit}")
+                return tt_metal_commit, vllm_commit
+        
         logger.debug(f"Docker image tag does not match expected format: {tag}")
         return None, None
 
