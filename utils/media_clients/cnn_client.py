@@ -194,7 +194,7 @@ class CnnClientStrategy(BaseMediaStrategy):
     def _calculate_ttft_value(
         self, status_list: list[CnnGenerationTestStatus]
     ) -> float:
-        """Calculate TTFT value based on model type and status list."""
+        """Calculate TTFT value based on status list."""
         logger.info("Calculating TTFT value")
 
         return (
