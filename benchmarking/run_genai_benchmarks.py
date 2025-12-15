@@ -24,8 +24,8 @@ sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.utils import get_repo_root_path, run_command
-from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,7 @@ def run_genai_benchmarks(
 
     # Get benchmarks output directory for direct file output
     from workflows.workflow_config import get_default_workflow_root_log_dir
+
     benchmarks_output_dir = get_default_workflow_root_log_dir() / "benchmarks_output"
     benchmarks_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,13 +135,13 @@ def run_genai_benchmarks(
     logger.info(f"Container name: {container_name}")
 
     # Get current user UID:GID for proper file permissions
-    import pwd
     uid = os.getuid()
     gid = os.getgid()
     user_spec = f"{uid}:{gid}"
 
     # Get host HF cache directory (reuse system's HF cache instead of creating new one)
     from workflows.utils import get_default_hf_home_path
+
     host_hf_cache = get_default_hf_home_path()
     logger.info(f"Using host HF cache: {host_hf_cache}")
 
@@ -171,7 +172,6 @@ def run_genai_benchmarks(
     # Output JSON path
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_json_name = f"genai_benchmark_{model_spec.model_id}_{run_timestamp}.json"
-    output_json_path = Path(output_path) / output_json_name
 
     # Build Docker command
     # fmt: off
@@ -189,7 +189,7 @@ def run_genai_benchmarks(
         "-e", f"URL=localhost:{service_port}",
         "-e", f"MAX_CONTEXT={max_context}",
         "-e", f"MODEL_MAX_CONCURRENCY={max_concurrency}",
-        "-e", f"BENCHMARKS_OUTPUT_DIR=/workspace/benchmarks_output",
+        "-e", "BENCHMARKS_OUTPUT_DIR=/workspace/benchmarks_output",
         "-e", "PYTHONUNBUFFERED=1",  # Force unbuffered output for real-time logs
         "-e", "HF_HOME=/workspace/.cache/huggingface",  # Point to mounted HF cache
         "-e", "TRANSFORMERS_CACHE=/workspace/.cache/huggingface",  # Point to mounted HF cache
@@ -214,7 +214,9 @@ def run_genai_benchmarks(
         logger.info("[OK] genai-perf benchmarks completed successfully")
         logger.info(f"Individual results saved to: {benchmarks_output_dir}")
     else:
-        logger.error(f"[FAIL] genai-perf benchmarks failed with return code: {return_code}")
+        logger.error(
+            f"[FAIL] genai-perf benchmarks failed with return code: {return_code}"
+        )
 
     return return_code
 
@@ -247,7 +249,9 @@ def main():
     if return_code == 0:
         logger.info("[OK] Completed genai-perf benchmarks")
     else:
-        logger.error(f"[FAIL] genai-perf benchmarks failed with return code: {return_code}")
+        logger.error(
+            f"[FAIL] genai-perf benchmarks failed with return code: {return_code}"
+        )
 
     return return_code
 

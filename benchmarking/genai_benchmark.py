@@ -11,11 +11,10 @@ import sys
 import subprocess
 import time
 import glob
-import csv
 import argparse
 import json
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from typing import List, Dict, Any
 
 # --- Default Configuration ---
 DEFAULT_BATCH_1_ISL_OSL_PAIRS = [
@@ -365,7 +364,7 @@ def run_benchmark(
     ]
 
     if verbose:
-        print(f"\nExecuting command:")
+        print("\nExecuting command:")
         print(f"  {' '.join(cmd)}\n")
 
     try:
@@ -373,10 +372,10 @@ def run_benchmark(
 
         if verbose:
             if result.stdout:
-                print(f"\n--- STDOUT ---")
+                print("\n--- STDOUT ---")
                 print(result.stdout)
             if result.stderr:
-                print(f"\n--- STDERR ---")
+                print("\n--- STDERR ---")
                 print(result.stderr)
 
         stats = parse_metrics(artifact_dir)
@@ -412,14 +411,14 @@ def run_benchmark(
             )
             aggregator.add_result(bench_res)
             if verbose:
-                print(f"\n[OK] BENCHMARK COMPLETED SUCCESSFULLY")
+                print("\n[OK] BENCHMARK COMPLETED SUCCESSFULLY")
                 sys.stdout.flush()
             else:
                 print("DONE")
                 sys.stdout.flush()
         else:
             if verbose:
-                print(f"\n[FAIL] BENCHMARK FAILED: Empty Results")
+                print("\n[FAIL] BENCHMARK FAILED: Empty Results")
                 if result.stderr:
                     print(f"\nStderr output:\n{result.stderr}")
                 sys.stdout.flush()
@@ -434,10 +433,10 @@ def run_benchmark(
         if verbose:
             print(f"\n[FAIL] BENCHMARK FAILED: Process Error (exit code {e.returncode})")
             if e.stdout:
-                print(f"\n--- STDOUT ---")
+                print("\n--- STDOUT ---")
                 print(e.stdout)
             if e.stderr:
-                print(f"\n--- STDERR ---")
+                print("\n--- STDERR ---")
                 print(e.stderr)
             sys.stdout.flush()
         else:
