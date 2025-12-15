@@ -71,7 +71,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if (
             self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
-            or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
         ):
             return False
 
@@ -90,11 +89,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             if num_tokens > self.settings.max_model_length:
                 raise ValueError(
                     f"Batched input text exceeds maximum number of batched tokens of {self.settings.max_model_length}. Got {num_tokens} tokens."
-                )
-
-            if requests[0].model != SupportedModels.QWEN_3_EMBEDDING_4B.value:
-                raise ValueError(
-                    f"Model {requests[0].model} is not supported by VLLMForgeEmbeddingQwenRunner."
                 )
 
         self.logger.debug(f"Device {self.device_id}: Running inference")
