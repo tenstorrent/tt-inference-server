@@ -10,7 +10,7 @@ import sys
 import subprocess
 
 # Unset environment variables
-vars_to_unset = ['TT_METAL_HOME', 'ARCH_NAME', 'WH_ARCH_YAML', 'PYTHONPATH']
+vars_to_unset = ["TT_METAL_HOME", "ARCH_NAME", "WH_ARCH_YAML", "PYTHONPATH"]
 for var in vars_to_unset:
     os.environ.pop(var, None)
 
