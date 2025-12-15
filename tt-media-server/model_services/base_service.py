@@ -4,6 +4,7 @@
 
 import asyncio
 from abc import ABC
+from typing import Any, Optional
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -11,6 +12,7 @@ from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.job_manager import JobManager
 from utils.logger import TTLogger
 
 
@@ -20,6 +22,7 @@ class BaseService(ABC):
         self.result_futures = {}
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
+        self._job_manager = JobManager()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int
@@ -114,6 +117,7 @@ class BaseService(ABC):
 
     @log_execution_time("Stopping workers")
     def stop_workers(self):
+        self._job_manager.shutdown()
         return self.scheduler.stop_workers()
 
     async def post_process(self, result):
@@ -252,3 +256,21 @@ class BaseService(ABC):
                 self.logger.debug(
                     f"Cleaned up {len(keys_to_remove)} pending chunk futures for task {request._task_id}"
                 )
+
+    async def create_job(self, job_type: str, request: BaseRequest) -> dict:
+        return self._job_manager.create_job(
+            job_id=request._task_id,
+            job_type=job_type,
+            model=settings.model_weights_path,
+            request=request,
+            task_function=self.process_request,
+        )
+
+    def get_job_metadata(self, job_id: str) -> Optional[dict]:
+        return self._job_manager.get_job_metadata(job_id)
+
+    def get_job_result(self, job_id: str) -> Optional[Any]:
+        return self._job_manager.get_job_result(job_id)
+
+    def delete_job(self, job_id: str) -> Optional[dict]:
+        return self._job_manager.delete_job(job_id)

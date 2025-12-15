@@ -1,0 +1,231 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+import asyncio
+import os
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+from config.settings import get_settings
+from domain.base_request import BaseRequest
+
+from utils.logger import TTLogger
+
+
+@dataclass
+class Job:
+    id: str
+    object: str
+    status: str = "queued"
+    created_at: int = None
+    model: str
+    completed_at: Optional[int] = None
+    result: Optional[Any] = None
+    error: Optional[dict] = None
+    _task: Optional[asyncio.Task] = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = int(time.time())
+
+    def mark_in_progress(self):
+        self.status = "in_progress"
+
+    def mark_completed(self, result: Any):
+        self.completed_at = int(time.time())
+        self.status = "completed"
+        self.result = result
+
+    def mark_failed(self, error_code: str, error_message: str):
+        self.completed_at = int(time.time())
+        self.status = "failed"
+        self.error = {"code": error_code, "message": error_message}
+
+    def mark_cancelled(self):
+        self.completed_at = int(time.time())
+        self.status = "cancelled"
+
+    def is_in_progress(self) -> bool:
+        return self.status == "in_progress"
+
+    def is_completed(self) -> bool:
+        return self.status == "completed"
+
+    def is_terminal(self) -> bool:
+        return self.status in ["completed", "failed", "cancelled"]
+
+    def to_public_dict(self) -> dict:
+        data = {
+            "id": self.id,
+            "object": self.object,
+            "status": self.status,
+            "created_at": self.created_at,
+            "model": self.model,
+        }
+        if self.completed_at:
+            data["completed_at"] = self.completed_at
+        if self.error:
+            data["error"] = self.error
+        return data
+
+
+class JobManager:
+    def __init__(self, max_jobs: int = 10000):
+        self._logger = TTLogger()
+        self._settings = get_settings()
+        self._max_jobs = max_jobs
+        # In-memory storage for submitted jobs
+        self._jobs: Dict[str, Job] = {}
+        # Background cleanup task
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._start_cleanup_task()
+
+    def create_job(
+        self,
+        job_id: str,
+        job_type: str,
+        model: str,
+        request: BaseRequest,
+        task_function: Optional[asyncio.Task] = None,
+    ) -> dict:
+        """Create job, start processing in background, and return initial job metadata."""
+        # ToDo: do we want to throw an error and limit jobs?
+        if len(self._jobs) >= self._max_jobs:
+            raise Exception("Maximum job limit reached")
+        job = Job(
+            id=job_id,
+            object=job_type,
+            model=model,
+        )
+        self._jobs[job_id] = job
+        self._logger.info(f"Job {job_id} created.")
+
+        job._task = asyncio.create_task(self._process_job(job, request, task_function))
+
+        return job.to_public_dict()
+
+    def get_job_metadata(self, job_id: str) -> Optional[dict]:
+        """Get job metadata (public fields only)."""
+        job = self._jobs.get(job_id)
+        if job:
+            return job.to_public_dict()
+        return None
+
+    def get_job_result(self, job_id: str) -> Optional[Any]:
+        """Get job result if completed."""
+        job = self._jobs.get(job_id)
+        if job and job.is_completed():
+            return job.result
+        return None
+
+    def delete_job(self, job_id: str) -> bool:
+        """Delete job, cancel if in progress, and return deletion confirmation."""
+        job = self._jobs.get(job_id)
+        if not job:
+            return False
+
+        # Cancel the task if it's still running
+        if job._task and not job._task.done():
+            self._logger.info(f"Cancelling in-progress job {job_id}")
+            job._task.cancel()
+
+        self._jobs.pop(job_id)
+        self._logger.info(f"Job {job_id} deleted.")
+        return True
+
+    async def shutdown(self):
+        """Gracefully shutdown job manager and cleanup task."""
+        self._logger.info("Shutting down job manager")
+
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+
+        running_tasks = [
+            job._task
+            for job in self._jobs.values()
+            if job._task and not job._task.done()
+        ]
+
+        if running_tasks:
+            for task in running_tasks:
+                task.cancel()
+            await asyncio.gather(*running_tasks, return_exceptions=True)
+
+        self._logger.info("Job manager shutdown complete")
+
+    async def _process_job(self, job: Job, request: BaseRequest, task_function):
+        try:
+            job.mark_in_progress()
+            result = await task_function(request)
+            job.mark_completed(result=result)
+        except asyncio.CancelledError:
+            self._logger.info(f"Job {job.id} was cancelled")
+            job.mark_cancelled()
+            raise
+        except Exception as e:
+            self._logger.error(f"Job {job.id} failed: {e}", exc_info=True)
+            job.mark_failed(error_code="processing_error", error_message=str(e))
+
+    def _start_cleanup_task(self):
+        """Start background task to periodically clean up old jobs."""
+
+        async def cleanup_loop():
+            while True:
+                try:
+                    await asyncio.sleep(self._settings.job_cleanup_interval_seconds)
+                    self._cleanup_old_jobs()
+                except asyncio.CancelledError:
+                    self._logger.info("Job cleanup task cancelled")
+                    break
+                except Exception as e:
+                    self._logger.error(f"Error in job cleanup task: {e}", exc_info=True)
+
+        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        self._logger.info("Job cleanup task started")
+
+    def _cleanup_old_jobs(self):
+        """Remove old completed/failed/cancelled jobs and stuck in-progress jobs."""
+        current_time = time.time()
+        cutoff_time = current_time - self._settings.job_retention_seconds
+        stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
+
+        jobs_to_remove = []
+
+        for job_id, job in self._jobs.items():
+            if (
+                job.is_terminal()
+                and job.completed_at
+                and job.completed_at < cutoff_time
+            ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
+                jobs_to_remove.append(job_id)
+                self._cleanup_job(job)
+
+        for job_id in jobs_to_remove:
+            self._jobs.pop(job_id, None)
+
+        if jobs_to_remove:
+            self._logger.info(
+                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
+            )
+
+    def _cleanup_job(self, job: Job):
+        # Cancel stuck jobs
+        if job._task and not job._task.done():
+            self._logger.warning(f"Cancelling stuck job {job.id}")
+            job._task.cancel()
+            job.mark_cancelled()
+
+        # Delete result file if it's a file path
+        if job.result and isinstance(job.result, str):
+            try:
+                if os.path.exists(job.result):
+                    os.remove(job.result)
+                    self._logger.debug(f"Deleted file for job {job.id}: {job.result}")
+            except Exception as e:
+                self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
