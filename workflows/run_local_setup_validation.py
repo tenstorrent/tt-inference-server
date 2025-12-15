@@ -201,9 +201,9 @@ def main():
     filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
 
     unique_board_types = set(filtered_board_types)
-    assert (
-        len(unique_board_types) == 1
-    ), f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    assert len(unique_board_types) == 1, (
+        f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    )
     unique_board_type = unique_board_types.pop()
 
     # parse system topology if board type requires it
@@ -230,12 +230,12 @@ def main():
     prefix, kmd_version = kmd_version.split(" ")
     system_info = (
         f"System info:\n"
-        f"{'='*80}\n"
+        f"{'=' * 80}\n"
         f"FW bundle versions (across all devices): {fw_bundle_versions}\n"
         f"KMD version (on host): {kmd_version}\n"
         f"Board types: {board_types}\n"
         f"Topology: {topology}\n"
-        f"{'='*80}"
+        f"{'=' * 80}"
     )
     logger.info(system_info)
 

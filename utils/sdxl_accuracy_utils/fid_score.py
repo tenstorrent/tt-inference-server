@@ -16,6 +16,7 @@ from utils.sdxl_accuracy_utils.inception import InceptionV3
 COCO_STATISTICS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/tools/val2014.npz"
 logger = logging.getLogger(__name__)
 
+
 def get_activations(files, model, batch_size=1, dims=2048, device="cpu", num_workers=1):
     """Calculates the activations of the pool_3 layer for all images.
 
@@ -39,7 +40,9 @@ def get_activations(files, model, batch_size=1, dims=2048, device="cpu", num_wor
     model.eval()
 
     if batch_size > len(files):
-        logger.warning("Warning: batch size is bigger than the data size. Setting batch size to data size")
+        logger.warning(
+            "Warning: batch size is bigger than the data size. Setting batch size to data size"
+        )
         batch_size = len(files)
 
     dataset = ImagesDataset(files, transforms=TF.ToTensor())
@@ -127,15 +130,21 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     sigma1 = np.atleast_2d(sigma1)
     sigma2 = np.atleast_2d(sigma2)
 
-    assert mu1.shape == mu2.shape, "Training and test mean vectors have different lengths"
-    assert sigma1.shape == sigma2.shape, "Training and test covariances have different dimensions"
+    assert mu1.shape == mu2.shape, (
+        "Training and test mean vectors have different lengths"
+    )
+    assert sigma1.shape == sigma2.shape, (
+        "Training and test covariances have different dimensions"
+    )
 
     diff = mu1 - mu2
 
     # Product might be almost singular
     covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
     if not np.isfinite(covmean).all():
-        logger.info(f"fid calculation produces singular product; adding {eps} to diagonal of cov estimates")
+        logger.info(
+            f"fid calculation produces singular product; adding {eps} to diagonal of cov estimates"
+        )
         offset = np.eye(sigma1.shape[0]) * eps
         covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
 

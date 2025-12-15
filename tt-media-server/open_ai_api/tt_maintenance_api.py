@@ -49,7 +49,7 @@ async def deep_reset(
 
 
 @router.post("/tt-reset-device")
-async def deep_reset(
+async def reset_device(
     device_id: str, service: BaseService = Depends(service_resolver)
 ) -> dict[str, Any]:
     """
