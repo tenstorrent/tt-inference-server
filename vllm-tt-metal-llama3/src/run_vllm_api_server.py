@@ -2,24 +2,24 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
-import runpy
-import logging
 import json
+import logging
 import multiprocessing
-from pprint import pprint
+import os
+import runpy
+import sys
 from pathlib import Path
+from pprint import pprint
 
 from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
+from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
-    resolve_commit,
     create_model_symlink,
     get_encoded_api_key,
+    resolve_commit,
 )
-from utils.prompt_client import run_background_trace_capture
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 def handle_code_versions(model_spec_json):
-    impl_id = model_spec_json["impl"]["impl_id"]
     tt_metal_home = os.getenv("TT_METAL_HOME")
     vllm_dir = os.getenv("vllm_dir")
 
@@ -300,7 +299,7 @@ def main():
     start_trace_capture(model_spec_json)
 
     # vLLM CLI arguments
-    logger.info(f"vllm_args:")
+    logger.info("vllm_args:")
     pprint(model_spec_json["device_model_spec"]["vllm_args"])
     for key, value in model_spec_json["device_model_spec"]["vllm_args"].items():
         if value is not None:

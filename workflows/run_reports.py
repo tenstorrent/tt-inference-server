@@ -1134,8 +1134,8 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if (
-                        type(metric_value) != float
+                    if not isinstance(
+                        metric_value, float
                     ):  # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
@@ -1326,7 +1326,6 @@ def main():
 
     server_mode = "API"
     command_flag = ""
-    local_server = False  # Not passed via CLI args anymore
     if docker_server:
         server_mode = "docker"
         command_flag = "--docker-server"

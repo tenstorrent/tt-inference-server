@@ -351,7 +351,7 @@ def copy_docker_image(src: str, dst: str, dry_run: bool = False) -> bool:
                 logger.error(f"Error output: {result.stderr}")
             return False
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout copying image (10 minutes exceeded)")
+        logger.error("Timeout copying image (10 minutes exceeded)")
         return False
     except Exception as e:
         logger.error(f"Exception during crane copy: {e}")
@@ -412,7 +412,7 @@ def make_release_artifacts(
 
         # Check if this image has already been processed
         if docker_image in processed_images:
-            logger.info(f"  ⚡ Image already processed, using cached result")
+            logger.info("  ⚡ Image already processed, using cached result")
             cached_result = image_results.get(docker_image)
             if cached_result == "needs_building":
                 images_to_build[docker_image].append(model_id)
@@ -428,7 +428,7 @@ def make_release_artifacts(
 
         # Check if release image already exists
         if check_image_exists(docker_image, cache=image_exists_cache):
-            logger.info(f"  ✓ Found image on remote container registry")
+            logger.info("  ✓ Found image on remote container registry")
 
             # Check if it has valid CI backing
             has_ci_backing = False
@@ -446,7 +446,7 @@ def make_release_artifacts(
                         ci_commits = extract_commits_from_tag(ci_docker_image)
 
                         if commits_match(release_commits, ci_commits, model_spec):
-                            logger.info(f"  ✓ Has valid Models CI reference")
+                            logger.info("  ✓ Has valid Models CI reference")
                             existing_with_ci_ref[docker_image] = ci_docker_image
                             processed_images.add(docker_image)
                             image_results[docker_image] = "exists_with_ci"
@@ -454,17 +454,17 @@ def make_release_artifacts(
                             has_ci_backing = True
                         else:
                             logger.info(
-                                f"  ⚠ Commit mismatch between release and CI images"
+                                "  ⚠ Commit mismatch between release and CI images"
                             )
                     else:
-                        logger.info(f"  ⚠ CI image not found on remote")
+                        logger.info("  ⚠ CI image not found on remote")
                 else:
-                    logger.info(f"  ⚠ No CI docker_image in CI data")
+                    logger.info("  ⚠ No CI docker_image in CI data")
             else:
-                logger.info(f"  ⚠ No CI data available")
+                logger.info("  ⚠ No CI data available")
 
             if not has_ci_backing:
-                logger.info(f"  → Existing image without Models CI reference")
+                logger.info("  → Existing image without Models CI reference")
                 existing_without_ci_ref[docker_image].append(model_id)
                 processed_images.add(docker_image)
                 image_results[docker_image] = "exists_without_ci"
@@ -478,7 +478,7 @@ def make_release_artifacts(
                 logger.warning(
                     f"  ⚠ Image already copied from {copied_images[docker_image]}, skipping build list"
                 )
-                logger.debug(f"  → Checked copied_images, found existing entry")
+                logger.debug("  → Checked copied_images, found existing entry")
                 continue
             logger.debug(
                 f"  → Checked copied_images (size={len(copied_images)}), not found"
@@ -486,7 +486,7 @@ def make_release_artifacts(
             images_to_build[docker_image].append(model_id)
             # processed_images.add(docker_image)
             image_results[docker_image] = "needs_building"
-            logger.info(f"  ⚠ No CI data available, added to images_to_be_built.json")
+            logger.info("  ⚠ No CI data available, added to images_to_be_built.json")
             needs_building += 1
             continue
 
@@ -502,7 +502,7 @@ def make_release_artifacts(
             processed_images.add(docker_image)
             image_results[docker_image] = "needs_building"
             logger.info(
-                f"  ⚠ No CI docker_image in CI data, added to images_to_be_built.json"
+                "  ⚠ No CI docker_image in CI data, added to images_to_be_built.json"
             )
             needs_building += 1
             continue
@@ -511,7 +511,7 @@ def make_release_artifacts(
 
         # Check if CI image exists
         if not check_image_exists(ci_docker_image, cache=image_exists_cache):
-            logger.error(f"  ✗ CI image not found on remote container registry")
+            logger.error("  ✗ CI image not found on remote container registry")
             if docker_image in copied_images:
                 logger.warning(
                     f"  ⚠ Image already copied from {copied_images[docker_image]}, skipping build list"
@@ -540,10 +540,10 @@ def make_release_artifacts(
                 f"     CI image has: tt-metal={ci_commits[0] if ci_commits else 'unknown'}, vllm={ci_commits[1] if ci_commits and len(ci_commits) > 1 else 'unknown'}"
             )
             logger.warning(
-                f"     → This happens when multiple models in MODEL_SPECS share the same docker_image"
+                "     → This happens when multiple models in MODEL_SPECS share the same docker_image"
             )
             logger.warning(
-                f"        but have different commits in CI data. Skipping copy to avoid mismatch."
+                "        but have different commits in CI data. Skipping copy to avoid mismatch."
             )
             if docker_image in copied_images:
                 logger.warning(
@@ -558,10 +558,10 @@ def make_release_artifacts(
 
         # Copy CI image to release location
         logger.info(
-            f"  → Copying from Models CI container registry to release container registry"
+            "  → Copying from Models CI container registry to release container registry"
         )
         if copy_docker_image(ci_docker_image, docker_image, dry_run):
-            logger.info(f"  ✓ Successfully copied to release container registry")
+            logger.info("  ✓ Successfully copied to release container registry")
             copied_images[docker_image] = ci_docker_image
             logger.debug(
                 f"  → Added to copied_images dict: {docker_image} <- {ci_docker_image}"
@@ -579,7 +579,7 @@ def make_release_artifacts(
             image_results[docker_image] = "copied"
             copied_from_ci += 1
         else:
-            logger.error(f"  ✗ Failed to copy image")
+            logger.error("  ✗ Failed to copy image")
             if docker_image in copied_images:
                 logger.warning(
                     f"  ⚠ Image already copied from {copied_images[docker_image]}, skipping build list"
@@ -895,15 +895,6 @@ def main():
     ) = make_release_artifacts(merged_spec, args.dry_run)
 
     logger.info("\nStep 3: Writing output files...")
-    output_data = write_output(
-        images_to_build,
-        copied_images,
-        existing_with_ci_ref,
-        existing_without_ci_ref,
-        output_dir,
-        image_target,
-        args.dry_run,
-    )
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")

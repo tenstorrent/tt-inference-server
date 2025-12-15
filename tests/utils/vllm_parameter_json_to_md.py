@@ -158,9 +158,9 @@ def main(report_file, *args, **kwargs):
     try:
         with open(report_file, "r") as f:
             report_data = json.load(f)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise FileNotFoundError(f"Error: Input file not found at {report_file}")
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         raise json.JSONDecodeError(f"Error: Could not decode JSON from {report_file}")
 
     # Analyze and format

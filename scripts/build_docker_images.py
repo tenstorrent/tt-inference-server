@@ -2,19 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import logging
-import sys
-import subprocess
-import tempfile
-import shutil
-from pathlib import Path
 import argparse
-import os
-import multiprocessing
-from datetime import datetime
 import json
-import urllib.request
+import logging
+import multiprocessing
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -22,9 +22,9 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import get_repo_root_path
-from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__file__)
 
@@ -173,7 +173,7 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"Log file: {log_file}")
 
         # Resolve tt_metal_commit to full SHA early in the process
-        process_logger.info(f"Resolving tt_metal_commit to full SHA...")
+        process_logger.info("Resolving tt_metal_commit to full SHA...")
         resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
         process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
 
@@ -669,7 +669,8 @@ def build_tt_metal_base_image(
         ubuntu_version: Ubuntu version to use
         logger: Logger instance
     """
-    os_version = f"ubuntu-{ubuntu_version}-amd64"
+    # note: note used
+    # os_version = f"ubuntu-{ubuntu_version}-amd64"
 
     if check_image_exists_local(tt_metal_base_tag):
         logger.info(f"TT-Metal base image already exists: {tt_metal_base_tag}")

@@ -2,10 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 import json
 import logging
-from typing import Optional, Union
 from pathlib import Path
 import subprocess
 import jwt

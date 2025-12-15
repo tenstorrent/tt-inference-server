@@ -80,7 +80,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
-        distribute_block = lambda: setattr(self, "pipeline", self.create_pipeline())
+        def distribute_block():
+            self.pipeline = self.create_pipeline()
 
         # 20 minutes to distribute the model on device
         weights_distribution_timeout = 1200

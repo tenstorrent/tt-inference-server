@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import json
 import logging
 import time
 

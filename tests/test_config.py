@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr

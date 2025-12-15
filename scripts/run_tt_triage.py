@@ -141,14 +141,14 @@ python triage.py
 
     combined_output = []
     combined_output.append(f"{'=' * 80}")
-    combined_output.append(f"TT-Metal Debugger Triage Report")
+    combined_output.append("TT-Metal Debugger Triage Report")
     combined_output.append(f"Container ID: {container_id}")
     combined_output.append(f"Timestamp: {datetime.now().isoformat()}")
     combined_output.append(f"{'=' * 80}\n")
 
     logger.info("Executing chained command in container")
     combined_output.append(f"\n{'=' * 80}")
-    combined_output.append(f"Executing debugging sequence")
+    combined_output.append("Executing debugging sequence")
     combined_output.append(f"{'=' * 80}\n")
 
     return_code, stdout, stderr = run_command_in_container(

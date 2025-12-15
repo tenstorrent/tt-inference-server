@@ -39,7 +39,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workflows.model_spec import (
     spec_templates,
     ModelSpecTemplate,
-    generate_docker_tag,
     generate_default_docker_link,
     VERSION,
 )
@@ -305,7 +304,7 @@ def get_commits_for_template(template: ModelSpecTemplate, last_good_data):
     )
 
     if len(tt_metal_commits) > 1:
-        print(f"\nWarning: Multiple tt_metal_commits found across weights/devices:")
+        print("\nWarning: Multiple tt_metal_commits found across weights/devices:")
         for commit in sorted(tt_metal_commits):
             matching_ids = [
                 dc["model_id"]
@@ -315,7 +314,7 @@ def get_commits_for_template(template: ModelSpecTemplate, last_good_data):
             print(f"  {commit}: {matching_ids}")
 
     if len(vllm_commits) > 1:
-        print(f"\nWarning: Multiple vllm_commits found across weights/devices:")
+        print("\nWarning: Multiple vllm_commits found across weights/devices:")
         for commit in sorted(vllm_commits):
             matching_ids = [
                 dc["model_id"]
@@ -325,7 +324,7 @@ def get_commits_for_template(template: ModelSpecTemplate, last_good_data):
             print(f"  {commit}: {matching_ids}")
 
     if len(perf_statuses) > 1:
-        print(f"\nWarning: Multiple perf_statuses found across weights/devices:")
+        print("\nWarning: Multiple perf_statuses found across weights/devices:")
         for status in sorted(perf_statuses):
             matching_ids = [
                 dc["model_id"]
@@ -448,7 +447,7 @@ def generate_release_diff_markdown(update_records, output_path):
     """
     lines = []
     lines.append("# Model Spec Release Updates\n")
-    lines.append(f"\nThis document shows model specification updates.\n")
+    lines.append("\nThis document shows model specification updates.\n")
 
     if not update_records:
         lines.append("\nNo updates were made.\n")
@@ -757,7 +756,7 @@ def main():
         )
 
         if not should_update:
-            print(f"  No CI data found for this template. Skipping.")
+            print("  No CI data found for this template. Skipping.")
             continue
 
         # Validate that selected commits come from this template's weights
@@ -769,7 +768,7 @@ def main():
                 print(
                     f"\nError: Selected model_id '{selected_model_id}' does not match template weights: {template.weights}"
                 )
-                print(f"  Skipping update to prevent cross-contamination.")
+                print("  Skipping update to prevent cross-contamination.")
                 continue
 
         # Build unique identifier to find this template in text
@@ -801,7 +800,7 @@ def main():
             weights = template.weights
             impl_name = template.impl.impl_name
 
-            print(f"\nUpdating template:")
+            print("\nUpdating template:")
             print(f"  impl: {impl_name}")
             print(f"  weights[0]: {weights[0] if weights else 'unknown'}")
             if tt_metal_commit:

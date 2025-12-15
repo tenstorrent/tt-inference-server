@@ -4,7 +4,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import sys
-import os
 import argparse
 import subprocess
 from pathlib import Path
@@ -124,7 +123,7 @@ def main():
             print(
                 f"\n⛔ Release workflow failed for {model_spec.model_name} with exit code {return_code}"
             )
-            print(f"Stopping execution as requested (stop on first failure).")
+            print("Stopping execution as requested (stop on first failure).")
             sys.exit(return_code)
 
         print(

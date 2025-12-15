@@ -2,10 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 import time
 import logging
-import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 from dataclasses import dataclass

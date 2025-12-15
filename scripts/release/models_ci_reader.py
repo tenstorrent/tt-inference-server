@@ -3,22 +3,21 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
-import io
-import re
-import json
-import time
-import shutil
-import zipfile
 import argparse
+import io
+import json
 import logging
+import os
+import re
+import shutil
+import sys
+import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
-from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from workflow_logs_parser import parse_workflow_logs_dir
 
@@ -511,12 +510,10 @@ def parse_built_docker_images_from_logs(logs_dir: Path) -> List[str]:
         lines = content.splitlines()
 
         # Look for "Successfully built and pushed images:" marker
-        found_marker = False
         for i, line in enumerate(lines):
             stripped = _strip_timestamp_prefix(line).strip()
 
             if "Successfully built and pushed images:" in stripped:
-                found_marker = True
                 # Parse subsequent lines until we hit a line that's not an image
                 for j in range(i + 1, len(lines)):
                     next_stripped = _strip_timestamp_prefix(lines[j]).strip()
@@ -957,7 +954,7 @@ def match_jobs_to_workflow_logs(
         Matched job dict with added fields: model_name, hardware, hardware_name or None
     """
     if not jobs_ci_metadata:
-        logger.debug(f"No jobs_ci_metadata provided for matching")
+        logger.debug("No jobs_ci_metadata provided for matching")
         return None
 
     # Parse workflow_logs_dir_name: workflow_logs_{workflow_type}_{model_name}_{hardware_name}
@@ -1598,7 +1595,7 @@ def process_run_directory(
             }
         else:
             logger.debug(
-                f"   No run metadata available - ci_run_id and ci_run_url will be null"
+                "   No run metadata available - ci_run_id and ci_run_url will be null"
             )
 
         # Extract job-specific data using job_id
@@ -1843,11 +1840,11 @@ def process_all_runs(
         else:
             logger.warning(f"⚠️  No run_ci_metadata.json found for {run_out_dir.name}")
             logger.warning(
-                f"   This may be from an older download before metadata saving was implemented."
+                "   This may be from an older download before metadata saving was implemented."
             )
-            logger.warning(f"   ci_run_id and ci_run_url will be null for this run.")
+            logger.warning("   ci_run_id and ci_run_url will be null for this run.")
             logger.warning(
-                f"   To fix: re-download artifacts for this run using the script without --process flag."
+                "   To fix: re-download artifacts for this run using the script without --process flag."
             )
 
         # Extract run_number from metadata or use "unknown" placeholder
@@ -1971,7 +1968,6 @@ def write_summary_output(
 
 
 def main():
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     parser = argparse.ArgumentParser(
         description="Read On nightly CI results and summarize passing models"
     )
