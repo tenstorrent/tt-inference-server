@@ -5161,7 +5161,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5174,7 +5174,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5187,7 +5187,7 @@
             {
                 "max_concurrency": 4,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5200,7 +5200,7 @@
             {
                 "max_concurrency": 32,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5215,7 +5215,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 11000,
@@ -5228,11 +5228,41 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 5000,
                         "tput_user": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "stable-diffusion-xl-base-1.0-img-2-img": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
+    "stable-diffusion-xl-1.0-inpainting-0.1": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
                     }
                 }
             }

@@ -66,6 +66,7 @@ class ModelRunners(Enum):
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
     MOCK = "mock"
+    TEST = "test"
 
 
 class ModelServices(Enum):
@@ -89,6 +90,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -381,7 +383,7 @@ for runner in [
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
     ModelConfigs[(runner, DeviceTypes.N300)] = {
         "is_galaxy": False,
