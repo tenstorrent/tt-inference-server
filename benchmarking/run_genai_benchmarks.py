@@ -12,7 +12,6 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 import jwt
@@ -168,10 +167,6 @@ def run_genai_benchmarks(
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
     logger.info(f"Config written to: {config_path}")
-
-    # Output JSON path
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_json_name = f"genai_benchmark_{model_spec.model_id}_{run_timestamp}.json"
 
     # Build Docker command
     # fmt: off
