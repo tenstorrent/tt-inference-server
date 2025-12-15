@@ -8,8 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock open_clip before importing modules that depend on it
+# Mock ML dependencies before importing modules that depend on them
 sys.modules["open_clip"] = MagicMock()
+sys.modules["torch"] = MagicMock()
+sys.modules["torch.nn"] = MagicMock()
+sys.modules["torchvision"] = MagicMock()
+sys.modules["torchvision.transforms"] = MagicMock()
+sys.modules["scipy"] = MagicMock()
+sys.modules["scipy.linalg"] = MagicMock()
 
 from utils.media_clients.media_client_factory import (
     STRATEGY_MAP,
