@@ -2,17 +2,23 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import argparse
+import csv
 import json
 import os
-import csv
 import re
-from typing import Dict, List, Any, Union, Tuple
-import argparse
-from pathlib import Path
 import unicodedata
+from pathlib import Path
+from typing import Any, Dict, List, Tuple, Union
+
 from workflows.utils import (
+    is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
-    is_preprocessing_enabled_for_whisper
+)
+
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelType,
 )
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
@@ -44,6 +50,24 @@ def parse_args():
     )
     return parser.parse_args()
 
+def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
+    if model_type == ModelType.LLM:
+        return "text"
+    if model_type == ModelType.CNN:
+        return "cnn"
+    if model_type == ModelType.AUDIO:
+        return "audio"
+    if model_type == ModelType.IMAGE:
+        return "image"
+
+def _get_task_type(model_id: str) -> str | None:
+    # model_id example: id_tt-transformers_resnet-50
+    # Extract just the model name (e.g., "resnet-50")
+    model_name = model_id.lower().split("_")[-1]
+    for _, model_spec in MODEL_SPECS.items():
+        if model_name in model_spec.model_name.lower() and model_spec.model_type:
+            return _map_model_type_to_task_type(model_spec.model_type)
+    return "unknown"
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # First try the image benchmark pattern
@@ -107,8 +131,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "num_requests": int(match.group("n")),
             "task_type": "text",
         }
-    
+
     # Try CNN benchmark pattern (for SDXL and similar models)
+    # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
@@ -120,13 +145,13 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # Check if this is actually an audio model (Whisper) based on model_id
-        model_id = match.group("model_id")
+        # Check if this is actually an audio model or image model based on model_id
+        model_id = match.group("model_id") # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
+            "task_type": _get_task_type(model_id),
         }
 
     # If no patterns match, raise error
@@ -166,10 +191,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
-    # Handle CNN benchmarks differently
     if params.get("task_type") == "cnn":
         # For CNN benchmarks, extract data from JSON content
-        benchmarks_data = data.get("benchmarks: ", data)  # Handle typo in key or fallback to root
+        benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -178,11 +202,40 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "cnn",
             "device": params["device"],
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "num_inference_steps": benchmarks_data.get("benchmarks").get("num_inference_steps", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
-            "inference_steps_per_second": benchmarks_data.get("benchmarks").get("inference_steps_per_second", 0),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                "num_inference_steps", 0
+            ),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "inference_steps_per_second", 0
+            ),
             "filename": filename,
             "task_type": "cnn",
+        }
+        return format_metrics(metrics)
+
+    if params.get("task_type") == "image":
+        # For IMAGE benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "image",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                "num_inference_steps", 0
+            ),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "inference_steps_per_second", 0
+            ),
+            "filename": filename,
+            "task_type": "image",
         }
         return format_metrics(metrics)
 
@@ -197,10 +250,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "audio",
             "device": params["device"],
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,  # ttft is already in seconds, convert to ms
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
             "filename": filename,
             "task_type": "audio",
-            "accuracy_check": benchmarks_data.get("benchmarks").get("accuracy_check", 0),
+            "accuracy_check": benchmarks_data.get("benchmarks").get(
+                "accuracy_check", 0
+            ),
             "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
             "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
@@ -362,7 +418,10 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     return display_dict
 
-def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]) -> Dict[str, str]:
+
+def create_audio_display_dict(
+    result: Dict[str, Any], model_spec: Dict[str, Any]
+) -> Dict[str, str]:
     """Create display dictionary for audio benchmarks."""
     # Column definitions
     display_cols: List[Tuple[str, str]] = [
@@ -372,7 +431,7 @@ def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]
         ("preprocessing_enabled", "Preprocessing enabled"),
         ("accuracy_check", "Accuracy Check"),
         ("t/s/u", "T/S/U"),
-        ("rtr", "RTR")
+        ("rtr", "RTR"),
     ]
 
     # Get streaming and preprocessing settings from model_spec
@@ -383,7 +442,7 @@ def create_audio_display_dict(result: Dict[str, Any], model_spec: Dict[str, Any]
     wrapper = ModelSpecWrapper(model_spec)
     whisper_config_values = {
         "streaming_enabled": str(is_streaming_enabled_for_whisper(wrapper)),
-        "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper))
+        "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper)),
     }
 
     display_dict = {}

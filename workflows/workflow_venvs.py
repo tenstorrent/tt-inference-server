@@ -87,8 +87,8 @@ def setup_evals_common(
     return True
 
 
-def setup_audio_venv(venv_config: VenvConfig) -> bool:
-    """Setup audio-specific virtual environment.
+def setup_venv(venv_config: VenvConfig) -> bool:
+    """Setup a generic virtual environment.
 
     Args:
         venv_config: Virtual environment configuration
@@ -98,28 +98,10 @@ def setup_audio_venv(venv_config: VenvConfig) -> bool:
     """
     work_dir = venv_config.venv_path / "work_dir"
     if not work_dir.exists():
-        logger.info(f"Creating work_dir for audio server testing: {work_dir}")
+        logger.info(f"Creating work_dir for generic server testing: {work_dir}")
         work_dir.mkdir(parents=True, exist_ok=True)
     else:
-        logger.info(f"work_dir already exists for audio server testing: {work_dir}")
-    return True
-
-
-def setup_cnn_venv(venv_config: VenvConfig) -> bool:
-    """Setup CNN-specific virtual environment.
-
-    Args:
-        venv_config: Virtual environment configuration
-
-    Returns:
-        True if setup was successful
-    """
-    work_dir = venv_config.venv_path / "work_dir"
-    if not work_dir.exists():
-        logger.info(f"Creating work_dir for CNN server testing: {work_dir}")
-        work_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        logger.info(f"work_dir already exists for CNN server testing: {work_dir}")
+        logger.info(f"work_dir already exists for generic server testing: {work_dir}")
     return True
 
 
@@ -128,10 +110,12 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    if model_spec.model_type == ModelType.AUDIO:
-        return setup_audio_venv(venv_config)
-    elif model_spec.model_type == ModelType.CNN:
-        return setup_cnn_venv(venv_config)
+    if (
+        model_spec.model_type == ModelType.AUDIO
+        or model_spec.model_type == ModelType.CNN
+        or model_spec.model_type == ModelType.IMAGE
+    ):
+        return setup_venv(venv_config)
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -409,7 +393,7 @@ def setup_tests_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
         logger=logger,
     )
     return True

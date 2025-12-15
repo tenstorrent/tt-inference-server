@@ -3,4 +3,5 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 #!/bin/bash
+set -eo pipefail
 uvicorn --host 0.0.0.0 main:app --lifespan on --port 8000
