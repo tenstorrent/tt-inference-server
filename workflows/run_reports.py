@@ -331,7 +331,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
 
     files = vllm_files + genai_files
-    logger.info(f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files")
+    logger.info(
+        f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
+    )
     output_dir = Path(args.output_path) / "benchmarks"
     logger.info("Benchmark Summary")
     logger.info(f"Processing: {len(files)} files")
