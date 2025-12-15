@@ -2054,7 +2054,7 @@ _eval_config_list = [
             # ),
         ],
     ),
-     EvalConfig(
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-Embedding-4B",
         tasks=[
             EvalTask(

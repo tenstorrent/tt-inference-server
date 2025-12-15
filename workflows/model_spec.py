@@ -238,6 +238,12 @@ whisper_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
 )
+forge_vllm_plugin_impl = ImplSpec(
+    impl_id="forge_vllm_plugin",
+    impl_name="forge-vllm-plugin",
+    repo_url="https://github.com/tenstorrent/tt-xla/tree/main",
+    code_path="integrations/vllm_plugin",
+)
 
 
 @dataclass(frozen=True)
@@ -2136,7 +2142,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-4B"],
         tt_metal_commit="2496be4",
-        impl=tt_transformers_impl,
+        impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2144,6 +2150,12 @@ spec_templates = [
         inference_engine=InferenceEngine.MEDIA.value,
         display_name="Qwen3-Embedding-4B",
         device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=1,
