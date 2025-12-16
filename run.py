@@ -3,33 +3,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
 import argparse
 import getpass
 import logging
-import subprocess
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
+from workflows.log_setup import setup_run_logger
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.run_docker_server import run_docker_server
+from workflows.run_workflows import WorkflowSetup, run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    get_run_id,
     load_dotenv,
     run_command,
     write_dotenv,
-    get_run_id,
 )
-from workflows.run_workflows import run_workflows, WorkflowSetup
-from workflows.run_docker_server import run_docker_server
-from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 from workflows.workflow_venvs import create_local_setup_venv
 
@@ -192,6 +192,12 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
     )
+    parser.add_argument(
+        "--server-tests",
+        type=str,
+        default=os.getenv("SERVER_TESTS", "false"),
+        help="Run server tests using server_tests/run.py (true/false). Default is false.",
+    )
 
     args = parser.parse_args()
 
@@ -323,6 +329,7 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  server_tests:               {args.server_tests}",
         "",
         "=" * 60,
     ]
@@ -377,6 +384,13 @@ def validate_runtime_args(model_spec):
                 raise ValueError(
                     "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
                 )
+
+    if workflow_type == WorkflowType.SPEC_TESTS:
+        # SPEC_TESTS (server tests) requires a running inference server
+        if not (args.docker_server or args.local_server):
+            raise ValueError(
+                f"Workflow {args.workflow} requires --docker-server argument (server must be running for tests)"
+            )
 
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks

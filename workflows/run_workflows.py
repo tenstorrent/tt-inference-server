@@ -161,10 +161,16 @@ def run_single_workflow(model_spec, json_fpath):
     return return_code
 
 
+# Workflows that run standalone without REPORTS follow-up
+STANDALONE_WORKFLOWS = {WorkflowType.SPEC_TESTS, WorkflowType.REPORTS}
+
+
 def run_workflows(model_spec, json_fpath):
     return_codes = []
     args = model_spec.cli_args
-    if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
+    workflow_type = WorkflowType.from_string(args.workflow)
+
+    if workflow_type == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
         workflows_to_run = [
@@ -187,8 +193,10 @@ def run_workflows(model_spec, json_fpath):
             done_trace_capture = True
         return return_codes
     else:
+        # Run the requested workflow
         return_codes.append(run_single_workflow(model_spec, json_fpath))
-        if WorkflowType.from_string(args.workflow) != WorkflowType.REPORTS:
+        # Run REPORTS after workflow unless it's a standalone workflow
+        if workflow_type not in STANDALONE_WORKFLOWS:
             args.workflow = WorkflowType.REPORTS.name
             return_codes.append(run_single_workflow(model_spec, json_fpath))
 
