@@ -4,7 +4,6 @@
 
 import json
 import unittest
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -397,16 +396,30 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.audio_client.get_num_calls", return_value=2)
-    @patch("utils.media_clients.audio_client.is_streaming_enabled_for_whisper", return_value=False)
-    @patch("utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper", return_value=False)
+    @patch(
+        "utils.media_clients.audio_client.is_streaming_enabled_for_whisper",
+        return_value=False,
+    )
+    @patch(
+        "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
+        return_value=False,
+    )
     @patch("utils.media_clients.audio_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(
-        self, mock_mkdir, mock_file, mock_targets, mock_preproc, mock_streaming, mock_num_calls
+        self,
+        mock_mkdir,
+        mock_file,
+        mock_targets,
+        mock_preproc,
+        mock_streaming,
+        mock_num_calls,
     ):
         strategy = self._create_strategy()
-        mock_targets.return_value = MagicMock(ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05)
+        mock_targets.return_value = MagicMock(
+            ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05
+        )
         mock_status = AudioTestStatus(
             status=True, elapsed=1.5, ttft=0.5, tsu=10.0, rtr=2.0
         )
@@ -459,17 +472,31 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
 class TestAudioClientStrategyGenerateReport(unittest.TestCase):
     """Tests for _generate_report method."""
 
-    @patch("utils.media_clients.audio_client.is_streaming_enabled_for_whisper", return_value=False)
-    @patch("utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper", return_value=False)
+    @patch(
+        "utils.media_clients.audio_client.is_streaming_enabled_for_whisper",
+        return_value=False,
+    )
+    @patch(
+        "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
+        return_value=False,
+    )
     @patch("utils.media_clients.audio_client.get_performance_targets")
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_generate_report(
-        self, mock_mkdir, mock_file, mock_tokenizer, mock_targets, mock_preproc, mock_streaming
+        self,
+        mock_mkdir,
+        mock_file,
+        mock_tokenizer,
+        mock_targets,
+        mock_preproc,
+        mock_streaming,
     ):
         mock_tokenizer.return_value = MagicMock()
-        mock_targets.return_value = MagicMock(ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05)
+        mock_targets.return_value = MagicMock(
+            ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05
+        )
         model_spec = MagicMock()
         model_spec.model_name = "test"
         model_spec.model_id = "test_id"
@@ -501,9 +528,17 @@ class TestAudioClientStrategyTranscribeAudio(unittest.TestCase):
         device = MagicMock()
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    @patch("utils.media_clients.audio_client.is_streaming_enabled_for_whisper", return_value=False)
-    @patch("utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper", return_value=False)
-    def test_transcribe_audio_routes_to_streaming_off(self, mock_preproc, mock_streaming):
+    @patch(
+        "utils.media_clients.audio_client.is_streaming_enabled_for_whisper",
+        return_value=False,
+    )
+    @patch(
+        "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
+        return_value=False,
+    )
+    def test_transcribe_audio_routes_to_streaming_off(
+        self, mock_preproc, mock_streaming
+    ):
         import asyncio
 
         strategy = self._create_strategy()
@@ -518,9 +553,17 @@ class TestAudioClientStrategyTranscribeAudio(unittest.TestCase):
         mock_method.assert_called_once_with(False)
         assert result == (True, 1.0, 0.5, None, 2.0)
 
-    @patch("utils.media_clients.audio_client.is_streaming_enabled_for_whisper", return_value=True)
-    @patch("utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper", return_value=True)
-    def test_transcribe_audio_routes_to_streaming_on(self, mock_preproc, mock_streaming):
+    @patch(
+        "utils.media_clients.audio_client.is_streaming_enabled_for_whisper",
+        return_value=True,
+    )
+    @patch(
+        "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
+        return_value=True,
+    )
+    def test_transcribe_audio_routes_to_streaming_on(
+        self, mock_preproc, mock_streaming
+    ):
         import asyncio
 
         strategy = self._create_strategy()
@@ -557,7 +600,9 @@ class TestAudioClientStrategyStreamingOff(unittest.TestCase):
         mock_response.json.return_value = {"duration": 10.0}
         mock_post.return_value = mock_response
 
-        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(False)
+        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(
+            False
+        )
 
         assert status is True
         assert ttft == elapsed
@@ -586,7 +631,9 @@ class TestAudioClientStrategyStreamingOff(unittest.TestCase):
         mock_response.status_code = 500
         mock_post.return_value = mock_response
 
-        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(False)
+        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(
+            False
+        )
 
         assert status is False
 
@@ -599,7 +646,9 @@ class TestAudioClientStrategyStreamingOff(unittest.TestCase):
         mock_response.json.side_effect = Exception("Parse error")
         mock_post.return_value = mock_response
 
-        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(False)
+        status, elapsed, ttft, tsu, rtr = strategy._transcribe_audio_streaming_off(
+            False
+        )
 
         assert status is True
         assert rtr is None
@@ -630,7 +679,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -649,7 +700,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=500)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -664,7 +717,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         strategy = self._create_strategy()
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(side_effect=Exception("Connection error"))
+            mock_session.return_value.__aenter__ = AsyncMock(
+                side_effect=Exception("Connection error")
+            )
 
             result = asyncio.run(strategy._transcribe_audio_streaming_on(False))
 
@@ -684,7 +739,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -708,7 +765,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -729,7 +788,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -745,12 +806,16 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
 
         chunk_data = [
             json.dumps({"text": "[SPEAKER_01]", "chunk_id": 1}).encode(),
-            json.dumps({"text": "Hello world", "chunk_id": 2, "duration": 5.0}).encode(),
+            json.dumps(
+                {"text": "Hello world", "chunk_id": 2, "duration": 5.0}
+            ).encode(),
         ]
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -771,7 +836,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
@@ -795,7 +862,9 @@ class TestAudioClientStrategyStreamingOn(unittest.TestCase):
         mock_response = MockAsyncResponse(status=200, content_lines=chunk_data)
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.post.return_value = mock_response
 
