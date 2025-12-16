@@ -114,3 +114,33 @@ class VideoManager:
             )
 
         return frame_list
+
+    @staticmethod
+    def parse_range_header(range_header, file_size):
+        """
+        Parse a Range header and return (start, end) byte positions.
+        Raises ValueError if invalid.
+        """
+        units, range_spec = range_header.strip().split("=")
+        if units != "bytes":
+            raise ValueError()
+        start_str, end_str = range_spec.split("-")
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
+        if start > end or end >= file_size:
+            raise ValueError()
+        return start, end
+
+    @staticmethod
+    def file_iterator(path, start, chunk_size):
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            bufsize = 1024 * 1024  # 1MB
+            while remaining > 0:
+                read_size = min(bufsize, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                yield data
+                remaining -= len(data)

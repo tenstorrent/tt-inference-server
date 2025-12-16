@@ -5,11 +5,12 @@
 import os
 
 from domain.video_generate_request import VideoGenerateRequest
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
+from utils.video_manager import VideoManager
 
 router = APIRouter()
 
@@ -61,6 +62,7 @@ def get_video_metadata(
 @router.get("/generations/{video_id}/download")
 def download_video_content(
     video_id: str,
+    request: Request,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -68,10 +70,12 @@ def download_video_content(
     Download the generated video file as an attachment.
 
     Returns:
-        FileResponse: Streams the video file (MP4).
+        FileResponse: Streams the full video file (MP4) if no Range header is present.
+        StreamingResponse: Streams a partial video file (MP4) with HTTP 206 if Range header is present.
 
     Raises:
         HTTPException: If video not found, not completed, or failed.
+        HTTPException: If Range header is invalid (416).
     """
     file_path = service.get_job_result(video_id)
     if (
@@ -81,13 +85,36 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    return FileResponse(
-        file_path,
+    file_size = os.path.getsize(file_path)
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            file_path,
+            media_type="video/mp4",
+            filename=os.path.basename(file_path),
+            headers={
+                "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
+            },
+        )
+
+    # Parse Range header and stream partial content
+    try:
+        start, end = VideoManager.parse_range_header(range_header, file_size)
+    except Exception:
+        raise HTTPException(status_code=416, detail="Invalid Range header")
+
+    chunk_size = end - start + 1
+    content_range = f"bytes {start}-{end}/{file_size}"
+    headers = {
+        "Content-Range": content_range,
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}",
+    }
+    return StreamingResponse(
+        VideoManager.file_iterator(file_path, start, chunk_size),
+        status_code=206,
         media_type="video/mp4",
-        filename=os.path.basename(file_path),
-        headers={
-            "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
-        },
+        headers=headers,
     )
 
 
