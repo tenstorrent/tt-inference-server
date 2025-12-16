@@ -19,6 +19,7 @@ class SupportedModels(Enum):
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
+    BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
 
 
 # MODEL environment variable
@@ -400,7 +401,7 @@ ModelConfigs = {
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
     },
 }

@@ -4,6 +4,7 @@
 
 import os
 
+from config.constants import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
@@ -27,11 +28,13 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
         prompts = [
             "The capital of France is Paris",
         ]
+        max_model_len = 384
+        max_num_seqs = 8
         self.llm = LLM(
-            model="BAAI/bge-large-en-v1.5",
-            max_model_len=384,
-            max_num_seqs=8,
-            max_num_batched_tokens=3072,
+            model=SupportedModels.BGE_LARGE_EN_V1_5.value,
+            max_model_len=max_model_len,
+            max_num_seqs=max_num_seqs,
+            max_num_batched_tokens=max_model_len * max_num_seqs,
         )
 
         self.llm.embed(prompts)
