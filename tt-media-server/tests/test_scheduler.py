@@ -10,7 +10,7 @@ import pytest
 
 # Mock external dependencies
 sys.modules["ttnn"] = Mock()
-# Note: tt_model_runners mocking is handled in conftest.py
+sys.modules["tt_model_runners.sdxl_runner"] = Mock()
 
 # Mock settings
 mock_settings = Mock()
