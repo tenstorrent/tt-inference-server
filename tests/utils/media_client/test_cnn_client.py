@@ -279,9 +279,7 @@ def test_run_image_analysis_various_num_calls(mock_analyze, num_calls):
 )
 @patch("builtins.open", mock_open(read_data="base64imagedata"))
 @patch("utils.media_clients.cnn_client.requests.post")
-def test_analyze_image_various_status_codes(
-    mock_post, status_code, expected_status
-):
+def test_analyze_image_various_status_codes(mock_post, status_code, expected_status):
     """Test _analyze_image handles various HTTP status codes correctly."""
     model_spec = MagicMock()
     model_spec.model_name = "test"

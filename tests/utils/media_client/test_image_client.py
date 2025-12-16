@@ -182,9 +182,7 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
     @patch("utils.media_clients.image_client.calculate_metrics")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
-    def test_run_eval_success(
-        self, mock_mkdir, mock_file, mock_metrics, mock_accuracy
-    ):
+    def test_run_eval_success(self, mock_mkdir, mock_file, mock_metrics, mock_accuracy):
         strategy = self._create_strategy()
         mock_metrics.return_value = (10.0, 0.8, 0.05)
         mock_accuracy.return_value = True
@@ -375,7 +373,9 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
             inference_steps_per_second=13.3,
         )
 
-        with patch.object(strategy, "get_health", return_value=(True, "unknown-runner")):
+        with patch.object(
+            strategy, "get_health", return_value=(True, "unknown-runner")
+        ):
             with patch.object(
                 strategy,
                 "_run_image_generation_benchmark",
@@ -893,7 +893,9 @@ class TestImageClientStrategyAsyncEvalMethods(unittest.TestCase):
         "utils.media_clients.image_client.sdxl_get_prompts",
         return_value=["prompt1", "prompt2"],
     )
-    @patch("utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=2)
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=2
+    )
     def test_run_image_generation_eval_success(self, mock_num_prompts, mock_prompts):
         import asyncio
 
@@ -914,7 +916,9 @@ class TestImageClientStrategyAsyncEvalMethods(unittest.TestCase):
     @patch(
         "utils.media_clients.image_client.sdxl_get_prompts", return_value=["prompt1"]
     )
-    @patch("utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=1)
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=1
+    )
     def test_run_image_generation_eval_with_failures(
         self, mock_num_prompts, mock_prompts
     ):
@@ -937,7 +941,9 @@ class TestImageClientStrategyAsyncEvalMethods(unittest.TestCase):
         "utils.media_clients.image_client.sdxl_get_prompts",
         return_value=["prompt1", "prompt2"],
     )
-    @patch("utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=2)
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=2
+    )
     def test_run_image_generation_eval_zero_elapsed(
         self, mock_num_prompts, mock_prompts
     ):
