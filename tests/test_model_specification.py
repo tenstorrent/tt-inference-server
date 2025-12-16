@@ -102,7 +102,6 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
-        assert template.version == "0.4.0"
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
 

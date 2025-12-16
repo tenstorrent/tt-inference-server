@@ -53,7 +53,7 @@ jobs:
         run: |
           gh ${{steps.set-variables.outputs.GH_COMMAND}} edit ${{ steps.set-variables.outputs.NUMBER }} --add-label ${{ env.LABELS }}
         env:
-          GH_TOKEN: ${{ secrets.LABEL_WRITE_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           LABELS: community
       - name: Send Notification
@@ -63,7 +63,7 @@ jobs:
           payload: |
             {
               "text": "A new ${{ steps.set-variables.outputs.EVENT_TYPE }} has been created by a non-org member `${{ steps.set-variables.outputs.USERNAME }}`: ${{ steps.set-variables.outputs.EVENT_URL }}",
-              "channel": ${{ secrets.CHANNEL }}
+              "channel": "${{ secrets.CHANNEL }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CHANNEL_WEBHOOK_URL }}
