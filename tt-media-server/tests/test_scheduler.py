@@ -10,7 +10,7 @@ import pytest
 
 # Mock external dependencies
 sys.modules["ttnn"] = Mock()
-sys.modules["tt_model_runners.sdxl_runner"] = Mock()
+# Note: tt_model_runners mocking is handled in conftest.py
 
 # Mock settings
 mock_settings = Mock()
@@ -115,7 +115,7 @@ class TestScheduler:
     def test_initialization(self, scheduler):
         """Test scheduler initialization"""
         # Verify initial state
-        assert not scheduler.isReady
+        assert not scheduler.is_ready
         assert scheduler.worker_count == 2  # From the mock_settings.device_ids
         assert scheduler.task_queue is not None
         assert scheduler.result_queue is not None
@@ -126,7 +126,7 @@ class TestScheduler:
         assert scheduler.listener_running
         assert scheduler.device_warmup_listener_running
         assert scheduler.monitor_running
-        assert scheduler.result_futures == {}
+        assert scheduler.result_queues == {}
 
         # Verify logger was initialized
         mock_logger.info.assert_not_called()  # No logs yet
@@ -134,13 +134,13 @@ class TestScheduler:
     @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_check_is_model_ready_when_ready(self, scheduler):
         """Test check_is_model_ready when model is ready"""
-        scheduler.isReady = True
+        scheduler.is_ready = True
         result = scheduler.check_is_model_ready()
         assert result
 
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
-        scheduler.isReady = False
+        scheduler.is_ready = False
 
         with pytest.raises(Exception) as exc_info:
             scheduler.check_is_model_ready()
@@ -153,7 +153,7 @@ class TestScheduler:
     def test_process_request_success(self, scheduler):
         """Test process_request when successful"""
         # Setup
-        scheduler.isReady = True
+        scheduler.is_ready = True
         mock_request = Mock()
 
         # Patch the task_queue.put method
@@ -167,7 +167,7 @@ class TestScheduler:
     def test_process_request_queue_full(self, scheduler):
         """Test process_request when queue is full"""
         # Setup
-        scheduler.isReady = True
+        scheduler.is_ready = True
         mock_request = Mock()
 
         # Patch the task_queue.full method
@@ -183,7 +183,7 @@ class TestScheduler:
     def test_process_request_queue_put_timeout(self, scheduler):
         """Test process_request when queue.put times out"""
         # Setup
-        scheduler.isReady = True
+        scheduler.is_ready = True
         mock_request = Mock()
 
         # Patch the task_queue.put method to raise an exception
@@ -201,7 +201,7 @@ class TestScheduler:
     def test_process_request_not_ready(self, scheduler):
         """Test process_request when model is not ready"""
         # Setup
-        scheduler.isReady = False
+        scheduler.is_ready = False
         mock_request = Mock()
 
         # Execute and verify
@@ -234,7 +234,7 @@ class TestScheduler:
 
     @pytest.mark.asyncio
     @patch("asyncio.to_thread")
-    async def test_result_listener(self, mock_to_thread, scheduler, mock_future):
+    async def test_result_listener(self, mock_to_thread, scheduler):
         """Test the result_listener method"""
 
         # Setup test data
@@ -249,8 +249,9 @@ class TestScheduler:
             (None, None, None),
         ]
 
-        # Add a future to the result_futures dictionary and worker_info
-        scheduler.result_futures = {test_task_id: mock_future}
+        # Add a queue to the result_queues dictionary and worker_info
+        mock_queue = AsyncMock()
+        scheduler.result_queues = {test_task_id: mock_queue}
         scheduler.worker_info = {test_worker_id: {"restart_count": 1}}
 
         # Execute
@@ -260,8 +261,8 @@ class TestScheduler:
         assert mock_to_thread.call_count == 2
         assert mock_to_thread.call_args_list[0][0][0] == scheduler.result_queue.get
 
-        # Verify future was set with the result
-        mock_future.set_result.assert_called_once_with(test_image)
+        # Verify result was put into the queue
+        mock_queue.put.assert_called_once_with(test_image)
 
         # Verify listener is stopped
         assert not scheduler.listener_running
@@ -274,7 +275,7 @@ class TestScheduler:
 
     @pytest.mark.asyncio
     @patch("asyncio.to_thread")
-    async def test_error_listener(self, mock_to_thread, scheduler, mock_future):
+    async def test_error_listener(self, mock_to_thread, scheduler):
         """Test the error_listener method"""
 
         # Setup test data
@@ -294,8 +295,9 @@ class TestScheduler:
             ),  # worker_id must be valid for error_count increment
         ]
 
-        # Add a future to the result_futures dictionary and worker_info
-        scheduler.result_futures = {test_task_id: mock_future}
+        # Add a queue to the result_queues dictionary and worker_info
+        mock_queue = AsyncMock()
+        scheduler.result_queues = {test_task_id: mock_queue}
         scheduler.worker_info = {test_worker_id: {"error_count": 0}}
 
         # Execute
@@ -305,10 +307,11 @@ class TestScheduler:
         assert mock_to_thread.call_count == 2
         assert mock_to_thread.call_args_list[0][0][0] == scheduler.error_queue.get
 
-        # Verify future was set with an exception
-        mock_future.set_exception.assert_called_once()
-        assert isinstance(mock_future.set_exception.call_args[0][0], Exception)
-        assert test_error in str(mock_future.set_exception.call_args[0][0])
+        # Verify error was put into the queue as an Exception
+        mock_queue.put.assert_called_once()
+        put_arg = mock_queue.put.call_args[0][0]
+        assert isinstance(put_arg, Exception)
+        assert test_error in str(put_arg)
 
         # Verify listener is stopped
         assert not scheduler.listener_running
@@ -350,7 +353,7 @@ class TestScheduler:
         # Verify device is tracked as ready
         assert scheduler.worker_info[test_device_id]["is_ready"]
         assert "ready_time" in scheduler.worker_info[test_device_id]
-        assert scheduler.isReady
+        assert scheduler.is_ready
 
         # Verify monitor task was created
         mock_create_task.assert_called_once()
@@ -378,7 +381,7 @@ class TestScheduler:
             "worker_0": {"process": mock_process1},
             "worker_1": {"process": mock_process2},
         }
-        scheduler.isReady = True
+        scheduler.is_ready = True
         scheduler.monitor_running = True
         scheduler.monitor_task_ref = None
 
@@ -414,7 +417,7 @@ class TestScheduler:
             scheduler.stop_workers()
 
             # Verify status change
-            assert not scheduler.isReady
+            assert not scheduler.is_ready
             assert not scheduler.monitor_running
 
             # Verify shutdown signals were sent to workers

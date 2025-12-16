@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 
 from workflows.workflow_types import WorkflowVenvType
 from workflows.utils import map_configs_by_attr
@@ -24,7 +24,7 @@ class TestTask:
 
     def _infer_data(self):
         pass
-        
+
     def validate_data(self):
         pass
 
@@ -41,7 +41,9 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_params",
-                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_path=Path(
+                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
+                ),
                 test_args=("s", "v"),
             ),
         ],
@@ -51,7 +53,9 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_params",
-                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_path=Path(
+                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
+                ),
                 test_args=("s", "v"),
             ),
         ],
@@ -61,7 +65,9 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_params",
-                test_path=Path("tests/server_tests/test_cases/test_vllm_server_parameters.py"),
+                test_path=Path(
+                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
+                ),
                 test_args=("s", "v"),
             ),
         ],

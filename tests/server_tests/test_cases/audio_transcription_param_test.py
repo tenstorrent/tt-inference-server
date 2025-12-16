@@ -106,15 +106,19 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
+
 class AudioTranscriptionParamTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/audio/transcriptions"
         logger.info(f"Testing audio transcription parameters at {self.url}")
-        
+
         # Create list of payloads to test different parameters
         payloads = [
             {"name": "base_default", "payload": base_payload},
-            {"name": "base_duplicate", "payload": base_payload},  # Duplicate to verify consistency
+            {
+                "name": "base_duplicate",
+                "payload": base_payload,
+            },  # Duplicate to verify consistency
             {"name": "response_format_text", "payload": response_format_text_payload},
             {"name": "response_format_json", "payload": response_format_json_payload},
             {"name": "no_preprocessing", "payload": no_preprocessing_payload},
@@ -122,126 +126,153 @@ class AudioTranscriptionParamTest(BaseTest):
             {"name": "with_temperatures", "payload": temperatures_payload},
             {"name": "with_compression_ratio", "payload": compression_ratio_payload},
             {"name": "with_logprob_threshold", "payload": logprob_threshold_payload},
-            {"name": "with_no_speech_threshold", "payload": no_speech_threshold_payload},
+            {
+                "name": "with_no_speech_threshold",
+                "payload": no_speech_threshold_payload,
+            },
             {"name": "with_timestamps", "payload": timestamps_payload},
             {"name": "with_prompt", "payload": prompt_payload},
             {"name": "combined_params", "payload": combined_params_payload},
         ]
-        
+
         # Get response data from all requests
         response_data_list = await self.test_concurrent_audio_transcription(payloads)
-        
+
         # Analyze results
         logger.info(f"\n📊 Received {len(response_data_list)} responses")
-        
-        results = {
-            "num_responses": len(response_data_list),
-            "tests": {}
-        }
-        
+
+        results = {"num_responses": len(response_data_list), "tests": {}}
+
         # Check if same requests produce identical results
         base_match = response_data_list[0]["data"] == response_data_list[1]["data"]
         results["same_requests_match"] = base_match
         logger.info(f"✓ Same requests match: {base_match}")
-        
+
         # Check if different parameters produce different results
         param_tests = []
         for i in range(2, len(response_data_list)):
             test_name = payloads[i]["name"]
-            differs_from_base = response_data_list[0]["data"] != response_data_list[i]["data"]
+            differs_from_base = (
+                response_data_list[0]["data"] != response_data_list[i]["data"]
+            )
             results["tests"][test_name] = {
                 "differs_from_base": differs_from_base,
                 "status": response_data_list[i]["status"],
                 "duration": response_data_list[i]["duration"],
             }
             param_tests.append(differs_from_base)
-            logger.info(f"  {test_name}: differs={differs_from_base}, status={response_data_list[i]['status']}")
-        
+            logger.info(
+                f"  {test_name}: differs={differs_from_base}, status={response_data_list[i]['status']}"
+            )
+
         # Success if base requests match and at least some parameter changes produce different results
         # (some params may not affect output, like preprocessing for same audio)
         success = base_match and any(param_tests)
         results["success"] = success
-        
-        logger.info(f"\n{'✅' if success else '❌'} Test {'PASSED' if success else 'FAILED'}")
-        
+
+        logger.info(
+            f"\n{'✅' if success else '❌'} Test {'PASSED' if success else 'FAILED'}"
+        )
+
         return results
 
     async def test_concurrent_audio_transcription(self, payloads):
         """
         Test concurrent audio transcription with a list of payloads.
-        
+
         Args:
             payloads: List of dictionaries with 'name' and 'payload' keys.
-        
+
         Returns:
             List of response data dictionaries from each request.
         """
+
         async def timed_request(session, index, test_config):
             test_name = test_config["name"]
             request_payload = test_config["payload"]
             logger.info(f"Starting request {index}: {test_name}")
             try:
                 start = time.perf_counter()
-                async with session.post(self.url, json=request_payload, headers=headers) as response:
+                async with session.post(
+                    self.url, json=request_payload, headers=headers
+                ) as response:
                     duration = time.perf_counter() - start
                     data = None
                     if response.status == 200:
                         # Handle different response formats
-                        content_type = response.headers.get('content-type', '')
-                        if 'application/json' in content_type:
+                        content_type = response.headers.get("content-type", "")
+                        if "application/json" in content_type:
                             data = await response.json()
-                        elif 'text/plain' in content_type:
+                        elif "text/plain" in content_type:
                             data = {"text": await response.text()}
                         else:
                             data = {"raw": await response.text()}
                     else:
-                        logger.warning(f"[{index}] {test_name} - Error: Status {response.status}")
-                        data = {"error": f"Status {response.status}", "status": response.status}
-                    
-                    logger.info(f"[{index}] {test_name} - Status: {response.status}, Time: {duration:.2f}s")
+                        logger.warning(
+                            f"[{index}] {test_name} - Error: Status {response.status}"
+                        )
+                        data = {
+                            "error": f"Status {response.status}",
+                            "status": response.status,
+                        }
+
+                    logger.info(
+                        f"[{index}] {test_name} - Status: {response.status}, Time: {duration:.2f}s"
+                    )
                     return {
                         "index": index,
                         "name": test_name,
                         "duration": duration,
                         "data": data,
-                        "status": response.status
+                        "status": response.status,
                     }
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                logger.error(f"[{index}] {test_name} - Error after {duration:.2f}s: {e}")
+                logger.error(
+                    f"[{index}] {test_name} - Error after {duration:.2f}s: {e}"
+                )
                 return {
                     "index": index,
                     "name": test_name,
                     "duration": duration,
                     "data": None,
                     "error": str(e),
-                    "status": 0
+                    "status": 0,
                 }
 
         batch_size = len(payloads)
         response_data_list = []
-        
+
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
                 headers=headers, timeout=session_timeout
             ) as session:
-                tasks = [timed_request(session, i + 1, payloads[i]) for i in range(batch_size)]
+                tasks = [
+                    timed_request(session, i + 1, payloads[i])
+                    for i in range(batch_size)
+                ]
                 results = await asyncio.gather(*tasks)
-                
+
                 if iteration == 0:
-                    logger.info("\n🔥 Warm up run done.")
+                    logger.info("🔥 Warm up run done.")
                 else:
                     # Second iteration - collect the actual data
                     response_data_list = results
                     durations = [r["duration"] for r in results]
                     requests_duration = max(durations)
                     avg_duration = sum(durations) / batch_size
-                    
-                    logger.info(f"\n🚀 Time taken for individual concurrent requests: {durations}")
-                    logger.info(f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s")
-                    logger.info(f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
-        
+
+                    logger.info(
+                        f"\n🚀 Time taken for individual concurrent requests: {durations}"
+                    )
+                    logger.info(
+                        f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+                    )
+                    logger.info(
+                        f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+                    )
+
         # Return list of response data in the same order as input payloads
         return sorted(response_data_list, key=lambda x: x["index"])

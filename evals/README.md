@@ -36,3 +36,27 @@ Implements scoring functions to compute task results.
 ## Add evals for a new Model
 
 For instructions on how to add evals for a new model see: [add_support_for_new_model.md](../docs/add_support_for_new_model.md)
+
+
+## Unique task_name values present in EVAL_CONFIGS
+- chartqa
+- docvqa_val
+- gpqa_diamond_generative_n_shot
+- humaneval_instruct
+- ifeval
+- leaderboard_ifeval
+- leaderboard_math_hard
+- librispeech_test_other
+- livecodebench
+- load_image
+- mbpp_instruct
+- meta_gpqa
+- meta_gpqa_cot
+- meta_ifeval
+- meta_math
+- mmlu_pro
+- mmmu_val
+- r1_aime24
+- r1_gpqa_diamond
+- r1_math500
+- ruler

@@ -21,6 +21,8 @@ if settings.model_service == ModelServices.AUDIO.value:
     from whisperx.diarize import DiarizationPipeline
     from whisperx.vads import Silero
 
+torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+
 
 class AudioManager:
     _whisperx_device: str = "cpu"
@@ -235,7 +237,7 @@ class AudioManager:
         """Initialize VAD model from WhisperX."""
         try:
             self._logger.info("Loading VAD model...")
-            # Silero VAD requires vad_onset and chunk_size parameters
+            # git  VAD requires vad_onset and chunk_size parameters
             # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
             # vad_onset: threshold for detecting speech onset (typical value: 0.500)
             self._vad_model = Silero(

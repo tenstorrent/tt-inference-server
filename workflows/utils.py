@@ -99,7 +99,6 @@ def ensure_readwriteable_dir(path, raise_on_fail=True, logger=logger):
         try:
             # Create a temporary file in the target directory
             with tempfile.NamedTemporaryFile(dir=path, delete=True) as tmpfile:
-                test_path = tmpfile.name
                 # Try writing to the file
                 file_data = b"test"
                 tmpfile.write(file_data)

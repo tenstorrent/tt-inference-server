@@ -27,18 +27,23 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
+
 class ImageGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/image/generations"
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
-        image_generation_target_time = self.targets.get("image_generation_time", 9)  # in seconds
+        image_generation_target_time = self.targets.get(
+            "image_generation_time", 9
+        )  # in seconds
         num_inference_steps = self.targets.get("num_inference_steps", 20)
-        
+
         payload["num_inference_steps"] = num_inference_steps
-        
-        requests_duration, average_duration = await self.test_concurrent_image_generation(
-            batch_size=devices)
+
+        (
+            requests_duration,
+            average_duration,
+        ) = await self.test_concurrent_image_generation(batch_size=devices)
 
         return {
             "requests_duration": requests_duration,
@@ -53,7 +58,9 @@ class ImageGenerationLoadTest(BaseTest):
             print(f"Starting request {index}")
             try:
                 start = time.perf_counter()
-                async with session.post(self.url, json=payload, headers=headers) as response:
+                async with session.post(
+                    self.url, json=payload, headers=headers
+                ) as response:
                     duration = time.perf_counter() - start
                     if response.status == 200:
                         await response.json()
@@ -64,9 +71,7 @@ class ImageGenerationLoadTest(BaseTest):
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(
-                    f"[{index}] Error after {duration:.2f}s: {e}"
-                )
+                print(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
         # First iteration is warmup, second is measured (original behavior)
@@ -82,14 +87,13 @@ class ImageGenerationLoadTest(BaseTest):
                 avg_duration = total_duration / batch_size
                 return requests_duration, avg_duration
             if iteration == 0:
-                print("\n Warm up run done.")
+                print("🔥 Warm up run done.")
 
-        print(
-            f"\n🚀 Time taken for individual concurrent requests : {results}"
-        )
+        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
         print(
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
         print(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
+        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")

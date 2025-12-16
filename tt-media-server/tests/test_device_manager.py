@@ -393,10 +393,38 @@ Mapping of trays to devices on the galaxy:
         result = self.device_manager.create_single_devices(self.sample_tray_mapping)
 
         expected = [
-            0, 1, 2, 3, 4, 5, 6, 7,  # Tray 1
-            8, 9, 10, 11, 12, 13, 14, 15,  # Tray 2
-            16, 17, 18, 19, 20, 21, 22, 23,  # Tray 3
-            24, 25, 26, 27, 28, 29, 30, 31,  # Tray 4
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,  # Tray 1
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,  # Tray 2
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,  # Tray 3
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,  # Tray 4
         ]
 
         self.assertEqual(result, expected)
@@ -438,9 +466,14 @@ Mapping of trays to devices on the galaxy:
         result = self.device_manager.create_single_devices(multi_tray_mapping)
 
         expected = [
-            0, 1, 2,  # Tray 1
-            3, 4, 5,  # Tray 2
-            6, 7,  # Tray 3
+            0,
+            1,
+            2,  # Tray 1
+            3,
+            4,
+            5,  # Tray 2
+            6,
+            7,  # Tray 3
         ]
         self.assertEqual(result, expected)
 
@@ -453,10 +486,38 @@ Mapping of trays to devices on the galaxy:
         result = self.device_manager.get_single_devices_from_system()
 
         expected = [
-            0, 1, 2, 3, 4, 5, 6, 7,
-            8, 9, 10, 11, 12, 13, 14, 15,
-            16, 17, 18, 19, 20, 21, 22, 23,
-            24, 25, 26, 27, 28, 29, 30, 31,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
         ]
 
         self.assertEqual(result, expected)

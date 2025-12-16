@@ -56,8 +56,7 @@ def get_audio_docker_env_vars(model_spec, args):
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
         "DEVICE_IDS": device_ids_str,
-        # Disable audio preprocessing by default to avoid HF_TOKEN requirement for basic transcription
-        "ALLOW_AUDIO_PREPROCESSING": "false",
+        "ALLOW_AUDIO_PREPROCESSING": "true",
     }
 
     logger.info(
@@ -191,6 +190,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif (
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
     ):
         docker_env_vars.update(get_cnn_docker_env_vars(model_spec, args))
 
@@ -240,7 +240,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
-        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE:
+        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE or model_spec.model_type == ModelType.EMBEDDING:
             # For CNN models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
