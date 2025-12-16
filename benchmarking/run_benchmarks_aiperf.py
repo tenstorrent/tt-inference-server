@@ -226,12 +226,19 @@ def save_individual_result(
     model_name: str,
     model_id: str,
     output_dir: str,
+    images: int = 0,
+    image_height: int = 0,
+    image_width: int = 0,
 ) -> str:
     """Save individual benchmark result in aiperf format."""
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # Use aiperf_ prefix to differentiate from vLLM benchmarks
-    filename = f"aiperf_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
+    # Include image parameters in filename if it's an image benchmark
+    if images > 0:
+        filename = f"aiperf_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}_images-{images}_height-{image_height}_width-{image_width}.json"
+    else:
+        filename = f"aiperf_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
     filepath = os.path.join(output_dir, filename)
 
     # Build vLLM-compatible JSON structure
@@ -266,14 +273,28 @@ def run_benchmark(
     output_dir: str,
     venv_python: Path,
     verbose: bool = False,
+    images: int = 0,
+    image_height: int = 0,
+    image_width: int = 0,
 ) -> int:
-    """Run a single AIPerf benchmark with specified parameters."""
+    """Run a single AIPerf benchmark with specified parameters.
+    
+    Args:
+        images: Number of images per prompt (0 for text-only)
+        image_height: Height of images in pixels
+        image_width: Width of images in pixels
+    """
     num_prompts = get_num_prompts(isl, osl, concurrency)
 
     run_id = f"bench_{isl}_{osl}_{concurrency}"
+    if images > 0:
+        run_id += f"_img{images}_{image_height}x{image_width}"
     artifact_dir = os.path.join(artifact_base, run_id)
 
-    logger.info(f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}")
+    if images > 0:
+        logger.info(f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}, Images={images}, Size={image_width}x{image_height}")
+    else:
+        logger.info(f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}")
 
     if not auth_token:
         logger.warning("No auth token provided, benchmark may fail")
@@ -318,6 +339,21 @@ def run_benchmark(
         artifact_dir,
     ]
 
+    # Add image parameters if this is an image benchmark
+    if images > 0:
+        cmd.extend([
+            "--image-width-mean",
+            str(image_width),
+            "--image-width-stddev",
+            "0",
+            "--image-height-mean",
+            str(image_height),
+            "--image-height-stddev",
+            "0",
+            "--image-batch-size",
+            str(images),
+        ])
+
     # Add auth token if available
     if auth_token:
         cmd.extend(["--api-key", auth_token])
@@ -342,7 +378,8 @@ def run_benchmark(
     if metrics:
         print_detailed_results(isl, osl, concurrency, num_prompts, metrics)
         save_individual_result(
-            metrics, isl, osl, concurrency, num_prompts, model_name, model_id, output_dir
+            metrics, isl, osl, concurrency, num_prompts, model_name, model_id, output_dir,
+            images, image_height, image_width
         )
         aggregator.add_result(
             BenchmarkResult(
@@ -522,11 +559,13 @@ def main():
 
     # Log benchmark parameters
     log_str = "Running AIPerf benchmarks for:\n"
-    log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
-    log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12}\n"
+    log_str += f"  {'#':<3} {'Type':<8} {'isl':<6} {'osl':<6} {'Concur':<8} {'N':<6} {'Images':<8}\n"
+    log_str += f"  {'-' * 3:<3} {'-' * 8:<8} {'-' * 6:<6} {'-' * 6:<6} {'-' * 8:<8} {'-' * 6:<6} {'-' * 8:<8}\n"
     for i, param in enumerate(all_params, 1):
-        if param.task_type == "text":
-            log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
+        img_str = ""
+        if param.task_type == "image":
+            img_str = f"{param.images_per_prompt}@{param.image_width}x{param.image_height}"
+        log_str += f"  {i:<3} {param.task_type:<8} {param.isl:<6} {param.osl:<6} {param.max_concurrency:<8} {param.num_prompts:<6} {img_str:<8}\n"
     logger.info(log_str)
 
     # Wait for server to be ready
@@ -562,10 +601,6 @@ def main():
     return_codes = []
 
     for i, params in enumerate(all_params, 1):
-        # Skip non-text benchmarks for now
-        if params.task_type != "text":
-            continue
-
         # Health check
         health_check = prompt_client.get_health()
         if health_check.status_code != 200:
@@ -576,6 +611,15 @@ def main():
 
         # Add delay between runs
         time.sleep(2)
+
+        # Extract image parameters if this is an image benchmark
+        images = 0
+        image_height = 0
+        image_width = 0
+        if params.task_type == "image":
+            images = getattr(params, "images_per_prompt", 1)
+            image_height = getattr(params, "image_height", 0)
+            image_width = getattr(params, "image_width", 0)
 
         return_code = run_benchmark(
             isl=params.isl,
@@ -590,6 +634,9 @@ def main():
             artifact_base=str(artifact_base),
             output_dir=args.output_path,
             venv_python=venv_config.venv_python,
+            images=images,
+            image_height=image_height,
+            image_width=image_width,
         )
         return_codes.append(return_code)
 
