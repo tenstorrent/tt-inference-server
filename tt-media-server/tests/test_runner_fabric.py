@@ -7,7 +7,6 @@ from config.settings import settings
 from tt_model_runners.runner_fabric import get_device_runner
 
 
-@pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
 def test_runner_creation(monkeypatch, runner_name, expected_class_name):
     """Test that each runner type creates the correct class instance."""
     monkeypatch.setattr(settings, "model_runner", runner_name)
@@ -15,7 +14,6 @@ def test_runner_creation(monkeypatch, runner_name, expected_class_name):
     assert expected_class_name in type(runner).__name__
 
 
-@pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
 def test_invalid_runner(monkeypatch):
     monkeypatch.setattr(settings, "model_runner", "invalid")
     with pytest.raises(ValueError):
