@@ -895,7 +895,7 @@ def main():
     ) = make_release_artifacts(merged_spec, args.dry_run)
 
     logger.info("\nStep 3: Writing output files...")
-    output_data = write_output(
+    write_output(
         images_to_build,
         copied_images,
         existing_with_ci_ref,
