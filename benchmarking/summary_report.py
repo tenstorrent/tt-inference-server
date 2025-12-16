@@ -73,7 +73,6 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return "embedding"
 
 
-
 def _get_task_type(model_id: str) -> str | None:
     # model_id example: id_tt-transformers_resnet-50
     # Extract just the model name (e.g., "resnet-50")
