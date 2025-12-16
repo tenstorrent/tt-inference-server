@@ -49,6 +49,20 @@ def parse_arguments():
         help="JWT secret for generating token to set API_KEY",
         default=os.getenv("JWT_SECRET", ""),
     )
+    # Add these optional arguments to match what run_workflows.py passes
+    # They're redundant with model-spec-json but needed for compatibility
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name (redundant with model-spec-json, kept for compatibility)",
+        required=False,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device name (redundant with model-spec-json, kept for compatibility)",
+        required=False,
+    )
 
     return parser.parse_args()
 
