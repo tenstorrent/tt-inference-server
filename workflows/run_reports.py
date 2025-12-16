@@ -371,7 +371,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         else []
     )
     perf_refs = [
-        cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+        cap_benchmark_params(
+            params, _max_context, _model_max_concurrency, model_spec.model_name
+        )
         for params in raw_perf_refs
     ]
 
@@ -1143,8 +1145,8 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if (
-                        type(metric_value) != float
+                    if not isinstance(
+                        metric_value, float
                     ):  # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
@@ -1696,7 +1698,6 @@ def main():
 
     server_mode = "API"
     command_flag = ""
-    local_server = False  # Not passed via CLI args anymore
     if docker_server:
         server_mode = "docker"
         command_flag = "--docker-server"
@@ -1901,14 +1902,18 @@ def main():
             if server_tests_path.exists():
                 server_tests_json_files = list(server_tests_path.glob("*.json"))
                 if server_tests_json_files:
-                    logger.info(f"Found {len(server_tests_json_files)} server test report(s)")
+                    logger.info(
+                        f"Found {len(server_tests_json_files)} server test report(s)"
+                    )
                     for json_file in server_tests_json_files:
                         try:
                             with open(json_file, "r", encoding="utf-8") as test_file:
                                 test_data = json.load(test_file)
                                 server_tests_data.append(test_data)
                         except Exception as e:
-                            logger.warning(f"Could not read server test file {json_file}: {e}")
+                            logger.warning(
+                                f"Could not read server test file {json_file}: {e}"
+                            )
 
         # Build the final JSON output
         output_data = {
@@ -2000,7 +2005,7 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
                 combined_markdown.append(f"#### {md_file.stem}\n\n{content}")
 
                 # Try to extract JSON data if corresponding JSON file exists
-                json_file = md_file.with_suffix('.json')
+                json_file = md_file.with_suffix(".json")
                 if json_file.exists():
                     with open(json_file, "r", encoding="utf-8") as jf:
                         json_data = json.load(jf)
@@ -2021,6 +2026,7 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
     logger.info(f"Server tests summary saved to: {summary_fpath}")
 
     return release_str, release_data
+
 
 if __name__ == "__main__":
     sys.exit(main())

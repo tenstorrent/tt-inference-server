@@ -152,7 +152,7 @@ class TelemetryClient:
                         event["status"],
                     )
                     self.queue.task_done()
-            except:
+            except Exception:
                 continue  # Keep worker alive
 
     def record_telemetry_event(

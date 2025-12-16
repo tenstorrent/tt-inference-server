@@ -23,6 +23,7 @@ if settings.model_service == ModelServices.AUDIO.value:
 
 torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
 
+
 class AudioManager:
     _whisperx_device: str = "cpu"
 

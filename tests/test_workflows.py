@@ -200,7 +200,7 @@ class TestWorkflowExecution:
             assert mock_run_single.call_count == 4
 
             # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", 'SPEC_TESTS', "REPORTS"]
+            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )
