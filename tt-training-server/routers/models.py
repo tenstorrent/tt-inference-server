@@ -23,8 +23,6 @@ FT_MODELS_DIR = Path("/storage/fine_tuned")
 
 router = APIRouter()
 
-router = APIRouter()
-
 # ------------------------------------------------------------------
 # Response Schemas
 # ------------------------------------------------------------------
