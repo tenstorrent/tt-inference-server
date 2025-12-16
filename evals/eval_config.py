@@ -455,7 +455,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
@@ -563,7 +563,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -671,7 +671,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
@@ -779,7 +779,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
