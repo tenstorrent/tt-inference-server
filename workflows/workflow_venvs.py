@@ -285,6 +285,7 @@ def setup_evals_audio(
     )
     return True
 
+
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -445,7 +446,6 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.STRESS_TESTS,
         setup_function=setup_stress_tests_run_script,
     ),
-
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,

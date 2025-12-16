@@ -36,8 +36,12 @@ from workflows.workflow_config import (
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
 
-from benchmarking.summary_report import generate_report as benchmark_generate_report_helper
-from stress_tests.stress_tests_summary_report import generate_report as stress_test_generate_report_helper
+from benchmarking.summary_report import (
+    generate_report as benchmark_generate_report_helper,
+)
+from stress_tests.stress_tests_summary_report import (
+    generate_report as stress_test_generate_report_helper,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -394,8 +398,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
         )
     # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = benchmark_generate_report_helper(
-        files, output_dir, report_id, metadata, model_spec=model_spec
+    release_str, release_raw, disp_md_path, stats_file_path = (
+        benchmark_generate_report_helper(
+            files, output_dir, report_id, metadata, model_spec=model_spec
+        )
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -470,9 +476,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert perf_target.ttft_ms > 0, (
-                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
-                        )
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -485,9 +491,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert perf_target.tput_user > 0, (
-                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
-                        )
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -500,9 +506,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert perf_target.tput > 0, (
-                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
-                        )
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -624,9 +630,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert perf_target.ttft_ms > 0, (
-                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
-                        )
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -639,9 +645,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert perf_target.tput_user > 0, (
-                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
-                        )
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -654,9 +660,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert perf_target.tput > 0, (
-                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
-                        )
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -798,9 +804,9 @@ def extract_eval_results(files):
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert task_name == check_task_name, (
-            f"Task name mismatch: {task_name} != {check_task_name}"
-        )
+        assert (
+            task_name == check_task_name
+        ), f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
@@ -1205,6 +1211,7 @@ def generate_evals_markdown_table(results, meta_data) -> str:
 
     return markdown
 
+
 def generate_stress_tests_markdown_table(release_raw, model_config):
     """Generate markdown table for test results with mean values only (original format)."""
 
@@ -1217,13 +1224,11 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
-
         # Mean metrics only (original format)
         ("ttft", "TTFT (ms)"),
         ("tpot", "TPOT (ms)"),
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
-
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
@@ -1276,7 +1281,9 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
             # Format numeric values with consistent decimal places for proper alignment
             if value == NOT_MEASURED_STR or value is None or value == "":
                 row_dict[display_header] = NOT_MEASURED_STR
-            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
                 decimal_places = decimal_places_map.get(display_header, 2)
                 if decimal_places == 0:
                     # Format as integer
@@ -1316,7 +1323,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("num_prompts", "Num Prompts"),
-
         # TTFT metrics: mean, p05, p25, p50, p95, p99
         ("ttft", "TTFT (ms)"),
         ("p5_ttft", "P5 TTFT (ms)"),
@@ -1324,7 +1330,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_ttft", "P50 TTFT (ms)"),
         ("p95_ttft", "P95 TTFT (ms)"),
         ("p99_ttft", "P99 TTFT (ms)"),
-
         # TPOT metrics: mean, p05, p25, p50, p95, p99
         ("tpot", "TPOT (ms)"),
         ("p5_tpot", "P5 TPOT (ms)"),
@@ -1332,7 +1337,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_tpot", "P50 TPOT (ms)"),
         ("p95_tpot", "P95 TPOT (ms)"),
         ("p99_tpot", "P99 TPOT (ms)"),
-
         # ITL metrics: mean, p05, p25, p50, p95, p99
         ("itl", "ITL (ms)"),
         ("p5_itl", "P5 ITL (ms)"),
@@ -1340,7 +1344,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_itl", "P50 ITL (ms)"),
         ("p95_itl", "P95 ITL (ms)"),
         ("p99_itl", "P99 ITL (ms)"),
-
         # E2EL metrics: mean, p05, p25, p50, p95, p99
         ("e2el", "E2EL (ms)"),
         ("p5_e2el", "P5 E2EL (ms)"),
@@ -1348,7 +1351,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p50_e2el", "P50 E2EL (ms)"),
         ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
-
         # Throughput metrics at the end
         ("tput_user", "Tput User (TPS)"),
         ("tput", "Tput Decode (TPS)"),
@@ -1362,7 +1364,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "OSL": 0,
         "Concurrency": 0,
         "Num Prompts": 0,
-
         # TTFT
         "TTFT (ms)": 1,
         "P5 TTFT (ms)": 1,
@@ -1370,7 +1371,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P50 TTFT (ms)": 1,
         "P95 TTFT (ms)": 1,
         "P99 TTFT (ms)": 1,
-
         # TPOT
         "TPOT (ms)": 1,
         "P5 TPOT (ms)": 1,
@@ -1378,7 +1378,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P50 TPOT (ms)": 1,
         "P95 TPOT (ms)": 1,
         "P99 TPOT (ms)": 1,
-
         # ITL
         "ITL (ms)": 1,
         "P5 ITL (ms)": 1,
@@ -1386,7 +1385,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P50 ITL (ms)": 1,
         "P95 ITL (ms)": 1,
         "P99 ITL (ms)": 1,
-
         # E2EL
         "E2EL (ms)": 1,
         "P5 E2EL (ms)": 1,
@@ -1394,7 +1392,6 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P50 E2EL (ms)": 1,
         "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
-
         # Throughput
         "Tput User (TPS)": 2,
         "Tput Decode (TPS)": 1,
@@ -1482,7 +1479,9 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
             # Format numeric values with consistent decimal places for proper alignment
             if value == NOT_MEASURED_STR or value is None or value == "":
                 row_dict[display_header] = NOT_MEASURED_STR
-            elif isinstance(value, (int, float)) and not (isinstance(value, float) and (value != value)):  # Check for NaN
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
                 decimal_places = decimal_places_map.get(display_header, 2)
                 if decimal_places == 0:
                     # Format as integer
@@ -1528,29 +1527,39 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
         return "", None, None, None
 
     # Use the stress_tests-specific generate_report function
-    release_str, release_raw, disp_md_path, stats_file_path = stress_test_generate_report_helper(
-        files, output_dir, report_id, metadata
+    release_str, release_raw, disp_md_path, stats_file_path = (
+        stress_test_generate_report_helper(files, output_dir, report_id, metadata)
     )
 
     # Generate stress test-specific release report
     # Build stress test performance report
-    stress_test_release_str = f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
+    stress_test_release_str = (
+        f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
+    )
 
     if release_raw:
         # Check if percentile report is requested
-        percentile_report = getattr(args, 'percentile_report', False)
+        percentile_report = getattr(args, "percentile_report", False)
 
         # Create stress test-specific markdown table (detailed or simple format)
         if percentile_report:
             logger.info("Generating detailed percentile report for stress tests")
-            stress_test_markdown = generate_stress_tests_markdown_table_detailed(release_raw, model_spec)
+            stress_test_markdown = generate_stress_tests_markdown_table_detailed(
+                release_raw, model_spec
+            )
         else:
-            logger.info("Generating simplified report for stress tests (use --percentile-report for detailed statistics)")
-            stress_test_markdown = generate_stress_tests_markdown_table(release_raw, model_spec)
+            logger.info(
+                "Generating simplified report for stress tests (use --percentile-report for detailed statistics)"
+            )
+            stress_test_markdown = generate_stress_tests_markdown_table(
+                release_raw, model_spec
+            )
 
         stress_test_release_str += stress_test_markdown
     else:
-        stress_test_release_str += "No stress test results found for this model and device combination.\n"
+        stress_test_release_str += (
+            "No stress test results found for this model and device combination.\n"
+        )
 
     # Save stress test-specific summary
     summary_fpath = output_dir / f"stress_test_summary_{report_id}.md"
@@ -1774,7 +1783,9 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json, percentile_report=False):
+        def __init__(
+            self, output_path, model, device, model_spec_json, percentile_report=False
+        ):
             self.output_path = output_path
             self.model = model
             self.device = device
@@ -1789,7 +1800,7 @@ def main():
         model,
         device_str,
         args.model_spec_json,
-        percentile_report=percentile_report
+        percentile_report=percentile_report,
     )
 
     # generate benchmarks report
@@ -1814,10 +1825,13 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
     # generate stress test report
-    stress_tests_release_str, stress_tests_release_data, stress_tests_disp_md_path, stress_tests_data_file_path = (
-        stress_test_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
+    (
+        stress_tests_release_str,
+        stress_tests_release_data,
+        stress_tests_disp_md_path,
+        stress_tests_data_file_path,
+    ) = stress_test_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
     # generate server tests report
@@ -1837,7 +1851,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{server_tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"

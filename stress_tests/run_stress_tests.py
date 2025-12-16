@@ -8,9 +8,11 @@ import os
 import json
 import jwt
 import sys
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 from pathlib import Path
+
 project_root = Path(__file__).resolve().parent.parent
 
 # Add the project root to the Python path to ensure imports work
@@ -25,8 +27,10 @@ from workflows.workflow_config import (
 )
 from workflows.log_setup import setup_workflow_script_logger
 import logging
+
 # Removed get_model_id - now using ModelSpec.from_json
 logger = logging.getLogger(__name__)
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Stress Tests.")
@@ -42,7 +46,7 @@ def parse_arguments():
         help="Path for stress test output",
         required=True,
     )
-    parser.add_argument('--project-root', type=Path, default=project_root)
+    parser.add_argument("--project-root", type=Path, default=project_root)
     parser.add_argument(
         "--jwt-secret",
         type=str,
@@ -66,6 +70,7 @@ def parse_arguments():
 
     return parser.parse_args()
 
+
 if __name__ == "__main__":
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
@@ -81,7 +86,7 @@ if __name__ == "__main__":
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    
+
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
     # Extract CLI args from model_spec
@@ -89,7 +94,7 @@ if __name__ == "__main__":
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
     workflow_args = cli_args.get("workflow_args")
-    
+
     # Parse workflow_args if provided (same logic as was in run_workflows.py)
     parsed_workflow_args = {}
     if workflow_args:
@@ -108,7 +113,7 @@ if __name__ == "__main__":
                         parsed_workflow_args[key] = value.lower() == "true"
                     else:
                         parsed_workflow_args[key] = value
-    
+
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_STRESS_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -119,14 +124,18 @@ if __name__ == "__main__":
     service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
     logger.info(f"service_port=: {service_port}")
     logger.info(f"run_mode=: {parsed_workflow_args.get('run_mode', 'multiple')}")
-    logger.info(f"max_context_length=: {parsed_workflow_args.get('max_context_length')}")
+    logger.info(
+        f"max_context_length=: {parsed_workflow_args.get('max_context_length')}"
+    )
     logger.info(f"endurance_mode=: {parsed_workflow_args.get('endurance_mode', False)}")
     logger.info(f"workflow_args=: {workflow_args}")
     logger.info(f"output_path=: {args.output_path}")
     logger.info("Wait for the vLLM server to be ready ...")
 
     # Create consolidated stress tests arguments from multiple sources
-    stress_args = StressTestsArgs.from_sources(args, cli_args, model_spec, parsed_workflow_args)
+    stress_args = StressTestsArgs.from_sources(
+        args, cli_args, model_spec, parsed_workflow_args
+    )
     run_stress_test = StressTests(stress_args, model_spec)
 
     run_stress_test.run()

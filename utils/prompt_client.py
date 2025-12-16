@@ -419,9 +419,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert len(images) == 0, (
-                "legacy API does not support images, use --use_chat_api option."
-            )
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
@@ -474,10 +474,7 @@ class PromptClient:
 
         url = self._get_api_tokenize_url()
 
-        payload = {
-            "model": model_name,
-            "prompt": prompt
-        }
+        payload = {"model": model_name, "prompt": prompt}
 
         response = requests.post(url, headers=self.headers, json=payload)
 
@@ -503,10 +500,7 @@ class PromptClient:
 
         url = self._get_api_detokenize_url()
 
-        payload = {
-            "model": model_name,
-            "tokens": tokens
-        }
+        payload = {"model": model_name, "tokens": tokens}
 
         response = requests.post(url, headers=self.headers, json=payload)
 
