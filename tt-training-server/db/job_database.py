@@ -36,33 +36,38 @@ class JobDatabase:
                 id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                hyperparameters TEXT, 
-                steps TEXT,           
-                training_loss TEXT,   
-                validation_loss TEXT, 
+                
+                job_type TEXT NOT NULL,
+                job_type_specific_parameters TEXT,
+                checkpoint_config TEXT,
+                
+                hyperparameters TEXT,                 
+                metrics TEXT,
                 error_message TEXT
-            )
+            );
         ''')
         conn.commit()
         conn.close()
 
     # --- Write Operations ---
 
-    def insert_job(self, job_id: str, status: str, hyperparameters: Dict[str, Any]):
+    def insert_job(self, job_id: str, status: str, hyperparameters: Dict[str, Any], job_type: str, 
+                   job_type_specific_parameters: Optional[dict], checkpoint_config: dict):
         """Inserts a new job. Handles JSON serialization of hyperparameters."""
         conn = self._get_connection()
         cursor = conn.cursor()
         
         # Serialize initial data
         hp_json = json.dumps(hyperparameters)
-        empty_list = json.dumps([])
+        empty_metrics = json.dumps({"training_loss": [], "validation_loss": []})
 
         cursor.execute(
             """
-            INSERT INTO jobs (id, status, hyperparameters, steps, training_loss, validation_loss)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (id, status, hyperparameters, job_type, job_type_specific_parameters, checkpoint_config, metrics)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (job_id, status, hp_json, empty_list, empty_list, empty_list)
+            (job_id, status, hp_json, job_type, json.dumps(job_type_specific_parameters), 
+             json.dumps(checkpoint_config), empty_metrics)
         )
         conn.commit()
         conn.close()
@@ -80,16 +85,40 @@ class JobDatabase:
         conn.commit()
         conn.close()
 
-    def update_job_metrics(self, job_id: str, steps: List[int], t_loss: List[float], v_loss: List[float]):
-        """Updates the metric lists. Handles JSON serialization."""
+    def update_job_metrics(self, job_id: str, step: int, scalar_metrics: Dict[str, float]):
+        """
+        Appends new metric values to the history.
+        
+        Args:
+            job_id: The ID of the job to update.
+            step: The current training step (e.g., 50).
+            scalar_metrics: Dict of current values, e.g., {"loss": 0.45, "accuracy": 0.88}
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
-            UPDATE jobs 
-            SET steps = ?, training_loss = ?, validation_loss = ? 
-            WHERE id = ?
-        """, (json.dumps(steps), json.dumps(t_loss), json.dumps(v_loss), job_id))
+        cursor.execute("SELECT metrics FROM jobs WHERE id = ?", (job_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return # Or raise an error if strictly required
+
+        current_json = row["metrics"]
+        
+        metrics_store = json.loads(current_json) if current_json else {}
+
+        for key, value in scalar_metrics.items():
+            # If this metric key doesn't exist yet, create a list for it
+            if key not in metrics_store:
+                metrics_store[key] = []
+            
+            metrics_store[key].append((step, value))
+
+        cursor.execute(
+            "UPDATE jobs SET metrics = ? WHERE id = ?", 
+            (json.dumps(metrics_store), job_id)
+        )
         
         conn.commit()
         conn.close()

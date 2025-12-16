@@ -1,3 +1,5 @@
+from enum import Enum
+
 AVAILABLE_DATASETS = [
     "sst2",
 ]
@@ -8,3 +10,11 @@ AVAILABLE_MODELS = [
     "microsoft/phi-1",
     "meta-llama/Llama-3.2-1B",
 ]
+
+class JobStatus(str, Enum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLING = "CANCELLING"
+    CANCELLED = "CANCELLED"

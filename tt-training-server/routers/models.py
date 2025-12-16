@@ -5,11 +5,10 @@
 import os
 import json
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+
 
 from config.constants import AVAILABLE_MODELS
 
@@ -22,20 +21,6 @@ FT_MODELS_DIR = Path("/storage/fine_tuned")
 
 
 router = APIRouter()
-
-# ------------------------------------------------------------------
-# Response Schemas
-# ------------------------------------------------------------------
-
-class FineTunedModelItem(BaseModel):
-    id: str
-    name: str
-    base_model_id: str
-    created_at: Optional[datetime] = None
-
-class FineTunedModelsResponse(BaseModel):
-    base_model_id: str
-    data: List[FineTunedModelItem]
 
 # ------------------------------------------------------------------
 # Helper Functions

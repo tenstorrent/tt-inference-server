@@ -1,6 +1,8 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from pydantic import BaseModel
+
+from config.constants import JobStatus
 
 # Define the input schema for a training job
 class TrainingJobRequest(BaseModel):
@@ -8,16 +10,14 @@ class TrainingJobRequest(BaseModel):
     dataset_id: str
     job_type: str 
     hyperparameters: dict
-    job_type_specific_parameters: dict # should this be optional?
+    job_type_specific_parameters: Optional[dict] = None
     checkpoint_config: dict
 
 class JobStatusResponse(BaseModel):
     id: str
-    status: str
-    metrics: Dict[str, float]
+    status: JobStatus
+    current_metrics: Dict[str, List]
 
 class JobMetricsResponse(BaseModel):
     job_id: str
-    steps: List[int]
-    training_loss: List[float]
-    validation_loss: List[float]
+    all_metrics: Dict[str, List]

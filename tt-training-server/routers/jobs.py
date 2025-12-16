@@ -6,7 +6,7 @@ from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from services.job_service import job_service, JobService
-from domain.job_models import (
+from domain.job_dtos import (
     TrainingJobRequest, 
     JobStatusResponse, 
     JobMetricsResponse
@@ -27,9 +27,12 @@ async def create_training_job(
     """
     Create a new fine-tuning job.
     """
-    created_job_id = service.create_job(request)
-    
-    return created_job_id
+    try:
+        created_job_id = service.create_job(request)
+        return created_job_id
+    except Exception as e:
+        # Fallback for unexpected database errors
+        raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
 
 @router.get("/jobs", response_model=List[JobStatusResponse])
 async def list_jobs(
@@ -42,7 +45,7 @@ async def list_jobs(
     # compatible with JobStatusResponse
     return service.list_jobs()
 
-@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse, responses={404: {"description": "Job not found"}})
 async def get_job_status(
     job_id: str,
     service: JobService = Depends(get_service)
@@ -50,9 +53,14 @@ async def get_job_status(
     """
     Get the status of a specific job.
     """
-    return service.get_job_status(job_id)
+    job = service.get_job_status(job_id)
+    
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+    return job
 
-@router.get("/jobs/{job_id}/events", response_model=JobMetricsResponse)
+@router.get("/jobs/{job_id}/events", response_model=JobMetricsResponse, responses={404: {"description": "Metrics not found"}})
 async def get_job_metrics(
     job_id: str,
     service: JobService = Depends(get_service)
@@ -63,12 +71,12 @@ async def get_job_metrics(
     # You will need to implement get_job_metrics(job_id) in your JobService
     metrics_data = service.get_job_metrics(job_id)
     
-    if not metrics_data:
-        raise HTTPException(status_code=404, detail="Job metrics not found")
+    if metrics_data is None:
+        raise HTTPException(status_code=404, detail=f"Metrics for job '{job_id}' not found")
 
     return metrics_data
 
-@router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse)
+@router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse, responses={404: {"description": "Job not found"}})
 async def cancel_job(
     job_id: str,
     service: JobService = Depends(get_service)
@@ -76,7 +84,11 @@ async def cancel_job(
     """
     Cancel a running or queued job.
     """
-    return service.cancel_job(job_id) # we need to check what to return
-
+    result = service.cancel_job(job_id)
+    
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+    return result
 
 

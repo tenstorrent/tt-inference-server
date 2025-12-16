@@ -3,9 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import uuid
-import threading
-import time
-import random
 import json
 from typing import List, Optional
 
@@ -13,16 +10,22 @@ from typing import List, Optional
 from db import JobDatabase
 
 # Import your Pydantic Models
-from domain.job_models import (
+from domain.job_dtos import (
     TrainingJobRequest, 
     JobStatusResponse, 
     JobMetricsResponse
 )
 
+def schedule_job(job_id: str):
+    """
+    Placeholder function to schedule the job for processing.
+    In a real system, this would enqueue the job in a task queue or similar.
+    """
+    pass
+
 class JobService:
-    def __init__(self):
-        # Initialize the Data Access Layer
-        self.db = JobDatabase()
+    def __init__(self, db: JobDatabase):
+            self.db = db
 
     # --- Public Methods (API) ---
 
@@ -33,10 +36,13 @@ class JobService:
         self.db.insert_job(
             job_id=job_id,
             status="QUEUED",
-            hyperparameters=request.hyperparameters
+            hyperparameters=request.hyperparameters,
+            job_type=request.job_type,
+            job_type_specific_parameters=request.job_type_specific_parameters,
+            checkpoint_config=request.checkpoint_config
         )
 
-        # TODO: schedule job
+        schedule_job(job_id)
 
         return job_id
 
@@ -65,9 +71,7 @@ class JobService:
         # The DB returns JSON strings; we must deserialize them here.
         return JobMetricsResponse(
             job_id=row["id"],
-            steps=json.loads(row["steps"]),
-            training_loss=json.loads(row["training_loss"]),
-            validation_loss=json.loads(row["validation_loss"])
+            all_metrics=json.loads(row["metrics"]),
         )
 
     def cancel_job(self, job_id: str) -> Optional[JobStatusResponse]:
@@ -91,79 +95,33 @@ class JobService:
     # --- Internal Helpers ---
 
     def _map_db_row_to_response(self, row: dict) -> JobStatusResponse:
-        """Converts raw DB dictionary to Pydantic Response Model"""
-        steps = json.loads(row["steps"])
-        t_loss = json.loads(row["training_loss"])
-        v_loss = json.loads(row["validation_loss"])
-
-        # Calculate summary metrics
-        metrics = {"steps_completed": len(steps)}
-        if t_loss:
-            metrics["last_loss"] = t_loss[-1]
-        if v_loss:
-            metrics["last_val_loss"] = v_loss[-1]
-
-        return JobStatusResponse(
-            id=row["id"],
-            status=row["status"],
-            metrics=metrics
-        )
-
-    # --- Simulation Worker ---
-
-    def _run_job_logic(self, job_id: str):
-        """
-        Background worker that interacts with the DB via self.db
-        """
-        try:
-            # 1. Update to RUNNING
-            time.sleep(2) 
-            self.db.update_job_status(job_id, "RUNNING")
-
-            # 2. Initialize Simulation
-            total_steps = 20
-            start_loss = 2.5
+            """Converts raw DB dictionary to Pydantic Response Model"""
             
-            # Fetch current state to ensure we have fresh lists
-            row = self.db.get_job(job_id)
-            if not row: return # Safety check
+            raw_metrics = json.loads(row["metrics"]) if row["metrics"] else {}
 
-            steps_list = json.loads(row["steps"])
-            t_loss_list = json.loads(row["training_loss"])
-            v_loss_list = json.loads(row["validation_loss"])
-            current_step = 0
+            current_metrics = {}
+            max_step = 0
 
-            # 3. Training Loop
-            for i in range(total_steps):
-                # Check for cancellation
-                fresh_row = self.db.get_job(job_id)
-                if not fresh_row or fresh_row["status"] == "CANCELLING":
-                    if fresh_row:
-                        self.db.update_job_status(job_id, "CANCELLED")
-                    return
+            for metric_name, metric_values in raw_metrics.items():
+                if metric_values:
+                    last_entry = metric_values[-1] # Get the latest tuple
+                    last_step = last_entry[0]
+                    last_value = last_entry[1]
 
-                # Simulate Compute
-                time.sleep(0.5)
-                
-                # Generate Data
-                current_step += 1
-                decay = 0.90
-                loss = start_loss * (decay ** current_step) + random.uniform(-0.05, 0.05)
-                val_loss = loss + 0.15
+                    current_metrics[metric_name] = last_value
+                    
+                    # Keep track of the highest step seen across all metrics
+                    if last_step > max_step:
+                        max_step = last_step
 
-                steps_list.append(current_step)
-                t_loss_list.append(round(loss, 4))
-                v_loss_list.append(round(val_loss, 4))
+            # Note: Pydantic will cast this int to float to satisfy Dict[str, float]
+            current_metrics["steps_completed"] = max_step
 
-                # Save Progress
-                self.db.update_job_metrics(job_id, steps_list, t_loss_list, v_loss_list)
-
-            # 4. Complete
-            self.db.update_job_status(job_id, "COMPLETED")
-
-        except Exception as e:
-            print(f"Job {job_id} failed: {e}")
-            self.db.update_job_status(job_id, "FAILED", error_message=str(e))
+            return JobStatusResponse(
+                id=row["id"],
+                status=row["status"], # Pydantic validates this against your Enum
+                current_metrics=current_metrics
+            )
 
 # Singleton Instance
-job_service = JobService()
+job_service = JobService(db=JobDatabase())
