@@ -9,7 +9,6 @@
 import argparse
 import glob
 import json
-import csv
 import os
 import subprocess
 import sys
