@@ -518,9 +518,56 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
         logger.info("No benchmark files found. Skipping AIPerf report.")
         return "", [], None, None
 
+    # Helper function to keep only the latest file for each (isl, osl, concurrency, task_type) config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration.
+        
+        Files are sorted by name (which includes timestamp) in reverse order,
+        so we keep the first occurrence of each config.
+        
+        Config key includes:
+        - isl, osl, concurrency, num_requests (base params)
+        - images, height, width (for image benchmarks - treated as separate configs)
+        """
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+                
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(r"images-(\d+)_height-(\d+)_width-(\d+)", filename)
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+                
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    # Deduplicate files to keep only latest run for each config
+    vllm_files = deduplicate_by_config(vllm_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+    
+    logger.info(f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf files")
+
     # Process vLLM benchmark files first (for comparison table)
+    # Filter out image benchmarks for fair comparison with AIPerf (which doesn't support images)
+    vllm_text_only_files = [f for f in vllm_files if "images" not in Path(f).name]
+    logger.info(f"Using {len(vllm_text_only_files)} text-only vLLM files (excluded {len(vllm_files) - len(vllm_text_only_files)} image benchmarks)")
+    
     vllm_results = []
-    for filepath in sorted(vllm_files):
+    for filepath in sorted(vllm_text_only_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)

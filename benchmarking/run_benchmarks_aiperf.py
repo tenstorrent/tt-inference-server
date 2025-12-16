@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import jwt
+import requests
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -364,6 +365,75 @@ def run_benchmark(
     return return_code
 
 
+def send_warmup_requests(
+    prompt_client: "PromptClient",
+    model_spec: "ModelSpec",
+    num_requests: int = 3,
+) -> bool:
+    """
+    Send warm-up requests to the server to initialize CUDA kernels and KV cache.
+
+    This prevents cold-start overhead from affecting the first benchmark.
+    The warm-up requests use small input/output sizes to minimize time while
+    still triggering all necessary initializations.
+
+    Args:
+        prompt_client: Client for sending requests to the server
+        model_spec: Model specification
+        num_requests: Number of warm-up requests to send
+
+    Returns:
+        True if all warm-up requests succeeded, False otherwise
+    """
+    warmup_prompts = [
+        "Hello, how are you?",
+        "What is 2 + 2?",
+        "Say 'ready' if you can hear me.",
+    ]
+
+    success_count = 0
+    for i in range(min(num_requests, len(warmup_prompts))):
+        try:
+            logger.info(f"Sending warm-up request {i + 1}/{num_requests}...")
+
+            # Use the prompt client's URL and auth
+            url = f"http://localhost:{prompt_client.env_config.service_port}/v1/chat/completions"
+            headers = {"Content-Type": "application/json"}
+
+            # Add auth if available
+            if prompt_client.env_config.jwt_secret:
+                import jwt as jwt_lib
+                json_payload = {"team_id": "tenstorrent", "token_id": "warmup"}
+                token = jwt_lib.encode(
+                    json_payload,
+                    prompt_client.env_config.jwt_secret,
+                    algorithm="HS256"
+                )
+                headers["Authorization"] = f"Bearer {token}"
+
+            payload = {
+                "model": model_spec.hf_model_repo,
+                "messages": [{"role": "user", "content": warmup_prompts[i]}],
+                "max_tokens": 32,  # Small output to minimize time
+                "stream": False,
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=120)
+
+            if response.status_code == 200:
+                success_count += 1
+                logger.info(f"Warm-up request {i + 1} succeeded")
+            else:
+                logger.warning(
+                    f"Warm-up request {i + 1} failed with status {response.status_code}: {response.text[:200]}"
+                )
+
+        except Exception as e:
+            logger.warning(f"Warm-up request {i + 1} failed with exception: {e}")
+
+    return success_count == num_requests
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run AIPerf benchmarks")
@@ -470,6 +540,15 @@ def main():
     if not prompt_client.wait_for_healthy():
         logger.error("vLLM server is not healthy. Aborting benchmarks.")
         return 1
+
+    # Send warm-up requests to ensure server is fully initialized
+    # This prevents cold-start overhead from affecting the first benchmark
+    logger.info("Sending warm-up requests to initialize server...")
+    warmup_success = send_warmup_requests(prompt_client, model_spec, num_requests=3)
+    if not warmup_success:
+        logger.warning("Warm-up requests failed, but continuing with benchmarks")
+    else:
+        logger.info("Warm-up completed successfully")
 
     # Create artifact directory
     artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
