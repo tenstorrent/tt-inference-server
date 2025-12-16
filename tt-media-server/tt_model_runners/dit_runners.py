@@ -20,6 +20,7 @@ from models.experimental.tt_dit.parallel.config import (
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
+from models.experimental.tt_dit.pipelines.qwenimage.pipeline_qwenimage import QwenImagePipeline
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
     StableDiffusion3Pipeline,
 )
@@ -35,6 +36,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_QWEN_IMAGE.value: "QwenImage",
 }
 
 
@@ -360,4 +362,30 @@ class TTWan22Runner(TTDiTRunner):
             device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
         elif tuple(self.settings.device_mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+        return device_params
+
+
+class TTQwenImageRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    def create_pipeline(self):
+        return QwenImagePipeline.create_pipeline(
+            mesh_device=self.ttnn_device,
+            num_links=self._get_num_links(),
+        )
+
+    def _get_num_links(self) -> int:
+        """Get the number of links based on device mesh shape."""
+        mesh_shape = tuple(self.ttnn_device.shape)
+        if mesh_shape == (4, 8):
+            return 4
+        return 1
+
+    def get_pipeline_device_params(self):
+        device_params = {
+            "l1_small_size": 32768,
+            "trace_region_size": 40000000,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+        }
         return device_params
