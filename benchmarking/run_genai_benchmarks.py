@@ -12,7 +12,6 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 import jwt
@@ -24,8 +23,8 @@ sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.utils import get_repo_root_path, run_command
-from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +134,6 @@ def run_genai_benchmarks(
     logger.info(f"Container name: {container_name}")
 
     # Get current user UID:GID for proper file permissions
-    import pwd
-
     uid = os.getuid()
     gid = os.getgid()
     user_spec = f"{uid}:{gid}"
@@ -171,11 +168,6 @@ def run_genai_benchmarks(
         json.dump(config, f, indent=2)
     logger.info(f"Config written to: {config_path}")
 
-    # Output JSON path
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_json_name = f"genai_benchmark_{model_spec.model_id}_{run_timestamp}.json"
-    output_json_path = Path(output_path) / output_json_name
-
     # Build Docker command
     # fmt: off
     cmd = [
@@ -192,7 +184,7 @@ def run_genai_benchmarks(
         "-e", f"URL=localhost:{service_port}",
         "-e", f"MAX_CONTEXT={max_context}",
         "-e", f"MODEL_MAX_CONCURRENCY={max_concurrency}",
-        "-e", f"BENCHMARKS_OUTPUT_DIR=/workspace/benchmarks_output",
+        "-e", "BENCHMARKS_OUTPUT_DIR=/workspace/benchmarks_output",
         "-e", "PYTHONUNBUFFERED=1",  # Force unbuffered output for real-time logs
         "-e", "HF_HOME=/workspace/.cache/huggingface",  # Point to mounted HF cache
         "-e", "TRANSFORMERS_CACHE=/workspace/.cache/huggingface",  # Point to mounted HF cache
