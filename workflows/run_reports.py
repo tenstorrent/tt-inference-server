@@ -43,6 +43,21 @@ FUNCTIONAL_TARGET = 10
 COMPLETE_TARGET = 2
 
 
+def generate_embedding_report_data(model_spec, eval_run_id):
+    """Generate embedding-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for embedding evaluation results
+    """
+    # Embedding models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
 def generate_audio_report_data(model_spec, eval_run_id):
     """Generate audio-specific report data.
 
@@ -86,6 +101,30 @@ def generate_image_report_data(model_spec, eval_run_id):
     # Image models use results_*.json pattern
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
+
+
+def get_embedding_benchmark_targets(model_spec, device_str, logger):
+    """Get embedding-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for embedding models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(
+            f"No performance targets found for embedding model {model_spec.model_name} on {device_str}"
+        )
+
+    return device_json_list
 
 
 def get_audio_benchmark_targets(model_spec, device_str, logger):
@@ -991,6 +1030,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.EMBEDDING:
+        file_name_pattern = generate_embedding_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -1444,6 +1489,7 @@ def main():
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.EMBEDDING.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -1498,6 +1544,14 @@ def main():
                 logger.info(
                     "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
                 )
+                target_checks = add_target_checks_cnn_and_image(
+                    targets,
+                    evals_release_data,
+                    benchmark_summary_data,
+                    metrics,
+                )
+            elif model_spec.model_type.name == "EMBEDDING":
+                logger.info("Adding target_checks for Embedding benchmark release data")
                 target_checks = add_target_checks_cnn_and_image(
                     targets,
                     evals_release_data,

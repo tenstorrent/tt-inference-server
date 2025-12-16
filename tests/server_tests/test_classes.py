@@ -87,5 +87,5 @@ class TestReport:
         self.description = descrtiption
 
     def __str__(self):
-        status = "✓ PASS" if self.success else "✗ FAIL"
+        status = "✅ PASS" if self.success else "❌ FAIL"
         return f"{status} {self.test_name} ({self.duration:.2f}s, {self.attempts} attempts)"
