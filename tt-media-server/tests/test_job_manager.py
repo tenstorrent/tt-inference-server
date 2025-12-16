@@ -185,7 +185,7 @@ class TestJobManager:
             await asyncio.sleep(0.1)
             return b"result"
 
-        job_data = job_manager.create_job(
+        job_data = await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -212,7 +212,7 @@ class TestJobManager:
 
         # Fill up to max
         for i in range(10):
-            job_manager.create_job(
+            await job_manager.create_job(
                 job_id=f"job-{i}",
                 job_type="video",
                 model="test-model",
@@ -222,7 +222,7 @@ class TestJobManager:
 
         # Next one should fail
         with pytest.raises(Exception, match="Maximum job limit reached"):
-            job_manager.create_job(
+            await job_manager.create_job(
                 job_id="job-overflow",
                 job_type="video",
                 model="test-model",
@@ -244,7 +244,7 @@ class TestJobManager:
             await asyncio.sleep(10)  # Long running
             return b"result"
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -263,7 +263,7 @@ class TestJobManager:
             await asyncio.sleep(0.1)
             return b"video data"
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -288,7 +288,7 @@ class TestJobManager:
             await asyncio.sleep(0.1)
             raise ValueError("Processing failed")
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -312,7 +312,7 @@ class TestJobManager:
             await asyncio.sleep(10)
             return b"result"
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -346,7 +346,7 @@ class TestJobManager:
                 cancelled = True
                 raise
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -369,7 +369,7 @@ class TestJobManager:
             return b"result"
 
         # Create and complete a job
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -399,7 +399,7 @@ class TestJobManager:
             await asyncio.sleep(10)
             return b"result"
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",
@@ -435,7 +435,7 @@ class TestJobManager:
             async def task_func(req):
                 return file_path
 
-            job_manager.create_job(
+            await job_manager.create_job(
                 job_id="job-123",
                 job_type="video",
                 model="test-model",
@@ -525,18 +525,17 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_thread_safety_concurrent_creates(self, job_manager, mock_request):
-        """Test thread safety with concurrent job creation"""
-        import threading
+        """Test thread safety with concurrent job creation (asyncio version)"""
 
         async def task_func(req):
             await asyncio.sleep(0.1)
             return b"result"
 
-        def create_jobs():
+        async def create_jobs(prefix):
             for i in range(5):
                 try:
-                    job_manager.create_job(
-                        job_id=f"job-{threading.current_thread().name}-{i}",
+                    await job_manager.create_job(
+                        job_id=f"job-{prefix}-{i}",
                         job_type="video",
                         model="test-model",
                         request=mock_request,
@@ -545,11 +544,12 @@ class TestJobManager:
                 except Exception:
                     pass  # May hit max limit
 
-        threads = [threading.Thread(target=create_jobs) for _ in range(3)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        # Run concurrent job creation using asyncio.gather
+        await asyncio.gather(
+            create_jobs("A"),
+            create_jobs("B"),
+            create_jobs("C"),
+        )
 
         # Should have created some jobs without crashes
         with job_manager._jobs_lock:
@@ -565,7 +565,7 @@ class TestJobManager:
             await asyncio.sleep(0.1)
             return b"result"
 
-        job_manager.create_job(
+        await job_manager.create_job(
             job_id="job-123",
             job_type="video",
             model="test-model",

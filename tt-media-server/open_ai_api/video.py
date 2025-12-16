@@ -4,7 +4,7 @@
 
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -28,14 +28,14 @@ async def submit_generate_video_request(
         HTTPException: If video generation submission fails.
     """
     try:
-        job_data = service.create_job("video", video_generation_request)
+        job_data = await service.create_job("video", video_generation_request)
         return JSONResponse(content=job_data, status_code=202)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/generations/{video_id}")
-async def get_video_metadata(
+def get_video_metadata(
     video_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
@@ -57,16 +57,16 @@ async def get_video_metadata(
 
 
 @router.get("/generations/{video_id}/content")
-async def get_video_content(
+def get_video_content(
     video_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
-    Download the generated video bytes.
+    Get the filename of the generated video.
 
     Returns:
-        Response: The generated video file (MP4).
+        JSONResponse: Object containing the video filename (MP4).
 
     Raises:
         HTTPException: If video not found, not completed, or failed.
@@ -75,15 +75,11 @@ async def get_video_content(
     if job_result is None:
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    return Response(
-        content=job_result,
-        media_type="video/mp4",
-        headers={"Content-Disposition": f"attachment; filename={video_id}.mp4"},
-    )
+    return JSONResponse(content={"filename": f"{job_result}.mp4"})
 
 
 @router.delete("/generations/{video_id}")
-async def delete_video_metadata(
+def delete_video_metadata(
     video_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),

@@ -217,7 +217,7 @@ class BaseService(ABC):
             self.scheduler.result_queues.pop(request._task_id, None)
 
     async def create_job(self, job_type: str, request: BaseRequest) -> dict:
-        return self._job_manager.create_job(
+        return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
             model=settings.model_weights_path,

@@ -43,23 +43,9 @@ class VideoManager:
             # Process frames for diffusers
             processed_frames = self._process_frames_for_export(frames)
             export_to_video(processed_frames, output_video_path=output_path, fps=fps)
-            self._logger.info("Successfully exported video using diffusers")
 
-            # Read the video file as bytes for HTTP response
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
-
-            self._logger.info(f"Video file size: {len(video_bytes)} bytes")
-
-            try:
-                os.remove(output_path)
-                self._logger.info(f"Cleaned up temporary file: {output_path}")
-            except Exception as cleanup_error:
-                self._logger.warning(
-                    f"Failed to clean up temporary file: {cleanup_error}"
-                )
-
-            return video_bytes
+            self._logger.info(f"Video export completed successfully: {output_path}")
+            return output_path
 
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")

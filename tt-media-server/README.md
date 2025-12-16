@@ -255,9 +255,10 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
-# Video generation test call
+# Video generation API
 
-Sample for calling the endpoint for video generation via curl:
+## Submit video generation job
+
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/video/generations' \
@@ -269,6 +270,33 @@ curl -X 'POST' \
   "negative_prompt": "low quality",
   "num_inference_steps": 20
 }'
+```
+
+## Get video job metadata
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Get generated video filename
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/content' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Delete video job and assets
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.

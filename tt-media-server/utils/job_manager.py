@@ -84,7 +84,7 @@ class JobManager:
         self._cleanup_task: Callable = None
         self._start_cleanup_task()
 
-    def create_job(
+    async def create_job(
         self,
         job_id: str,
         job_type: str,
@@ -192,7 +192,7 @@ class JobManager:
                     self._logger.info("Job cleanup task cancelled")
                     break
                 except Exception as e:
-                    self._logger.error(f"Error in job cleanup task: {e}", exc_info=True)
+                    self._logger.error(f"Error in job cleanup task: {e}")
 
         self._cleanup_task = asyncio.create_task(cleanup_loop())
         self._logger.info("Job cleanup task started")
