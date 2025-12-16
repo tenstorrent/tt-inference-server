@@ -2,9 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import sys
 import unittest
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -13,147 +13,18 @@ import pytest
 sys.modules["open_clip"] = MagicMock()
 sys.modules["torch"] = MagicMock()
 sys.modules["torch.nn"] = MagicMock()
+sys.modules["torch.nn.functional"] = MagicMock()
+sys.modules["torch.utils"] = MagicMock()
+sys.modules["torch.utils.model_zoo"] = MagicMock()
 sys.modules["torchvision"] = MagicMock()
 sys.modules["torchvision.transforms"] = MagicMock()
 sys.modules["scipy"] = MagicMock()
 sys.modules["scipy.linalg"] = MagicMock()
 
 from utils.media_clients.image_client import (
-    GUIDANCE_SCALE,
-    GUIDANCE_SCALE_IMG2IMG,
-    GUIDANCE_SCALE_INPAINTING,
-    NEGATIVE_PROMPT,
-    NUM_INFERENCE_STEPS,
-    SDXL_IMG2IMG_INFERENCE_STEPS,
-    SDXL_INPAINTING_INFERENCE_STEPS,
-    SDXL_SD35_BENCHMARK_NUM_PROMPTS,
-    SDXL_SD35_INFERENCE_STEPS,
-    SEED_IMG2IMG,
-    SEED_INPAINTING,
-    STRENGTH_IMG2IMG,
-    STRENGTH_INPAINTING,
-    WORKFLOW_BENCHMARKS,
-    WORKFLOW_EVALS,
     ImageClientStrategy,
 )
 from utils.media_clients.test_status import ImageGenerationTestStatus
-
-
-def create_async_context_manager(response):
-    """Helper to create proper async context manager for aiohttp response."""
-
-    @asynccontextmanager
-    async def mock_post(*args, **kwargs):
-        yield response
-
-    return mock_post
-
-
-class TestConstants(unittest.TestCase):
-    """Tests for module-level constants."""
-
-    def test_workflow_evals(self):
-        assert WORKFLOW_EVALS == "evals"
-
-    def test_workflow_benchmarks(self):
-        assert WORKFLOW_BENCHMARKS == "benchmarks"
-
-    def test_sdxl_sd35_benchmark_num_prompts(self):
-        assert SDXL_SD35_BENCHMARK_NUM_PROMPTS == 20
-
-    def test_sdxl_sd35_inference_steps(self):
-        assert SDXL_SD35_INFERENCE_STEPS == 20
-
-    def test_sdxl_inpainting_inference_steps(self):
-        assert SDXL_INPAINTING_INFERENCE_STEPS == 20
-
-    def test_negative_prompt(self):
-        assert "low quality" in NEGATIVE_PROMPT
-
-    def test_guidance_scale(self):
-        assert GUIDANCE_SCALE == 8
-
-    def test_num_inference_steps(self):
-        assert NUM_INFERENCE_STEPS == 20
-
-    def test_img2img_constants(self):
-        assert SDXL_IMG2IMG_INFERENCE_STEPS == 30
-        assert GUIDANCE_SCALE_IMG2IMG == 7.5
-        assert SEED_IMG2IMG == 0
-        assert STRENGTH_IMG2IMG == 0.6
-
-    def test_inpainting_constants(self):
-        assert GUIDANCE_SCALE_INPAINTING == 8.0
-        assert SEED_INPAINTING == 0
-        assert STRENGTH_INPAINTING == 0.99
-
-
-class TestImageClientStrategyInit(unittest.TestCase):
-    """Tests for ImageClientStrategy.__init__ method."""
-
-    def _create_strategy(self):
-        model_spec = MagicMock()
-        model_spec.model_name = "test_model"
-        device = MagicMock()
-        device.name = "test_device"
-        return ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    def test_init_sets_benchmark_methods(self):
-        strategy = self._create_strategy()
-        assert "tt-sdxl-trace" in strategy.benchmark_methods
-        assert "tt-sdxl-image-to-image" in strategy.benchmark_methods
-        assert "tt-sdxl-edit" in strategy.benchmark_methods
-        assert "tt-sd3.5" in strategy.benchmark_methods
-
-    def test_init_sets_eval_methods(self):
-        strategy = self._create_strategy()
-        assert "tt-sdxl-trace" in strategy.eval_methods
-        assert "tt-sdxl-image-to-image" in strategy.eval_methods
-        assert "tt-sdxl-edit" in strategy.eval_methods
-        assert "tt-sd3.5" in strategy.eval_methods
-
-    def test_init_inherits_base_attributes(self):
-        model_spec = MagicMock()
-        device = MagicMock()
-        strategy = ImageClientStrategy(
-            {"key": "value"}, model_spec, device, "/output", 9000
-        )
-        assert strategy.all_params == {"key": "value"}
-        assert strategy.model_spec == model_spec
-        assert strategy.device == device
-        assert strategy.output_path == "/output"
-        assert strategy.service_port == 9000
-        assert strategy.base_url == "http://localhost:9000"
-
-
-class TestImageClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method."""
-
-    def _create_strategy(self):
-        model_spec = MagicMock()
-        device = MagicMock()
-        return ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    def test_calculate_ttft_with_status_list(self):
-        strategy = self._create_strategy()
-        status_list = [
-            MagicMock(elapsed=1.0),
-            MagicMock(elapsed=2.0),
-            MagicMock(elapsed=3.0),
-        ]
-        result = strategy._calculate_ttft_value(status_list)
-        assert result == 2.0
-
-    def test_calculate_ttft_empty_list(self):
-        strategy = self._create_strategy()
-        result = strategy._calculate_ttft_value([])
-        assert result == 0
-
-    def test_calculate_ttft_single_item(self):
-        strategy = self._create_strategy()
-        status_list = [MagicMock(elapsed=5.0)]
-        result = strategy._calculate_ttft_value(status_list)
-        assert result == 5.0
 
 
 class TestImageClientStrategyRunEval(unittest.TestCase):
@@ -184,15 +55,81 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(self, mock_mkdir, mock_file, mock_metrics, mock_accuracy):
         strategy = self._create_strategy()
-        mock_metrics.return_value = (10.0, 0.8, 0.05)
-        mock_accuracy.return_value = True
+        # fid_score, average_clip_score, deviation_clip_score
+        mock_metrics.return_value = (15.5, 0.85, 0.03)
+        mock_accuracy.return_value = 2  # PASS
 
-        mock_status = MagicMock(elapsed=1.5)
+        # Multiple status entries to verify TTFT averaging
+        status_list = [
+            MagicMock(elapsed=1.0),
+            MagicMock(elapsed=2.0),
+        ]
+        total_time = 3.0
+
         with patch.object(strategy, "get_health", return_value=(True, "tt-sdxl-trace")):
-            with patch("asyncio.run", return_value=([mock_status], 2.0)):
+            with patch("asyncio.run", return_value=(status_list, total_time)):
                 strategy.run_eval()
 
-        mock_mkdir.assert_called()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/eval_{model_id}/{hf_repo}/results_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert "/tmp/eval_test_id/org__model/results_" in path_str
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # run_eval wraps data in a list
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        eval_result = report_data[0]
+
+        # Verify all required keys exist
+        required_keys = [
+            "model",
+            "device",
+            "timestamp",
+            "task_type",
+            "task_name",
+            "tolerance",
+            "published_score",
+            "score",
+            "published_score_ref",
+            "fid_score",
+            "average_clip",
+            "deviation_clip_score",
+            "accuracy_check",
+            "tput_user",
+        ]
+        for key in required_keys:
+            assert key in eval_result, f"Missing required key: {key}"
+
+        # Verify calculated TTFT average: (1.0 + 2.0) / 2 = 1.5
+        assert eval_result["score"] == 1.5
+
+        # Verify metrics from calculate_metrics mock
+        assert eval_result["fid_score"] == 15.5
+        assert eval_result["average_clip"] == 0.85
+        assert eval_result["deviation_clip_score"] == 0.03
+        assert eval_result["accuracy_check"] == 2
+
+        # Verify tput_user calculation: len(status_list) / (total_time * max_concurrency)
+        # = 2 / (3.0 * 4) = 2 / 12 ≈ 0.1667
+        expected_tput_user = len(status_list) / (total_time * 4)
+        assert abs(eval_result["tput_user"] - expected_tput_user) < 0.0001
+
+        # Verify metadata from model_spec and all_params
+        assert eval_result["model"] == "test_model"
+        assert eval_result["device"] == "test_device"
+        assert eval_result["task_type"] == "image"
+        assert eval_result["task_name"] == "test_task"
+        assert eval_result["tolerance"] == 0.1
+        assert eval_result["published_score"] == 0.9
+        assert eval_result["published_score_ref"] == "ref"
 
     @patch.object(ImageClientStrategy, "get_health", return_value=(False, None))
     def test_run_eval_health_check_failed(self, mock_health):
@@ -204,7 +141,7 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
     @patch.object(
         ImageClientStrategy, "get_health", return_value=(True, "tt-sdxl-trace")
     )
-    def test_run_eval_exception_during_eval(self, mock_health):
+    def test_run_eval_propagates_eval_exception(self, mock_health):
         strategy = self._create_strategy()
 
         with patch("asyncio.run", side_effect=RuntimeError("Eval error")):
@@ -274,25 +211,67 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
         device.name = "test_device"
         return ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    @patch("utils.media_clients.image_client.get_num_calls", return_value=5)
+    @patch("utils.media_clients.image_client.get_num_calls", return_value=2)
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_status = ImageGenerationTestStatus(
-            status=True,
-            elapsed=1.5,
-            num_inference_steps=20,
-            inference_steps_per_second=13.3,
-        )
+        # Multiple status entries to verify averaging of TTFT and inference_steps_per_second
+        status_list = [
+            ImageGenerationTestStatus(
+                status=True,
+                elapsed=1.0,
+                num_inference_steps=20,
+                inference_steps_per_second=20.0,
+            ),
+            ImageGenerationTestStatus(
+                status=True,
+                elapsed=2.0,
+                num_inference_steps=20,
+                inference_steps_per_second=10.0,
+            ),
+        ]
 
-        mock_benchmark = MagicMock(return_value=[mock_status])
+        mock_benchmark = MagicMock(return_value=status_list)
         strategy.benchmark_methods["tt-sdxl-trace"] = mock_benchmark
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-sdxl-trace")):
             strategy.run_benchmark()
 
         mock_benchmark.assert_called_once()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/benchmark_{model_id}_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert path_str.startswith("/tmp/benchmark_test_id_")
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # Verify required top-level keys
+        assert "benchmarks" in report_data
+        assert "model" in report_data
+        assert "device" in report_data
+        assert "timestamp" in report_data
+        assert "task_type" in report_data
+
+        # Verify benchmarks structure and computed averages
+        benchmarks = report_data["benchmarks"]
+        assert benchmarks["num_requests"] == 2
+        assert benchmarks["num_inference_steps"] == 20
+        # TTFT: (1.0 + 2.0) / 2 = 1.5
+        assert benchmarks["ttft"] == 1.5
+        # inference_steps_per_second: (20.0 + 10.0) / 2 = 15.0
+        assert benchmarks["inference_steps_per_second"] == 15.0
+
+        # Verify metadata
+        assert report_data["model"] == "test_model"
+        assert report_data["device"] == "test_device"
+        assert report_data["task_type"] == "image"
 
     @patch.object(ImageClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
@@ -302,7 +281,7 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
             strategy.run_benchmark()
 
     @patch("utils.media_clients.image_client.get_num_calls", return_value=5)
-    def test_run_benchmark_exception(self, mock_num_calls):
+    def test_run_benchmark_propagates_benchmark_exception(self, mock_num_calls):
         strategy = self._create_strategy()
 
         mock_benchmark = MagicMock(side_effect=RuntimeError("Benchmark error"))
@@ -382,45 +361,6 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
                 return_value=[mock_status],
             ):
                 strategy.run_benchmark()
-
-
-class TestImageClientStrategyGenerateReport(unittest.TestCase):
-    """Tests for _generate_report method."""
-
-    def _create_strategy(self):
-        model_spec = MagicMock()
-        model_spec.model_name = "test_model"
-        model_spec.model_id = "test_id"
-        device = MagicMock()
-        device.name = "test_device"
-        return ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("pathlib.Path.mkdir")
-    def test_generate_report_with_status_list(self, mock_mkdir, mock_file):
-        strategy = self._create_strategy()
-        status_list = [
-            MagicMock(
-                elapsed=1.0, num_inference_steps=20, inference_steps_per_second=20.0
-            ),
-            MagicMock(
-                elapsed=2.0, num_inference_steps=20, inference_steps_per_second=10.0
-            ),
-        ]
-
-        strategy._generate_report(status_list)
-
-        mock_mkdir.assert_called_once()
-        mock_file.assert_called_once()
-
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("pathlib.Path.mkdir")
-    def test_generate_report_empty_status_list(self, mock_mkdir, mock_file):
-        strategy = self._create_strategy()
-
-        strategy._generate_report([])
-
-        mock_file.assert_called_once()
 
 
 class TestImageClientStrategyImageGenerationBenchmark(unittest.TestCase):
@@ -1089,54 +1029,3 @@ class TestImageClientStrategyAsyncInpaintingEval(unittest.TestCase):
             status_list, _ = asyncio.run(strategy._run_inpainting_generation_eval())
 
         assert status_list[0].inference_steps_per_second == 0
-
-
-# Parametrized tests for edge cases
-@pytest.mark.parametrize(
-    "runner,expected_method_name",
-    [
-        ("tt-sdxl-trace", "_run_image_generation_benchmark"),
-        ("tt-sdxl-image-to-image", "_run_img2img_generation_benchmark"),
-        ("tt-sdxl-edit", "_run_inpainting_generation_benchmark"),
-        ("tt-sd3.5", "_run_image_generation_benchmark"),
-        ("unknown-runner", "_run_image_generation_benchmark"),
-    ],
-)
-def test_benchmark_method_routing(runner, expected_method_name):
-    """Test that benchmark routes to correct method based on runner."""
-    model_spec = MagicMock()
-    model_spec.model_name = "test"
-    model_spec.model_id = "test_id"
-    device = MagicMock()
-    device.name = "test"
-    strategy = ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    method = strategy.benchmark_methods.get(
-        runner, strategy._run_image_generation_benchmark
-    )
-    assert (
-        method.__name__ == expected_method_name
-        or expected_method_name == "_run_image_generation_benchmark"
-    )
-
-
-@pytest.mark.parametrize(
-    "runner,expected_method_name",
-    [
-        ("tt-sdxl-trace", "_run_image_generation_eval"),
-        ("tt-sdxl-image-to-image", "_run_img2img_generation_eval"),
-        ("tt-sdxl-edit", "_run_inpainting_generation_eval"),
-        ("tt-sd3.5", "_run_image_generation_eval"),
-    ],
-)
-def test_eval_method_routing(runner, expected_method_name):
-    """Test that eval routes to correct method based on runner."""
-    model_spec = MagicMock()
-    model_spec.model_name = "test"
-    device = MagicMock()
-    device.name = "test"
-    strategy = ImageClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    method = strategy.eval_methods.get(runner)
-    assert method is not None
-    assert method.__name__ == expected_method_name

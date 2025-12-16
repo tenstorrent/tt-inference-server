@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -38,17 +39,64 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_status = CnnGenerationTestStatus(status=True, elapsed=1.5)
+        # Multiple status entries to verify TTFT averaging
+        status_list = [
+            CnnGenerationTestStatus(status=True, elapsed=1.0),
+            CnnGenerationTestStatus(status=True, elapsed=2.0),
+        ]
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
             with patch.object(
                 strategy,
                 "_run_image_analysis_benchmark",
-                return_value=[mock_status],
+                return_value=status_list,
             ):
                 strategy.run_eval()
 
-        mock_mkdir.assert_called()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/eval_{model_id}/{hf_repo}/results_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert "/tmp/eval_test_id/org__model/results_" in path_str
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # run_eval wraps data in a list
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        eval_result = report_data[0]
+
+        # Verify all required keys exist
+        required_keys = [
+            "model",
+            "device",
+            "timestamp",
+            "task_type",
+            "task_name",
+            "tolerance",
+            "published_score",
+            "score",
+            "published_score_ref",
+        ]
+        for key in required_keys:
+            assert key in eval_result, f"Missing required key: {key}"
+
+        # Verify calculated TTFT average: (1.0 + 2.0) / 2 = 1.5
+        assert eval_result["score"] == 1.5
+
+        # Verify metadata from model_spec and all_params
+        assert eval_result["model"] == "test_model"
+        assert eval_result["device"] == "test_device"
+        assert eval_result["task_type"] == "cnn"
+        assert eval_result["task_name"] == "test_task"
+        assert eval_result["tolerance"] == 0.1
+        assert eval_result["published_score"] == 0.9
+        assert eval_result["published_score_ref"] == "ref"
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_eval_health_check_failed(self, mock_health):
@@ -58,7 +106,7 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
             strategy.run_eval()
 
     @patch("utils.media_clients.cnn_client.get_num_calls", return_value=1)
-    def test_run_eval_exception(self, mock_num_calls):
+    def test_run_eval_propagates_benchmark_exception(self, mock_num_calls):
         strategy = self._create_strategy()
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
@@ -87,17 +135,63 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_status = CnnGenerationTestStatus(status=True, elapsed=1.5)
+        # Multiple status entries to verify averaging
+        status_list = [
+            CnnGenerationTestStatus(
+                status=True,
+                elapsed=1.0,
+                num_inference_steps=50,
+                inference_steps_per_second=50.0,
+            ),
+            CnnGenerationTestStatus(
+                status=True,
+                elapsed=2.0,
+                num_inference_steps=50,
+                inference_steps_per_second=25.0,
+            ),
+        ]
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
             with patch.object(
                 strategy,
                 "_run_image_analysis_benchmark",
-                return_value=[mock_status],
+                return_value=status_list,
             ):
                 strategy.run_benchmark(2)
 
-        mock_mkdir.assert_called()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/benchmark_{model_id}_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert path_str.startswith("/tmp/benchmark_test_id_")
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # Verify required top-level keys
+        assert "benchmarks" in report_data
+        assert "model" in report_data
+        assert "device" in report_data
+        assert "timestamp" in report_data
+        assert "task_type" in report_data
+
+        # Verify benchmarks structure and computed averages
+        benchmarks = report_data["benchmarks"]
+        assert benchmarks["num_requests"] == 2
+        assert benchmarks["num_inference_steps"] == 50
+        # TTFT: (1.0 + 2.0) / 2 = 1.5
+        assert benchmarks["ttft"] == 1.5
+        # inference_steps_per_second: (50.0 + 25.0) / 2 = 37.5
+        assert benchmarks["inference_steps_per_second"] == 37.5
+
+        # Verify metadata
+        assert report_data["model"] == "test_model"
+        assert report_data["device"] == "test_device"
+        assert report_data["task_type"] == "cnn"
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
@@ -107,7 +201,7 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
             strategy.run_benchmark(2)
 
     @patch("utils.media_clients.cnn_client.get_num_calls", return_value=1)
-    def test_run_benchmark_exception(self, mock_num_calls):
+    def test_run_benchmark_propagates_benchmark_exception(self, mock_num_calls):
         strategy = self._create_strategy()
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
@@ -196,21 +290,48 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         model_spec.model_id = "test_id"
         device = MagicMock()
         device.name = "test_device"
-        return CnnClientStrategy({}, model_spec, device, "/tmp", 8000)
+        return CnnClientStrategy({}, model_spec, device, "/tmp/output", 8000)
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_generate_report_with_status_list(self, mock_mkdir, mock_file):
         strategy = self._create_strategy()
         status_list = [
-            CnnGenerationTestStatus(status=True, elapsed=1.0),
-            CnnGenerationTestStatus(status=True, elapsed=2.0),
+            CnnGenerationTestStatus(
+                status=True,
+                elapsed=1.0,
+                num_inference_steps=50,
+                inference_steps_per_second=50.0,
+            ),
+            CnnGenerationTestStatus(
+                status=True,
+                elapsed=2.0,
+                num_inference_steps=50,
+                inference_steps_per_second=25.0,
+            ),
         ]
 
         strategy._generate_report(status_list)
 
-        mock_mkdir.assert_called_once()
-        mock_file.assert_called_once()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert path_str.startswith("/tmp/output/benchmark_test_id_")
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # Verify structure and values
+        assert report_data["benchmarks"]["num_requests"] == 2
+        assert report_data["benchmarks"]["ttft"] == 1.5
+        assert report_data["benchmarks"]["inference_steps_per_second"] == 37.5
+        assert report_data["model"] == "test_model"
+        assert report_data["task_type"] == "cnn"
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -219,11 +340,18 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
 
         strategy._generate_report([])
 
-        mock_file.assert_called_once()
+        # Verify JSON content handles empty list
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        assert report_data["benchmarks"]["num_requests"] == 0
+        assert report_data["benchmarks"]["ttft"] == 0
+        assert report_data["benchmarks"]["inference_steps_per_second"] == 0
 
 
 class TestCnnClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method (inherited from base)."""
+    """Tests for _calculate_ttft_value method."""
 
     def _create_strategy(self):
         model_spec = MagicMock()
@@ -233,9 +361,9 @@ class TestCnnClientStrategyCalculateTtft(unittest.TestCase):
     def test_calculate_ttft_with_status_list(self):
         strategy = self._create_strategy()
         status_list = [
-            MagicMock(elapsed=1.0),
-            MagicMock(elapsed=2.0),
-            MagicMock(elapsed=3.0),
+            CnnGenerationTestStatus(status=True, elapsed=1.0),
+            CnnGenerationTestStatus(status=True, elapsed=2.0),
+            CnnGenerationTestStatus(status=True, elapsed=3.0),
         ]
         result = strategy._calculate_ttft_value(status_list)
         assert result == 2.0
@@ -244,6 +372,12 @@ class TestCnnClientStrategyCalculateTtft(unittest.TestCase):
         strategy = self._create_strategy()
         result = strategy._calculate_ttft_value([])
         assert result == 0
+
+    def test_calculate_ttft_single_item(self):
+        strategy = self._create_strategy()
+        status_list = [CnnGenerationTestStatus(status=True, elapsed=5.0)]
+        result = strategy._calculate_ttft_value(status_list)
+        assert result == 5.0
 
 
 # Parametrized tests

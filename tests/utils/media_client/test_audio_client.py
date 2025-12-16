@@ -83,24 +83,6 @@ class TestAudioClientStrategyInit(unittest.TestCase):
 
         assert strategy.tokenizer is None
 
-    @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
-    def test_init_inherits_base_attributes(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-
-        strategy = AudioClientStrategy(
-            {"key": "value"}, model_spec, device, "/output", 9000
-        )
-
-        assert strategy.all_params == {"key": "value"}
-        assert strategy.model_spec == model_spec
-        assert strategy.device == device
-        assert strategy.output_path == "/output"
-        assert strategy.service_port == 9000
-        assert strategy.base_url == "http://localhost:9000"
-
 
 class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
     """Tests for _calculate_ttft_value method."""
@@ -116,9 +98,9 @@ class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
     def test_calculate_ttft_with_valid_values(self):
         strategy = self._create_strategy()
         status_list = [
-            MagicMock(ttft=1.0),
-            MagicMock(ttft=2.0),
-            MagicMock(ttft=3.0),
+            AudioTestStatus(status=True, elapsed=1.0, ttft=1.0, tsu=10.0, rtr=2.0),
+            AudioTestStatus(status=True, elapsed=1.0, ttft=2.0, tsu=10.0, rtr=2.0),
+            AudioTestStatus(status=True, elapsed=1.0, ttft=3.0, tsu=10.0, rtr=2.0),
         ]
         result = strategy._calculate_ttft_value(status_list)
         assert result == 2.0
@@ -326,19 +308,73 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_status = AudioTestStatus(
-            status=True, elapsed=1.5, ttft=0.5, tsu=10.0, rtr=2.0
-        )
+        # Multiple status entries to verify averaging of TTFT, RTR, TSU
+        status_list = [
+            AudioTestStatus(status=True, elapsed=1.0, ttft=0.4, tsu=8.0, rtr=1.5),
+            AudioTestStatus(status=True, elapsed=1.5, ttft=0.6, tsu=12.0, rtr=2.5),
+        ]
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-whisper")):
             with patch.object(
                 strategy,
                 "_run_audio_transcription_benchmark",
-                return_value=[mock_status],
+                return_value=status_list,
             ):
                 strategy.run_eval()
 
-        mock_mkdir.assert_called()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/eval_{model_id}/{hf_repo}/results_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert "/tmp/eval_test_id/org__model/results_" in path_str
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # run_eval wraps data in a list
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        eval_result = report_data[0]
+
+        # Verify all required keys exist
+        required_keys = [
+            "model",
+            "device",
+            "timestamp",
+            "task_type",
+            "task_name",
+            "tolerance",
+            "published_score",
+            "score",
+            "published_score_ref",
+            "accuracy_check",
+            "t/s/u",
+            "rtr",
+        ]
+        for key in required_keys:
+            assert key in eval_result, f"Missing required key: {key}"
+
+        # Verify calculated averages (TTFT, RTR, TSU)
+        # TTFT: (0.4 + 0.6) / 2 = 0.5
+        assert eval_result["score"] == 0.5
+        # TSU: (8.0 + 12.0) / 2 = 10.0
+        assert eval_result["t/s/u"] == 10.0
+        # RTR: (1.5 + 2.5) / 2 = 2.0
+        assert eval_result["rtr"] == 2.0
+
+        # Verify metadata from model_spec and all_params
+        assert eval_result["model"] == "test_model"
+        assert eval_result["device"] == "test_device"
+        assert eval_result["task_type"] == "audio"
+        assert eval_result["task_name"] == "test_task"
+        assert eval_result["tolerance"] == 0.1
+        assert eval_result["published_score"] == 0.9
+        assert eval_result["published_score_ref"] == "ref"
+        assert eval_result["accuracy_check"] == 2
 
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -358,7 +394,9 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
 
     @patch("utils.media_clients.audio_client.get_num_calls", return_value=1)
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
-    def test_run_eval_exception(self, mock_tokenizer, mock_num_calls):
+    def test_run_eval_propagates_benchmark_exception(
+        self, mock_tokenizer, mock_num_calls
+    ):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
         model_spec.model_name = "test"
@@ -398,11 +436,11 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
     @patch("utils.media_clients.audio_client.get_num_calls", return_value=2)
     @patch(
         "utils.media_clients.audio_client.is_streaming_enabled_for_whisper",
-        return_value=False,
+        return_value=True,
     )
     @patch(
         "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
-        return_value=False,
+        return_value=True,
     )
     @patch("utils.media_clients.audio_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
@@ -418,21 +456,62 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
     ):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
-            ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05
+            ttft_ms=100, tput_user=10.0, rtr=2.0, tolerance=0.05
         )
-        mock_status = AudioTestStatus(
-            status=True, elapsed=1.5, ttft=0.5, tsu=10.0, rtr=2.0
-        )
+        # Multiple status entries to verify averaging of TTFT, RTR, TSU
+        status_list = [
+            AudioTestStatus(status=True, elapsed=1.0, ttft=0.4, tsu=8.0, rtr=1.5),
+            AudioTestStatus(status=True, elapsed=1.5, ttft=0.6, tsu=12.0, rtr=2.5),
+        ]
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-whisper")):
             with patch.object(
                 strategy,
                 "_run_audio_transcription_benchmark",
-                return_value=[mock_status],
+                return_value=status_list,
             ):
                 result = strategy.run_benchmark()
 
         assert result is True
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/benchmark_{model_id}_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        path_str = str(open_call_args)
+        assert path_str.startswith("/tmp/benchmark_test_id_")
+        assert path_str.endswith(".json")
+
+        # Verify JSON content
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # Verify required top-level keys
+        assert "benchmarks" in report_data
+        assert "model" in report_data
+        assert "device" in report_data
+        assert "timestamp" in report_data
+        assert "task_type" in report_data
+        assert "streaming_enabled" in report_data
+        assert "preprocessing_enabled" in report_data
+
+        # Verify benchmarks structure and computed averages
+        benchmarks = report_data["benchmarks"]
+        assert benchmarks["num_requests"] == 2
+        # TTFT: (0.4 + 0.6) / 2 = 0.5
+        assert benchmarks["ttft"] == 0.5
+        # TSU: (8.0 + 12.0) / 2 = 10.0
+        assert benchmarks["t/s/u"] == 10.0
+        # RTR: (1.5 + 2.5) / 2 = 2.0
+        assert benchmarks["rtr"] == 2.0
+        assert "accuracy_check" in benchmarks
+
+        # Verify metadata
+        assert report_data["model"] == "test_model"
+        assert report_data["device"] == "test_device"
+        assert report_data["task_type"] == "audio"
+        assert report_data["streaming_enabled"] is True
+        assert report_data["preprocessing_enabled"] is True
 
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     def test_run_benchmark_health_check_failed(self, mock_tokenizer):
@@ -450,7 +529,9 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
 
     @patch("utils.media_clients.audio_client.get_num_calls", return_value=1)
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
-    def test_run_benchmark_exception(self, mock_tokenizer, mock_num_calls):
+    def test_run_benchmark_propagates_benchmark_exception(
+        self, mock_tokenizer, mock_num_calls
+    ):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
         model_spec.model_name = "test"
@@ -498,14 +579,14 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
             ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05
         )
         model_spec = MagicMock()
-        model_spec.model_name = "test"
+        model_spec.model_name = "test_model"
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "AUDIO"
         model_spec.cli_args = {"device": "n150"}
         device = MagicMock()
-        device.name = "test"
-        strategy = AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
+        device.name = "test_device"
+        strategy = AudioClientStrategy({}, model_spec, device, "/tmp/output", 8000)
 
         status_list = [
             AudioTestStatus(status=True, elapsed=1.0, ttft=0.5, tsu=10.0, rtr=2.0)
@@ -514,7 +595,41 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         result = strategy._generate_report(status_list)
 
         assert result is True
-        mock_mkdir.assert_called()
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # Verify file path pattern: {output_path}/benchmark_{model_id}_{timestamp}.json
+        open_call_args = mock_file.call_args[0][0]
+        assert str(open_call_args).startswith("/tmp/output/benchmark_test_id_")
+        assert str(open_call_args).endswith(".json")
+
+        # Verify JSON content structure
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        # Verify required top-level keys
+        assert "benchmarks" in report_data
+        assert "model" in report_data
+        assert "device" in report_data
+        assert "timestamp" in report_data
+        assert "task_type" in report_data
+        assert "streaming_enabled" in report_data
+        assert "preprocessing_enabled" in report_data
+
+        # Verify benchmarks structure and computed values
+        benchmarks = report_data["benchmarks"]
+        assert benchmarks["num_requests"] == 1
+        assert benchmarks["ttft"] == 0.5
+        assert benchmarks["t/s/u"] == 10.0
+        assert benchmarks["rtr"] == 2.0
+        assert "accuracy_check" in benchmarks
+
+        # Verify model/device metadata
+        assert report_data["model"] == "test_model"
+        assert report_data["device"] == "test_device"
+        assert report_data["task_type"] == "audio"
+        assert report_data["streaming_enabled"] is False
+        assert report_data["preprocessing_enabled"] is False
 
 
 class TestAudioClientStrategyTranscribeAudio(unittest.TestCase):
@@ -1013,52 +1128,3 @@ class TestAudioClientStrategyCalculateAccuracyCheck(unittest.TestCase):
 
         # Should pass because only TTFT is checked (tsu_value is None so TSU check skipped)
         assert result == 2  # PASS
-
-
-# Parametrized tests
-@pytest.mark.parametrize(
-    "status_values,expected",
-    [
-        ([1.0, 2.0, 3.0], 2.0),
-        ([5.0], 5.0),
-        ([], 0),
-        ([None, None], 0),
-        ([1.0, None, 3.0], 2.0),
-    ],
-)
-@patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
-def test_calculate_ttft_various_inputs(mock_tokenizer, status_values, expected):
-    mock_tokenizer.return_value = MagicMock()
-    model_spec = MagicMock()
-    model_spec.hf_model_repo = "test/model"
-    device = MagicMock()
-    strategy = AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    status_list = [MagicMock(ttft=v) for v in status_values]
-    result = strategy._calculate_ttft_value(status_list)
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    "text,tokenizer_result,expected",
-    [
-        ("hello world", [1, 2], 2),
-        ("", None, 0),
-        ("   ", None, 0),
-        ("one two three", [1, 2, 3], 3),
-    ],
-)
-@patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
-def test_count_tokens_various_inputs(mock_tokenizer, text, tokenizer_result, expected):
-    mock_tok = MagicMock()
-    if tokenizer_result is not None:
-        mock_tok.encode.return_value = tokenizer_result
-    mock_tokenizer.return_value = mock_tok
-
-    model_spec = MagicMock()
-    model_spec.hf_model_repo = "test/model"
-    device = MagicMock()
-    strategy = AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    result = strategy._count_tokens(text)
-    assert result == expected
