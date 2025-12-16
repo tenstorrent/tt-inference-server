@@ -895,6 +895,16 @@ def main():
     ) = make_release_artifacts(merged_spec, args.dry_run)
 
     logger.info("\nStep 3: Writing output files...")
+    output_data = write_output(
+        images_to_build,
+        copied_images,
+        existing_with_ci_ref,
+        existing_without_ci_ref,
+        output_dir,
+        image_target,
+        args.dry_run,
+    )
+    logger.info(f"Output data written successfully: {output_data}")
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")
