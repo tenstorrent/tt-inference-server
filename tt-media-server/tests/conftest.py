@@ -517,6 +517,9 @@ runner_mocks = {
     "tt_model_runners.vllm_forge_runner": {
         "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
     },
+    "tt_model_runners.vllm_bge_large_en_runner": {
+        "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
+    },
     "tt_model_runners.test_runner": {
         "TestRunner": create_mock_runner_class("TestRunner")
     },
