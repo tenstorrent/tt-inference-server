@@ -18,7 +18,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import cap_benchmark_params
-from benchmarking.summary_report import generate_report, get_markdown_table
+from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
@@ -35,10 +35,8 @@ from workflows.workflow_config import (
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
-from workflows.log_setup import setup_workflow_script_logger
 
 from benchmarking.summary_report import generate_report as benchmark_generate_report_helper
-from benchmarking.summary_report import get_markdown_table
 from stress_tests.stress_tests_summary_report import generate_report as stress_test_generate_report_helper
 
 
@@ -1535,8 +1533,6 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
     )
 
     # Generate stress test-specific release report
-    device_type = DeviceTypes.from_string(args.device)
-
     # Build stress test performance report
     stress_test_release_str = f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
 

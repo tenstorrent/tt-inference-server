@@ -13,7 +13,7 @@ import random
 import torch
 import logging
 from transformers import AutoTokenizer
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Any
 
 # Set up logging
 logging.basicConfig(
@@ -113,7 +113,6 @@ def generate_stable_prompt_tokens(
         vocab_size = tokenizer.vocab_size
     else:
         tokenizer = model_name  # Just pass the model name for server tokenization
-        actual_model = model_name
         # Estimate vocab size - could be retrieved from server if available
         vocab_size = 32000  # Default estimate for LLM models
     
