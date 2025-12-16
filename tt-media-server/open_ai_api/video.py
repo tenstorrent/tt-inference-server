@@ -2,9 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
+
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -56,26 +58,37 @@ def get_video_metadata(
     return JSONResponse(content=job_data)
 
 
-@router.get("/generations/{video_id}/content")
-def get_video_content(
+@router.get("/generations/{video_id}/download")
+def download_video_content(
     video_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
-    Get the filename of the generated video.
+    Download the generated video file as an attachment.
 
     Returns:
-        JSONResponse: Object containing the video filename (MP4).
+        FileResponse: Streams the video file (MP4).
 
     Raises:
         HTTPException: If video not found, not completed, or failed.
     """
-    job_result = service.get_job_result(video_id)
-    if job_result is None:
+    file_path = service.get_job_result(video_id)
+    if (
+        file_path is None
+        or not isinstance(file_path, str)
+        or not os.path.exists(file_path)
+    ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    return JSONResponse(content={"filename": f"{job_result}.mp4"})
+    return FileResponse(
+        file_path,
+        media_type="video/mp4",
+        filename=os.path.basename(file_path),
+        headers={
+            "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
+        },
+    )
 
 
 @router.delete("/generations/{video_id}")

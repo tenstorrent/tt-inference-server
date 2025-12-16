@@ -158,8 +158,9 @@ class TestJobManager:
             mock_settings.return_value.job_cleanup_interval_seconds = 1
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
+            mock_settings.return_value.max_jobs = 10
 
-            manager = JobManager(max_jobs=10)
+            manager = JobManager()
             yield manager
 
             # Cleanup

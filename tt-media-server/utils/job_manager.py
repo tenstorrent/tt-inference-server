@@ -73,10 +73,9 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, max_jobs: int = 10000):
+    def __init__(self):
         self._logger = TTLogger()
         self._settings = get_settings()
-        self._max_jobs = max_jobs
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
         self._jobs_lock = Lock()
@@ -94,7 +93,7 @@ class JobManager:
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
-            if len(self._jobs) >= self._max_jobs:
+            if len(self._jobs) >= self._settings.max_jobs:
                 raise Exception("Maximum job limit reached")
             job = Job(
                 id=job_id,
