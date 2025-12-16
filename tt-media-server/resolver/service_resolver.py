@@ -41,7 +41,7 @@ def service_resolver() -> BaseService:
     model_service = ModelServices(settings.model_service)
     with _service_holders_lock:
         if model_service not in _service_holders:
-            if not model_service in _SUPPORTED_MODEL_SERVICES:
+            if model_service not in _SUPPORTED_MODEL_SERVICES:
                 raise ValueError(
                     f"Unsupported model service: {settings.model_service}. "
                     f"Supported services: {', '.join([s.value for s in _SUPPORTED_MODEL_SERVICES.keys()])}"

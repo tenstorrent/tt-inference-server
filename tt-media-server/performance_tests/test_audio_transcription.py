@@ -111,7 +111,6 @@ async def test_concurrent_audio_transcription(
         async with aiohttp.ClientSession(
             headers=headers, timeout=session_timeout
         ) as session:
-            start = time.perf_counter()
             tasks = [timed_request(session, i + 1) for i in range(batch_size)]
             results = await asyncio.gather(*tasks)
             requests_duration = max(results)
