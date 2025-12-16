@@ -1198,8 +1198,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="d554814",
-        vllm_commit="6e67d2d",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1461,8 +1461,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1859,8 +1859,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1995,11 +1995,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="fbbbd2d",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2110,11 +2110,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="fbbbd2d",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.AUDIO,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
