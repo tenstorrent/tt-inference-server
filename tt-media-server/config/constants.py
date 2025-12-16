@@ -66,6 +66,7 @@ class ModelRunners(Enum):
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
     MOCK = "mock"
+    TEST = "test"
 
 
 class ModelServices(Enum):
@@ -89,6 +90,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,

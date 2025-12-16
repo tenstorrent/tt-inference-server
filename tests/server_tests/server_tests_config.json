@@ -937,7 +937,8 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "audio_transcription_time": 3
+                    "audio_transcription_time": 3,
+                    "num_of_devices": 32
                 }
             },
             {

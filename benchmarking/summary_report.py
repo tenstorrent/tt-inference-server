@@ -16,8 +16,23 @@ from workflows.utils import (
     is_streaming_enabled_for_whisper,
 )
 
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelType,
+)
+
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
+
+
+def format_backend_value(backend: str) -> str:
+    """Format backend value for display in summary table."""
+    if backend == "vllm":
+        return "vLLM"
+    elif backend == "genai-perf":
+        return "genai-perf"
+    else:
+        return backend if backend else NOT_MEASURED_STR
 
 
 def parse_args():
@@ -46,10 +61,31 @@ def parse_args():
     return parser.parse_args()
 
 
+def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
+    if model_type == ModelType.LLM:
+        return "text"
+    if model_type == ModelType.CNN:
+        return "cnn"
+    if model_type == ModelType.AUDIO:
+        return "audio"
+    if model_type == ModelType.IMAGE:
+        return "image"
+
+
+def _get_task_type(model_id: str) -> str | None:
+    # model_id example: id_tt-transformers_resnet-50
+    # Extract just the model name (e.g., "resnet-50")
+    model_name = model_id.lower().split("_")[-1]
+    for _, model_spec in MODEL_SPECS.items():
+        if model_name in model_spec.model_name.lower() and model_spec.model_type:
+            return _map_model_type_to_task_type(model_spec.model_type)
+    return "unknown"
+
+
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # First try the image benchmark pattern
     image_pattern = r"""
-        ^benchmark_
+        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -84,7 +120,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Fall back to text benchmark pattern
     text_pattern = r"""
-        ^benchmark_
+        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -110,6 +146,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
 
     # Try CNN benchmark pattern (for SDXL and similar models)
+    # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
@@ -121,13 +158,15 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # Check if this is actually an audio model (Whisper) based on model_id
-        model_id = match.group("model_id")
+        # Check if this is actually an audio model or image model based on model_id
+        model_id = match.group(
+            "model_id"
+        )  # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
+            "task_type": _get_task_type(model_id),
         }
 
     # If no patterns match, raise error
@@ -347,6 +386,7 @@ def save_to_csv(results: List[Dict[str, Any]], file_path: Union[Path, str]) -> N
 def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
@@ -363,6 +403,9 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_dict = {}
     for col_name, display_header in display_cols:
         value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
         display_dict[display_header] = str(value)
 
     return display_dict
@@ -371,6 +414,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping for image benchmarks
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Max Concurrency"),
@@ -390,6 +434,9 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_dict = {}
     for col_name, display_header in display_cols:
         value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
         display_dict[display_header] = str(value)
 
     return display_dict
@@ -401,6 +448,7 @@ def create_audio_display_dict(
     """Create display dictionary for audio benchmarks."""
     # Column definitions
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
@@ -431,6 +479,9 @@ def create_audio_display_dict(
 
         # Get value from result
         value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
         display_dict[display_header] = str(value)
 
     return display_dict
