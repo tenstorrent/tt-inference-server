@@ -11,14 +11,13 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
-from workflows.utils import (
-    is_preprocessing_enabled_for_whisper,
-    is_streaming_enabled_for_whisper,
-)
-
 from workflows.model_spec import (
     MODEL_SPECS,
     ModelType,
+)
+from workflows.utils import (
+    is_preprocessing_enabled_for_whisper,
+    is_streaming_enabled_for_whisper,
 )
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
@@ -70,6 +69,8 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return "audio"
     if model_type == ModelType.IMAGE:
         return "image"
+    if model_type == ModelType.EMBEDDING:
+        return "embedding"
 
 
 def _get_task_type(model_id: str) -> str | None:
@@ -276,6 +277,22 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
             "preprocessing_enabled": data.get("preprocessing_enabled", False),
+        }
+        return format_metrics(metrics)
+
+    if params.get("task_type") == "embedding":
+        # For IMAGE benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "embedding",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "filename": filename,
+            "task_type": "embedding",
         }
         return format_metrics(metrics)
 
@@ -487,6 +504,31 @@ def create_audio_display_dict(
     return display_dict
 
 
+def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for embedding benchmarks
+    display_cols: List[Tuple[str, str]] = [
+        ("input_sequence_length", "ISL"),
+        ("output_sequence_length", "OSL"),
+        ("max_con", "Max Concurrency"),
+        ("embedding_dimension", "Embedding Dimension"),
+        ("num_requests", "Num Requests"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("mean_tps", "Tput User (TPS)"),
+        ("tps_decode_throughput", "Tput Decode (TPS)"),
+        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
     return text.strip()
@@ -681,6 +723,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
+    embedding_results = [r for r in results if r.get("task_type") == "embedding"]
 
     markdown_sections = []
 
@@ -708,6 +751,15 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         audio_markdown_str = get_markdown_table(audio_display_results)
         audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
         markdown_sections.append(audio_section)
+
+    # Generate embedding benchmarks section if any exist
+    if embedding_results:
+        embedding_display_results = [
+            create_embedding_display_dict(res) for res in embedding_results
+        ]
+        embedding_markdown_str = get_markdown_table(embedding_display_results)
+        embedding_section = f"#### Embedding Benchmark Sweeps for {model_name} on {device}\n\n{embedding_markdown_str}"
+        markdown_sections.append(embedding_section)
 
     # Combine sections
     if markdown_sections:

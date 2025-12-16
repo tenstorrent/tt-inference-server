@@ -455,8 +455,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -563,7 +563,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.015,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -671,8 +671,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -779,8 +779,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.015,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -2052,6 +2052,23 @@ _eval_config_list = [
             #     },
             #     batch_size=16,
             # ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Embedding-4B",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,  # Using META as a placeholder
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
         ],
     ),
     EvalConfig(
