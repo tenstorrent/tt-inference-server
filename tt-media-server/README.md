@@ -10,9 +10,10 @@ This server is built to serve non-LLM models. Currently supported models:
 6. Mochi1
 7. Wan2.2
 8. Motif-Image-6B-Preview
-9. Whisper
-10. Microsoft Resnet (Forge)
-11. VLLM with TT Plugin
+9. Qwen-Image
+10. Whisper
+11. Microsoft Resnet (Forge)
+12. VLLM with TT Plugin
 
 # Repo structure
 
@@ -108,6 +109,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | motif-image-6b-preview | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
+| qwen-image | galaxy, t3k |
 
 For example, to run flux.1-dev on t3k
 1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
