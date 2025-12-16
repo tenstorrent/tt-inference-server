@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
+
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
@@ -14,6 +16,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
 
     @log_execution_time("Model warmup")
     async def load_model(self) -> bool:
+        os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         prompts = [
@@ -37,5 +40,4 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
         )
         prompts = [req.input for req in requests]
         result = self.llm.embed(prompts)
-        self.logger.debug(f"VLLMBGELargeENRunner: result length: {len(result)}")
         return [output.outputs.embedding for output in result]
