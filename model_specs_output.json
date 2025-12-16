@@ -892,6 +892,7 @@
       "VLLM_CONFIGURE_LOGGING": "1",
       "VLLM_RPC_TIMEOUT": "900000",
       "VLLM_TARGET_DEVICE": "tt",
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
@@ -1594,21 +1595,21 @@
           "theoretical_tput_user": null,
           "targets": {
             "functional": {
-              "ttft_ms": 630.0,
-              "tput_user": 4.2,
-              "tput": null,
+              "ttft_ms": 620.0,
+              "tput_user": 4.1000000000000005,
+              "tput": 133.20000000000002,
               "tolerance": 0.0
             },
             "complete": {
-              "ttft_ms": 126.0,
-              "tput_user": 21.0,
-              "tput": null,
+              "ttft_ms": 124.0,
+              "tput_user": 20.5,
+              "tput": 666.0,
               "tolerance": 0.0
             },
             "target": {
-              "ttft_ms": 63.0,
-              "tput_user": 42.0,
-              "tput": null,
+              "ttft_ms": 62.0,
+              "tput_user": 41.0,
+              "tput": 1332.0,
               "tolerance": 0.0
             }
           },
