@@ -476,9 +476,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert (
-                            perf_target.ttft_ms > 0
-                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert perf_target.ttft_ms > 0, (
+                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        )
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -491,9 +491,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert (
-                            perf_target.tput_user > 0
-                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert perf_target.tput_user > 0, (
+                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        )
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -506,9 +506,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert (
-                            perf_target.tput > 0
-                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        assert perf_target.tput > 0, (
+                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        )
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -630,9 +630,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for ttft metric if defined.
                     if perf_target.ttft_ms is not None:
-                        assert (
-                            perf_target.ttft_ms > 0
-                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert perf_target.ttft_ms > 0, (
+                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        )
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -645,9 +645,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput_user metric if defined.
                     if perf_target.tput_user is not None:
-                        assert (
-                            perf_target.tput_user > 0
-                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert perf_target.tput_user > 0, (
+                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        )
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -660,9 +660,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
-                        assert (
-                            perf_target.tput > 0
-                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        assert perf_target.tput > 0, (
+                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
+                        )
                         tput_ratio = res["tps_decode_throughput"] / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
@@ -804,9 +804,9 @@ def extract_eval_results(files):
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert (
-            task_name == check_task_name
-        ), f"Task name mismatch: {task_name} != {check_task_name}"
+        assert task_name == check_task_name, (
+            f"Task name mismatch: {task_name} != {check_task_name}"
+        )
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 

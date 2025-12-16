@@ -419,9 +419,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert (
-                len(images) == 0
-            ), "legacy API does not support images, use --use_chat_api option."
+            assert len(images) == 0, (
+                "legacy API does not support images, use --use_chat_api option."
+            )
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
