@@ -22,12 +22,10 @@ import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 import aiohttp
 import numpy as np
-from transformers import AutoTokenizer
 
 from utils.prompt_configs import EnvironmentConfig
 from utils.prompt_client import PromptClient
@@ -143,7 +141,7 @@ async def async_request_openai_completions(
 
                         chunk = remove_prefix(chunk_bytes.decode("utf-8"), "data: ")
                         if chunk == "[DONE]":
-                            latency = time.perf_counter() - st
+                            pass
                         else:
                             try:
                                 data = json.loads(chunk)
@@ -435,8 +433,8 @@ async def run_benchmark(
     logger.info("Starting main benchmark run...")
     
     # Display traffic information
-    logger.info(f"Traffic request rate: inf")
-    logger.info(f"Burstiness factor: 1.0 (Poisson process)")
+    logger.info("Traffic request rate: inf")
+    logger.info("Burstiness factor: 1.0 (Poisson process)")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
     
     # Run the main benchmark

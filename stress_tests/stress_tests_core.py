@@ -527,7 +527,7 @@ class StressTests:
         # Show pre-adjustment info if any combinations were adjusted
         pre_adjusted_info = [(i+1, p) for i, p in enumerate(self.test_params) if p.get('_pre_adjustment')]
         if pre_adjusted_info:
-            print(f"\n**Pre-adjustment values**:")
+            print("\n**Pre-adjustment values**:")
             for combo_num, params in pre_adjusted_info:
                 pre_adj = params['_pre_adjustment']
                 print(f"  Combination {combo_num}: ISL {pre_adj['isl']} → {params['input_size']}, OSL {pre_adj['osl']} → {params['output_size']}")

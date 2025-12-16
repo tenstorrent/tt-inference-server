@@ -7,7 +7,6 @@ from workflows.workflow_types import DeviceTypes
 # Removed get_model_id - using MODEL_SPECS directly
 from typing import List, Dict, Tuple, Set
 import logging
-import itertools
 
 logger = logging.getLogger(__name__)
 
@@ -207,10 +206,8 @@ class StressTestParamSpace:
         # Extract unique values from validated combinations if available
         if self.validated_combinations:
             validated_concurrency = set(combo['max_concurrent'] for combo in self.validated_combinations if combo['max_concurrent'])
-            validated_prompts = set(combo['num_prompts'] for combo in self.validated_combinations if combo['num_prompts'])
         else:
             validated_concurrency = set()
-            validated_prompts = set()
 
         # Generate 3 max_context sizes for comprehensive testing
         self.max_context_sizes = self._generate_context_sizes()
@@ -403,7 +400,7 @@ class StressTestParamSpace:
         logger.debug(f"  Max concurrent values: {self.max_concurrent_values}")
         logger.debug(f"  Num prompts multipliers: {self.num_prompts_multipliers}")
         logger.debug(f"  Validated combinations: {len(self.validated_combinations)}")
-        logger.debug(f"  ISL+OSL constraint: Applied by adjustment, not filtering")
+        logger.debug("  ISL+OSL constraint: Applied by adjustment, not filtering")
 
     def get_validated_combinations(self) -> List[Dict]:
         """Get pre-validated parameter combinations from model config."""

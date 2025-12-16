@@ -9,7 +9,7 @@ Consolidates arguments from multiple sources (argparse, model_spec.cli_args, wor
 into a single well-typed dataclass with explicit precedence rules.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
