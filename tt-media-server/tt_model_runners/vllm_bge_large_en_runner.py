@@ -16,6 +16,11 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
 
     @log_execution_time("Model warmup")
     async def load_model(self) -> bool:
+        # Disable vLLM multiprocessing to ensure full batch utilization.
+        # When enabled, the engine core runs in a separate process (ZMQ IPC),
+        # causing non-deterministic scheduling that splits batches inefficiently
+        # (e.g., batch of 8 becomes 7+1, doubling forward passes).
+        # See: https://github.com/tenstorrent/tt-inference-server/issues/1453
         os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
