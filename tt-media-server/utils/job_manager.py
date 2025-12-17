@@ -130,10 +130,7 @@ class JobManager:
             if not job:
                 return False
 
-            # Cancel the task if it's still running
-            if job._task and not job._task.done():
-                self._logger.info(f"Cancelling in-progress job {job_id}")
-                job._task.cancel()
+            self._cleanup_job(job)
 
             self._jobs.pop(job_id)
             self._logger.info(f"Job {job_id} deleted.")
@@ -224,9 +221,8 @@ class JobManager:
             )
 
     def _cleanup_job(self, job: Job):
-        # Cancel stuck jobs
         if job._task and not job._task.done():
-            self._logger.warning(f"Cancelling stuck job {job.id}")
+            self._logger.warning(f"Cancelling in-progress job {job.id}")
             job._task.cancel()
 
         # Delete result file if it's a file path

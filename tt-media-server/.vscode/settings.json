@@ -13,10 +13,7 @@
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.pytestArgs": [
-        "--rootdir=.",
-        "resolver/",
-        "tests/",
-        "."
+        "tests"
     ],
     "python.testing.cwd": "${workspaceFolder}",
     "python.defaultInterpreterPath": "/opt/venv/bin/python",

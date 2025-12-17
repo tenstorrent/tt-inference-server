@@ -10,6 +10,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
+from telemetry.telemetry_client import TelemetryEvent
+from utils.decorators import log_execution_time
 from utils.video_manager import VideoManager
 
 router = APIRouter()
@@ -59,6 +61,7 @@ def get_video_metadata(
     return JSONResponse(content=job_data)
 
 
+@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 @router.get("/generations/{video_id}/download")
 def download_video_content(
     video_id: str,
