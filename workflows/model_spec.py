@@ -344,6 +344,9 @@ class ModelSpec:
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
     vllm_commit: Optional[str] = None
+    hf_weights_repo: Optional[str] = (
+        None  # HF repo to download weights from (defaults to hf_model_repo)
+    )
     param_count: Optional[int] = None
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -393,6 +396,10 @@ class ModelSpec:
         """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
         # need to use __setattr__ because instance is frozen
+
+        # Default hf_weights_repo to hf_model_repo if not set
+        if not self.hf_weights_repo:
+            object.__setattr__(self, "hf_weights_repo", self.hf_model_repo)
 
         # Infer param count from model repo name
         if not self.param_count:
@@ -775,6 +782,9 @@ class ModelSpecTemplate:
     min_ram_gb: Optional[int] = None
     uses_tensor_model_cache: bool = True
     display_name: Optional[str] = None
+    hf_weights_repo: Optional[str] = (
+        None  # HF repo to download weights from (shared across all weights)
+    )
 
     def __post_init__(self):
         self._validate_data()
@@ -853,6 +863,7 @@ class ModelSpecTemplate:
                     system_requirements=self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
+                    hf_weights_repo=self.hf_weights_repo,
                     # Template fields
                     env_vars=self.env_vars,
                     repacked=self.repacked,
@@ -1035,8 +1046,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1069,8 +1080,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1103,8 +1114,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-32B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1125,8 +1136,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-72B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1198,8 +1209,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="d554814",
-        vllm_commit="6e67d2d",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1461,8 +1472,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1859,8 +1870,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="fbbbd2d",
+        vllm_commit="7a9b86f",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1932,7 +1943,10 @@ spec_templates = [
     ),
     # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
     ModelSpecTemplate(
-        weights=["stabilityai/stable-diffusion-xl-base-1.0"],
+        weights=[
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
+        ],
         tt_metal_commit="e95ffa5",
         impl=tt_transformers_impl,
         min_disk_gb=15,
@@ -1940,6 +1954,8 @@ spec_templates = [
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
+        # img2img uses the same weights as base SDXL
+        hf_weights_repo="stabilityai/stable-diffusion-xl-base-1.0",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1995,11 +2011,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="fbbbd2d",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2110,11 +2126,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="fbbbd2d",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.AUDIO,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
