@@ -115,7 +115,7 @@ class BaseService(ABC):
     def stop_workers(self):
         return self.scheduler.stop_workers()
 
-    async def post_process(self, result, input_request = None):
+    async def post_process(self, result, input_request=None):
         return result
 
     async def pre_process(self, request):

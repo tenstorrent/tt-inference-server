@@ -42,7 +42,9 @@ class ImageService(BaseService):
     async def post_process(self, result, input_request: ImageGenerateRequest):
         """Asynchronous postprocessing using queue-based workers"""
         try:
-            image_file = await self._cpu_workload_handler.execute_task(result, input_request)
+            image_file = await self._cpu_workload_handler.execute_task(
+                result, input_request
+            )
         except Exception as e:
             self.logger.error(f"Image postprocessing failed: {e}")
             raise
