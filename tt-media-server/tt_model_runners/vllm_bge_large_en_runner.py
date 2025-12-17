@@ -48,7 +48,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
             f"VLLMBGELargeENRunner: Running inference for {len(requests)} requests"
         )
         for req in requests:
-            if req.model != ModelNames.BGE_LARGE_EN_V1_5.value:  # noqa: F821
+            if req.model != ModelNames.BGE_LARGE_EN_V1_5.value:
                 raise ValueError(
                     f"Model {req.model} is not supported by VLLMBGELargeENRunner"
                 )
