@@ -57,6 +57,9 @@ class TestStrategyMap(unittest.TestCase):
     def test_strategy_map_contains_audio(self):
         assert "AUDIO" in STRATEGY_MAP
 
+    def test_strategy_map_contains_embedding(self):
+        assert "EMBEDDING" in STRATEGY_MAP
+
     def test_strategy_map_size(self):
         assert len(STRATEGY_MAP) == 4
 
