@@ -131,7 +131,7 @@ class ImageGenerationParamTest(BaseTest):
                 results = await asyncio.gather(*tasks)
 
                 if iteration == 0:
-                    print("\n Warm up run done.")
+                    print("🔥 Warm up run done.")
                 else:
                     # Second iteration - collect the actual data
                     response_data_list = results
