@@ -1,4 +1,5 @@
-from typing import List, Dict, Literal, Optional
+from datetime import datetime
+from typing import List, Dict, Literal, Optional, Tuple
 
 from pydantic import BaseModel
 
@@ -21,3 +22,15 @@ class JobStatusResponse(BaseModel):
 class JobMetricsResponse(BaseModel):
     job_id: str
     all_metrics: Dict[str, List]
+
+# For the list view (get_all_jobs) - lighter, no metrics
+class JobSummary(BaseModel):
+    id: str
+    status: str
+    job_type: str
+    created_at: datetime
+
+# For the single detail view (get_job)
+class JobDetailResponse(JobSummary):
+    hyperparameters: dict
+    current_metrics: Dict[Tuple[str, int], float]

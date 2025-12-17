@@ -107,14 +107,20 @@ class JobDatabase:
             for k, v in scalar_metrics.items()
         ]
 
-        # Use INSERT OR REPLACE to handle potential re-runs of the same step
-        cursor.executemany('''
-            INSERT OR REPLACE INTO metrics (job_id, step, metric_name, value)
-            VALUES (?, ?, ?, ?)
-        ''', rows)
-        
-        conn.commit()
-        conn.close()
+        try:
+            cursor.executemany('''
+                INSERT INTO metrics (job_id, step, metric_name, value)
+                VALUES (?, ?, ?, ?)
+            ''', rows)
+            
+            conn.commit()
+        except sqlite3.IntegrityError as e:
+            conn.rollback() # Important: undo changes if one fails
+            print(f"ERROR: Attempted to overwrite metrics for Job {job_id} at Step {step}")
+            # Re-raise the error so your API knows to return a 409 Conflict
+            raise ValueError(f"Duplicate metrics detected for step {step}") from e
+        finally:
+            conn.close()
 
     def update_job_status(self, job_id: str, status: str, error_message: Optional[str] = None):
         """Updates just the status (and optionally error message)."""
