@@ -71,6 +71,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if (
             self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
+            or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
         ):
             return False
 

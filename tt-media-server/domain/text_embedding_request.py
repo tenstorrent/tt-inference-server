@@ -10,4 +10,5 @@ from pydantic import Field
 
 class TextEmbeddingRequest(BaseRequest):
     input: str
+    model: str
     dimensions: Optional[int] = Field(default=None, ge=0)

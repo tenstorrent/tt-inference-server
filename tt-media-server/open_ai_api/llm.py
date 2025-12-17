@@ -82,6 +82,7 @@ async def create_embedding(
         return {
             "object": "list",
             "data": [{"object": "embedding", "embedding": embeddings, "index": 0}],
+            "model": text_embedding_request.model,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
