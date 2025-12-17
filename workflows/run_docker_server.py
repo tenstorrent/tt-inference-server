@@ -107,13 +107,11 @@ def get_embedding_docker_env_vars(model_spec, args):
     Returns:
         Dictionary of embedding-specific environment variables
     """
-    # Configure device IDs for tt-media-server workers
+    # Default to device 0 for single device setups
+    device_ids_str = "(0)"
     if getattr(args, "device_id", None):
         # Use specific device IDs provided by user
         device_ids_str = ",".join(f"({d})" for d in args.device_id)
-    else:
-        # Default to device 0 for single device setups
-        device_ids_str = "(0)"
 
     # Use model_name (not hf_model_repo) to match ModelNames enum
     # model_name is extracted from the HF repo path
