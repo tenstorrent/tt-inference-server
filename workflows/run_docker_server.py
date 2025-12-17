@@ -97,6 +97,40 @@ def get_cnn_docker_env_vars(model_spec, args):
     return env_vars
 
 
+def get_embedding_docker_env_vars(model_spec, args):
+    """Get embedding-specific environment variables for Docker container.
+
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+
+    Returns:
+        Dictionary of embedding-specific environment variables
+    """
+    # Configure device IDs for tt-media-server workers
+    if getattr(args, "device_id", None):
+        # Use specific device IDs provided by user
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+    else:
+        # Default to device 0 for single device setups
+        device_ids_str = "(0)"
+
+    # Use model_name (not hf_model_repo) to match ModelNames enum
+    # model_name is extracted from the HF repo path
+    env_vars = {
+        "MODEL": model_spec.model_name,
+        "DEVICE": model_spec.device_type.name.lower(),
+        "DEVICE_IDS": device_ids_str,
+        "MAX_NUM_BATCHED_TOKENS": 1024,
+        "MAX_MODEL_LENGTH": 1024,
+    }
+
+    logger.info(
+        f"CNN environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}"
+    )
+    return env_vars
+
+
 def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
@@ -190,9 +224,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif (
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
-        or model_spec.model_type == ModelType.EMBEDDING
     ):
         docker_env_vars.update(get_cnn_docker_env_vars(model_spec, args))
+    elif model_spec.model_type == ModelType.EMBEDDING:
+        docker_env_vars.update(get_embedding_docker_env_vars(model_spec, args))
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
