@@ -1884,7 +1884,6 @@ spec_templates = [
                     "trace_region_size": 50000000,
                     "data_parallel": 4,
                     "always_compat_sampling": True,
-                    "trace_mode": "none",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
