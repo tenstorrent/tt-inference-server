@@ -58,7 +58,7 @@ class TestStrategyMap(unittest.TestCase):
         assert "AUDIO" in STRATEGY_MAP
 
     def test_strategy_map_size(self):
-        assert len(STRATEGY_MAP) == 3
+        assert len(STRATEGY_MAP) == 4
 
 
 class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
