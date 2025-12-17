@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import tempfile
 
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
@@ -88,11 +89,20 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    file_size = os.path.getsize(file_path)
+    # Create a faststart temp file before serving
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        faststart_path = tmp.name
+    try:
+        VideoManager.ensure_faststart(file_path, faststart_path)
+        serve_path = faststart_path
+    except Exception:
+        serve_path = file_path
+
+    file_size = os.path.getsize(serve_path)
     range_header = request.headers.get("range")
     if not range_header:
         return FileResponse(
-            file_path,
+            serve_path,
             media_type="video/mp4",
             filename=os.path.basename(file_path),
             headers={
@@ -111,10 +121,11 @@ def download_video_content(
     headers = {
         "Content-Range": content_range,
         "Accept-Ranges": "bytes",
+        "Content-Length": str(chunk_size),
         "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}",
     }
     return StreamingResponse(
-        VideoManager.file_iterator(file_path, start, chunk_size),
+        VideoManager.file_iterator(serve_path, start, end),
         status_code=206,
         media_type="video/mp4",
         headers=headers,

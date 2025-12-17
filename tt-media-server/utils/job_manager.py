@@ -44,10 +44,6 @@ class Job:
         self.status = "failed"
         self.error = {"code": error_code, "message": error_message}
 
-    def mark_cancelled(self):
-        self.completed_at = int(time.time())
-        self.status = "cancelled"
-
     def is_in_progress(self) -> bool:
         return self.status == "in_progress"
 
@@ -55,7 +51,7 @@ class Job:
         return self.status == "completed"
 
     def is_terminal(self) -> bool:
-        return self.status in ["completed", "failed", "cancelled"]
+        return self.status in ["completed", "failed"]
 
     def to_public_dict(self) -> dict:
         data = {
@@ -147,16 +143,14 @@ class JobManager:
             except asyncio.CancelledError:
                 pass
 
+        running_tasks = []
         with self._jobs_lock:
-            running_tasks = [
-                job._task
-                for job in self._jobs.values()
-                if job._task and not job._task.done()
-            ]
+            for job in list(self._jobs.values()):
+                task = self._cleanup_job(job)
+                if task:
+                    running_tasks.append(task)
 
         if running_tasks:
-            for task in running_tasks:
-                task.cancel()
             await asyncio.gather(*running_tasks, return_exceptions=True)
 
         self._logger.info("Job manager shutdown complete")
@@ -168,7 +162,6 @@ class JobManager:
             job.mark_completed(result=result)
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
-            job.mark_cancelled()
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
@@ -194,7 +187,7 @@ class JobManager:
         self._logger.info("Job cleanup task started")
 
     def _cleanup_old_jobs(self):
-        """Remove old completed/failed/cancelled jobs and stuck in-progress jobs."""
+        """Remove old completed, failed and stuck in-progress jobs."""
         current_time = time.time()
         cutoff_time = current_time - self._settings.job_retention_seconds
         stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
@@ -221,9 +214,11 @@ class JobManager:
             )
 
     def _cleanup_job(self, job: Job):
+        running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
             job._task.cancel()
+            running_task = job._task
 
         # Delete result file if it's a file path
         if job.result and isinstance(job.result, str):
@@ -233,6 +228,8 @@ class JobManager:
                     self._logger.debug(f"Deleted file for job {job.id}: {job.result}")
             except Exception as e:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
+
+        return running_task
 
 
 _job_manager_instance: Optional[JobManager] = None
