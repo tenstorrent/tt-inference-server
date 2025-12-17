@@ -1,14 +1,14 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Literal, Optional
 
 from pydantic import BaseModel
 
-from config.constants import JobStatus
+from config.constants import JobStatus, JobType
 
 # Define the input schema for a training job
 class TrainingJobRequest(BaseModel):
     model_id: str
     dataset_id: str
-    job_type: str 
+    job_type: JobType = JobType.LORA
     hyperparameters: dict
     job_type_specific_parameters: Optional[dict] = None
     checkpoint_config: dict

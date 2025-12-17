@@ -18,3 +18,6 @@ class JobStatus(str, Enum):
     FAILED = "FAILED"
     CANCELLING = "CANCELLING"
     CANCELLED = "CANCELLED"
+
+class JobType(str, Enum):
+    LORA = "lora"

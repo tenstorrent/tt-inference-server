@@ -6,23 +6,14 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from resolver.service_resolver import service_resolver
 
 from routers.datasets import router as datasets_router
 from routers.models import router as models_router
-from routers.fine_tuning import router as fine_tuning_router
+from routers.jobs import router as fine_tuning_router
 
 env = os.getenv("ENVIRONMENT", "production")
 # TODO load proper development later
 env = "development"
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # warmup model on startup
-    service_resolver().start_workers()
-    yield
-    service_resolver().stop_workers()
 
 
 app = FastAPI(
@@ -32,7 +23,6 @@ app = FastAPI(
     redoc_url="/redoc" if env == "development" else None,
     openapi_url="/openapi.json" if env == "development" else None,
     version="0.0.1",
-    lifespan=lifespan,
 )
 
 app.include_router(

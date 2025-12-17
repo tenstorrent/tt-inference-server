@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 
 # Default path, can be overridden in __init__
-DEFAULT_DB_PATH = Path("/storage/jobs.db")
+DEFAULT_DB_PATH = Path("./temp_storage/jobs.db")
 
 class JobDatabase:
     def __init__(self, db_path: Path = DEFAULT_DB_PATH):
@@ -17,6 +17,7 @@ class JobDatabase:
         if self.db_path.parent != Path("."):
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self.clear_all_data()
 
     def _get_connection(self) -> sqlite3.Connection:
         """
@@ -36,16 +37,39 @@ class JobDatabase:
                 id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                       
+                dataset_id TEXT,
+                base_model_id TEXT,
+                tag TEXT,
                 
                 job_type TEXT NOT NULL,
                 job_type_specific_parameters TEXT,
                 checkpoint_config TEXT,
                 
                 hyperparameters TEXT,                 
-                metrics TEXT,
                 error_message TEXT
             );
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS metrics (
+                job_id TEXT NOT NULL,
+                step INTEGER NOT NULL,
+                metric_name TEXT NOT NULL,
+                value FLOAT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                PRIMARY KEY (job_id, step, metric_name), 
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+        ''')
+        conn.commit()
+        conn.close()
+
+    def clear_all_data(self):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM jobs;') 
+        # Note: metrics are deleted automatically due to CASCADE
         conn.commit()
         conn.close()
 
@@ -53,22 +77,42 @@ class JobDatabase:
 
     def insert_job(self, job_id: str, status: str, hyperparameters: Dict[str, Any], job_type: str, 
                    job_type_specific_parameters: Optional[dict], checkpoint_config: dict):
-        """Inserts a new job. Handles JSON serialization of hyperparameters."""
+        """
+        Inserts a new job. 
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # Serialize initial data
-        hp_json = json.dumps(hyperparameters)
-        empty_metrics = json.dumps({"training_loss": [], "validation_loss": []})
-
         cursor.execute(
             """
-            INSERT INTO jobs (id, status, hyperparameters, job_type, job_type_specific_parameters, checkpoint_config, metrics)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (id, status, hyperparameters, job_type, job_type_specific_parameters, checkpoint_config)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (job_id, status, hp_json, job_type, json.dumps(job_type_specific_parameters), 
-             json.dumps(checkpoint_config), empty_metrics)
+            (job_id, status, json.dumps(hyperparameters), job_type, 
+             json.dumps(job_type_specific_parameters), json.dumps(checkpoint_config))
         )
+        conn.commit()
+        conn.close()
+    
+    def insert_metric_value(self, job_id: str, step: int, scalar_metrics: Dict[str, float]):
+        """
+        Inserts multiple metric values for a single step efficiently.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Prepare list of tuples for bulk insertion
+        rows = [
+            (job_id, step, k, v) 
+            for k, v in scalar_metrics.items()
+        ]
+
+        # Use INSERT OR REPLACE to handle potential re-runs of the same step
+        cursor.executemany('''
+            INSERT OR REPLACE INTO metrics (job_id, step, metric_name, value)
+            VALUES (?, ?, ?, ?)
+        ''', rows)
+        
         conn.commit()
         conn.close()
 
@@ -85,64 +129,106 @@ class JobDatabase:
         conn.commit()
         conn.close()
 
-    def update_job_metrics(self, job_id: str, step: int, scalar_metrics: Dict[str, float]):
-        """
-        Appends new metric values to the history.
-        
-        Args:
-            job_id: The ID of the job to update.
-            step: The current training step (e.g., 50).
-            scalar_metrics: Dict of current values, e.g., {"loss": 0.45, "accuracy": 0.88}
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT metrics FROM jobs WHERE id = ?", (job_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
-            return # Or raise an error if strictly required
-
-        current_json = row["metrics"]
-        
-        metrics_store = json.loads(current_json) if current_json else {}
-
-        for key, value in scalar_metrics.items():
-            # If this metric key doesn't exist yet, create a list for it
-            if key not in metrics_store:
-                metrics_store[key] = []
-            
-            metrics_store[key].append((step, value))
-
-        cursor.execute(
-            "UPDATE jobs SET metrics = ? WHERE id = ?", 
-            (json.dumps(metrics_store), job_id)
-        )
-        
-        conn.commit()
-        conn.close()
-
     # --- Read Operations ---
 
     def get_all_jobs(self) -> List[Dict[str, Any]]:
-        """Returns raw dictionaries of all jobs."""
+        """
+        Returns all jobs WITHOUT metrics data.
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM jobs ORDER BY created_at DESC")
         rows = cursor.fetchall()
         conn.close()
         
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            d = dict(row)
+            # Parse JSON fields back to dicts
+            d['hyperparameters'] = json.loads(d['hyperparameters']) if d['hyperparameters'] else {}
+            d['job_type_specific_parameters'] = json.loads(d['job_type_specific_parameters']) if d['job_type_specific_parameters'] else {}
+            d['checkpoint_config'] = json.loads(d['checkpoint_config']) if d['checkpoint_config'] else {}
+            results.append(d)
+            
+        return results
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Returns a raw dictionary for a specific job, or None."""
+        """
+        Returns job details + 'current_metrics' (the LATEST value for each metric).
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
+        
+        # 1. Get Job Info
         cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = cursor.fetchone()
-        conn.close()
         
-        if row:
-            return dict(row)
-        return None
+        if not row:
+            conn.close()
+            return None
+        
+        job_data = dict(row)
+        
+        # 2. Get LATEST metrics (snapshot)
+        # We group by metric_name and find the row with the max step
+        cursor.execute("""
+            SELECT metric_name, value, step
+            FROM metrics
+            WHERE job_id = ?
+            GROUP BY metric_name
+            HAVING step = MAX(step)
+        """, (job_id,))
+        
+        metric_rows = cursor.fetchall()
+        
+        # Transform into simple dict: {"loss": 0.5, "accuracy": 0.9}
+        current_metrics = {(r["metric_name"], r["step"]): r["value"] for r in metric_rows}
+        
+        conn.close()
+
+        # Parse JSON fields
+        job_data['hyperparameters'] = json.loads(job_data['hyperparameters']) if job_data['hyperparameters'] else {}
+        job_data['job_type_specific_parameters'] = json.loads(job_data['job_type_specific_parameters']) if job_data['job_type_specific_parameters'] else {}
+        job_data['checkpoint_config'] = json.loads(job_data['checkpoint_config']) if job_data['checkpoint_config'] else {}
+        
+        # Attach snapshot metrics
+        job_data['current_metrics'] = current_metrics
+        
+        return job_data
+
+    def get_job_metrics(self, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Returns FULL history of metrics for graphing.
+        Format:
+        {
+           "training_loss": [ {"step": 1, "value": 0.5, "timestamp": ...}, ... ],
+           "accuracy": [ ... ]
+        }
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT step, metric_name, value, timestamp 
+            FROM metrics 
+            WHERE job_id = ? 
+            ORDER BY step ASC
+        """, (job_id,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+
+        # Organize by metric name
+        history = {}
+        for r in rows:
+            name = r["metric_name"]
+            if name not in history:
+                history[name] = []
+            
+            history[name].append({
+                "step": r["step"],
+                "value": r["value"],
+                "timestamp": r["timestamp"]
+            })
+            
+        return history

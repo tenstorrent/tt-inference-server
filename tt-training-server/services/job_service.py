@@ -7,7 +7,7 @@ import json
 from typing import List, Optional
 
 # Import the Database Class
-from db import JobDatabase
+from db.job_database import JobDatabase
 
 # Import your Pydantic Models
 from domain.job_dtos import (
@@ -100,7 +100,6 @@ class JobService:
             raw_metrics = json.loads(row["metrics"]) if row["metrics"] else {}
 
             current_metrics = {}
-            max_step = 0
 
             for metric_name, metric_values in raw_metrics.items():
                 if metric_values:
@@ -109,13 +108,6 @@ class JobService:
                     last_value = last_entry[1]
 
                     current_metrics[metric_name] = last_value
-                    
-                    # Keep track of the highest step seen across all metrics
-                    if last_step > max_step:
-                        max_step = last_step
-
-            # Note: Pydantic will cast this int to float to satisfy Dict[str, float]
-            current_metrics["steps_completed"] = max_step
 
             return JobStatusResponse(
                 id=row["id"],

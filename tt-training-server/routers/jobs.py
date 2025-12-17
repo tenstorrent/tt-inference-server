@@ -41,11 +41,9 @@ async def list_jobs(
     """
     List all current jobs.
     """
-    # Assumption: service.list_jobs() returns a list of job objects 
-    # compatible with JobStatusResponse
     return service.list_jobs()
 
-@router.get("/jobs/{job_id}", response_model=JobStatusResponse, responses={404: {"description": "Job not found"}})
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(
     job_id: str,
     service: JobService = Depends(get_service)
@@ -60,7 +58,7 @@ async def get_job_status(
         
     return job
 
-@router.get("/jobs/{job_id}/events", response_model=JobMetricsResponse, responses={404: {"description": "Metrics not found"}})
+@router.get("/jobs/{job_id}/events", response_model=JobMetricsResponse)
 async def get_job_metrics(
     job_id: str,
     service: JobService = Depends(get_service)
@@ -76,7 +74,7 @@ async def get_job_metrics(
 
     return metrics_data
 
-@router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse, responses={404: {"description": "Job not found"}})
+@router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse)
 async def cancel_job(
     job_id: str,
     service: JobService = Depends(get_service)

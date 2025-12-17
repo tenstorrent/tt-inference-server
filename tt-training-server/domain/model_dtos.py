@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class FineTunedModelItem(BaseModel):
     id: str
-    name: str
+    tag: str
     base_model_id: str
     created_at: Optional[datetime] = None
 
