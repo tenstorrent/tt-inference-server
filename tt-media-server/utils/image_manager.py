@@ -3,16 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
-import io
 from io import BytesIO
 
 import numpy as np
 import torch
-from config.settings import settings
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
-
-from utils.decorators import log_execution_time
 
 
 class ImageManager:
@@ -39,7 +35,9 @@ class ImageManager:
         file_path.unlink()
         return True
 
-    def _convert_image_to_base64(self, image: Image.Image, format: str, quality: int) -> str:
+    def _convert_image_to_base64(
+        self, image: Image.Image, format: str, quality: int
+    ) -> str:
         """
         Convert PIL Image directly to base64 string with optimized settings.
 
