@@ -71,32 +71,22 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_result = report_data[0]
 
-        # Verify all required keys exist
-        required_keys = [
-            "model",
-            "device",
-            "timestamp",
-            "task_type",
-            "task_name",
-            "tolerance",
-            "published_score",
-            "score",
-            "published_score_ref",
-        ]
-        for key in required_keys:
-            assert key in eval_result, f"Missing required key: {key}"
+        # Verify timestamp exists (dynamic field)
+        assert "timestamp" in eval_result
 
-        # Verify calculated TTFT average: (1.0 + 2.0) / 2 = 1.5
-        assert eval_result["score"] == 1.5
-
-        # Verify metadata from model_spec and all_params
-        assert eval_result["model"] == "test_model"
-        assert eval_result["device"] == "test_device"
-        assert eval_result["task_type"] == "cnn"
-        assert eval_result["task_name"] == "test_task"
-        assert eval_result["tolerance"] == 0.1
-        assert eval_result["published_score"] == 0.9
-        assert eval_result["published_score_ref"] == "ref"
+        # Compare all static fields
+        expected = {
+            "model": "test_model",
+            "device": "test_device",
+            "task_type": "cnn",
+            "task_name": "test_task",
+            "tolerance": 0.1,
+            "published_score": 0.9,
+            "published_score_ref": "ref",
+            "score": 1.5,  # TTFT average: (1.0 + 2.0) / 2
+        }
+        for key, value in expected.items():
+            assert eval_result[key] == value, f"Mismatch for {key}"
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_eval_health_check_failed(self, mock_health):
@@ -172,26 +162,27 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
-        # Verify required top-level keys
-        assert "benchmarks" in report_data
-        assert "model" in report_data
-        assert "device" in report_data
+        # Verify timestamp exists (dynamic field)
         assert "timestamp" in report_data
-        assert "task_type" in report_data
 
-        # Verify benchmarks structure and computed averages
-        benchmarks = report_data["benchmarks"]
-        assert benchmarks["num_requests"] == 2
-        assert benchmarks["num_inference_steps"] == 50
-        # TTFT: (1.0 + 2.0) / 2 = 1.5
-        assert benchmarks["ttft"] == 1.5
-        # inference_steps_per_second: (50.0 + 25.0) / 2 = 37.5
-        assert benchmarks["inference_steps_per_second"] == 37.5
+        # Compare static top-level fields
+        expected_metadata = {
+            "model": "test_model",
+            "device": "test_device",
+            "task_type": "cnn",
+        }
+        for key, value in expected_metadata.items():
+            assert report_data[key] == value
 
-        # Verify metadata
-        assert report_data["model"] == "test_model"
-        assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "cnn"
+        # Compare benchmarks structure
+        expected_benchmarks = {
+            "num_requests": 2,
+            "num_inference_steps": 50,
+            "ttft": 1.5,  # (1.0 + 2.0) / 2
+            "inference_steps_per_second": 37.5,  # (50.0 + 25.0) / 2
+        }
+        for key, value in expected_benchmarks.items():
+            assert report_data["benchmarks"][key] == value
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
@@ -326,12 +317,16 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
-        # Verify structure and values
-        assert report_data["benchmarks"]["num_requests"] == 2
-        assert report_data["benchmarks"]["ttft"] == 1.5
-        assert report_data["benchmarks"]["inference_steps_per_second"] == 37.5
+        # Compare expected values
         assert report_data["model"] == "test_model"
         assert report_data["task_type"] == "cnn"
+        expected_benchmarks = {
+            "num_requests": 2,
+            "ttft": 1.5,
+            "inference_steps_per_second": 37.5,
+        }
+        for key, value in expected_benchmarks.items():
+            assert report_data["benchmarks"][key] == value
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -345,9 +340,13 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
-        assert report_data["benchmarks"]["num_requests"] == 0
-        assert report_data["benchmarks"]["ttft"] == 0
-        assert report_data["benchmarks"]["inference_steps_per_second"] == 0
+        expected_benchmarks = {
+            "num_requests": 0,
+            "ttft": 0,
+            "inference_steps_per_second": 0,
+        }
+        for key, value in expected_benchmarks.items():
+            assert report_data["benchmarks"][key] == value
 
 
 class TestCnnClientStrategyCalculateTtft(unittest.TestCase):

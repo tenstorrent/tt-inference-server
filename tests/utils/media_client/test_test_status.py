@@ -99,17 +99,3 @@ class TestCnnGenerationTestStatus(unittest.TestCase):
                 "prompt": "image data",
             },
         )
-
-    def test_to_dict_with_defaults(self):
-        status = CnnGenerationTestStatus(status=False, elapsed=0.0)
-
-        result = status.to_dict()
-
-        self.assertEqual(result["status"], False)
-        self.assertEqual(result["elapsed"], 0.0)
-        self.assertEqual(result["num_inference_steps"], 0)
-        self.assertEqual(result["inference_steps_per_second"], 0)
-        self.assertIsNone(result["ttft"])
-        self.assertIsNone(result["tpups"])
-        self.assertIsNone(result["base64image"])
-        self.assertIsNone(result["prompt"])

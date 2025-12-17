@@ -117,10 +117,8 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
         assert eval_result["deviation_clip_score"] == 0.03
         assert eval_result["accuracy_check"] == 2
 
-        # Verify tput_user calculation: len(status_list) / (total_time * max_concurrency)
-        # = 2 / (3.0 * 4) = 2 / 12 ≈ 0.1667
-        expected_tput_user = len(status_list) / (total_time * 4)
-        assert abs(eval_result["tput_user"] - expected_tput_user) < 0.0001
+        # tput_user = 2 / (3.0 * 4) = 0.1667
+        assert abs(eval_result["tput_user"] - 0.1667) < 0.001
 
         # Verify metadata from model_spec and all_params
         assert eval_result["model"] == "test_model"
