@@ -104,8 +104,6 @@ def setup_venv(venv_config: VenvConfig) -> bool:
     return True
 
 
-
-
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
