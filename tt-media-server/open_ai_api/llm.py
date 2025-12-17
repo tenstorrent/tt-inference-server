@@ -78,10 +78,17 @@ async def create_embedding(
         HTTPException: If embedding generation fails.
     """
     try:
-        embeddings = await service.process_request(text_embedding_request)
+        response = await service.process_request(text_embedding_request)
         return {
             "object": "list",
-            "data": [{"object": "embedding", "embedding": embeddings, "index": 0}],
+            "data": [
+                {"object": "embedding", "embedding": response.embedding, "index": 0}
+            ],
+            "model": text_embedding_request.model,
+            "usage": {
+                "total_tokens": response.total_tokens,
+                "prompt_tokens": response.total_tokens,
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -7,6 +7,7 @@ import os
 from config.constants import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.embedding_response import EmbeddingResponse
 from utils.decorators import log_execution_time
 from vllm import LLM
 
@@ -46,6 +47,17 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
         self.logger.debug(
             f"VLLMBGELargeENRunner: Running inference for {len(requests)} requests"
         )
+        for req in requests:
+            if req.model != SupportedModels.BGE_LARGE_EN_V1_5.value:
+                raise ValueError(
+                    f"Model {req.model} is not supported by VLLMBGELargeENRunner"
+                )
         prompts = [req.input for req in requests]
         result = self.llm.embed(prompts)
-        return [output.outputs.embedding for output in result]
+        return [
+            EmbeddingResponse(
+                embedding=output.outputs.embedding,
+                total_tokens=len(output.prompt_token_ids),
+            )
+            for output in result
+        ]
