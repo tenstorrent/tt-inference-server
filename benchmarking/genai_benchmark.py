@@ -6,15 +6,15 @@
 # This script runs inside the nvcr.io/nvidia/tritonserver container
 # and uses the genai-perf CLI to profile LLM inference servers.
 
-import os
-import sys
-import subprocess
-import time
-import glob
 import argparse
+import glob
 import json
+import os
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 # --- Default Configuration ---
 DEFAULT_BATCH_1_ISL_OSL_PAIRS = [

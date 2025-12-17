@@ -267,6 +267,216 @@
         ]
     },
     {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
         "weights" : ["distil-large-v3"],
         "device": "n150",
         "test_cases": [

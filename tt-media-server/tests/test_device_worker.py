@@ -9,11 +9,11 @@ from unittest.mock import Mock, patch
 import pytest
 
 # Mock all external dependencies before importing
+# Note: tt_model_runners mocking is handled in conftest.py
 sys.modules["ttnn"] = Mock()
 sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
 sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
 sys.modules["models.experimental.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
-sys.modules["tt_model_runners.sdxl_runner"] = Mock()
 
 # Mock config settings
 mock_settings = Mock()
@@ -47,13 +47,7 @@ mock_device_runner.load_model = Mock(return_value=asyncio.Future())
 mock_device_runner.load_model.return_value.set_result(None)
 mock_device_runner.run_inference.return_value = [Mock(), Mock()]
 
-mock_runner_fabric = Mock()
-mock_runner_fabric.get_device_runner = Mock(return_value=mock_device_runner)
-sys.modules["tt_model_runners.base_device_runner"] = Mock()
-sys.modules["tt_model_runners.runner_fabric"] = Mock()
-sys.modules[
-    "tt_model_runners.runner_fabric"
-].get_device_runner = mock_runner_fabric.get_device_runner
+# Note: tt_model_runners mocking (including base_device_runner) is handled in conftest.py
 
 # Mock image manager
 mock_image_manager = Mock()
@@ -603,7 +597,6 @@ def reset_mocks():
     """Reset all mocks before each test"""
     mock_logger.reset_mock()
     mock_device_runner.reset_mock()
-    mock_runner_fabric.reset_mock()
     mock_image_manager.reset_mock()
 
     # Reset device runner defaults
@@ -611,7 +604,6 @@ def reset_mocks():
     mock_device_runner.load_model = Mock(return_value=asyncio.Future())
     mock_device_runner.load_model.return_value.set_result(None)
     mock_device_runner.run_inference.return_value = [Mock(), Mock()]
-    mock_runner_fabric.get_device_runner.return_value = mock_device_runner
 
 
 if __name__ == "__main__":
