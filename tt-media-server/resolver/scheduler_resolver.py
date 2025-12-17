@@ -9,6 +9,7 @@ import threading
 _current_scheduler_holder = None
 _scheduler_lock = threading.Lock()
 
+
 def get_scheduler() -> Scheduler:
     global _current_scheduler_holder
     with _scheduler_lock:

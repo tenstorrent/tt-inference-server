@@ -352,7 +352,7 @@ class TestRuntimeValidation:
             if should_pass:
                 validate_runtime_args(mock_model_spec)
             else:
-                with pytest.raises(NotImplementedError):
+                with pytest.raises(AssertionError):
                     validate_runtime_args(mock_model_spec)
 
     def test_server_workflow_validation(self, mock_model_spec):
@@ -508,12 +508,12 @@ class TestOverrideArgsIntegration:
                         env_var_found = True
                         assert "test-model-spec.json" in env_setting
 
-            assert (
-                json_mount_found
-            ), f"JSON file mount not found in docker command: {docker_command}"
-            assert (
-                env_var_found
-            ), f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
+            assert json_mount_found, (
+                f"JSON file mount not found in docker command: {docker_command}"
+            )
+            assert env_var_found, (
+                f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
+            )
 
 
 class TestSecretsHandling:

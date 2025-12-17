@@ -2,38 +2,73 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from config.constants import ModelRunners
 from config.settings import settings
-from config.constants import ModelRunners, ModelServices
-from domain.text_completion_request import TextCompletionRequest
+from domain.completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
-from fastapi import APIRouter, Depends, Security, HTTPException
-from fastapi.responses import JSONResponse
-from domain.image_generate_request import ImageGenerateRequest
+from fastapi import APIRouter, Depends, HTTPException, Response, Security
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
 completions_router = APIRouter()
 
-@completions_router.post('/completions')
+
+@completions_router.post("/completions")
 async def complete_text(
-    text_completion_request: TextCompletionRequest,
+    completion_request: CompletionRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
+    """
+    Create a completion for the provided prompt and parameters.
+
+    OpenAI-compatible endpoint for text completions.
+
+    Note: This endpoint is considered legacy according to OpenAI documentation.
+    Most developers should use the Chat Completions API to leverage the best and newest models.
+    See: https://platform.openai.com/docs/api-reference/completions
+    """
     try:
-        return await service.process_request(text_completion_request)
+        if not completion_request.stream:
+            result = await service.process_request(completion_request)
+            return Response(content=result.text, media_type="text/plain")
+
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
+
+        async def result_stream():
+            import json
+
+            async for partial in service.process_streaming_request(completion_request):
+                service.logger.info(f"Streaming chunk: {partial}")
+                chunk = {"choices": [partial.to_dict()]}
+                yield json.dumps(chunk) + "\n"
+
+        return StreamingResponse(
+            result_stream(),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Transfer-Encoding": "chunked",
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 embedding_router = APIRouter()
 
-@embedding_router.post('/embeddings')
+
+@embedding_router.post("/embeddings")
 async def create_embedding(
     text_embedding_request: TextEmbeddingRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Create text embeddings based on the provided request.
@@ -43,12 +78,20 @@ async def create_embedding(
         HTTPException: If embedding generation fails.
     """
     try:
-        return await service.process_request(text_embedding_request)
+        embeddings = await service.process_request(text_embedding_request)
+        return {
+            "object": "list",
+            "data": [{"object": "embedding", "embedding": embeddings, "index": 0}],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 router = APIRouter()
-if settings.model_runner == ModelRunners.VLLMForge_QWEN_EMBEDDING.value:
+if settings.model_runner in [
+    ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
+    ModelRunners.VLLMBGELargeEN_V1_5.value,
+]:
     router.include_router(embedding_router)
 else:
     router.include_router(completions_router)

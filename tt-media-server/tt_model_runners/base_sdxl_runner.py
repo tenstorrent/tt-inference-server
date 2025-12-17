@@ -2,82 +2,101 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import abstractmethod
 import asyncio
 import os
-from config.settings import get_settings
-from domain.image_generate_request import ImageGenerateRequest
-from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.helpers import log_execution_time
+from abc import abstractmethod
+
 import ttnn
-import torch
+from domain.image_generate_request import ImageGenerateRequest
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
+    SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
     SDXL_TRACE_REGION_SIZE,
-    SDXL_FABRIC_CONFIG
 )
-from models.common.utility_functions import profiler
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import TtSDXLPipeline
+from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+    TtSDXLPipeline,
+)
+from telemetry.telemetry_client import TelemetryEvent
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from utils.decorators import log_execution_time
 
-class BaseSDXLRunner(BaseDeviceRunner):
+
+class BaseSDXLRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
-        self.settings = get_settings()
-        # setup is tensor parallel if device mesh shape first param starts with 2
-        self.is_tensor_parallel = self.settings.device_mesh_shape[0] > 1
-        if (self.is_tensor_parallel):
-            self.logger.info(f"Device {self.device_id}: Tensor parallel mode enabled with mesh shape {self.settings.device_mesh_shape}")
         self.batch_size = 0
         self.pipeline = None
 
-        # Limit the number of threads torch can create in order to avoid thread explosion when running multi-process scenarios (such as 32 processes on a galaxy).
-        # This way, torch can create only one thread per process, instead of predefined number of them (32).
-        if torch.get_num_threads() != 1:
-            torch.set_num_threads(1)
-        if torch.get_num_interop_threads() != 1:
-            torch.set_num_interop_threads(1)
+    def get_pipeline_device_params(self):
+        device_params = {
+            "l1_small_size": SDXL_L1_SMALL_SIZE,
+            "trace_region_size": self.settings.trace_region_size
+            or SDXL_TRACE_REGION_SIZE,
+        }
+        if self.is_tensor_parallel:
+            device_params["fabric_config"] = SDXL_FABRIC_CONFIG
+        return device_params
 
-    @log_execution_time("SDXL warmup", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
-    async def load_model(self, device)->bool:
+    def _configure_fabric(self, updated_device_params):
+        fabric_config = updated_device_params.pop("fabric_config", None)
+        if fabric_config:
+            ttnn.set_fabric_config(fabric_config)
+        return None
+
+    @log_execution_time(
+        "SDXL warmup",
+        TelemetryEvent.DEVICE_WARMUP,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    async def load_model(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
-        if device is None:
-            self.ttnn_device = self._mesh_device()
-        else:
-            self.ttnn_device = device
-        
         self.batch_size = self.settings.max_batch_size
 
         # 1. Load components
         self._load_pipeline()
-        
-        self.logger.info(f"Device {self.device_id}: Model weights downloaded successfully")
+
+        self.logger.info(
+            f"Device {self.device_id}: Model weights downloaded successfully"
+        )
 
         # 6 minutes to distribute the model on device
         weights_distribution_timeout = 720
 
         try:
-            await asyncio.wait_for(asyncio.to_thread(self._distribute_block), timeout=weights_distribution_timeout)
+            await asyncio.wait_for(
+                asyncio.to_thread(self._distribute_block),
+                timeout=weights_distribution_timeout,
+            )
         except asyncio.TimeoutError:
-            self.logger.error(f"Device {self.device_id}: ttnn.distribute block timed out after {weights_distribution_timeout} seconds")
+            self.logger.error(
+                f"Device {self.device_id}: ttnn.distribute block timed out after {weights_distribution_timeout} seconds"
+            )
             raise
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Exception during model loading: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Exception during model loading: {e}"
+            )
             raise
 
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
-
         warmup_inference_timeout = 1000
-    
+
         try:
-            await asyncio.wait_for(asyncio.to_thread(self._warmup_inference_block), timeout=warmup_inference_timeout)
+            await asyncio.wait_for(
+                asyncio.to_thread(self._warmup_inference_block),
+                timeout=warmup_inference_timeout,
+            )
         except asyncio.TimeoutError:
-            self.logger.error(f"Device {self.device_id}: warmup inference timed out after {warmup_inference_timeout} seconds")
+            self.logger.error(
+                f"Device {self.device_id}: warmup inference timed out after {warmup_inference_timeout} seconds"
+            )
             raise
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Exception during warmup inference: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Exception during warmup inference: {e}"
+            )
             raise
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
@@ -88,43 +107,6 @@ class BaseSDXLRunner(BaseDeviceRunner):
     def run_inference(self, requests: list[ImageGenerateRequest]):
         pass
 
-    def close_device(self, device) -> bool:
-        if device is None:
-            for submesh in self.mesh_device.get_submeshes():
-                ttnn.close_mesh_device(submesh)
-            ttnn.close_mesh_device(self.mesh_device)
-        else:
-            ttnn.close_mesh_device(device)
-        return True
-    
-    def get_device(self):
-        # for now use all available devices
-        return self._mesh_device()
-
-    def _set_fabric(self, fabric_config):
-        # If fabric_config is not None, set it to fabric_config
-        if fabric_config:
-            ttnn.set_fabric_config(fabric_config)
-
-    def _reset_fabric(self, fabric_config):
-        if fabric_config:
-            ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
-    def _mesh_device(self):
-        device_params = {'l1_small_size': SDXL_L1_SMALL_SIZE, 'trace_region_size': self.settings.trace_region_size or SDXL_TRACE_REGION_SIZE}
-        if self.is_tensor_parallel:
-            device_params["fabric_config"] = SDXL_FABRIC_CONFIG
-
-        mesh_shape = ttnn.MeshShape(self.settings.device_mesh_shape)
-
-        updated_device_params = self.get_updated_device_params(device_params)
-        fabric_config = updated_device_params.pop("fabric_config", None)
-        self._set_fabric(fabric_config)
-        mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **updated_device_params)
-
-        self.logger.info(f"Device {self.device_id}: multidevice with {mesh_device.get_num_devices()} devices is created")
-        return mesh_device
-    
     @abstractmethod
     def _load_pipeline(self):
         pass
@@ -138,34 +120,36 @@ class BaseSDXLRunner(BaseDeviceRunner):
         pass
 
     @abstractmethod
-    def _prepare_input_tensors_for_iteration(self, iter: int):
+    def _prepare_input_tensors_for_iteration(self, tensors):
         pass
 
-    def _process_prompts(self, requests: list[ImageGenerateRequest]) -> tuple[list[str], str, int]:
-        prompts = [request.prompt for request in requests]
-        negative_prompt = requests[0].negative_prompt
-        if isinstance(prompts, str):
-            prompts = [prompts]
+    def _process_prompts(
+        self, requests: list[ImageGenerateRequest]
+    ) -> tuple[list[str], str, int]:
+        batch_size = len(requests)
+        needed_padding = self.max_batch_size - batch_size
 
-        needed_padding = (self.batch_size - len(prompts) % self.batch_size) % self.batch_size
-        prompts = prompts + [""] * needed_padding
+        prompts = [request.prompt for request in requests] + [""] * needed_padding
+        negative_prompts = [request.negative_prompt for request in requests] + [
+            ""
+        ] * needed_padding
+        if negative_prompts == [None]:
+            negative_prompts = None
 
         prompts_2 = requests[0].prompt_2
-        negative_prompt_2 = requests[0].negative_prompt_2
+        if prompts_2 is not None and isinstance(requests[0].prompt_2, str):
+            prompts_2 = [requests[0].prompt_2]
         if prompts_2 is not None:
-            prompts_2 = [request.prompt_2 for request in requests]
-            if isinstance(prompts_2, str):
-                prompts_2 = [prompts_2]
-
-            needed_padding = (self.batch_size - len(prompts_2) % self.batch_size) % self.batch_size
             prompts_2 = prompts_2 + [""] * needed_padding
-        
-        return prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding
+
+        negative_prompt_2 = requests[0].negative_prompt_2
+
+        return prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding
 
     def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(request.num_inference_steps)
-        
+
         if request.guidance_scale is not None:
             self.tt_sdxl.set_guidance_scale(request.guidance_scale)
 
@@ -181,32 +165,35 @@ class BaseSDXLRunner(BaseDeviceRunner):
     def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []
         self.logger.info(f"Device {self.device_id}: Starting ttnn inference...")
-        for iter in range(len(prompts) // self.batch_size):
-            self.logger.info(
-                f"Device {self.device_id}: Running inference for prompts {iter * self.batch_size + 1}-{iter * self.batch_size + self.batch_size}/{len(prompts)}"
-            )
+        self._prepare_input_tensors_for_iteration(tensors)
 
-            self._prepare_input_tensors_for_iteration(tensors, iter)
+        imgs = self.tt_sdxl.generate_images()
 
-            imgs = self.tt_sdxl.generate_images()
-            
-            self.logger.info(
-                f"Device {self.device_id}: Prepare input tensors for {self.batch_size} prompts completed in {profiler.times['prepare_input_tensors'][-1]:.2f} seconds"
-            )
-            self.logger.info(f"Device {self.device_id}: Image gen for {self.batch_size} prompts completed in {profiler.times['image_gen'][-1]:.2f} seconds")
-            self.logger.info(
-                f"Device {self.device_id}: Denoising loop for {self.batch_size} prompts completed in {profiler.times['denoising_loop'][-1]:.2f} seconds"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: On device VAE decoding completed in {profiler.times['vae_decode'][-1]:.2f} seconds"
-            )
-            self.logger.info(f"Device {self.device_id}: Output tensor read completed in {profiler.times['read_output_tensor'][-1]:.2f} seconds")
+        for idx, img in enumerate(imgs):
+            if idx >= self.batch_size - needed_padding:
+                break
 
-            for idx, img in enumerate(imgs):
-                if iter == len(prompts) // self.batch_size - 1 and idx >= self.batch_size - needed_padding:
-                    break
-                img = img.unsqueeze(0)
-                img = self.pipeline.image_processor.postprocess(img, output_type="pil")[0]
-                images.append(img)
+            img = img.unsqueeze(0)
+            img = self.pipeline.image_processor.postprocess(img, output_type="pil")[0]
+            images.append(img)
 
         return images
+
+    def is_request_batchable(self, request, batch=None):
+        if len(batch or []) >= self.max_batch_size:
+            return False
+
+        if batch is None:
+            return True
+
+        first_request = batch[0]
+        return (
+            request.num_inference_steps == first_request.num_inference_steps
+            and request.guidance_scale == first_request.guidance_scale
+            and request.guidance_rescale == first_request.guidance_rescale
+            and request.crop_coords_top_left == first_request.crop_coords_top_left
+            and request.timesteps == first_request.timesteps
+            and request.sigmas == first_request.sigmas
+            and request.prompt_2 == first_request.prompt_2
+            and request.negative_prompt_2 == first_request.negative_prompt_2
+        )

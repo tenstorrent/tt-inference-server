@@ -12,6 +12,7 @@ class WorkflowType(IntEnum):
     REPORTS = auto()
     SERVER = auto()
     RELEASE = auto()
+    SPEC_TESTS = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -24,6 +25,7 @@ class WorkflowType(IntEnum):
 class WorkflowVenvType(IntEnum):
     LOCAL_SETUP_VALIDATION = auto()
     EVALS_RUN_SCRIPT = auto()
+    TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
     EVALS_COMMON = auto()
@@ -31,6 +33,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
+    BENCHMARKS_GENAI_PERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
 
@@ -38,6 +41,7 @@ class WorkflowVenvType(IntEnum):
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    GENAI_PERF = auto()
 
 
 class DeviceTypes(IntEnum):

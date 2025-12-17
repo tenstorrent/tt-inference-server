@@ -3,9 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import logging
 
 import aiohttp
-from server_tests.base_test import BaseTest
+
+from tests.server_tests.base_test import BaseTest
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class DeviceLivenessTest(BaseTest):
@@ -30,7 +35,7 @@ class DeviceLivenessTest(BaseTest):
                         f"Expected status 200, got {response.status}"
                     )
                     data = await response.json()
-                    print(f"Liveness check response: {data}")
+                    logger.info(f"Liveness check response: {data}")
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")
@@ -38,7 +43,7 @@ class DeviceLivenessTest(BaseTest):
                         raise SystemExit(
                             f"❌ Service status is '{status}', expected 'alive'"
                         )
-                    print(f"✅ Service status check passed: {status}")
+                    logger.info(f"✅ Service status check passed: {status}")
 
                     # Check 2: Verify worker_info has correct number of ready devices
                     worker_info = data.get("worker_info", {})
@@ -58,12 +63,13 @@ class DeviceLivenessTest(BaseTest):
                     ready_count = len(ready_workers)
                     alive_count = len(alive_workers)
 
-                    print(
+                    logger.info(
                         f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}"
                     )
 
-                    # Check if number of ready workers matches expected devices
-                    if ready_count != expected_devices:
+                    # Check if number of ready workers is equal or bigger than expected devices
+                    # we don't use equal to have a possibility to use i.e. 1 device on Galaxy to start some tests
+                    if ready_count < expected_devices:
                         # this is just an exception, not a system exit, to allow retries
                         raise Exception(
                             f"❌ Device count mismatch: Expected {expected_devices} ready devices, "
@@ -76,18 +82,19 @@ class DeviceLivenessTest(BaseTest):
                         w for w in ready_workers if w not in alive_workers
                     ]
                     if not_alive_but_ready:
-                        print(
+                        logger.warning(
                             f"⚠️  Warning: Workers {not_alive_but_ready} are ready but not alive"
                         )
 
-                    print(
+                    logger.info(
                         f"✅ Device count check passed: {ready_count}/{expected_devices} devices are ready"
                     )
-                    print(f"✅ Ready workers: {ready_workers}")
+                    logger.info(f"✅ Ready workers: {ready_workers}")
 
                     return {
                         "status": status,
                         "expected_devices": expected_devices,
+                        "success": True if ready_count >= expected_devices else False,
                         "ready_workers": ready_workers,
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
@@ -102,13 +109,13 @@ class DeviceLivenessTest(BaseTest):
             OSError,
         ) as e:
             error_msg = f"❌ Media server is not running on port {self.service_port}. Please start the server first.\n🔍 Connection error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except asyncio.TimeoutError as e:
             error_msg = f"❌ Media server on port {self.service_port} is not responding (timeout after 30s). Server may be starting up or overloaded.\n🔍 Error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it
-            print(f"⚠️  Unexpected error during device liveness check: {e}")
+            logger.warning(f"⚠️  Unexpected error during device liveness check: {e}")
             raise

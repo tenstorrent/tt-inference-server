@@ -2,18 +2,36 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from abc import ABC, abstractmethod
 import os
+from abc import ABC, abstractmethod
 
+from config.settings import get_settings
 from utils.logger import TTLogger
+from utils.torch_utils import set_torch_thread_limits
+
 
 class BaseDeviceRunner(ABC):
     def __init__(self, device_id: str):
         self.device_id = device_id
         self.logger = TTLogger()
+        self.settings = get_settings()
+        self.ttnn_device = None
 
-        if not os.getenv("HF_TOKEN", None) and not (os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))):
-            self.logger.warning("HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly.")
+        set_torch_thread_limits()
+
+        if not os.getenv("HF_TOKEN", None) and not (
+            os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
+        ):
+            self.logger.warning(
+                "HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly."
+            )
+
+        # setup is tensor parallel if device mesh shape first param starts with 2
+        self.is_tensor_parallel = self.settings.device_mesh_shape[0] > 1
+        if self.is_tensor_parallel:
+            self.logger.info(
+                f"Device {self.device_id}: Tensor parallel mode enabled with mesh shape {self.settings.device_mesh_shape}"
+            )
 
     @abstractmethod
     def load_model(self):
@@ -23,27 +41,11 @@ class BaseDeviceRunner(ABC):
     def run_inference(self, *args, **kwargs):
         pass
 
-    @abstractmethod
+    def set_device(self):
+        return {}
+
     def close_device(self):
-        pass
+        return True
 
-    @abstractmethod
-    def get_device(self):
-        pass
-
-    def get_updated_device_params(self, device_params):
-        import ttnn
-
-        new_device_params = device_params.copy()
-
-        dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
-        dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
-
-        if ttnn.device.is_blackhole() and dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
-            self.logger.warning("blackhole arch does not support DispatchCoreAxis.ROW, using DispatchCoreAxis.COL instead.")
-            dispatch_core_axis = ttnn.DispatchCoreAxis.COL
-
-        dispatch_core_config = ttnn.DispatchCoreConfig(dispatch_core_type, dispatch_core_axis)
-        new_device_params["dispatch_core_config"] = dispatch_core_config
-
-        return new_device_params
+    def is_request_batchable(self, request, batch=None):
+        return True

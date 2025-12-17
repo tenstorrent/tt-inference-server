@@ -41,6 +41,8 @@ USER_AGENT = "tt-inference-server-example/1.0"
 DEFAULT_RETRIES = 3
 DEFAULT_RETRY_WAIT = 2.0
 DEFAULT_CONCURRENCY = 1
+DEFAULT_AUTHORIZATION = "your-secret-key"
+DATA_DIR = os.path.join(os.path.dirname(__file__), "example_data")
 
 # Mutable runtime configuration (can be overridden via CLI)
 RETRIES = DEFAULT_RETRIES
@@ -100,6 +102,7 @@ def http_get_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         content_type = resp.headers.get("Content-Type", "")
         data = resp.read()
+        print(f"HF Download Content Type: {content_type}")
         if "application/json" not in content_type:
             # Try to decode as JSON regardless; produce clearer error if not JSON
             return json.loads(data.decode("utf-8"))
@@ -117,9 +120,10 @@ def fetch_rows_metadata(samples: int, config: str, split: str) -> dict:
     url = build_rows_url(config=config, split=split, offset=0, length=samples)
     # Perform a single, headerless GET exactly like a plain curl request
     req = urllib.request.Request(url)
-    print(f"HF Download URL: {url}")
+    print(f"Fetching HF dataset metadata from {url}")
     with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT) as resp:
         data = resp.read()
+        print("Done fetching rows metadata.")
         return json.loads(data.decode("utf-8"))
 
 
@@ -173,14 +177,18 @@ def check_server_health(host: str, timeout: int = DEFAULT_TIMEOUT) -> Optional[d
 
 
 def post_json(
-    host: str, path: str, payload: dict, timeout: int = DEFAULT_TIMEOUT
+    host: str,
+    path: str,
+    payload: dict,
+    authorization: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> Tuple[int, bytes, str]:
     url = f"{host.rstrip('/')}{path}"
     data = json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json, application/x-ndjson",
         "Content-Type": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {authorization}",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -189,14 +197,18 @@ def post_json(
 
 
 def post_streaming(
-    host: str, path: str, payload: dict, timeout: int = DEFAULT_TIMEOUT
+    host: str,
+    path: str,
+    payload: dict,
+    authorization: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> int:
     url = f"{host.rstrip('/')}{path}"
     data = json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json, application/x-ndjson",
         "Content-Type": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {authorization}",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     start = time.perf_counter()
@@ -233,10 +245,61 @@ def post_streaming(
 
 def download_audio_b64_for_index(
     rows: list, index: int, config: str, split: str, total: int
-) -> Optional[str]:
+) -> Tuple[Optional[str], bool]:
     row_obj = rows[index].get("row", {})
+    filename = extract_audio_filename(row_obj=row_obj, fallback_index=index)
+    audio_bytes, downloaded = load_or_download_audio(
+        row_obj=row_obj,
+        row_index=index,
+        config=config,
+        split=split,
+        filename=filename,
+    )
+    return base64_encode(audio_bytes), downloaded
+
+
+def ensure_data_dir() -> str:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    return DATA_DIR
+
+
+def extract_audio_filename(row_obj: dict, fallback_index: int) -> str:
+    audio_entry = row_obj.get("audio")
+
+    # HF datasets-server rows endpoint often returns a dict with "path"
+    if isinstance(audio_entry, dict):
+        candidate = audio_entry.get("path") or audio_entry.get("file")
+        if candidate:
+            base = os.path.basename(candidate)
+            if base:
+                return base
+
+    # Older shape: list of dicts with path/file
+    if isinstance(audio_entry, list) and audio_entry:
+        candidate = audio_entry[0].get("path") or audio_entry[0].get("file")
+        if candidate:
+            base = os.path.basename(candidate)
+            if base:
+                return base
+
+    # Fall back to a simple indexed name to keep files distinct
+    return f"sample-{fallback_index}.flac"
+
+
+def load_or_download_audio(
+    row_obj: dict, row_index: int, config: str, split: str, filename: str
+) -> Tuple[bytes, bool]:
+    data_dir = ensure_data_dir()
+    filepath = os.path.join(data_dir, filename)
+    if os.path.isfile(filepath):
+        print(f"[cache] using {filename}")
+        with open(filepath, "rb") as f:
+            return f.read(), False
     audio_bytes = fetch_audio_from_rows_src(row_obj)
-    return base64_encode(audio_bytes)
+    with open(filepath, "wb") as f:
+        f.write(audio_bytes)
+    print(f"[download] saved {filename}")
+    return audio_bytes, True
 
 
 def download_audio_samples(
@@ -247,11 +310,13 @@ def download_audio_samples(
     total = min(len(rows), samples)
 
     if total <= 0:
-        print(f"Completed: successes=0, failures=0, total=0")
+        print("Completed: successes=0, failures=0, total=0")
         return [], 0, 0
 
     max_workers = max(1, int(concurrency))
     downloaded_b64: List[Optional[str]] = [None] * total
+    downloaded_new = 0
+    cache_hits = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_index = {
             executor.submit(
@@ -261,15 +326,27 @@ def download_audio_samples(
         }
         for fut in as_completed(future_to_index):
             i = future_to_index[fut]
-            downloaded_b64[i] = fut.result()
+            b64_value, downloaded = fut.result()
+            downloaded_b64[i] = b64_value
+            if downloaded:
+                downloaded_new += 1
+            else:
+                cache_hits += 1
 
     downloaded_count = sum(1 for x in downloaded_b64 if x is not None)
-    print(f"Downloaded {downloaded_count} samples from dataset: {DATASET_REPO}")
+    print(
+        f"Download phase complete: ready={downloaded_count} "
+        f"(new={downloaded_new}, cached={cache_hits}) in {ensure_data_dir()}"
+    )
     return downloaded_b64, total, downloaded_count
 
 
 def stream_single_request(
-    host: str, payload: dict, request_id: int, timeout: int = DEFAULT_TIMEOUT
+    host: str,
+    payload: dict,
+    request_id: int,
+    authorization: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> Tuple[bool, Optional[float]]:
     start = time.perf_counter()
     url = f"{host.rstrip('/')}/audio/transcriptions"
@@ -277,7 +354,7 @@ def stream_single_request(
     headers = {
         "Accept": "application/json, application/x-ndjson",
         "Content-Type": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {authorization}",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     first_content_time: Optional[float] = None
@@ -319,11 +396,14 @@ def stream_single_request(
 
 
 def nonstream_single_request(
-    host: str, payload: dict, timeout: int = DEFAULT_TIMEOUT
+    host: str,
+    payload: dict,
+    authorization: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> Tuple[bool, Optional[float]]:
     start = time.perf_counter()
     status, body, content_type = post_json(
-        host, "/audio/transcriptions", payload, timeout=timeout
+        host, "/audio/transcriptions", payload, authorization, timeout=timeout
     )
     elapsed = time.perf_counter() - start
     if status == 200 and body:
@@ -360,6 +440,7 @@ def make_streaming_inference_requests(
     preprocess: bool,
     diarization: bool,
     concurrency: int,
+    authorization: str,
 ) -> Tuple[int, int, float, float, float]:
     successes = 0
     failures = 0
@@ -379,7 +460,12 @@ def make_streaming_inference_requests(
             }
             futures.append(
                 executor.submit(
-                    stream_single_request, host, payload, req_id, DEFAULT_TIMEOUT
+                    stream_single_request,
+                    host,
+                    payload,
+                    req_id,
+                    authorization,
+                    DEFAULT_TIMEOUT,
                 )
             )
 
@@ -403,6 +489,7 @@ def make_non_streaming_inference_requests(
     preprocess: bool,
     diarization: bool,
     concurrency: int,
+    authorization: str,
 ) -> Tuple[int, int, float, float, float]:
     successes = 0
     failures = 0
@@ -422,7 +509,11 @@ def make_non_streaming_inference_requests(
             }
             futures.append(
                 executor.submit(
-                    nonstream_single_request, host, payload, DEFAULT_TIMEOUT
+                    nonstream_single_request,
+                    host,
+                    payload,
+                    authorization,
+                    DEFAULT_TIMEOUT,
                 )
             )
 
@@ -447,13 +538,14 @@ def make_inference_requests(
     preprocess: bool,
     diarization: bool,
     concurrency: int,
+    authorization: str,
 ) -> Tuple[int, int, float, float, float]:
     if stream:
         return make_streaming_inference_requests(
-            b64_queue, host, preprocess, diarization, concurrency
+            b64_queue, host, preprocess, diarization, concurrency, authorization
         )
     return make_non_streaming_inference_requests(
-        b64_queue, host, preprocess, diarization, concurrency
+        b64_queue, host, preprocess, diarization, concurrency, authorization
     )
 
 
@@ -482,7 +574,7 @@ def run(args: argparse.Namespace) -> int:
     failures = 0
 
     if total <= 0:
-        print(f"Completed: successes=0, failures=0, total=0")
+        print("Completed: successes=0, failures=0, total=0")
         return 0
 
     failures += total - downloaded_count
@@ -500,6 +592,7 @@ def run(args: argparse.Namespace) -> int:
             preprocess=bool(args.preprocess),
             diarization=bool(args.diarization),
             concurrency=int(getattr(args, "concurrency", DEFAULT_CONCURRENCY)),
+            authorization=args.authorization,
         )
     )
     successes += successes2
@@ -543,6 +636,12 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         type=str,
         default="http://localhost:8000",
         help="Inference server host base URL",
+    )
+    parser.add_argument(
+        "--authorization",
+        type=str,
+        default=DEFAULT_AUTHORIZATION,
+        help='Authorization token sent as "Bearer <token>"',
     )
     parser.add_argument(
         "--concurrency",
