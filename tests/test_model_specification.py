@@ -4,16 +4,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import re
+
 import pytest
 
 from workflows.model_spec import (
+    MODEL_SPECS,
+    VERSION,
+    DeviceModelSpec,
+    ImplSpec,
     InferenceEngine,
     ModelSpec,
     ModelSpecTemplate,
-    ImplSpec,
-    DeviceModelSpec,
     get_model_spec_map,
-    MODEL_SPECS,
     spec_templates,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
@@ -102,6 +104,7 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
+        assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
 
