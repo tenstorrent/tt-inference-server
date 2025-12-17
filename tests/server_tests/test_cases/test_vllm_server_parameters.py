@@ -39,7 +39,7 @@ REPRO_PROMPT = [
     {"role": "user", "content": "What is the capital of France? Be concise."}
 ]
 PENALTY_PROMPTS = {
-    "repeat_trap": [{"role": "user", "content": "Write a very repetitive story."}],
+    "repeat_trap": [{"role": "user", "content": "Write a story where you reuse the same words as much as possible."}],
     "natural_repetition": [
         {
             "role": "user",
