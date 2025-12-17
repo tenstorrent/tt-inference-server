@@ -1871,7 +1871,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
+                    "always_compat_sampling": True,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1883,6 +1883,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
+                    "always_compat_sampling": True,
                     "trace_region_size": 50000000,
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
