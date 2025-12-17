@@ -373,6 +373,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `NEW_DEVICE_DELAY_SECONDS` | `30` | Delay in seconds before initializing a new device worker |
+| `NEW_RUNNER_DELAY_SECONDS` | `30` | Delay in seconds before initializing a new CPU worker |
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |

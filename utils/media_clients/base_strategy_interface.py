@@ -60,7 +60,7 @@ class BaseMediaStrategy(ABC):
         test_config = TestConfig(
             {
                 "test_timeout": 1200,  # 20 minutes
-                "retry_attempts": 119,  # 120 total attempts (0-indexed)
+                "retry_attempts": 229,  # 230 total attempts (0-indexed)
                 "retry_delay": 10,  # 10 seconds between attempts
                 "break_on_failure": False,
             }
