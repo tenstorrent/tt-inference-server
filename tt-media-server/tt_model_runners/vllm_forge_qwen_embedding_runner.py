@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import vllm
+from config.constants import ModelNames
 from config.settings import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
@@ -72,7 +73,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if (
             self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
-            or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
+            or request.model != ModelNames.QWEN_3_EMBEDDING_4B.value
             or (batch is not None and request.model != batch[0].model)
         ):
             return False
@@ -87,7 +88,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         # if only one request in batch, validate and set dimensions
         if self.num_tokens_in_batch == 0:
-            if requests[0].model != SupportedModels.QWEN_3_EMBEDDING_4B.value:
+            if requests[0].model != ModelNames.QWEN_3_EMBEDDING_4B.value:
                 raise ValueError(
                     f"Model {requests[0].model} is not supported by VLLMForgeEmbeddingQwenRunner"
                 )

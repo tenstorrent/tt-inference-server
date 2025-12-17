@@ -4,7 +4,7 @@
 
 import os
 
-from config.constants import SupportedModels
+from config.constants import ModelNames, SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.embedding_response import EmbeddingResponse
@@ -48,7 +48,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
             f"VLLMBGELargeENRunner: Running inference for {len(requests)} requests"
         )
         for req in requests:
-            if req.model != SupportedModels.BGE_LARGE_EN_V1_5.value:
+            if req.model != ModelNames.BGE_LARGE_EN_V1_5.value:  # noqa: F821
                 raise ValueError(
                     f"Model {req.model} is not supported by VLLMBGELargeENRunner"
                 )
