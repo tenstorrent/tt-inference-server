@@ -1328,8 +1328,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="d2f891d",
+        vllm_commit="6e67d2d",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1710,8 +1710,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="d2f891d",
+        vllm_commit="6e67d2d",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
