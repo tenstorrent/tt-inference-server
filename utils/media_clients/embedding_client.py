@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 BENCHMARK_RESULT_START = "============ Serving Benchmark Result ============"
 BENCHMARK_RESULT_END = "=================================================="
 OPENAI_API_KEY = "your-secret-key"
+MTEB_TASK = ["STS12"]  # add AmazonCounterfactualClassification for classification
 
 
 class EmbeddingClientStrategy(BaseMediaStrategy):
@@ -61,7 +62,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             status_list = self._run_embedding_transcription_eval()
 
-            return self._generate_evals_report(status_list)
+            self._generate_evals_report(status_list)
 
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
@@ -88,7 +89,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             status_list = []
             status_list = self._run_embedding_transcription_benchmark(num_calls)
 
-            return self._generate_benchmarking_report(status_list)
+            self._generate_benchmarking_report(status_list)
 
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -241,9 +242,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         model.encode = single_string_encode.__get__(model, type(model))
 
         # Select tasks and run evaluation
-        tasks = mteb.get_tasks(
-            tasks=["STS12"]
-        )  # or AmazonCounterfactualClassification for classification
+        tasks = mteb.get_tasks(tasks=MTEB_TASK)
 
         logger.info("Running embedding transcription evaluation with STS12...")
         results = mteb.evaluate(
@@ -259,6 +258,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             scores = results.task_results[0].scores["test"]
         except Exception as e:
             logger.error(f"Could not extract scores['test']: {e}")
+            raise
 
         # Extract the required metrics
         keys = [
