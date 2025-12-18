@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 BENCHMARK_RESULT_START = "============ Serving Benchmark Result ============"
 BENCHMARK_RESULT_END = "=================================================="
 OPENAI_API_KEY = "your-secret-key"
-MTEB_TASK = ["STS12"]  # add AmazonCounterfactualClassification for classification
+MTEB_TASKS = ["STS12"]  # add AmazonCounterfactualClassification for classification
 
 
 class EmbeddingClientStrategy(BaseMediaStrategy):
@@ -242,7 +242,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         model.encode = single_string_encode.__get__(model, type(model))
 
         # Select tasks and run evaluation
-        tasks = mteb.get_tasks(tasks=MTEB_TASK)
+        tasks = mteb.get_tasks(tasks=MTEB_TASKS)
 
         logger.info("Running embedding transcription evaluation with STS12...")
         results = mteb.evaluate(
