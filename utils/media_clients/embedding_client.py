@@ -217,9 +217,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "task_type": "embedding",
         }
 
-        with open(result_filename, "w") as f:
+        """with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
-        logger.info(f"Report generated: {result_filename}")
+        logger.info(f"Report generated: {result_filename}")"""
 
     def _run_embedding_transcription_eval(self) -> None:
         """Run embedding transcription evaluation."""
@@ -267,3 +267,4 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
 
         logger.info(f"Eval results: {results}")
+        logger.info(f"Eval results: {results.task_results[0].scores}")
