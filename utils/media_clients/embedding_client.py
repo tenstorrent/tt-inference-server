@@ -59,29 +59,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             logger.info("Running embedding eval...")
 
-            self._run_embedding_transcription_eval()
+            status_list = self._run_embedding_transcription_eval()
 
-            logger.info("Generating eval report...")
-
-            eval_data = {
-                "model": self.model_spec.model_name,
-                "device": self.device.name,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                "task_type": "embedding",
-            }
-
-            eval_filename = (
-                Path(self.output_path)
-                / f"eval_{self.model_spec.model_id}"
-                / self.model_spec.hf_model_repo.replace("/", "__")
-                / f"results_{time.time()}.json"
-            )
-            # Create directory structure if it doesn't exist
-            eval_filename.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(eval_filename, "w") as f:
-                json.dump(eval_data, f, indent=4)
-            logger.info(f"Evaluation data written to: {eval_filename}")
+            return self._generate_evals_report(status_list)
 
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
@@ -108,7 +88,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             status_list = []
             status_list = self._run_embedding_transcription_benchmark(num_calls)
 
-            return self._generate_report(status_list)
+            return self._generate_benchmarking_report(status_list)
+
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -179,7 +160,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
         return metrics
 
-    def _generate_report(self, metrics: dict):
+    def _generate_benchmarking_report(self, metrics: dict):
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -217,9 +198,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "task_type": "embedding",
         }
 
-        """with open(result_filename, "w") as f:
+        with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
-        logger.info(f"Report generated: {result_filename}")"""
+        logger.info(f"Report generated: {result_filename}")
 
     def _run_embedding_transcription_eval(self) -> None:
         """Run embedding transcription evaluation."""
@@ -231,6 +212,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
         model_name = self.model
 
+        # Currently only single string encoding is supported
         def single_string_encode(self, inputs, **kwargs):
             sentences = [text for batch in inputs for text in batch["text"]]
             all_embeddings = []
@@ -252,8 +234,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         # Create the model wrapper
         model = OpenAIModel(
             model_name=model_name,
-            max_tokens=100,
-            embed_dim=100,
+            max_tokens=self.isl,
+            embed_dim=self.dimensions,
             client=client,
         )
         model.encode = single_string_encode.__get__(model, type(model))
@@ -262,9 +244,59 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         tasks = mteb.get_tasks(
             tasks=["STS12"]
         )  # or AmazonCounterfactualClassification for classification
+
+        logger.info("Running embedding transcription evaluation with STS12...")
         results = mteb.evaluate(
             model, tasks=tasks, show_progress_bar=True, encode_kwargs={"batch_size": 1}
         )
 
-        logger.info(f"Eval results: {results}")
-        logger.info(f"Eval results: {results.task_results[0].scores}")
+        return self._parse_embedding_evals_output(results)
+
+    def _parse_embedding_evals_output(self, results: dict) -> dict:
+        """Parse embedding evaluation results and extract key metrics from scores['test']."""
+        scores = {}
+        try:
+            scores = results.task_results[0].scores["test"]
+        except Exception as e:
+            logger.error(f"Could not extract scores['test']: {e}")
+
+        # Extract the required metrics
+        keys = [
+            "pearson",
+            "spearman",
+            "cosine_pearson",
+            "cosine_spearman",
+            "manhattan_pearson",
+            "manhattan_spearman",
+            "euclidean_pearson",
+            "euclidean_spearman",
+            "main_score",
+            "languages",
+        ]
+        report_data = {k: scores.get(k) for k in keys if k in scores}
+        return report_data
+
+    def _generate_evals_report(self, metrics: dict):
+        """Generate evals report, attaching metrics to report_data."""
+        logger.info("Generating evals report...")
+        result_filename = (
+            Path(self.output_path)
+            / f"evals_{self.model_spec.model_id}_{time.time()}.json"
+        )
+        result_filename.parent.mkdir(parents=True, exist_ok=True)
+
+        report_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "embedding",
+            "task_name": self.all_params.tasks[0].task_name,
+        }
+        # Attach metrics dict
+        report_data.update(metrics)
+
+        report_data = [report_data]
+
+        with open(result_filename, "w") as f:
+            json.dump(report_data, f, indent=4)
+        logger.info(f"Report generated: {result_filename}")
