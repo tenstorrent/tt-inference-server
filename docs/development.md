@@ -82,6 +82,8 @@ workflow for release:
   - PATCH version when you make backward compatible bug fixes
 - based off `pre-release-v<MAJOR>.<MINOR>.<PATCH>`, PR to `main`
 
+### Git Workflows Diagram
+
 Follow the development and release git workflow, steps described below image:
 
 ![ttis-git-workflows-2025-08-14-1106](ttis-git-workflows-2025-08-14-1106.png)
