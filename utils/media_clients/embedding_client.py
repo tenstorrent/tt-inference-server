@@ -38,7 +38,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
-        self.isl = 1000  # input sequence length
+        self.isl = 1000
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
     def run_eval(self) -> None:
@@ -127,26 +127,29 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         return self._parse_embedding_benchmark_output(output)
 
     def _parse_embedding_benchmark_output(self, output: str) -> dict:
-        """Parse embedding benchmark output."""
-        # Extract the relevant benchmark result section
-        section = None
-        if BENCHMARK_RESULT_START in output:
-            section = output.split(BENCHMARK_RESULT_START, 1)[1]
-            # Optionally, stop at the next '====' line after the section
-            if BENCHMARK_RESULT_END in section:
-                section = section.split(BENCHMARK_RESULT_END, 1)[0]
-            section = section.strip()
-        else:
+        """Parse benchmark metrics from output."""
+        if BENCHMARK_RESULT_START not in output:
             logger.warning("Benchmark result section not found in output.")
+            return {}
+
+        section = output.split(BENCHMARK_RESULT_START, 1)[1]
+        # Optionally, stop at the next '====' line after the section
+        if BENCHMARK_RESULT_END in section:
+            section = section.split(BENCHMARK_RESULT_END, 1)[0]
+        section = section.strip()
+
+        # Handles empty string after strip
+        if not section:
+            logger.warning("Benchmark result section is empty after parsing.")
+            return {}
 
         # Parse the section into a dictionary, stripping units from keys
         metrics = {}
-        if section:
-            for line in section.splitlines():
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    key_clean = re.sub(r"\s*\([^)]*\)", "", key).strip()
-                    metrics[key_clean] = value.strip()
+        for line in section.splitlines():
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key_clean = re.sub(r"\s*\([^)]*\)", "", key).strip()
+                metrics[key_clean] = value.strip()
         logger.info(f"Parsed benchmark metrics: {metrics}")
 
         return metrics

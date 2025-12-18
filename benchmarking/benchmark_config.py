@@ -32,7 +32,7 @@ class BenchmarkTaskCNN(BenchmarkTask):
 @dataclass(frozen=True)
 class BenchmarkTaskEmbedding(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.GENAI_PERF
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
     workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_EMBEDDING
 
 
