@@ -70,6 +70,7 @@ def test_penalties(
 
     # Baseline run (no penalty)
     payload_base = {"messages": messages, "max_tokens": 1024, "temperature": 0.1, "seed": 2000}
+    print(payload_base)
     response_base = api_client(payload_base, timeout=None)
 
     # Test run (with penalty)
