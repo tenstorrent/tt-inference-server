@@ -183,7 +183,7 @@ def run_workflows(model_spec, json_fpath):
             if done_trace_capture:
                 # after first run BENCHMARKS traces are captured
                 args.disable_trace_capture = True
-            logger.info(f"Next workflow in release: {wf}")
+            logger.info(f"Next workflow in release: {wf.name}")
             args.workflow = wf.name
             return_code = run_single_workflow(model_spec, json_fpath)
             return_codes.append(return_code)

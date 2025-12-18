@@ -1,0 +1,17 @@
+# IDE
+.vscode
+.DS_Store
+
+# Python
+*.pyc
+__pycache__
+*egg-info
+*.whl
+venv*/**
+
+# Build artifacts
+build/
+dist/
+
+datasets/**
+*.tensorbin

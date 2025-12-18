@@ -290,9 +290,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model_id": data.get("model", ""),
             "backend": "embedding",
             "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
             "filename": filename,
             "task_type": "embedding",
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "input_sequence_length": benchmarks_data.get("benchmarks").get("isl", 0),
+            "max_con": benchmarks_data.get("benchmarks").get("concurrency", 0),
+            "mean_tps": benchmarks_data.get("benchmarks").get("tput_user", 0.0),
+            "tps_prefill_throughput": benchmarks_data.get("benchmarks").get(
+                "tput_prefill", 0.0
+            ),
+            "mean_e2el_ms": benchmarks_data.get("benchmarks").get("e2el", 0.0),
+            "request_throughput": benchmarks_data.get("benchmarks").get(
+                "req_tput", 0.0
+            ),
         }
         return format_metrics(metrics)
 

@@ -203,6 +203,26 @@ def setup_evals_meta(
     return True
 
 
+def setup_benchmarks_embedding(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_benchmarks_embedding() ...")
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for generic server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for generic server testing: {work_dir}")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip vllm torch",
+        logger=logger,
+    )
+
+    return True
+
+
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -467,6 +487,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_EMBEDDING,
+        setup_function=setup_benchmarks_embedding,
         python_version="3.11",
     ),
     VenvConfig(

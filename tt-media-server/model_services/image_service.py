@@ -15,8 +15,8 @@ def create_image_worker_context():
     return ImageManager("img")
 
 
-def image_worker_function(image_manager, image_data):
-    return image_manager.images_to_base64_list(image_data)
+def image_worker_function(image_manager, image_data, input_request=None):
+    return image_manager.images_to_base64_list(image_data, input_request)
 
 
 class ImageService(BaseService):
@@ -39,10 +39,12 @@ class ImageService(BaseService):
             request._segments = list(range(request.number_of_images))
         return request
 
-    async def post_process(self, result):
+    async def post_process(self, result, input_request: ImageGenerateRequest):
         """Asynchronous postprocessing using queue-based workers"""
         try:
-            image_file = await self._cpu_workload_handler.execute_task(result)
+            image_file = await self._cpu_workload_handler.execute_task(
+                result, input_request
+            )
         except Exception as e:
             self.logger.error(f"Image postprocessing failed: {e}")
             raise
