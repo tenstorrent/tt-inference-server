@@ -1489,7 +1489,6 @@ def main():
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
-            or model_spec.model_type.name == ModelType.EMBEDDING.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
