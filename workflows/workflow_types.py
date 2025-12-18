@@ -33,6 +33,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
+    BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_GENAI_PERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
