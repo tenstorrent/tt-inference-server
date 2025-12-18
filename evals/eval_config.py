@@ -2072,6 +2072,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="BAAI/bge-large-en-v1.5",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,  # Using META as a placeholder
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/BAAI/bge-large-en-v1.5",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-Embedding-4B",
         tasks=[
             EvalTask(
