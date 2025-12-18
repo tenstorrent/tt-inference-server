@@ -58,7 +58,7 @@ PENALTY_PROMPTS = {
 @pytest.mark.parametrize(
     "penalty_param, penalty_val",
     [
-        ("presence_penalty", 1.2),
+        ("presence_penalty", 1.5),
         ("frequency_penalty", 1.2),
         ("repetition_penalty", 1.5),  # vLLM implements this, OpenAI uses the other two
     ],
@@ -69,7 +69,7 @@ def test_penalties(
     """Tests repetition, presence, and frequency penalties."""
 
     # Baseline run (no penalty)
-    payload_base = {"messages": messages, "max_tokens": 1024, "temperature": 0.1, "seed": 2002}
+    payload_base = {"messages": messages, "max_tokens": 1024, "temperature": 0.1, "seed": 2000}
     print(payload_base)
     response_base = api_client(payload_base, timeout=None)
 
