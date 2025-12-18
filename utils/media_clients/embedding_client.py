@@ -39,6 +39,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
         self.isl = 1000
+        self.dimensions = 1000
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
     def run_eval(self) -> None:
@@ -56,7 +57,31 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            return True
+            logger.info("Running embedding eval...")
+
+            self._run_embedding_transcription_eval()
+
+            logger.info("Generating eval report...")
+
+            eval_data = {
+                "model": self.model_spec.model_name,
+                "device": self.device.name,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "task_type": "embedding",
+            }
+
+            eval_filename = (
+                Path(self.output_path)
+                / f"eval_{self.model_spec.model_id}"
+                / self.model_spec.hf_model_repo.replace("/", "__")
+                / f"results_{time.time()}.json"
+            )
+            # Create directory structure if it doesn't exist
+            eval_filename.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(eval_filename, "w") as f:
+                json.dump(eval_data, f, indent=4)
+            logger.info(f"Evaluation data written to: {eval_filename}")
 
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
@@ -195,3 +220,50 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
+
+    def _run_embedding_transcription_eval(self) -> None:
+        """Run embedding transcription evaluation."""
+
+        import mteb
+        import numpy as np
+        from mteb.models.model_implementations.openai_models import OpenAIModel
+        from openai import OpenAI
+
+        model_name = self.model
+
+        def single_string_encode(self, inputs, **kwargs):
+            sentences = [text for batch in inputs for text in batch["text"]]
+            all_embeddings = []
+            for sentence in sentences:
+                response = self._client.embeddings.create(
+                    input=sentence,
+                    model=model_name,
+                    encoding_format="float",
+                    dimensions=self._embed_dim if self._embed_dim else None,
+                )
+                all_embeddings.extend(self._to_numpy(response))
+            return np.array(all_embeddings)
+
+        client = OpenAI(
+            base_url=f"{self.base_url}/v1",
+            api_key=OPENAI_API_KEY,
+        )
+
+        # Create the model wrapper
+        model = OpenAIModel(
+            model_name=model_name,
+            max_tokens=100,
+            embed_dim=100,
+            client=client,
+        )
+        model.encode = single_string_encode.__get__(model, type(model))
+
+        # Select tasks and run evaluation
+        tasks = mteb.get_tasks(
+            tasks=["STS12"]
+        )  # or AmazonCounterfactualClassification for classification
+        results = mteb.evaluate(
+            model, tasks=tasks, show_progress_bar=True, encode_kwargs={"batch_size": 1}
+        )
+
+        logger.info(f"Eval results: {results}")
