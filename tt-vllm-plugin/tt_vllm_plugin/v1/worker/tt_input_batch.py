@@ -11,7 +11,6 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState
 
 
 class SamplingInputBatch:
-
     def __init__(self, max_num_reqs: int):
         self.temperature_cpu = np.empty(max_num_reqs, dtype=np.float32)
         self.top_p_cpu = np.empty(max_num_reqs, dtype=np.float32)
@@ -22,11 +21,11 @@ class InputBatch:
     """Persistent input batch, based on InputBatch for GPU/TPU backends."""
 
     def __init__(
-            self,
-            max_num_reqs: int,
-            max_model_len: int,
-            max_num_batched_tokens: int,
-            block_sizes: list[int],  # The block_size of each kv cache group
+        self,
+        max_num_reqs: int,
+        max_model_len: int,
+        max_num_batched_tokens: int,
+        block_sizes: list[int],  # The block_size of each kv cache group
     ):
         self.max_num_reqs = max_num_reqs
 
@@ -78,7 +77,8 @@ class InputBatch:
         if req_index is None:
             req_index = self.num_reqs
         assert req_index < self.max_num_reqs, (
-            f"req_index={req_index} >= max_num_reqs={self.max_num_reqs}")
+            f"req_index={req_index} >= max_num_reqs={self.max_num_reqs}"
+        )
 
         req_id = request.req_id
         if req_index == len(self._req_ids):
@@ -93,12 +93,10 @@ class InputBatch:
         # Copy the prompt token ids and output token ids.
         num_prompt_tokens = len(request.prompt_token_ids)
         self.num_prompt_tokens[req_index] = num_prompt_tokens
-        self.token_ids_cpu[
-            req_index, :num_prompt_tokens] = request.prompt_token_ids
+        self.token_ids_cpu[req_index, :num_prompt_tokens] = request.prompt_token_ids
         start_idx = num_prompt_tokens
         end_idx = start_idx + len(request.output_token_ids)
-        self.token_ids_cpu[req_index,
-                           start_idx:end_idx] = request.output_token_ids
+        self.token_ids_cpu[req_index, start_idx:end_idx] = request.output_token_ids
         # Number of token ids in token_ids_cpu.
         self.num_tokens[req_index] = request.num_tokens
 
@@ -125,7 +123,7 @@ class InputBatch:
 
     def condense(self, empty_req_indices: list[int]) -> None:
         """Move non-empty requests down into lower, empty indices.
-        
+
         Args:
             empty_req_indices: empty batch indices, sorted descending.
         """
@@ -161,27 +159,26 @@ class InputBatch:
 
             num_tokens = self.num_tokens[last_req_index]
             self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[
-                last_req_index, :num_tokens]
+                last_req_index, :num_tokens
+            ]
             self.num_tokens[empty_index] = num_tokens
-            self.num_prompt_tokens[empty_index] = self.num_prompt_tokens[
-                last_req_index]
-            self.num_computed_tokens_cpu[
-                empty_index] = self.num_computed_tokens_cpu[last_req_index]
+            self.num_prompt_tokens[empty_index] = self.num_prompt_tokens[last_req_index]
+            self.num_computed_tokens_cpu[empty_index] = self.num_computed_tokens_cpu[
+                last_req_index
+            ]
             self.block_table.move_row(last_req_index, empty_index)
 
             # Sampling-related.
             sampling = self.sampling
             sampling.temperature_cpu[empty_index] = sampling.temperature_cpu[
-                last_req_index]
-            sampling.top_p_cpu[empty_index] = sampling.top_p_cpu[
-                last_req_index]
-            sampling.top_k_cpu[empty_index] = sampling.top_k_cpu[
-                last_req_index]
+                last_req_index
+            ]
+            sampling.top_p_cpu[empty_index] = sampling.top_p_cpu[last_req_index]
+            sampling.top_k_cpu[empty_index] = sampling.top_k_cpu[last_req_index]
 
             # Decrement last_req_index since it is now empty.
             last_req_index -= 1
 
         # Trim lists to the batch size.
-        del self._req_ids[self.num_reqs:]
-        del self.req_output_token_ids[self.num_reqs:]
-
+        del self._req_ids[self.num_reqs :]
+        del self.req_output_token_ids[self.num_reqs :]

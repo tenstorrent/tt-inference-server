@@ -29,9 +29,9 @@ def _method_accepts_param(method, param_name: str) -> bool:
 
 
 class TTModelLoader(BaseModelLoader):
-
-    def load_model(self, vllm_config: VllmConfig,
-                   model_config: ModelConfig) -> nn.Module:
+    def load_model(
+        self, vllm_config: VllmConfig, model_config: ModelConfig
+    ) -> nn.Module:
         """Load a model with the given configurations."""
 
         logger.info("Loading model on TT platform...")
@@ -41,10 +41,10 @@ class TTModelLoader(BaseModelLoader):
 
         model_class, _ = get_model_architecture(model_config)
         logger.info(f"Resolved model class: {model_class.__name__}")
-        
+
         # Check if model class has initialize_vllm_model method
         # If not, it's likely vLLM's native implementation and we should let vLLM handle it
-        if not hasattr(model_class, 'initialize_vllm_model'):
+        if not hasattr(model_class, "initialize_vllm_model"):
             logger.error(
                 f"Model class {model_class.__name__} does not have initialize_vllm_model method. "
                 f"Architecture: {model_config.hf_config.architectures}. "
@@ -57,15 +57,16 @@ class TTModelLoader(BaseModelLoader):
                 "Ensure your model is registered in vLLM's ModelRegistry with a TT-prefixed architecture name. "
                 "For BGE model, ensure 'TTBertModel' -> 'BGEForEmbedding' is registered in ModelRegistry."
             )
-        
+
         # Fix: Check if override_tt_config exists before calling .get()
         optimizations = None
         if model_config.override_tt_config:
             optimizations = model_config.override_tt_config.get("optimizations", None)
-        
+
         if optimizations is not None:
             assert optimizations in [
-                "performance", "accuracy"
+                "performance",
+                "accuracy",
             ], f"""Invalid optimizations configuration `{optimizations}`, 
             allowed values are 'performance' or 'accuracy'"""
 
@@ -79,7 +80,7 @@ class TTModelLoader(BaseModelLoader):
             "tt_data_parallel": data_parallel,
             "optimizations": optimizations,
         }
-        
+
         if _method_accepts_param(model_class.initialize_vllm_model, "vllm_config"):
             init_kwargs["vllm_config"] = vllm_config
 
@@ -95,9 +96,7 @@ class TTModelLoader(BaseModelLoader):
         """Download a model so that it can be immediately loaded."""
         raise NotImplementedError
 
-    def load_weights(self, model: nn.Module,
-                     model_config: ModelConfig) -> None:
-        """Load weights into a model. This standalone API allows 
+    def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
+        """Load weights into a model. This standalone API allows
         inplace weights loading for an already-initialized model"""
         raise NotImplementedError
-

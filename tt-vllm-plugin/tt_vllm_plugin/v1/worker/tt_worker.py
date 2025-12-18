@@ -10,8 +10,7 @@ import torch.nn as nn
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
-from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                        KVCacheSpec)
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
@@ -19,9 +18,12 @@ from tt_vllm_plugin.v1.worker.tt_model_runner import TTModelRunner
 from tt_vllm_plugin.v1.worker.tt_model_runner_pooling import TTModelRunnerPooling
 from tt_vllm_plugin.model_loader.tt_loader import TTModelLoader
 from tt_vllm_plugin.worker.tt_model_runner import TTModelInput
-from tt_vllm_plugin.worker.tt_worker import (close_mesh_device, get_mesh_grid,
-                                   get_num_available_blocks_tt,
-                                   open_mesh_device)
+from tt_vllm_plugin.worker.tt_worker import (
+    close_mesh_device,
+    get_mesh_grid,
+    get_num_available_blocks_tt,
+    open_mesh_device,
+)
 from vllm.tasks import SupportedTask
 
 if TYPE_CHECKING:
@@ -33,7 +35,6 @@ logger.info("=== tt_worker.py module is being imported ===")
 
 
 class TTWorker(WorkerBase):
-
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -44,8 +45,9 @@ class TTWorker(WorkerBase):
     ):
         logger.info("Initializing TT worker...")
         print("Initializing TT worker...")
-        super().__init__(vllm_config, local_rank, rank,
-                         distributed_init_method, is_driver_worker)
+        super().__init__(
+            vllm_config, local_rank, rank, distributed_init_method, is_driver_worker
+        )
 
         # Initialized by init_device
         self.mesh_device = None
@@ -56,8 +58,9 @@ class TTWorker(WorkerBase):
         trace_key = "trace_mode"
         self.trace_mode = True
         if override_tt_config and trace_key in override_tt_config:
-            assert override_tt_config[trace_key] in [True, False], \
+            assert override_tt_config[trace_key] in [True, False], (
                 f"Invalid {trace_key}: {override_tt_config[trace_key]}"
+            )
             self.trace_mode = override_tt_config[trace_key]
 
     def init_device(self) -> None:
@@ -66,7 +69,11 @@ class TTWorker(WorkerBase):
         if dp_rank == 0:
             # Pass model_config to device_params_from_override_tt_config for BGE detection
             self.mesh_device = open_mesh_device(
-                self.model_config.override_tt_config, self.trace_mode, dp_rank, self.model_config)
+                self.model_config.override_tt_config,
+                self.trace_mode,
+                dp_rank,
+                self.model_config,
+            )
             self.device_config.device = self.mesh_device
             assert self.mesh_device is not None
             self.device_config.num_devices = self.mesh_device.get_num_devices()
@@ -86,26 +93,28 @@ class TTWorker(WorkerBase):
             # First, load the model to determine its type
             loader = TTModelLoader(self.load_config)
             model = loader.load_model(
-                vllm_config=self.vllm_config,
-                model_config=self.model_config
+                vllm_config=self.vllm_config, model_config=self.model_config
             )
-            
+
             # Detect if this is a pooling model
             # Check if model has forward() but not prefill_forward()/decode_forward()
             # This is a heuristic - pooling models typically only have forward()
             is_pooling = (
-                hasattr(model, 'forward') and 
-                not (hasattr(model, 'prefill_forward') and hasattr(model, 'decode_forward')) and
-                hasattr(model, 'get_embedding_dim')
+                hasattr(model, "forward")
+                and not (
+                    hasattr(model, "prefill_forward")
+                    and hasattr(model, "decode_forward")
+                )
+                and hasattr(model, "get_embedding_dim")
             )
-            
+
             # Also check model_config.runner_type if set
-            runner_type = getattr(self.model_config, 'runner_type', None)
-            if runner_type == 'pooling':
+            runner_type = getattr(self.model_config, "runner_type", None)
+            if runner_type == "pooling":
                 is_pooling = True
-            elif runner_type == 'generate':
+            elif runner_type == "generate":
                 is_pooling = False
-            
+
             # Create the appropriate runner
             if is_pooling:
                 logger.info("Detected pooling model, using TTModelRunnerPooling")
@@ -130,8 +139,8 @@ class TTWorker(WorkerBase):
         else:
             # For non-DP rank 0, we still need to create a runner placeholder
             # The actual model won't be loaded, but the runner structure is needed
-            runner_type = getattr(self.model_config, 'runner_type', 'generate')
-            if runner_type == 'pooling':
+            runner_type = getattr(self.model_config, "runner_type", "generate")
+            if runner_type == "pooling":
                 self.model_runner = TTModelRunnerPooling(
                     vllm_config=self.vllm_config,
                     mesh_device=self.mesh_device,
@@ -151,12 +160,12 @@ class TTWorker(WorkerBase):
         forward context (compilation_config.static_forward_context).
         core/kv_cache_utils.py uses the KVCacheSpec along with available
         memory info from a profiling run to determine num blocks.
-        
+
         For the TT backend, the static forward context is not populated since
         the modelling code is independent so we currently skip creating a
         kv cache spec for each layer, similar to the Spyre/Neuron backends.
         Currently we also don't run profiling to determine available memory.
-        
+
         Return a dummy single layer KVCacheSpec and in the
         determine_available_memory function override num blocks using
         self.cache_config.num_gpu_blocks_override.
@@ -173,8 +182,11 @@ class TTWorker(WorkerBase):
         # Excludes TP factor since that is handled on the model side for TT.
         total_num_kv_heads = model_config.get_num_kv_heads(parallel_config)
         head_size = model_config.get_head_size()
-        dtype = (model_config.dtype if cache_config.cache_dtype == "auto" else
-                 STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype])
+        dtype = (
+            model_config.dtype
+            if cache_config.cache_dtype == "auto"
+            else STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
+        )
 
         attn_spec = FullAttentionSpec(
             block_size=cache_config.block_size,
@@ -182,7 +194,8 @@ class TTWorker(WorkerBase):
             head_size=head_size,
             dtype=dtype,
             use_mla=model_config.use_mla,
-            sliding_window=model_config.get_sliding_window())
+            sliding_window=model_config.get_sliding_window(),
+        )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
         return kv_cache_spec
 
@@ -192,7 +205,7 @@ class TTWorker(WorkerBase):
         available memory for the KV cache. The available memory is then used
         in conjunction with the output of get_kv_cache_spec to determine
         the number of kv cache blocks (total memory / page_size / num layers).
-        
+
         Currenly we just return a large dummy number of bytes similar to the
         Spyre/Neuron backends and override the number of kv cache blocks.
         """
@@ -214,8 +227,7 @@ class TTWorker(WorkerBase):
             return
         self.model_runner.initialize_kv_cache(kv_cache_config)
 
-    def initialize_cache(self, num_gpu_blocks: int,
-                         num_cpu_blocks: int) -> None:
+    def initialize_cache(self, num_gpu_blocks: int, num_cpu_blocks: int) -> None:
         # Cache is already initialized in initialize_from_config.
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
@@ -229,7 +241,9 @@ class TTWorker(WorkerBase):
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
         assert self.is_driver_worker, "There should only be one Worker for TT"
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         output = self.model_runner.execute_model(scheduler_output)
         return output
 
@@ -245,7 +259,9 @@ class TTWorker(WorkerBase):
         """Called by each DP rank to build model input from scheduler output.
         Pooling models don't use TTModelInput, so return None.
         """
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         if isinstance(self.model_runner, TTModelRunnerPooling):
             # Pooling models handle input preparation internally
             return None, 0
@@ -256,27 +272,34 @@ class TTWorker(WorkerBase):
         return model_input, max_blocks
 
     def build_dp_decode_gather_input(
-            self, model_input: Optional[TTModelInput],
-            max_blocks_decode_batch: int) -> dict[str, torch.Tensor]:
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        self, model_input: Optional[TTModelInput], max_blocks_decode_batch: int
+    ) -> dict[str, torch.Tensor]:
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         if isinstance(self.model_runner, TTModelRunnerPooling):
             # Pooling models don't use decode gather input
             return {"int_inputs": torch.tensor([]), "float_inputs": torch.tensor([])}
         return self.model_runner.build_dp_decode_gather_input(
-            model_input, max_blocks_decode_batch)
+            model_input, max_blocks_decode_batch
+        )
 
     def concat_and_execute_dp(
-            self, inputs: Union[list[Optional[TTModelInput]],
-                                dict[str, torch.Tensor]], is_decode: bool,
-            max_blocks_decode_batch: Optional[int]) -> torch.Tensor:
+        self,
+        inputs: Union[list[Optional[TTModelInput]], dict[str, torch.Tensor]],
+        is_decode: bool,
+        max_blocks_decode_batch: Optional[int],
+    ) -> torch.Tensor:
         """Called only by DP rank 0 to concatenate DP-sized inputs and execute.
         Returns a stacked tensor [world, max_num_seqs, 1] of sampled ids.
         Each DP slice is right-padded with zeros to max_num_seqs; empty entries
         are zeros. Same behavior for both prefill and decode.
-        
+
         For pooling models, this is not used as they don't support DP yet.
         """
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         if isinstance(self.model_runner, TTModelRunnerPooling):
             # Pooling models don't support DP yet
             # Return empty tensor for now
@@ -284,13 +307,16 @@ class TTWorker(WorkerBase):
             B = int(self.model_runner.scheduler_config.max_num_seqs)
             return torch.zeros((world, B, 1), dtype=torch.int32)
 
-        assert self.vllm_config.parallel_config.data_parallel_rank == 0, \
+        assert self.vllm_config.parallel_config.data_parallel_rank == 0, (
             "concat_and_execute_dp must run on DP rank 0"
+        )
         assert self.is_driver_worker, "concat_and_execute_dp must run on driver"
         merged = self.model_runner.concat_dp_model_inputs(
-            inputs, is_decode, max_blocks_decode_batch)
-        sampled_token_ids_per_dp: list[
-            torch.Tensor] = self.model_runner.execute_with_model_input(merged)
+            inputs, is_decode, max_blocks_decode_batch
+        )
+        sampled_token_ids_per_dp: list[torch.Tensor] = (
+            self.model_runner.execute_with_model_input(merged)
+        )
 
         # Pad each DP result to uniform shape for tensor all_gather.
         world = self.vllm_config.parallel_config.data_parallel_size
@@ -302,24 +328,31 @@ class TTWorker(WorkerBase):
                 token_ids = torch.zeros((B, 1), dtype=torch.int32)
             else:
                 assert token_ids.dim() == 2 and token_ids.shape[1] == 1, (
-                    "Currently only supporting 1 output token per request")
+                    "Currently only supporting 1 output token per request"
+                )
                 pad_rows = B - token_ids.shape[0]
                 if pad_rows > 0:
-                    token_ids = torch.cat([
-                        token_ids,
-                        torch.zeros(
-                            (pad_rows, token_ids.shape[1]), dtype=torch.int32)
-                    ],
-                                          dim=0)
+                    token_ids = torch.cat(
+                        [
+                            token_ids,
+                            torch.zeros(
+                                (pad_rows, token_ids.shape[1]), dtype=torch.int32
+                            ),
+                        ],
+                        dim=0,
+                    )
             sampled_token_ids_per_dp[dp_rank] = token_ids
         return torch.stack(sampled_token_ids_per_dp)  # [world, B, 1]
 
     def apply_dp_execution_result(
-            self, sampled_token_ids: torch.Tensor) -> ModelRunnerOutput:
+        self, sampled_token_ids: torch.Tensor
+    ) -> ModelRunnerOutput:
         """Called by each DP rank to apply sampled tokens to internal caches.
         Pooling models don't use this method.
         """
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         if isinstance(self.model_runner, TTModelRunnerPooling):
             # Pooling models don't support DP yet
             return ModelRunnerOutput(
@@ -345,19 +378,24 @@ class TTWorker(WorkerBase):
             del self.model_runner
 
             if self.mesh_device:
-                close_mesh_device(self.mesh_device,
-                                  self.model_config.override_tt_config)
+                close_mesh_device(
+                    self.mesh_device, self.model_config.override_tt_config
+                )
                 del self.mesh_device
 
-        if hasattr(super(), '__del__'):
+        if hasattr(super(), "__del__"):
             super().__del__()  # type: ignore
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         """Get supported tasks by delegating to the model runner."""
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         return self.model_runner.get_supported_tasks()
-    
+
     def get_model(self) -> nn.Module:
         """Get the underlying model."""
-        assert self.model_runner is not None, "Model runner not initialized. Call load_model() first."
+        assert self.model_runner is not None, (
+            "Model runner not initialized. Call load_model() first."
+        )
         return self.model_runner.get_model()

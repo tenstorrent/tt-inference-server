@@ -17,8 +17,8 @@ logger = init_logger("vllm.tt_vllm_plugin.worker.tt_worker")
 
 def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     """
-    Used to set the number of available blocks for the TT KV cache as we 
-    currently do not run profiling to determine available memory. 
+    Used to set the number of available blocks for the TT KV cache as we
+    currently do not run profiling to determine available memory.
     Also used by the V1 TTWorker.
     """
 
@@ -31,29 +31,48 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
         data_parallel = vllm_config.parallel_config.data_parallel_size
     else:
         data_parallel = 1
-        if (model_config.override_tt_config
-                and "data_parallel" in model_config.override_tt_config):
+        if (
+            model_config.override_tt_config
+            and "data_parallel" in model_config.override_tt_config
+        ):
             data_parallel = model_config.override_tt_config["data_parallel"]
 
     is_wormhole = "wormhole_b0" in ttnn.get_arch_name()
-    num_devices_per_model = (device_config.num_devices // data_parallel)
+    num_devices_per_model = device_config.num_devices // data_parallel
 
-    if (("Llama-3.1-8B" in model_config.model or "Mistral-7B"
-         in model_config.model or "gemma-3-4b" in model_config.model)
-            and num_devices_per_model == 1 and is_wormhole):
+    if (
+        (
+            "Llama-3.1-8B" in model_config.model
+            or "Mistral-7B" in model_config.model
+            or "gemma-3-4b" in model_config.model
+        )
+        and num_devices_per_model == 1
+        and is_wormhole
+    ):
         # Llama8B, Mistral7B, and gemma3-4b on N150
         max_tokens_all_users = 65536
-    elif (("DeepSeek-R1-Distill-Qwen-14B" in model_config.model
-           or "Qwen2.5-14B" in model_config.model)
-          and num_devices_per_model == 2 and is_wormhole):
+    elif (
+        (
+            "DeepSeek-R1-Distill-Qwen-14B" in model_config.model
+            or "Qwen2.5-14B" in model_config.model
+        )
+        and num_devices_per_model == 2
+        and is_wormhole
+    ):
         # Qwen2.5-14B on N300
         max_tokens_all_users = 65536
-    elif ("Llama-3.2-90B" in model_config.model and num_devices_per_model == 8
-          and is_wormhole):
+    elif (
+        "Llama-3.2-90B" in model_config.model
+        and num_devices_per_model == 8
+        and is_wormhole
+    ):
         # Llama90B on WH T3K
         max_tokens_all_users = 65536
-    elif ("Qwen2.5-VL-72B" in model_config.model and num_devices_per_model == 8
-          and is_wormhole):
+    elif (
+        "Qwen2.5-VL-72B" in model_config.model
+        and num_devices_per_model == 8
+        and is_wormhole
+    ):
         # Qwen2.5-VL-72B on WH T3K
         max_tokens_all_users = 65536
     elif "gpt-oss" in model_config.model:
@@ -77,8 +96,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
         # allocate an extra num_lookahead_slots (num_scheduler_steps - 1 when
         # not using speculative decoding) per user.
         # E.g. batch 32, num_lookahead_slots 9 needs 288 extra tokens.
-        max_tokens_all_users += (scheduler_config.num_lookahead_slots *
-                                 max_batch)
+        max_tokens_all_users += scheduler_config.num_lookahead_slots * max_batch
 
     num_tt_blocks = math.ceil(max_tokens_all_users / cache_config.block_size)
 
@@ -94,16 +112,17 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
 
 def get_dispatch_core_config(override_tt_config):
     dispatch_core_axis: Optional[ttnn.DispatchCoreAxis] = None
-    if (override_tt_config is not None
-            and "dispatch_core_axis" in override_tt_config):
-        assert override_tt_config["dispatch_core_axis"] in [
-            "row", "col"
-        ], ("Invalid dispatch_core_axis:"
+    if override_tt_config is not None and "dispatch_core_axis" in override_tt_config:
+        assert override_tt_config["dispatch_core_axis"] in ["row", "col"], (
+            "Invalid dispatch_core_axis:"
             f"{override_tt_config['dispatch_core_axis']}. "
-            "Expected: row, col.")
-        dispatch_core_axis = (ttnn.DispatchCoreAxis.COL
-                              if override_tt_config["dispatch_core_axis"]
-                              == "col" else ttnn.DispatchCoreAxis.ROW)
+            "Expected: row, col."
+        )
+        dispatch_core_axis = (
+            ttnn.DispatchCoreAxis.COL
+            if override_tt_config["dispatch_core_axis"] == "col"
+            else ttnn.DispatchCoreAxis.ROW
+        )
 
     return ttnn.DispatchCoreConfig(axis=dispatch_core_axis)
 
@@ -114,14 +133,13 @@ def get_fabric_config(override_tt_config, num_devices):
         fabric_config = None
     else:
         # Set the most common value as default
-        is_6u = (
-            ttnn.cluster.get_cluster_type() == ttnn.cluster.ClusterType.GALAXY)
-        fabric_config = (ttnn.FabricConfig.FABRIC_1D_RING
-                         if is_6u else ttnn.FabricConfig.FABRIC_1D)
+        is_6u = ttnn.cluster.get_cluster_type() == ttnn.cluster.ClusterType.GALAXY
+        fabric_config = (
+            ttnn.FabricConfig.FABRIC_1D_RING if is_6u else ttnn.FabricConfig.FABRIC_1D
+        )
 
     # Override fabric_config if specified in override_tt_config
-    if (override_tt_config is not None
-            and "fabric_config" in override_tt_config):
+    if override_tt_config is not None and "fabric_config" in override_tt_config:
         fabric_config_str = override_tt_config["fabric_config"]
         fabric_config_map = {
             "DISABLED": ttnn.FabricConfig.DISABLED,
@@ -133,7 +151,8 @@ def get_fabric_config(override_tt_config, num_devices):
         fabric_config = fabric_config_map.get(fabric_config_str)
         assert fabric_config is not None, (
             f"Invalid fabric_config: {fabric_config_str}. "
-            f"Expected one of {list(fabric_config_map.keys())}.")
+            f"Expected one of {list(fabric_config_map.keys())}."
+        )
     return fabric_config
 
 
@@ -159,15 +178,16 @@ def reset_fabric(override_tt_config, num_devices):
         ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 
 
-def device_params_from_override_tt_config(override_tt_config, trace_mode, model_config=None):
+def device_params_from_override_tt_config(
+    override_tt_config, trace_mode, model_config=None
+):
     device_params = {}
 
     if trace_mode:
         # Set the most common value as default, override later
         device_params["trace_region_size"] = 50000000
         if override_tt_config and "trace_region_size" in override_tt_config:
-            device_params["trace_region_size"] = override_tt_config[
-                "trace_region_size"]
+            device_params["trace_region_size"] = override_tt_config["trace_region_size"]
 
     if override_tt_config and "worker_l1_size" in override_tt_config:
         device_params["worker_l1_size"] = override_tt_config["worker_l1_size"]
@@ -178,34 +198,40 @@ def device_params_from_override_tt_config(override_tt_config, trace_mode, model_
     # Support num_command_queues parameter
     if override_tt_config and "num_command_queues" in override_tt_config:
         device_params["num_command_queues"] = override_tt_config["num_command_queues"]
-    
+
     # Auto-detect BGE models and set required parameters
     # BGE models need 2 command queues for _capture_bge_trace_2cqs()
     if model_config is not None:
         # Check model name from various possible attributes
         model_name = None
-        if hasattr(model_config, 'model'):
+        if hasattr(model_config, "model"):
             model_name = model_config.model
-        elif hasattr(model_config, 'hf_config'):
+        elif hasattr(model_config, "hf_config"):
             hf_config = model_config.hf_config
-            if hasattr(hf_config, 'name_or_path'):
+            if hasattr(hf_config, "name_or_path"):
                 model_name = hf_config.name_or_path
-            elif hasattr(hf_config, '_name_or_path'):
+            elif hasattr(hf_config, "_name_or_path"):
                 model_name = hf_config._name_or_path
             elif isinstance(hf_config, dict):
-                model_name = hf_config.get('name_or_path') or hf_config.get('_name_or_path')
-        
+                model_name = hf_config.get("name_or_path") or hf_config.get(
+                    "_name_or_path"
+                )
+
         # Check if this is a BGE model by model name
         # BGE models typically have "bge" in their HuggingFace model name
-        is_bge = model_name and 'bge' in str(model_name).lower()
-        
+        is_bge = model_name and "bge" in str(model_name).lower()
+
         # For BGE models, set required device parameters if not already set
         if is_bge and "num_command_queues" not in device_params:
-            logger.info(f"Detected BGE model ({model_name}), setting num_command_queues=2")
+            logger.info(
+                f"Detected BGE model ({model_name}), setting num_command_queues=2"
+            )
             device_params["num_command_queues"] = 2
             if "l1_small_size" not in device_params:
                 device_params["l1_small_size"] = 24576
-            if trace_mode and (not override_tt_config or "trace_region_size" not in override_tt_config):
+            if trace_mode and (
+                not override_tt_config or "trace_region_size" not in override_tt_config
+            ):
                 device_params["trace_region_size"] = 6434816
 
     return device_params
@@ -226,7 +252,7 @@ def get_mesh_grid(dp_rank=0):
         "P150x4": (1, 4),
         "T3K": (1, 8),
         "P150x8": (1, 8),
-        "TG": (8, 4)
+        "TG": (8, 4),
     }
     mesh_device_env = os.environ.get("MESH_DEVICE")
     if mesh_device_env is not None:
@@ -241,17 +267,19 @@ def get_mesh_grid(dp_rank=0):
         except (ValueError, SyntaxError):
             # If parsing fails, treat as a string key for mesh_grid_dict
             assert mesh_device_env in mesh_grid_dict, (
-                f"Invalid MESH_DEVICE: {mesh_device_env}")
+                f"Invalid MESH_DEVICE: {mesh_device_env}"
+            )
             mesh_grid = mesh_grid_dict[mesh_device_env]
     else:
         assert dp_rank == 0, (
-            "MESH_DEVICE must be set when running with data_parallel_size > 1")
+            "MESH_DEVICE must be set when running with data_parallel_size > 1"
+        )
         mesh_grid = (1, num_devices_available)
 
-    assert dp_rank != 0 or (
-        mesh_grid[0] * mesh_grid[1] <= num_devices_available), (
-            f"Requested mesh grid shape {mesh_grid} is larger than "
-            f"number of available devices {num_devices_available}")
+    assert dp_rank != 0 or (mesh_grid[0] * mesh_grid[1] <= num_devices_available), (
+        f"Requested mesh grid shape {mesh_grid} is larger than "
+        f"number of available devices {num_devices_available}"
+    )
 
     return mesh_grid
 
@@ -261,7 +289,8 @@ def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=Non
     mesh_grid = get_mesh_grid(dp_rank)
 
     device_params = device_params_from_override_tt_config(
-        override_tt_config, trace_mode, model_config)
+        override_tt_config, trace_mode, model_config
+    )
 
     # Set fabric before opening the device
     num_devices_requested = mesh_grid[0] * mesh_grid[1]
@@ -272,10 +301,16 @@ def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=Non
         dispatch_core_config=get_dispatch_core_config(override_tt_config),
         **device_params,
     )
-    logger.info("multidevice with %d devices and grid %s is created",
-                mesh_device.get_num_devices(), mesh_grid)
+    logger.info(
+        "multidevice with %d devices and grid %s is created",
+        mesh_device.get_num_devices(),
+        mesh_grid,
+    )
     if "num_command_queues" in device_params:
-        logger.info("Device initialized with %d command queues", device_params["num_command_queues"])
+        logger.info(
+            "Device initialized with %d command queues",
+            device_params["num_command_queues"],
+        )
     return mesh_device
 
 
@@ -289,4 +324,3 @@ def close_mesh_device(mesh_device, override_tt_config):
 
     # Reset fabric
     reset_fabric(override_tt_config, num_devices)
-
