@@ -80,8 +80,8 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info("## Run inference ##")
 
         with torch.no_grad():
-            self.compiled_model(inputs)
-            self.loader.output_postprocess(inputs)
+            output = self.compiled_model(inputs)
+            predictions = self.loader.output_postprocess(output)  # noqa: F841
 
         return True
 
