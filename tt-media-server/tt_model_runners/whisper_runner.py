@@ -86,6 +86,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 dummy_audio = np.zeros(
                     self.settings.default_sample_rate, dtype=np.float32
                 )
+                dummy_audio = np.stack(
+                    [dummy_audio, dummy_audio], axis=0
+                )  # Shape: (2, 16000)
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
@@ -126,34 +129,44 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 )
             if self.ttnn_device is None:
                 raise RuntimeError("TTNN device not initialized")
-            request = self._validate_and_extract_request(requests)
+            requests = self._validate_and_extract_request(requests)
 
-            if request._segments and len(request._segments) > 0:
+            # Segments are present only in streaming requests
+            if requests[0]._segments and len(requests[0]._segments) > 0:
                 # Process audio with audio segments
                 self.logger.info(
-                    f"Device {self.device_id}: Processing {len(request._segments)} audio segments, stream: {request.stream}"
+                    f"Device {self.device_id}: Processing {len(requests[0]._segments)} audio segments, stream: {requests[0].stream}"
                 )
 
-                if request.stream:
-                    return self._process_segments_streaming(request)
+                if requests[0].stream:
+                    return self._process_segments_streaming(requests[0])
                 else:
-                    return await self._process_segments_non_streaming(request)
+                    return await self._process_segments_non_streaming(requests)
             else:
                 # Process audio without segments - direct inference on full audio
                 self.logger.info(
-                    f"Device {self.device_id}: Running inference on audio data, duration: {request._duration:.2f}s, samples: {len(request._audio_array)}, stream: {request.stream}"
+                    f"Device {self.device_id}: Running inference on audio data, duration: {requests[0]._duration:.2f}s, samples: {len(requests[0]._audio_array)}, stream: {requests[0].stream}"
                 )
+
+                audio_arrays = [request._audio_array for request in requests]
+                generation_params = [
+                    self._create_generation_params(request) for request in requests
+                ]
 
                 result = await self._execute_pipeline(
-                    request._audio_array,
-                    request.stream,
-                    self._create_generation_params(request),
+                    audio_arrays,
+                    requests[
+                        0
+                    ].stream,  # device worker guarantees all requests have same stream setting
+                    generation_params,
                 )
 
-                if request.stream:
-                    return self._format_streaming_result(result, request)
+                if requests[0].stream:
+                    return self._format_streaming_result(result, requests[0])
                 else:
-                    return self._format_non_streaming_result(result, request._duration)
+                    return self._format_non_streaming_result(
+                        result, requests[0]._duration
+                    )
 
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
@@ -191,32 +204,27 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         if not requests:
             raise ValueError("Empty requests list provided")
 
-        if len(requests) > 1:
-            self.logger.warning(
-                f"Device {self.device_id}: Batch processing not fully implemented. Processing only first of {len(requests)} requests"
-            )
+        for request in requests:
+            if request is None:
+                raise ValueError("Request cannot be None")
 
-        request = requests[0]
-        if request is None:
-            raise ValueError("Request cannot be None")
+            if not hasattr(request._audio_array, "shape"):
+                raise ValueError(
+                    f"Expected numpy array with shape attribute, got {type(request._audio_array)}"
+                )
 
-        if not hasattr(request._audio_array, "shape"):
-            raise ValueError(
-                f"Expected numpy array with shape attribute, got {type(request._audio_array)}"
-            )
+            if len(request._audio_array) == 0:
+                raise ValueError("Audio data is empty")
 
-        if len(request._audio_array) == 0:
-            raise ValueError("Audio data is empty")
+            if not np.isfinite(request._audio_array).all():
+                raise ValueError("Audio data contains non-finite values (NaN or Inf)")
 
-        if not np.isfinite(request._audio_array).all():
-            raise ValueError("Audio data contains non-finite values (NaN or Inf)")
+            if request._duration > self.settings.max_audio_duration_seconds:
+                self.logger.warning(
+                    f"Device {self.device_id}: Audio duration {request._duration:.2f}s exceeds recommended maximum {self.settings.max_audio_duration_seconds}s"
+                )
 
-        if request._duration > self.settings.max_audio_duration_seconds:
-            self.logger.warning(
-                f"Device {self.device_id}: Audio duration {request._duration:.2f}s exceeds recommended maximum {self.settings.max_audio_duration_seconds}s"
-            )
-
-        return request
+        return requests
 
     async def _execute_pipeline(self, audio_data, stream, generation_params):
         """Main pipeline execution method"""
@@ -362,7 +370,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
         }
 
-    async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
+    async def _process_segments_non_streaming(
+        self, requests: list[AudioProcessingRequest]
+    ):
         """Process segments without streaming - direct processing of each segment"""
         segments = []
         full_text_parts = []
@@ -370,34 +380,59 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         duration = 0.0
 
-        for i, segment in enumerate(request._segments):
+        processing_segments = []
+
+        for request in requests:
+            segment = request._segments[0]
             start_time = segment["start"]
             end_time = segment["end"]
             duration += end_time - start_time
-            speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
-
+            speaker = segment.get("speaker", f"SPEAKER_{0:02d}")
             segment_audio = request._audio_array
 
             if len(segment_audio) == 0:
                 self.logger.warning(
-                    f"Device {self.device_id}: Empty audio segment {i} from {start_time:.2f}s to {end_time:.2f}s"
+                    f"Device {self.device_id}: Empty audio segment from {start_time:.2f}s to {end_time:.2f}s"
                 )
                 continue
 
             self.logger.info(
-                f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
+                f"Device {self.device_id}: Processing segment: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
-            segment_result = await self._execute_pipeline(
-                segment_audio,
-                request.stream,
-                self._create_generation_params(request),
+            processing_segments.append(segment_audio)
+
+        if len(processing_segments) == 1:
+            # Single segment - pad by duplicating to reach batch_size
+            single_audio = processing_segments[0]
+            processing_segments = np.stack([single_audio] * 2, axis=0)
+            self.logger.info(
+                f"Device {self.device_id}: Padded single segment to batch shape: {processing_segments.shape}"
+            )
+        elif len(processing_segments) == 2:
+            # Two segments - stack them directly
+            processing_segments = np.stack(processing_segments, axis=0)
+            self.logger.info(
+                f"Device {self.device_id}: Stacked 2 segments to batch shape: {processing_segments.shape}"
             )
 
-            cleaned_text, start, end = TextUtils.extract_text(segment_result)
+        # Now processing_segments is a single numpy array
+        results = await self._execute_pipeline(
+            processing_segments,  # Single array instead of list
+            False,
+            self._create_generation_params(requests[0]),
+        )
+
+        if results and results[0].len() != 0:
+            results = results[0]
+
+        audio_text_segments = []
+
+        for result in results:
+            cleaned_text, start, end = TextUtils.extract_text(result)
 
             segment = AudioTextSegment(
-                id=i,
+                id=0,
                 speaker=speaker,
                 start_time=start_time,
                 end_time=end_time,
@@ -407,20 +442,22 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             full_text_parts.append(cleaned_text)
             speakers_set.add(speaker)
 
-        # Sort speakers for consistent ordering
-        speakers = sorted(list(speakers_set))
+            # Sort speakers for consistent ordering
+            speakers = sorted(list(speakers_set))
 
-        return [
-            AudioTextResponse(
-                text=TextUtils.concatenate_chunks(full_text_parts),
-                duration=duration,
-                segments=segments,
-                speaker_count=len(speakers),
-                speakers=speakers,
-                start=start,
-                end=end,
+            audio_text_segments.append(
+                AudioTextResponse(
+                    text=TextUtils.concatenate_chunks(full_text_parts),
+                    duration=duration,
+                    segments=segments,
+                    speaker_count=len(speakers),
+                    speakers=speakers,
+                    start=start,
+                    end=end,
+                )
             )
-        ]
+
+        return audio_text_segments
 
     async def _format_streaming_result(
         self, result_generator, request: AudioProcessingRequest
@@ -699,3 +736,25 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: Failed to create inference pipeline: {e}"
             )
             raise RuntimeError(f"Pipeline creation failed: {str(e)}") from e
+
+    def is_request_batchable(
+        self, request: AudioProcessingRequest, batch: list[AudioProcessingRequest]
+    ):
+        """
+        Requests are batchable only if all requests are non-streaming
+        """
+        if len(batch or []) >= self.max_batch_size:
+            return False
+
+        if batch is None:
+            return True
+
+        if request.stream:
+            return False
+
+        # check are all requests non-streaming
+        for batched_request in batch:
+            if batched_request.stream:
+                return False
+
+        return True
