@@ -66,7 +66,7 @@ class BaseService(ABC):
             result = self.combine_results(results)
 
         if result is not None:
-            return await self.post_process(result)
+            return await self.post_process(result, input_request)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
@@ -115,7 +115,7 @@ class BaseService(ABC):
     def stop_workers(self):
         return self.scheduler.stop_workers()
 
-    async def post_process(self, result):
+    async def post_process(self, result, input_request=None):
         return result
 
     async def pre_process(self, request):

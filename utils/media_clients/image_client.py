@@ -35,6 +35,8 @@ WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
 SDXL_SD35_INFERENCE_STEPS = 20
+IMAGE_FORMAT_FOR_EVALS = "PNG"
+IMAGE_QUALITY_FOR_EVALS = 100
 SDXL_INPAINTING_INFERENCE_STEPS = 20
 NEGATIVE_PROMPT = (
     "normal quality, low quality, worst quality, low res, blurry, nsfw, nude"
@@ -335,6 +337,8 @@ class ImageClientStrategy(BaseMediaStrategy):
             "num_inference_steps": NUM_INFERENCE_STEPS,
             "seed": 0,
             "guidance_scale": GUIDANCE_SCALE,
+            "image_return_format": IMAGE_FORMAT_FOR_EVALS,
+            "image_quality": IMAGE_QUALITY_FOR_EVALS,
             "number_of_images": 1,
         }
 
