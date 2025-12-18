@@ -81,6 +81,7 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             self.compiled_model(inputs)
+            self.loader.output_postprocess(inputs)
 
         return True
 
