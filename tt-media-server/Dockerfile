@@ -25,7 +25,7 @@ ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
 # make build commit SHA available in the image for reference and debugging
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+ENV TT_METAL_COMMIT_SHA_OR_TAG=1be016e10042908f29f3b5efa37b5c54ecd4e2b3
 
 ENV ENVIRONMENT=development
 ENV TT_MM_THROTTLE_PERF=5
@@ -90,8 +90,8 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
-    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
+    && git fetch --depth 1 origin 1be016e10042908f29f3b5efa37b5c54ecd4e2b3 \
+    && git checkout 1be016e10042908f29f3b5efa37b5c54ecd4e2b3 \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
@@ -180,7 +180,7 @@ ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+ENV TT_METAL_COMMIT_SHA_OR_TAG=1be016e10042908f29f3b5efa37b5c54ecd4e2b3 \
     ENVIRONMENT=development \
     TT_MM_THROTTLE_PERF=5 \
     SHELL=/bin/bash \
