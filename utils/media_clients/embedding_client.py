@@ -12,7 +12,6 @@ import sys
 import time
 from pathlib import Path
 
-from workflows.utils import get_num_calls
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -39,6 +38,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
+        self.num_calls = 1000
         self.isl = 1000
         self.dimensions = 1000
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
@@ -68,7 +68,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
-    def run_benchmark(self, attempt=0) -> list[AudioTestStatus]:
+    def run_benchmark(self) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -83,11 +83,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            # Get num_calls from benchmark parameters
-            num_calls = get_num_calls(self)
-
             status_list = []
-            status_list = self._run_embedding_transcription_benchmark(num_calls)
+            status_list = self._run_embedding_transcription_benchmark()
 
             self._generate_benchmarking_report(status_list)
 
@@ -95,9 +92,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _run_embedding_transcription_benchmark(
-        self, num_calls: int
-    ) -> list[EmbeddingTestStatus]:
+    def _run_embedding_transcription_benchmark(self) -> list[EmbeddingTestStatus]:
         """Run embedding transcription benchmark."""
 
         # Use the venv's python and vllm executable directly
@@ -115,7 +110,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "--random-input-len",
             str(self.isl),
             "--num-prompts",
-            str(num_calls),
+            str(self.num_calls),
             "--backend",
             "openai-embeddings",
             "--endpoint",
@@ -127,7 +122,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "benchmark",
         ]
 
-        logger.info(f"Running embedding benchmark with {num_calls} calls...")
+        logger.info(f"Running embedding benchmark with {self.num_calls} calls...")
 
         output = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
@@ -248,7 +243,6 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         results = mteb.evaluate(
             model, tasks=tasks, show_progress_bar=True, encode_kwargs={"batch_size": 1}
         )
-
         return self._parse_embedding_evals_output(results)
 
     def _parse_embedding_evals_output(self, results: dict) -> dict:
@@ -281,7 +275,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         logger.info("Generating evals report...")
         result_filename = (
             Path(self.output_path)
-            / f"evals_{self.model_spec.model_id}_{time.time()}.json"
+            / f"eval_{self.model_spec.model_id}"
+            / self.model_spec.hf_model_repo.replace("/", "__")
+            / f"results_{time.time()}.json"
         )
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
