@@ -2231,7 +2231,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2256,7 +2256,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2281,7 +2281,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2306,7 +2306,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2331,7 +2331,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2356,7 +2356,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2381,7 +2381,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
