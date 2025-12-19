@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import numpy as np
+from domain.video_generate_request import VideoGenerateRequest
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 
@@ -40,7 +41,7 @@ class VideoService(BaseService):
             warmup_task_data=warmup_task_data,
         )
 
-    async def post_process(self, result):
+    async def post_process(self, result, input_request: VideoGenerateRequest):
         """Asynchronous postprocessing using queue-based workers"""
         try:
             video_file = await self._cpu_workload_handler.execute_task(result, False)
