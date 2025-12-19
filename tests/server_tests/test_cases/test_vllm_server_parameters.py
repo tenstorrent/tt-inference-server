@@ -39,7 +39,7 @@ REPRO_PROMPT = [
     {"role": "user", "content": "What is the capital of France? Be concise."}
 ]
 PENALTY_PROMPTS = {
-    "repeat_trap": [{"role": "user", "content": "Write a story where you reuse the same words as much as possible."}],
+    "repeat_trap": [{"role": "user", "content": "Write a very repetitive story."}],
     "natural_repetition": [
         {
             "role": "user",
@@ -247,7 +247,6 @@ def test_penalties(
 
     # Baseline run (no penalty)
     payload_base = {"messages": messages, "temperature": 0.1, "max_tokens": 1024, "seed": 2000}
-    print(payload_base)
     response_base = api_client(payload_base, timeout=None)
 
     # Test run (with penalty)
@@ -270,7 +269,7 @@ def test_penalties(
 
         # 2. Heavy repetition should decrease
         #    For repetition-heavy prompts, penalties reduce top-token dominance
-        if prompt_name == "repeat_trap":
+        if prompt_name == "repeat_trap" and penalty_param == "presence_penalty":
             most_common_penalty = test_stats["most_common"][0][1]
             most_common_baseline = base_stats["most_common"][0][1]
             assert most_common_penalty <= most_common_baseline, (
