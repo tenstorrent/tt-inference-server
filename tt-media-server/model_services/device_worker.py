@@ -39,7 +39,9 @@ def setup_worker_environment(worker_id: str):
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
     # use cache per device to reduce number of "binary not found" errors
-    # os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
+    os.environ["TT_METAL_CACHE"] = (
+        f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
+    )
 
     if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
