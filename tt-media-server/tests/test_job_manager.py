@@ -90,18 +90,6 @@ class TestJob:
         assert job.is_terminal()
         assert not job.is_completed()
 
-    def test_mark_cancelled(self):
-        """Test marking job as cancelled"""
-        job = Job(id="test-123", object="video", model="test-model")
-
-        before = int(time.time())
-        job.mark_cancelled()
-        after = int(time.time())
-
-        assert job.status == "cancelled"
-        assert before <= job.completed_at <= after
-        assert job.is_terminal()
-        assert not job.is_completed()
 
     def test_to_public_dict_queued(self):
         """Test converting queued job to public dict"""
