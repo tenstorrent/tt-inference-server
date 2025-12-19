@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=4e497ce4d78c0cc21b52e05fbb34a58cf387b920
 
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
@@ -140,6 +140,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
+# Install tt-vllm-plugin
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+    && pip install ."
+
 # Cleanup build-only directories
 USER root
 RUN rm -rf ${HOME_DIR}/.rustup \
@@ -175,7 +181,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=4e497ce4d78c0cc21b52e05fbb34a58cf387b920
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
@@ -191,7 +197,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib
+    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
+    VLLM_USE_V1=1
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
