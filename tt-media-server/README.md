@@ -272,6 +272,19 @@ curl -X 'POST' \
 }'
 ```
 
+**Response example:**
+```json
+{
+  "id": "video_id_1",
+  "object": "video",
+  "status": "queued",
+  "created_at": 1702860000,
+  "model": "Wan2.2-T2V-A14B-Diffusers"
+}
+```
+
+Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}` in subsequent requests.
+
 ## Get video job metadata
 
 ```bash
@@ -304,7 +317,7 @@ curl -X 'GET' \
 ```
 This will download only the first 1 MB (bytes 0–1048575) of the video file.
 
-## Delete video job and assets
+## Cancel video job and assets
 
 ```bash
 curl -X 'DELETE' \
