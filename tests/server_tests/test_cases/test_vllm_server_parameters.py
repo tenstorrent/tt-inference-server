@@ -58,7 +58,7 @@ PENALTY_PROMPTS = {
 @pytest.mark.parametrize(
     "penalty_param, penalty_val",
     [
-        ("presence_penalty", 1.5),
+        ("presence_penalty", 1.2),
         ("frequency_penalty", 1.2),
         ("repetition_penalty", 1.5),  # vLLM implements this, OpenAI uses the other two
     ],
