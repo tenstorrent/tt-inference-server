@@ -38,7 +38,14 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
-        self.isl = 1000
+        self.isl = (
+            int(
+                model_spec.device_model_spec.env_vars.get(
+                    "MAX_NUM_BATCHED_TOKENS", 1024
+                )
+            )
+            - 20
+        )
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
     def run_eval(self) -> None:
