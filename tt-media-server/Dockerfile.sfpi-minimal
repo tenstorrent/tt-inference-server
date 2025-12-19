@@ -159,4 +159,3 @@ EXPOSE 8000
 
 # Default command - run the media server via uvicorn
 CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && source ./run_uvicorn.sh"]
-g
