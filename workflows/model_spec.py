@@ -1765,6 +1765,15 @@ spec_templates = [
                     "trace_region_size": 33000000,
                 },
             ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="2bdefe7",
+        vllm_commit="0f289be",
+        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=32 * 4,
@@ -1777,7 +1786,7 @@ spec_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
