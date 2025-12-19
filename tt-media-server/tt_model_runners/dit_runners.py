@@ -6,7 +6,6 @@ import asyncio
 import os
 from abc import abstractmethod
 
-import torch
 import ttnn
 from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
@@ -136,15 +135,12 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     )
     def run_inference(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        prompt = requests[0].prompt
-        negative_prompt = requests[0].negative_prompt
-        seed = int(requests[0].seed or 0)
-        num_inference_steps = requests[0].num_inference_steps
+        request = requests[0]
         image = self.pipeline.run_single_prompt(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            num_inference_steps=num_inference_steps,
-            seed=seed,
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt,
+            num_inference_steps=request.num_inference_steps,
+            seed=int(request.seed or 0),
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
@@ -291,18 +287,17 @@ class TTMochi1Runner(TTDiTRunner):
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run_inference(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        prompt = requests[0].prompt
-        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
-        num_inference_steps = requests[0].num_inference_steps
+        request = requests[0]
         frames = self.pipeline(
-            prompt,
-            num_inference_steps=num_inference_steps,
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt,
+            num_inference_steps=request.num_inference_steps,
             guidance_scale=3.5,
             num_frames=168,  # TODO: Parameterize output dimensions.
             height=480,
             width=848,
-            generator=generator,
             output_type="np",
+            seed=int(request.seed or 0),
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
@@ -321,12 +316,7 @@ class TTWan22Runner(TTDiTRunner):
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run_inference(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        prompt = requests[0].prompt
-        negative_prompt = requests[0].negative_prompt
-        generator = torch.Generator("cpu").manual_seed(int(requests[0].seed or 0))
-        num_inference_steps = (
-            requests[0].num_inference_steps or self.settings.num_inference_steps
-        )
+        request = requests[0]
         # TODO: Move parameterization outside of runner class.
         if tuple(self.pipeline.mesh_device.shape) == (4, 8):
             width = 1280
@@ -336,15 +326,15 @@ class TTWan22Runner(TTDiTRunner):
             height = 480
         num_frames = 81
         frames = self.pipeline(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt,
             height=height,
             width=width,
             num_frames=num_frames,
-            num_inference_steps=num_inference_steps,
+            num_inference_steps=request.num_inference_steps,
             guidance_scale=3.0,
             guidance_scale_2=4.0,
-            generator=generator,
+            seed=int(request.seed or 0),
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
