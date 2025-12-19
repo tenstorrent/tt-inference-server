@@ -36,7 +36,7 @@ class AudioTranscriptionLoadTest(BaseTest):
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         audio_transcription_time = self.targets.get(
-            "image_generation_time", 9
+            "audio_transcription_time", 9
         )  # in seconds
         dataset_name = self.targets.get("dataset", "30s")  # in seconds
 
