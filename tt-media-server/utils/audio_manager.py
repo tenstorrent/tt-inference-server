@@ -6,6 +6,7 @@ import base64
 import os
 import struct
 import subprocess
+import time
 from typing import List
 
 import numpy as np
@@ -234,21 +235,42 @@ class AudioManager:
             )
 
     def _initialize_vad_model(self):
-        """Initialize VAD model from WhisperX."""
-        try:
-            self._logger.info("Loading VAD model...")
-            # git  VAD requires vad_onset and chunk_size parameters
-            # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
-            # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-            self._vad_model = Silero(
-                vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
-            )
-            self._logger.info("VAD model loaded successfully")
-        except Exception as e:
-            self._logger.warning(
-                f"Failed to load VAD model: {e}. Continuing without standalone VAD"
-            )
-            self._vad_model = None
+        """Initialize VAD model from WhisperX with retry logic."""
+        total_attempts = 5
+
+        # due to throttling from HF, we implement retries
+        for attempt in range(total_attempts):
+            try:
+                self._logger.info(
+                    f"Loading VAD model... (attempt {attempt + 1}/{total_attempts})"
+                )
+
+                # VAD requires vad_onset and chunk_size parameters
+                # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
+                # vad_onset: threshold for detecting speech onset (typical value: 0.500)
+                self._vad_model = Silero(
+                    vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
+                )
+
+                self._logger.info("VAD model loaded successfully")
+                return  # Success - exit the retry loop
+
+            except Exception as e:
+                if attempt < total_attempts:
+                    self._logger.warning(
+                        f"Failed to load VAD model on attempt {attempt + 1}: {e}. "
+                        f"Retrying... ({total_attempts - attempt} attempts remaining)"
+                    )
+
+                    time.sleep(1.0)  # Wait 1 second before retry
+                else:
+                    # Final attempt failed
+                    self._logger.error(
+                        f"Failed to load VAD model after {total_attempts} attempts: {e}. "
+                        f"Continuing without standalone VAD"
+                    )
+                    self._vad_model = None
+                    break
 
     @log_execution_time("Applying diarization")
     def _apply_diarization(self, audio_array):
