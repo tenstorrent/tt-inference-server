@@ -5507,7 +5507,7 @@
         ],
         "t3k": [
             {
-                "max_concurrency": 1,
+                "max_concurrency": 4,
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
@@ -5519,7 +5519,7 @@
         ],
         "galaxy": [
             {
-                "max_concurrency": 1,
+                "max_concurrency": 32,
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
