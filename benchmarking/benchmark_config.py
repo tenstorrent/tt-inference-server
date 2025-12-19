@@ -30,6 +30,13 @@ class BenchmarkTaskCNN(BenchmarkTask):
 
 
 @dataclass(frozen=True)
+class BenchmarkTaskEmbedding(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_EMBEDDING
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     model_id: str
     tasks: List[BenchmarkTask]
@@ -280,6 +287,11 @@ else:
         if model_spec.model_type == ModelType.CNN:
             perf_ref_task = BenchmarkTaskCNN(param_map={_device: capped_perf_reference})
 
+        if model_spec.model_type == ModelType.EMBEDDING:
+            perf_ref_task = BenchmarkTaskEmbedding(
+                param_map={_device: capped_perf_reference}
+            )
+
         # get (isl, osl, max_concurrency) from capped perf_ref_task
         perf_ref_task_runs = {
             _device: [
@@ -307,6 +319,10 @@ else:
                         BenchmarkTaskParamsCNN(num_inference_steps=20, num_eval_runs=15)
                     ]
                 }
+            )
+        elif model_spec.model_type == ModelType.EMBEDDING:
+            benchmark_task_runs = BenchmarkTaskEmbedding(
+                param_map={_device: [BenchmarkTaskParams()]}
             )
         else:
             benchmark_task_runs = BenchmarkTask(
