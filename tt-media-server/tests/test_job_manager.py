@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from domain.base_request import BaseRequest
-from utils.job_manager import Job, JobManager, get_job_manager
+from utils.job_manager import Job, JobManager, JobStatus, get_job_manager
 
 
 class TestJob:
@@ -23,7 +23,7 @@ class TestJob:
         assert job.id == "test-123"
         assert job.object == "video"
         assert job.model == "test-model"
-        assert job.status == "queued"
+        assert job.status == JobStatus.QUEUED
         assert job.created_at is not None
         assert job.completed_at is None
         assert job.result is None
@@ -55,7 +55,7 @@ class TestJob:
         job = Job(id="test-123", object="video", model="test-model")
         job.mark_in_progress()
 
-        assert job.status == "in_progress"
+        assert job.status == JobStatus.IN_PROGRESS
         assert job.is_in_progress()
 
     def test_mark_completed(self):
@@ -67,7 +67,7 @@ class TestJob:
         job.mark_completed(result)
         after = int(time.time())
 
-        assert job.status == "completed"
+        assert job.status == JobStatus.COMPLETED
         assert job.result == result
         assert before <= job.completed_at <= after
         assert job.is_completed()
@@ -81,7 +81,7 @@ class TestJob:
         job.mark_failed("processing_error", "Something went wrong")
         after = int(time.time())
 
-        assert job.status == "failed"
+        assert job.status == JobStatus.FAILED
         assert job.error == {
             "code": "processing_error",
             "message": "Something went wrong",

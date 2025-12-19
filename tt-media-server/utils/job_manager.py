@@ -6,6 +6,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from enum import Enum
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
@@ -15,12 +16,19 @@ from domain.base_request import BaseRequest
 from utils.logger import TTLogger
 
 
+class JobStatus(str, Enum):
+    QUEUED = "queued"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 @dataclass
 class Job:
     id: str
     object: str
     model: str
-    status: str = "queued"
+    status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
     result: Optional[Any] = None
@@ -32,32 +40,32 @@ class Job:
             self.created_at = int(time.time())
 
     def mark_in_progress(self):
-        self.status = "in_progress"
+        self.status = JobStatus.IN_PROGRESS
 
     def mark_completed(self, result: Any):
         self.completed_at = int(time.time())
-        self.status = "completed"
+        self.status = JobStatus.COMPLETED
         self.result = result
 
     def mark_failed(self, error_code: str, error_message: str):
         self.completed_at = int(time.time())
-        self.status = "failed"
+        self.status = JobStatus.FAILED
         self.error = {"code": error_code, "message": error_message}
 
     def is_in_progress(self) -> bool:
-        return self.status == "in_progress"
+        return self.status == JobStatus.IN_PROGRESS
 
     def is_completed(self) -> bool:
-        return self.status == "completed"
+        return self.status == JobStatus.COMPLETED
 
     def is_terminal(self) -> bool:
-        return self.status in ["completed", "failed"]
+        return self.status in [JobStatus.COMPLETED, JobStatus.FAILED]
 
     def to_public_dict(self) -> dict:
         data = {
             "id": self.id,
             "object": self.object,
-            "status": self.status,
+            "status": self.status.value,
             "created_at": self.created_at,
             "model": self.model,
         }
