@@ -293,7 +293,7 @@ class TestJobManager:
         assert "Processing failed" in metadata["error"]["message"]
 
     @pytest.mark.asyncio
-    async def test_delete_job_success(self, job_manager, mock_request):
+    async def test_cancel_job_success(self, job_manager, mock_request):
         """Test deleting an existing job"""
 
         async def task_func(req):
@@ -308,7 +308,7 @@ class TestJobManager:
             task_function=task_func,
         )
 
-        result = job_manager.delete_job("job-123")
+        result = job_manager.cancel_job("job-123")
         assert result is True
 
         # Job should be gone
@@ -316,13 +316,13 @@ class TestJobManager:
         assert metadata is None
 
     @pytest.mark.asyncio
-    async def test_delete_job_not_found(self, job_manager):
+    async def test_cancel_job_not_found(self, job_manager):
         """Test deleting non-existent job"""
-        result = job_manager.delete_job("nonexistent")
+        result = job_manager.cancel_job("nonexistent")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_delete_job_cancels_task(self, job_manager, mock_request):
+    async def test_cancel_job_cancels_task(self, job_manager, mock_request):
         """Test deleting job cancels running task"""
         cancelled = False
 
@@ -344,7 +344,7 @@ class TestJobManager:
 
         await asyncio.sleep(0.1)  # Let task start
 
-        job_manager.delete_job("job-123")
+        job_manager.cancel_job("job-123")
         await asyncio.sleep(0.1)  # Let cancellation propagate
 
         assert cancelled is True

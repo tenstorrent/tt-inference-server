@@ -139,16 +139,16 @@ def delete_video_metadata(
     api_key: str = Security(get_api_key),
 ):
     """
-    Permanently delete a video job and its stored assets.
+    Permanently cancel a video job and its stored assets.
 
     Returns:
-        JSONResponse: Deleted video job metadata.
+        JSONResponse: Cancelled video job metadata.
 
     Raises:
         HTTPException: If video not found.
     """
-    deletion_result = service.delete_job(video_id)
-    if not deletion_result:
+    cancellation_result = service.cancel_job(video_id)
+    if not cancellation_result:
         raise HTTPException(status_code=404, detail="Video not found")
 
     return JSONResponse(

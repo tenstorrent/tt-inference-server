@@ -119,8 +119,8 @@ class JobManager:
                 return job.result if job.is_completed() else job.error
             return None
 
-    def delete_job(self, job_id: str) -> bool:
-        """Delete job, cancel if in progress, and return deletion confirmation."""
+    def cancel_job(self, job_id: str) -> bool:
+        """Cancel job, cancel if in progress, and return cancellation confirmation."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
             if not job:
@@ -129,7 +129,7 @@ class JobManager:
             self._cleanup_job(job)
 
             self._jobs.pop(job_id)
-            self._logger.info(f"Job {job_id} deleted.")
+            self._logger.info(f"Job {job_id} cancelled.")
             return True
 
     async def shutdown(self):
