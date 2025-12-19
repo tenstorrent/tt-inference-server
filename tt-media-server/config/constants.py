@@ -404,6 +404,24 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
     },
+    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 16,
+    },
+    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 32,
+    },
+    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 256,
+    },
 }
 
 for runner in [
