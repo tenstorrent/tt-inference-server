@@ -90,7 +90,6 @@ class TestJob:
         assert job.is_terminal()
         assert not job.is_completed()
 
-
     def test_to_public_dict_queued(self):
         """Test converting queued job to public dict"""
         job = Job(id="test-123", object="video", model="test-model", created_at=1000)
