@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 # Clone tt-metal models folder (sparse checkout from arg/bge_merge_branch)
 # ------------------------------------------------------------------------------
-ARG TT_METAL_BRANCH=arg/bge_merge_branch
+ARG TT_METAL_BRANCH=main
 ENV TT_METAL_HOME=/opt/tt-metal
 
 RUN mkdir -p ${TT_METAL_HOME} \
@@ -124,35 +124,38 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && rm /tmp/requirements-filtered.txt
 
 # ------------------------------------------------------------------------------
-# Clone and install tt-vllm-plugin
+# Clone tt-inference-server and install components
 # ------------------------------------------------------------------------------
-ENV TT_VLLM_PLUGIN_HOME=/opt/tt-vllm-plugin
+ENV TT_INFERENCE_SERVER_HOME=/opt/tt-inference-server
 
+RUN git clone --depth 1 --branch dev https://github.com/tenstorrent/tt-inference-server.git ${TT_INFERENCE_SERVER_HOME}
+
+# Install tt-media-server requirements
 RUN --mount=type=cache,target=/root/.cache/pip \
-    git clone --depth 1 https://github.com/dmadicTT/tt-vllm-plugin.git ${TT_VLLM_PLUGIN_HOME} \
-    && cd ${TT_VLLM_PLUGIN_HOME} \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-media-server \
+    && ${VENV_PATH}/bin/pip install -r requirements.txt
+
+# Install tt-vllm-plugin
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-vllm-plugin \
     && ${VENV_PATH}/bin/pip install .
 
 # ------------------------------------------------------------------------------
 # Application Setup
 # ------------------------------------------------------------------------------
-WORKDIR /app
+WORKDIR ${TT_INFERENCE_SERVER_HOME}/tt-media-server
 
 # Set environment for interactive use
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH="/opt/tt-metal"
 
-# Mesh device configuration (can be overridden at runtime with -e MESH_DEVICE=...)
-ARG MESH_DEVICE=N150
-ENV MESH_DEVICE=${MESH_DEVICE}
-
-# vLLM configuration
+# Device and model configuration
+ENV DEVICE=n150
 ENV VLLM_USE_V1=1
-ENV HF_MODEL="BAAI/bge-large-en-v1.5"
-ENV VLLM_PORT=8000
+ENV MODEL=bge-large-en-v1.5
 
-# Expose vLLM API port (default 9000, can be overridden with -p host:container)
-EXPOSE 9000
+# Expose media server API port
+EXPOSE 8000
 
-# Default command - run vLLM serve
-CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && vllm serve \"$HF_MODEL\" --host 0.0.0.0 --port $VLLM_PORT --max-model-len 384 --max-num-seqs 8 --max-num-batched-tokens 3072"]
+# Default command - run the media server via uvicorn
+CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && source ./run_uvicorn.sh"]
