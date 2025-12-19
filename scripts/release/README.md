@@ -2,8 +2,8 @@
 
 The release process can be run locally on a laptop or on a remote server. 
 
-## requirements
-requirement is:
+## pre-requisite requirements
+permissions requirement:
 - Download only
     - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) (PAT)
         - Read access to tt-shield repo.
@@ -13,6 +13,7 @@ requirement is:
         - Write access to tt-inference-server packages
     - crane CLI (https://github.com/google/go-containerregistry/tree/main/cmd/crane)
 
+Login locally using GH PAT:
 ```bash
 export GH_ID=tstescoTT
 export GH_PAT=ghp_xxxxxxx
@@ -21,13 +22,22 @@ crane auth login ghcr.io -u ${GH_ID} -p ${GH_PAT}
 docker login ghcr.io -u ${GH_ID} -p ${GH_PAT}
 ```
 
+The operational requirement for releasing is a passing Models CI run. Any models with regressions that are being added as default impl should be clearly listed in the model waiver section of release notes. While the tt-inference-server Docker images support running multiple versions of tt-metal / vllm commits, this may occur for example due to consolidation of release artifacts and tt-metal versions used.
+
+## Git Workflow Diagram
+
+Follow the git workflow for release described below in the diagram and step by step instructions below:
+
+![../../docs/ttis-git-workflows-2025-08-14-1106](../../docs/ttis-git-workflows-2025-08-14-1106.png)
+
+
 ## Pre-release to `dev`
 
-Make pre-release branch:
+Make pre-release branch from Models CI passing commit, for example `50bd698` from https://github.com/tenstorrent/tt-shield/actions/runs/20241693052/job/58113167653#step:5:78
 ```bash
-git checkout -b pre-release-vx.x.0
+git checkout 50bd698
+git checkout -b pre-release-vx.x.x
 ```
-
 
 ## Step 1: parse Models CI run data
 
@@ -84,6 +94,8 @@ usage:
 * --release: targets `-release-` images
 * --dry-run see what would happen without copying Docker images from tt-shield
 
+Note: `--increment patch` can be used if there is no changes to models and only patch changes to the tt-inference-server code.
+
 #### outputs
 
 - `release_logs/dev_artifacts_summary.md`: summary of Docker image changes
@@ -112,20 +124,25 @@ python3 scripts/build_docker_images.py --push
 
 ## step 4: create pre-release PR
 
-* Open tt-inference-server PR `pre-release-vx.x.0` to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
+* Open tt-inference-server PR `pre-release-vx.x.x` to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
 * include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
+* the PR must be merge commit option ("all commits from this branch will be added with a merge commit"), this is done in the case that there are merge conflicts that need to be resolved. The resolution commit is then available in the next release for the changes required on current `dev`.
+* NOTE: the release will process with `pre-release-vx.x.x` branch which is now "stable" from `dev`
 
 ## Release to `main`
 
-Once pre-release PR is merged being release to `main`. Following git workflow in docs/development.md make RC branch 
+Once pre-release PR is merged to `dev` begin release to `main`.
 
-Make pre-release branch:
+Make RC `rc-vx.x.x` branch from `pre-release-vx.x.x`:
 ```bash
-git checkout -b rc-vx.x.0
+git checkout pre-release-vx.x.x
+git checkout -b rc-vx.x.x
 ```
+
+Note: any hot-fixes to be applied on the RC branch should be based on the RC branch `<namett>/hot-fix-<fix-description>` and be PR back into `dev` via merge commit then `git cherry-pick` the changes back into RC branch. This ensures all future branches have the same commit SHAs and history is correct.
 
 ## step 1: generate release artifacts
 
@@ -154,7 +171,7 @@ python3 scripts/build_docker_images.py --push --release
 
 ## step 2: create release PR
 
-* Open tt-inference-server PR `rc-vx.x.0` to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
+* Open tt-inference-server PR `rc-vx.x.x` to `main` https://github.com/tenstorrent/tt-inference-server/compare/main...
 * manually inspect and review all changes
 * if possible: run `python3 scripts/release/update_model_spec.py` to generate the `release_logs/release_models_diff.md` against the `main` model_spec.py.
 * include: `release_logs/release_artifacts_summary.md`
@@ -162,5 +179,5 @@ python3 scripts/build_docker_images.py --push --release
 
 ## Release notes:
 
-* must be added describing new supported vLLM features 
+* must be added describing new supported vLLM features
 * add notes for changes to model support and performance (if possible use `release_logs/release_models_diff.md`)
