@@ -6,6 +6,7 @@ import base64
 import os
 import struct
 import subprocess
+import time
 from typing import List
 
 import numpy as np
@@ -235,12 +236,13 @@ class AudioManager:
 
     def _initialize_vad_model(self):
         """Initialize VAD model from WhisperX with retry logic."""
-        max_retries = 4
+        total_attempts = 5
 
-        for attempt in range(max_retries + 1):  # +1 for initial attempt
+        # due to throttling from HF, we implement retries
+        for attempt in range(total_attempts):
             try:
                 self._logger.info(
-                    f"Loading VAD model... (attempt {attempt + 1}/{max_retries + 1})"
+                    f"Loading VAD model... (attempt {attempt + 1}/{total_attempts})"
                 )
 
                 # VAD requires vad_onset and chunk_size parameters
@@ -254,19 +256,17 @@ class AudioManager:
                 return  # Success - exit the retry loop
 
             except Exception as e:
-                if attempt < max_retries:
+                if attempt < total_attempts:
                     self._logger.warning(
                         f"Failed to load VAD model on attempt {attempt + 1}: {e}. "
-                        f"Retrying... ({max_retries - attempt} attempts remaining)"
+                        f"Retrying... ({total_attempts - attempt} attempts remaining)"
                     )
-                    # Optional: Add delay between retries
-                    import time
 
                     time.sleep(1.0)  # Wait 1 second before retry
                 else:
                     # Final attempt failed
                     self._logger.error(
-                        f"Failed to load VAD model after {max_retries + 1} attempts: {e}. "
+                        f"Failed to load VAD model after {total_attempts} attempts: {e}. "
                         f"Continuing without standalone VAD"
                     )
                     self._vad_model = None
