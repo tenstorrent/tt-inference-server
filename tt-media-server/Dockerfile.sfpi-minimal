@@ -15,8 +15,14 @@
 # Run:
 #   docker run --rm -it --device /dev/tenstorrent ttnn-minimal
 #
-# Test:
-#   docker run --rm -it --device /dev/tenstorrent ttnn-minimal python /app/ttnn_test.py
+# Run with vLLM BGE (embeddings model):
+#   docker run -e MODEL_RUNNER=vllm_bge_large_en_v1_5 -e DEVICE=n150 \
+#     --rm -it -p 8000:8000 --user root \
+#     --device /dev/tenstorrent/ \
+#     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+#     --mount type=bind,src=$HOME/.cache/huggingface,dst=/root/.cache/huggingface \
+#     -e HF_TOKEN=$HF_TOKEN -e MESH_DEVICE='(1,1)' \
+#     ttnn-minimal
 # ==============================================================================
 
 FROM ubuntu:22.04 AS base
