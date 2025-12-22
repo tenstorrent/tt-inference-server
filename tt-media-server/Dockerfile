@@ -140,6 +140,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
+# Install tt-vllm-plugin
+# COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+#     && pip install ."
+
 # Cleanup build-only directories
 USER root
 RUN rm -rf ${HOME_DIR}/.rustup \
@@ -191,7 +197,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib
+    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
+    VLLM_USE_V1=1
 
 # Install runtime dependencies
 # These packages are required for the application to run in production

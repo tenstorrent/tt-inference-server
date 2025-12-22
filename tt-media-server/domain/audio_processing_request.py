@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 from config.constants import AudioResponseFormat
 from domain.base_request import BaseRequest
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, field_validator
 
 
 class AudioProcessingRequest(BaseRequest):
@@ -29,9 +29,40 @@ class AudioProcessingRequest(BaseRequest):
     logprob_threshold: Optional[float] = -2.0
     no_speech_threshold: Optional[float] = 0.6
     return_timestamps: Optional[bool] = False
-    prompt: Optional[str] = None
+    prompt: Optional[str] = ""
 
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)
     _segments: Optional[List[Dict[str, Union[float, str]]]] = PrivateAttr(default=None)
     _duration: float = PrivateAttr(default=0.0)
+
+    @field_validator("temperatures", mode="before")
+    @classmethod
+    def parse_and_validate_temperatures(cls, temperatures):
+        if temperatures is None or temperatures == "":
+            return None
+
+        if isinstance(temperatures, (float, int)):
+            return float(temperatures)
+
+        if isinstance(temperatures, (tuple, list)) and temperatures:
+            try:
+                # Validate all elements are numeric
+                temp_values = tuple(float(t) for t in temperatures)
+                return temp_values if len(temp_values) > 1 else temp_values[0]
+            except (ValueError, TypeError):
+                pass
+
+        if isinstance(temperatures, str) and temperatures.strip():
+            try:
+                temp_values = [float(t.strip()) for t in temperatures.split(",")]
+                if temp_values:
+                    return (
+                        tuple(temp_values) if len(temp_values) > 1 else temp_values[0]
+                    )
+            except (ValueError, AttributeError):
+                pass
+
+        raise ValueError(
+            "Invalid temperatures format. Use comma-separated floats.",
+        )

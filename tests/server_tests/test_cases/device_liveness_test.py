@@ -67,8 +67,9 @@ class DeviceLivenessTest(BaseTest):
                         f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}"
                     )
 
-                    # Check if number of ready workers matches expected devices
-                    if ready_count != expected_devices:
+                    # Check if number of ready workers is equal or bigger than expected devices
+                    # we don't use equal to have a possibility to use i.e. 1 device on Galaxy to start some tests
+                    if ready_count < expected_devices:
                         # this is just an exception, not a system exit, to allow retries
                         raise Exception(
                             f"❌ Device count mismatch: Expected {expected_devices} ready devices, "
@@ -93,6 +94,7 @@ class DeviceLivenessTest(BaseTest):
                     return {
                         "status": status,
                         "expected_devices": expected_devices,
+                        "success": True if ready_count >= expected_devices else False,
                         "ready_workers": ready_workers,
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
@@ -107,11 +109,11 @@ class DeviceLivenessTest(BaseTest):
             OSError,
         ) as e:
             error_msg = f"❌ Media server is not running on port {self.service_port}. Please start the server first.\n🔍 Connection error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except asyncio.TimeoutError as e:
             error_msg = f"❌ Media server on port {self.service_port} is not responding (timeout after 30s). Server may be starting up or overloaded.\n🔍 Error: {e}"
-            raise SystemExit(error_msg)
+            raise Exception(error_msg)
 
         except Exception as e:
             # Log unexpected errors but don't exit - let retry logic handle it

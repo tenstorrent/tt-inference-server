@@ -81,18 +81,6 @@ def get_performance_targets(
     model_data = model_performance_reference.get(model_name, {})
     device_json_list = model_data.get(device_str, [])
 
-    # Handle model name mapping for variants - only for AUDIO models (Whisper)
-    if model_type == "AUDIO" and not device_json_list:
-        # Map distil variants to their base models for performance reference
-        whisper_mapping = {
-            "distil-large-v3": "whisper-large-v3",
-            "whisper-large-v3": "distil-large-v3",
-        }
-        perf_model_name = whisper_mapping.get(model_name, model_name)
-        if perf_model_name != model_name:
-            model_data = model_performance_reference.get(perf_model_name, {})
-            device_json_list = model_data.get(device_str, [])
-
     # Return first config if available
     if device_json_list:
         logger.info(

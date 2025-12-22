@@ -36,11 +36,14 @@ def setup_worker_environment(worker_id: str):
     if settings.enable_telemetry:
         get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
 
+    tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+    # use cache per device to reduce number of "binary not found" errors
+    os.environ["TT_METAL_CACHE"] = (
+        f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
+    )
+
     if settings.is_galaxy:
         os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
-        tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-        # use cache per device to reduce number of "binary not found" errors
-        os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{str(worker_id)}"
         # make sure to not override except 1,1 and 2,1 mesh sizes
         if settings.device_mesh_shape == (1, 1):
             os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
@@ -218,7 +221,7 @@ def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
                 batch.append(None)
                 break
             batch.append(item)
-        except:
+        except Exception:
             break
 
     return batch

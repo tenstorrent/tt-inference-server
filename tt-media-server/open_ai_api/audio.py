@@ -44,20 +44,6 @@ async def parse_audio_request(
     if file is not None:
         file_content = await file.read()
 
-        # Parse temperatures if provided as string (e.g., "0.0,0.2,0.4")
-        parsed_temperatures = None
-        if temperatures is not None:
-            try:
-                temp_values = [float(t.strip()) for t in temperatures.split(",")]
-                parsed_temperatures = (
-                    tuple(temp_values) if len(temp_values) > 1 else temp_values[0]
-                )
-            except (ValueError, AttributeError):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid temperatures format. Use comma-separated floats (e.g., '0.0,0.2,0.4')",
-                )
-
         return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
@@ -66,7 +52,7 @@ async def parse_audio_request(
             if is_preprocessing_enabled is not None
             else True,
             perform_diarization=perform_diarization or False,
-            temperatures=parsed_temperatures,
+            temperatures=temperatures,
             compression_ratio_threshold=compression_ratio_threshold,
             logprob_threshold=logprob_threshold,
             no_speech_threshold=no_speech_threshold,

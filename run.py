@@ -185,6 +185,13 @@ def parse_arguments():
         help="Number of prompts to use for SDXL (default: 1)",
         default="100",
     )
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["genai", "vllm"],
+        default="vllm",
+        help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
+    )
 
     args = parser.parse_args()
 
@@ -236,9 +243,9 @@ def handle_secrets(model_spec):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(
-                key
-            ), f"Required environment variable {key} is not set in .env file."
+            assert os.getenv(key), (
+                f"Required environment variable {key} is not set in .env file."
+            )
 
 
 def get_current_commit_sha() -> str:
@@ -297,6 +304,7 @@ def format_cli_args_summary(args, model_spec):
         f"  device:                     {args.device}",
         f"  impl:                       {args.impl}",
         f"  workflow:                   {args.workflow}",
+        f"  tools:                      {args.tools}",
         "",
         "Optional args:",
         f"  dev_mode:                   {args.dev_mode}",
@@ -337,19 +345,19 @@ def validate_runtime_args(model_spec):
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
     if workflow_type == WorkflowType.EVALS:
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
     if workflow_type == WorkflowType.TESTS:
-        assert (
-            model_spec.model_name in TEST_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
+        assert model_spec.model_name in TEST_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
+        )
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
@@ -375,12 +383,12 @@ def validate_runtime_args(model_spec):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert (
-            model_spec.model_name in EVAL_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        assert (
-            model_spec.model_id in BENCHMARK_CONFIGS
-        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        assert model_spec.model_name in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        )
+        assert model_spec.model_id in BENCHMARK_CONFIGS, (
+            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        )
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -388,9 +396,9 @@ def validate_runtime_args(model_spec):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (
-        args.docker_server and args.local_server
-    ), "Cannot run --docker-server and --local-server"
+    assert not (args.docker_server and args.local_server), (
+        "Cannot run --docker-server and --local-server"
+    )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(

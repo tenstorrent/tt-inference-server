@@ -5,8 +5,10 @@
 import inspect
 import re
 import sys
+import types
 from unittest.mock import MagicMock
 
+# Import real settings early so runner_fabric gets the real object before test files mock it
 import pytest
 
 # Mock modules that are not available in test environment
@@ -177,6 +179,13 @@ for module in mock_modules:
             mock_model.eval = MagicMock(return_value=mock_model)
             mock_model.to = MagicMock(return_value=mock_model)
             mock.model_provider.get_model = MagicMock(return_value=mock_model)
+        elif module == "vllm":
+            # Mock vllm module with all necessary submodules
+            mock.AsyncEngineArgs = MagicMock()
+            mock.AsyncLLMEngine = MagicMock()
+            mock.SamplingParams = MagicMock()
+            mock.sampling_params = MagicMock()
+            mock.sampling_params.RequestOutputKind = MagicMock()
 
         sys.modules[module] = mock
 
@@ -296,6 +305,9 @@ submodules = {
     "torch_xla.core": MagicMock(),
     "torch_xla.core.xla_model": MagicMock(),
     "torch_xla.runtime": MagicMock(),
+    "vllm.sampling_params": sys.modules["vllm"].sampling_params
+    if "vllm" in sys.modules
+    else MagicMock(),
 }
 
 for submodule, mock in submodules.items():
@@ -321,29 +333,12 @@ def mock_log_execution_time(*args, **kwargs):
     return decorator
 
 
-# Patch it in utils.helpers before imports
-import utils.helpers
+# Patch it in utils.decorators before imports
+import utils.decorators
 
-utils.helpers.log_execution_time = mock_log_execution_time
+utils.decorators.log_execution_time = mock_log_execution_time
 
-# Mock load_dynamic before importing forge runners
-import tt_model_runners.forge_runners.runners as forge_runners_module
-
-
-def mock_load_dynamic(model_name: str):
-    """Mock loader that returns a MagicMock model loader."""
-    mock_loader = MagicMock()
-    mock_loader.load_model = MagicMock(return_value=MagicMock())
-    mock_loader._variant_config = MagicMock()
-    mock_loader._variant_config.pretrained_model_name = f"mock_{model_name}"
-    mock_loader.image_to_input = MagicMock(return_value=MagicMock())
-    mock_loader.output_to_prediction = MagicMock(return_value=MagicMock())
-    return mock_loader
-
-
-forge_runners_module.load_dynamic = mock_load_dynamic
-
-# Mock models.demos structure
+# Mock models.demos structure BEFORE importing any runner modules
 if "models" not in sys.modules:
     models_mock = MagicMock()
 
@@ -361,6 +356,9 @@ if "models" not in sys.modules:
     whisper_mock = MagicMock()
     whisper_tt_mock = MagicMock()
     whisper_tt_mock.ttnn_optimized_functional_whisper = MagicMock()
+    whisper_tt_mock.whisper_generator = MagicMock()
+    whisper_tt_mock.whisper_generator.GenerationParams = MagicMock()
+    whisper_tt_mock.whisper_generator.WhisperGenerator = MagicMock()
     whisper_mock.tt = whisper_tt_mock
     demos_mock.whisper = whisper_mock
 
@@ -400,6 +398,9 @@ if "models" not in sys.modules:
     mochi_mock = MagicMock()
     mochi_mock.pipeline_mochi = MagicMock()
     pipelines_mock.mochi = mochi_mock
+    motif_mock = MagicMock()
+    motif_mock.pipeline_motif = MagicMock()
+    pipelines_mock.motif = motif_mock
     wan_mock = MagicMock()
     wan_mock.pipeline_wan = MagicMock()
     pipelines_mock.wan = wan_mock
@@ -454,6 +455,10 @@ if "models" not in sys.modules:
     sys.modules["models.experimental.tt_dit.pipelines.mochi.pipeline_mochi"] = (
         mochi_mock.pipeline_mochi
     )
+    sys.modules["models.experimental.tt_dit.pipelines.motif"] = motif_mock
+    sys.modules["models.experimental.tt_dit.pipelines.motif.pipeline_motif"] = (
+        motif_mock.pipeline_motif
+    )
     sys.modules["models.experimental.tt_dit.pipelines.wan"] = wan_mock
     sys.modules["models.experimental.tt_dit.pipelines.wan.pipeline_wan"] = (
         wan_mock.pipeline_wan
@@ -463,9 +468,126 @@ if "models" not in sys.modules:
     sys.modules["models.demos.whisper.tt.ttnn_optimized_functional_whisper"] = (
         whisper_tt_mock.ttnn_optimized_functional_whisper
     )
+    sys.modules["models.demos.whisper.tt.whisper_generator"] = (
+        whisper_tt_mock.whisper_generator
+    )
 
-# Import after mocks are set up
-from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
+
+# Create mock runner classes with proper names BEFORE any imports
+def create_mock_runner_class(class_name: str):
+    """Create a mock runner class with the specified name."""
+    mock_class = type(
+        class_name,
+        (),
+        {"__init__": lambda self, worker_id: setattr(self, "worker_id", worker_id)},
+    )
+    return mock_class
+
+
+# Create mock runner modules directly in sys.modules with our custom classes
+# This prevents Python from trying to import and execute the actual runner files
+runner_mocks = {
+    "tt_model_runners.base_device_runner": {
+        "BaseDeviceRunner": type("BaseDeviceRunner", (), {})
+    },  # Base class mock
+    "tt_model_runners.sdxl_generate_runner_trace": {
+        "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
+            "TTSDXLGenerateRunnerTrace"
+        )
+    },
+    "tt_model_runners.sdxl_image_to_image_runner_trace": {
+        "TTSDXLImageToImageRunner": create_mock_runner_class("TTSDXLImageToImageRunner")
+    },
+    "tt_model_runners.sdxl_edit_runner_trace": {
+        "TTSDXLEditRunner": create_mock_runner_class("TTSDXLEditRunner")
+    },
+    "tt_model_runners.dit_runners": {
+        "TTSD35Runner": create_mock_runner_class("TTSD35Runner"),
+        "TTFlux1DevRunner": create_mock_runner_class("TTFlux1DevRunner"),
+        "TTFlux1SchnellRunner": create_mock_runner_class("TTFlux1SchnellRunner"),
+        "TTMotifImage6BPreviewRunner": create_mock_runner_class(
+            "TTMotifImage6BPreviewRunner"
+        ),
+        "TTMochi1Runner": create_mock_runner_class("TTMochi1Runner"),
+        "TTWan22Runner": create_mock_runner_class("TTWan22Runner"),
+    },
+    "tt_model_runners.whisper_runner": {
+        "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
+    },
+    "tt_model_runners.vllm_forge_runner": {
+        "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
+    },
+    "tt_model_runners.vllm_bge_large_en_runner": {
+        "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
+    },
+    "tt_model_runners.test_runner": {
+        "TestRunner": create_mock_runner_class("TestRunner")
+    },
+    "tt_model_runners.vllm_forge_qwen_embedding_runner": {
+        "VLLMForgeEmbeddingQwenRunner": create_mock_runner_class(
+            "VLLMForgeEmbeddingQwenRunner"
+        )
+    },
+    "tt_model_runners.mock_runner": {
+        "MockRunner": create_mock_runner_class("MockRunner")
+    },
+    "tt_model_runners.forge_runners": {},  # Parent package module
+    "tt_model_runners.forge_runners.runners": {
+        "ForgeResnetRunner": create_mock_runner_class("ForgeResnetRunner"),
+        "ForgeVovnetRunner": create_mock_runner_class("ForgeVovnetRunner"),
+        "ForgeMobilenetv2Runner": create_mock_runner_class("ForgeMobilenetv2Runner"),
+        "ForgeEfficientnetRunner": create_mock_runner_class("ForgeEfficientnetRunner"),
+        "ForgeSegformerRunner": create_mock_runner_class("ForgeSegformerRunner"),
+        "ForgeUnetRunner": create_mock_runner_class("ForgeUnetRunner"),
+        "ForgeVitRunner": create_mock_runner_class("ForgeVitRunner"),
+    },
+    "tt_model_runners.forge_runners.forge_runner": {
+        "ForgeRunner": create_mock_runner_class("ForgeRunner")
+    },
+}
+
+# Create mock modules and add them to sys.modules
+for module_name, classes in runner_mocks.items():
+    # Use types.ModuleType to create a proper module object
+    mock_module = types.ModuleType(module_name)
+    for class_name, class_obj in classes.items():
+        setattr(mock_module, class_name, class_obj)
+    sys.modules[module_name] = mock_module
+
+# Mock load_dynamic before importing forge runners
+import tt_model_runners.forge_runners.runners as forge_runners_module
+
+
+def mock_load_dynamic(model_name: str):
+    """Mock loader that returns a MagicMock model loader."""
+    mock_loader = MagicMock()
+    mock_loader.load_model = MagicMock(return_value=MagicMock())
+    mock_loader._variant_config = MagicMock()
+    mock_loader._variant_config.pretrained_model_name = f"mock_{model_name}"
+    mock_loader.image_to_input = MagicMock(return_value=MagicMock())
+    mock_loader.output_to_prediction = MagicMock(return_value=MagicMock())
+    return mock_loader
+
+
+forge_runners_module.load_dynamic = mock_load_dynamic
+
+# Also add forge runner classes to the already-imported forge_runners_module
+forge_runners_module.ForgeResnetRunner = create_mock_runner_class("ForgeResnetRunner")
+forge_runners_module.ForgeVovnetRunner = create_mock_runner_class("ForgeVovnetRunner")
+forge_runners_module.ForgeMobilenetv2Runner = create_mock_runner_class(
+    "ForgeMobilenetv2Runner"
+)
+forge_runners_module.ForgeEfficientnetRunner = create_mock_runner_class(
+    "ForgeEfficientnetRunner"
+)
+forge_runners_module.ForgeSegformerRunner = create_mock_runner_class(
+    "ForgeSegformerRunner"
+)
+forge_runners_module.ForgeUnetRunner = create_mock_runner_class("ForgeUnetRunner")
+forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
+
+# Don't import AVAILABLE_RUNNERS here - let test files import it when needed
+# The mocks are already in sys.modules, so imports will work correctly
 
 
 def pytest_addoption(parser):
@@ -502,6 +624,9 @@ def evaluation_range(request):
 
 def generate_runner_test_params():
     """Generate (runner_name, expected_class_name) tuples from AVAILABLE_RUNNERS."""
+    # Import here to avoid importing runner_fabric at conftest module level
+    from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
+
     params = []
     for runner_enum, lambda_func in AVAILABLE_RUNNERS.items():
         try:

@@ -2,13 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-from abc import abstractmethod
-
-import torch
 
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+
 
 class BaseMetalDeviceRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
@@ -21,6 +18,7 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         if self.ttnn_device is None:
             # for now use all available devices
             self.ttnn_device = self._mesh_device()
+        self.max_batch_size = self.settings.max_batch_size
         return self.ttnn_device
 
     def close_device(self):
@@ -66,7 +64,9 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
                     f"Blackhole with fabric_config and fabric_tensix_config enabled, using fabric_tensix_config={fabric_tensix_config}"
                 )
 
-        dispatch_core_config = ttnn.DispatchCoreConfig(dispatch_core_type, dispatch_core_axis, fabric_tensix_config)
+        dispatch_core_config = ttnn.DispatchCoreConfig(
+            dispatch_core_type, dispatch_core_axis, fabric_tensix_config
+        )
         new_device_params["dispatch_core_config"] = dispatch_core_config
 
         return new_device_params
@@ -101,7 +101,6 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             raise RuntimeError(
                 f"Unexpected device initialization error: {str(e)}"
             ) from e
-
 
     def _configure_fabric(self, updated_device_params):
         return None

@@ -2,19 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import logging
-import sys
-import subprocess
-import tempfile
-import shutil
-from pathlib import Path
 import argparse
-import os
-import multiprocessing
-from datetime import datetime
 import json
-import urllib.request
+import logging
+import multiprocessing
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -22,9 +22,9 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import get_repo_root_path
-from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__file__)
 
@@ -173,7 +173,7 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"Log file: {log_file}")
 
         # Resolve tt_metal_commit to full SHA early in the process
-        process_logger.info(f"Resolving tt_metal_commit to full SHA...")
+        process_logger.info("Resolving tt_metal_commit to full SHA...")
         resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
         process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
 
@@ -188,14 +188,14 @@ def process_sha_combination(args_tuple):
 
         # Track image status for all image types
         image_status = {}
-        
+
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
         for image_type in ["tt_metal_base", "cloud", "dev", "release"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
-            
+
             image_status[image_type] = {
                 "tag": image_tag,
                 "local_exists": local_exists,
@@ -211,60 +211,93 @@ def process_sha_combination(args_tuple):
         build_release_image_flag = True
 
         if not force_build:
-            if image_status["cloud"]["local_exists"] or image_status["cloud"]["remote_exists"]:
+            if (
+                image_status["cloud"]["local_exists"]
+                or image_status["cloud"]["remote_exists"]
+            ):
                 build_cloud_image_flag = False
                 process_logger.info("Cloud image already exists, skipping build")
 
-            if image_status["dev"]["local_exists"] or image_status["dev"]["remote_exists"]:
+            if (
+                image_status["dev"]["local_exists"]
+                or image_status["dev"]["remote_exists"]
+            ):
                 build_dev_image_flag = False
                 process_logger.info("Dev image already exists, skipping build")
                 # Dev image is built FROM cloud image, so cloud must exist too
                 if build_cloud_image_flag:
                     build_cloud_image_flag = False
-                    process_logger.info("Dev image exists, cloud image must exist too, skipping cloud build")
+                    process_logger.info(
+                        "Dev image exists, cloud image must exist too, skipping cloud build"
+                    )
 
-            if image_status["release"]["local_exists"] or image_status["release"]["remote_exists"]:
+            if (
+                image_status["release"]["local_exists"]
+                or image_status["release"]["remote_exists"]
+            ):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
                 # Release image is built FROM cloud image, so cloud must exist too
                 if build_cloud_image_flag:
                     build_cloud_image_flag = False
-                    process_logger.info("Release image exists, cloud image must exist too, skipping cloud build")
-                
-            if image_status["tt_metal_base"]["local_exists"] or image_status["tt_metal_base"]["remote_exists"]:
+                    process_logger.info(
+                        "Release image exists, cloud image must exist too, skipping cloud build"
+                    )
+
+            if (
+                image_status["tt_metal_base"]["local_exists"]
+                or image_status["tt_metal_base"]["remote_exists"]
+            ):
                 build_tt_metal_base_flag = False
 
-            if release and build_release_image_flag and not image_status["cloud"]["local_exists"]:
-                # NOTE: copying a dev image into a release image is not guaranteed 
+            if (
+                release
+                and build_release_image_flag
+                and not image_status["cloud"]["local_exists"]
+            ):
+                # NOTE: copying a dev image into a release image is not guaranteed
                 # to have correct code in it, so it is required to build the cloud image
                 # as part of release process.
-                process_logger.info("Cloud image does not exist locally, building cloud image to safely build release image")
+                process_logger.info(
+                    "Cloud image does not exist locally, building cloud image to safely build release image"
+                )
                 build_cloud_image_flag = True
                 # might as well build the dev image too, just a different tag
                 build_dev_image_flag = True
 
         # Build tt-metal base image only if needed
-        if (build_cloud_image_flag or build_dev_image_flag) and build_tt_metal_base_flag:
+        if (
+            build_cloud_image_flag or build_dev_image_flag
+        ) and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
                 process_logger.info("[DRY-RUN] Would build tt-metal base image...")
             else:
                 process_logger.info("Building tt-metal base image...")
                 try:
-                    build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
+                    build_tt_metal_base_image(
+                        image_tags["tt_metal_base"],
+                        resolved_tt_metal_commit,
+                        ubuntu_version,
+                        process_logger,
+                    )
                     image_status["tt_metal_base"]["build_succeeded"] = True
                 except Exception as e:
                     process_logger.error(f"Failed to build tt-metal base image: {e}")
                     image_status["tt_metal_base"]["build_succeeded"] = False
                     raise
         else:
-            process_logger.info("All final images exist, skipping tt-metal base image build")
+            process_logger.info(
+                "All final images exist, skipping tt-metal base image build"
+            )
 
         # Build cloud image
         if build_cloud_image_flag:
             image_status["cloud"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}"
+                )
             else:
                 process_logger.info("Building cloud image...")
                 try:
@@ -287,7 +320,9 @@ def process_sha_combination(args_tuple):
         if build_dev_image_flag:
             image_status["dev"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build dev image: {image_tags['dev']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build dev image: {image_tags['dev']}"
+                )
             else:
                 process_logger.info("Building dev image...")
                 try:
@@ -304,7 +339,9 @@ def process_sha_combination(args_tuple):
         if release and build_release_image_flag:
             image_status["release"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build release image: {image_tags['release']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build release image: {image_tags['release']}"
+                )
             else:
                 process_logger.info("Building release image...")
                 try:
@@ -371,7 +408,7 @@ def process_sha_combination(args_tuple):
             "vllm_commit": vllm_commit,
             "log_file": str(log_file),
             "error": str(e),
-            "images": image_status if 'image_status' in locals() else {},
+            "images": image_status if "image_status" in locals() else {},
         }
 
 
@@ -584,21 +621,25 @@ def resolve_commit_to_full_sha(tt_metal_commit):
                     return sha
     except Exception as e:
         logger.debug(f"ls-remote failed for {tt_metal_commit}: {e}")
-    
+
     # Fallback: Try GitHub API for short SHA resolution
     try:
         logger.info(f"Trying GitHub commits API fallback for {tt_metal_commit}...")
         api_url = f"https://api.github.com/repos/tenstorrent/tt-metal/commits/{tt_metal_commit}"
-        
+
         with urllib.request.urlopen(api_url, timeout=10) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                full_sha = data['sha']
-                logger.info(f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}")
+                full_sha = data["sha"]
+                logger.info(
+                    f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}"
+                )
                 return full_sha
             else:
-                logger.debug(f"GitHub API returned status {response.status} for {tt_metal_commit}")
-                
+                logger.debug(
+                    f"GitHub API returned status {response.status} for {tt_metal_commit}"
+                )
+
     except urllib.error.HTTPError as e:
         if e.code == 404:
             logger.debug(f"GitHub API: commit {tt_metal_commit} not found (404)")
@@ -610,23 +651,26 @@ def resolve_commit_to_full_sha(tt_metal_commit):
         logger.debug(f"GitHub API JSON decode error for {tt_metal_commit}: {e}")
     except Exception as e:
         logger.debug(f"GitHub API fallback failed for {tt_metal_commit}: {e}")
-    
+
     # If we can't resolve it, return the original reference
     logger.info(f"Could not resolve {tt_metal_commit} to full SHA, using as-is")
     return tt_metal_commit
 
 
-def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger):
+def build_tt_metal_base_image(
+    tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger
+):
     """
     Build the tt-metal base image if it doesn't exist.
-    
+
     Args:
         tt_metal_base_tag: Docker image tag to build tt-metal base image with
         tt_metal_commit: Already resolved full SHA commit hash
         ubuntu_version: Ubuntu version to use
         logger: Logger instance
     """
-    os_version = f"ubuntu-{ubuntu_version}-amd64"
+    # note: note used
+    # os_version = f"ubuntu-{ubuntu_version}-amd64"
 
     if check_image_exists_local(tt_metal_base_tag):
         logger.info(f"TT-Metal base image already exists: {tt_metal_base_tag}")
@@ -671,7 +715,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
             logger.info("Fetched as tag.")
         except subprocess.CalledProcessError:
             try:
-                logger.info("Trying to fetch as commit SHA from shallow repo history ...")
+                logger.info(
+                    "Trying to fetch as commit SHA from shallow repo history ..."
+                )
                 run_command_with_logging(
                     ["git", "fetch", "--depth", "1", "origin", resolved_commit],
                     logger=logger,
@@ -680,7 +726,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                 )
                 logger.info("Fetched as commit SHA.")
             except subprocess.CalledProcessError:
-                logger.info("Trying to fetch in unshallow repo history, this make take a minute ...")
+                logger.info(
+                    "Trying to fetch in unshallow repo history, this make take a minute ..."
+                )
                 try:
                     run_command_with_logging(
                         ["git", "fetch", "--unshallow"],
@@ -690,7 +738,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                     )
                     logger.info("Fetched full history successfully.")
                 except subprocess.CalledProcessError:
-                    logger.info("Trying full repo history fetch, this make take a minute ...")
+                    logger.info(
+                        "Trying full repo history fetch, this make take a minute ..."
+                    )
                     run_command_with_logging(
                         ["git", "fetch", "origin"],
                         logger=logger,
@@ -756,7 +806,7 @@ def build_cloud_image(
 ):
     """
     Build the cloud Docker image.
-    
+
     Args:
         image_tags: Dictionary of image tags
         tt_metal_commit: Already resolved full SHA commit hash
@@ -890,15 +940,13 @@ def build_docker_images(
         for config in model_configs.values()
         if config.vllm_commit is not None
     }
-    
+
     skipped_count = sum(
         1 for config in model_configs.values() if config.vllm_commit is None
     )
-    
+
     if skipped_count > 0:
-        logger.info(
-            f"Skipped {skipped_count} model config(s) with vllm_commit=None"
-        )
+        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
 
     if build_metal_commit:
         unique_sha_combinations = {
@@ -954,11 +1002,9 @@ def build_docker_images(
         logger.info("=" * 80)
         logger.info("DRY-RUN MODE: Checking image status without building")
         logger.info("=" * 80)
-    
+
     # Use multiprocessing.Pool to process combinations in parallel
-    logger.info(
-        f"Processing {len(args_tuples)} combinations with {workers} workers"
-    )
+    logger.info(f"Processing {len(args_tuples)} combinations with {workers} workers")
 
     if single_threaded:
         results = []
@@ -1001,7 +1047,7 @@ def build_docker_images(
     build_attempted = {"cloud": [], "dev": [], "release": []}
     build_succeeded = {"cloud": [], "dev": [], "release": []}
     remote_exists = {"cloud": [], "dev": [], "release": []}
-    
+
     for result in results:
         images = result.get("images", {})
         for image_type in ["cloud", "dev", "release"]:
@@ -1018,7 +1064,7 @@ def build_docker_images(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = get_build_logs_dir()
     json_file = logs_dir / f"build_summary_{timestamp}.json"
-    
+
     summary_data = {
         "timestamp": timestamp,
         "dry_run": dry_run,
@@ -1033,10 +1079,10 @@ def build_docker_images(
         "remote_exists": remote_exists,
         "combinations": results,
     }
-    
+
     with open(json_file, "w") as f:
         json.dump(summary_data, f, indent=2)
-    
+
     logger.info(f"Build summary saved to: {json_file}")
     logger.info("Done building Docker images.")
 

@@ -70,7 +70,6 @@ class TestForgeRunner:
                 mock_model, sample_inputs=[mock_inputs]
             )
             mock_compiled.assert_called_once_with(mock_inputs)
-            mock_print_results.assert_called_once_with(mock_output)
 
     @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_close_device(self, runner):

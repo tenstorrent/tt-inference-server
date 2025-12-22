@@ -10,7 +10,6 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
-    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -28,13 +27,13 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_1.value
-    is_galaxy: bool = True  # used for graph device split and class init
+    device_ids: str = "1"
+    is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
-    use_greedy_based_allocation: bool = True
+    use_greedy_based_allocation: bool = False
 
     # Model settings
     model_runner: str = ModelRunners.VLLMForge.value
@@ -47,11 +46,12 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 64
-    max_batch_delay_time_ms: int = 10
+    max_batch_size: int = 32
+    max_batch_delay_time_ms: Optional[int] = 10
 
     # Worker management settings
     new_device_delay_seconds: int = 15
+    new_runner_delay_seconds: int = 5
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
@@ -60,10 +60,16 @@ class Settings(BaseSettings):
     # Timeout settings
     inference_timeout_seconds: int = 1000
 
+    # Job management settings
+    max_jobs: int = 10000  # Maximum number of jobs allowed in the job manager
+    job_cleanup_interval_seconds: int = 300  # Check for cleanup every 5 minutes
+    job_retention_seconds: int = 3600  # Keep completed/failed jobs for 1 hour
+    job_max_stuck_time_seconds: int = 7200  # Cancel jobs stuck for more than 2 hours
+
     # Text processing settings
-    min_context_length: int = 1
-    max_model_length: int = 2**14
-    max_num_batched_tokens: int = 2**14
+    min_context_length: int = 32
+    max_model_length: int = 128
+    max_num_batched_tokens: int = 128
     max_num_seqs: int = 1
 
     # Image processing settings

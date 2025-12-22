@@ -14,7 +14,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.sdxl_image_to_image_runner_trace import TTSDXLImageToImageRunner
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 
 
 class TTSDXLEditRunner(TTSDXLImageToImageRunner):
@@ -83,17 +83,18 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             raise
 
     def _process_image_and_mask(
-        self, request: ImageEditRequest
+        self, requests: list[ImageEditRequest]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        image = self._preprocess_image(request.image)
-        mask = self._preprocess_mask(request.mask)
+        images = [self._preprocess_image(request.image) for request in requests]
+        images = torch.cat(images, dim=0)
+        masks = [self._preprocess_mask(request.mask) for request in requests]
+        masks = torch.cat(masks, dim=0)
+        masked_images = [i * (m < 0.5) for i, m in zip(images, masks)]
+        masked_images = torch.stack(masked_images, dim=0)
 
-        masked_image = [i * (m < 0.5) for i, m in zip(image, mask)]
-        masked_image = torch.stack(masked_image, dim=0)
+        return images, masks, masked_images
 
-        return image, mask, masked_image
-
-    def _prepare_input_tensors_for_iteration(self, tensors, iter: int):
+    def _prepare_input_tensors_for_iteration(self, tensors):
         (
             tt_image_latents,
             tt_masked_image_latents,
@@ -106,8 +107,8 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
                 tt_image_latents,
                 tt_masked_image_latents,
                 tt_mask,
-                tt_prompt_embeds[iter],
-                tt_add_text_embeds[iter],
+                tt_prompt_embeds[0],
+                tt_add_text_embeds[0],
             ]
         )
 
@@ -117,59 +118,54 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run_inference(self, requests: list[ImageEditRequest]):
-        outputs = []
-        for request in requests:
-            prompts, negative_prompt, prompts_2, negative_prompt_2, needed_padding = (
-                self._process_prompts(request)
-            )
+        prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
+            self._process_prompts(requests)
+        )
 
-            self._apply_request_settings(request)
-            self._apply_image_to_image_request_settings(request)
+        self._apply_request_settings(requests[0])
+        self._apply_image_to_image_request_settings(requests[0])
 
-            self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
-            self.tt_sdxl.compile_text_encoding()
+        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+        self.tt_sdxl.compile_text_encoding()
 
-            all_prompt_embeds_torch, torch_add_text_embeds = (
-                self.tt_sdxl.encode_prompts(
-                    prompts, negative_prompt, prompts_2, negative_prompt_2
-                )
-            )
+        all_prompt_embeds_torch, torch_add_text_embeds = self.tt_sdxl.encode_prompts(
+            prompts, negative_prompts, prompts_2, negative_prompt_2
+        )
 
-            image, mask, masked_image = self._process_image_and_mask(request)
+        images, masks, masked_images = self._process_image_and_mask(requests)
 
-            self.logger.info(f"Device {self.device_id}: Generating input tensors...")
+        self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
-            (
-                tt_image_latents,
-                tt_masked_image_latents,
-                tt_mask,
-                tt_prompt_embeds,
-                tt_add_text_embeds,
-            ) = self.tt_sdxl.generate_input_tensors(
-                torch_image=image,
-                torch_masked_image=masked_image,
-                torch_mask=mask,
-                all_prompt_embeds_torch=all_prompt_embeds_torch,
-                torch_add_text_embeds=torch_add_text_embeds,
-                start_latent_seed=request.seed,
-                timesteps=request.timesteps,
-                sigmas=request.sigmas,
-            )
+        (
+            tt_image_latents,
+            tt_masked_image_latents,
+            tt_mask,
+            tt_prompt_embeds,
+            tt_add_text_embeds,
+        ) = self.tt_sdxl.generate_input_tensors(
+            torch_image=images,
+            torch_masked_image=masked_images,
+            torch_mask=masks,
+            all_prompt_embeds_torch=all_prompt_embeds_torch,
+            torch_add_text_embeds=torch_add_text_embeds,
+            start_latent_seed=requests[0].seed,
+            timesteps=requests[0].timesteps,
+            sigmas=requests[0].sigmas,
+        )
 
-            self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
+        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
 
-            tensors = (
-                tt_image_latents,
-                tt_masked_image_latents,
-                tt_mask,
-                tt_prompt_embeds,
-                tt_add_text_embeds,
-            )
-            self._prepare_input_tensors_for_iteration(tensors, 0)
+        tensors = (
+            tt_image_latents,
+            tt_masked_image_latents,
+            tt_mask,
+            tt_prompt_embeds,
+            tt_add_text_embeds,
+        )
+        self._prepare_input_tensors_for_iteration(tensors)
 
-            self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
+        self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
-            self.tt_sdxl.compile_image_processing()
+        self.tt_sdxl.compile_image_processing()
 
-            outputs.append(self._ttnn_inference(tensors, prompts, needed_padding))
-        return outputs
+        return self._ttnn_inference(tensors, prompts, needed_padding)

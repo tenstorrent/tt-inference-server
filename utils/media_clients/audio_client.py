@@ -65,7 +65,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 logger.info("Health check passed.")
             else:
                 logger.error("Health check failed.")
-                return
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
@@ -75,7 +75,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             status_list = self._run_audio_transcription_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
-            return
+            raise
 
         logger.info("Generating eval report...")
         benchmark_data = {}
@@ -140,7 +140,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 logger.info(f"Health check passed. Runner in use: {runner_in_use}")
             else:
                 logger.error("Health check failed.")
-                return []
+                raise
 
             logger.info(f"Runner in use: {runner_in_use}")
 
@@ -153,7 +153,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             return self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
-            return []
+            raise
 
     def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
         logger.info("Generating benchmark report...")
@@ -543,7 +543,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         checks_total = 0
 
         # Always check TTFT if target is available
-        if targets.ttft_ms is not None:
+        if targets.ttft_ms is not None:  # pragma: no branch
             checks_total += 1
             ttft_threshold = targets.ttft_ms * (1 + tolerance)
             if ttft_value <= ttft_threshold:
@@ -581,7 +581,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
         # Determine overall result
-        if checks_total == 0:
+        if checks_total == 0:  # pragma: no cover
             logger.warning("No targets available for accuracy check")
             return 0  # UNDEFINED
         elif checks_passed == checks_total:
