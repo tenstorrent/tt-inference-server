@@ -250,6 +250,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         scores = {}
         try:
             scores = results.task_results[0].scores["test"]
+            if isinstance(scores, list) and len(scores) > 0:
+                scores = scores[0]
         except Exception as e:
             logger.error(f"Could not extract scores['test']: {e}")
             raise
