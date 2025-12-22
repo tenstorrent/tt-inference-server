@@ -1,0 +1,6 @@
+{
+    "_description": "Test suites for CNN model category (ResNet, VoVNet, MobileNet, etc.)",
+    "_category": "CNN",
+    "_comment": "Placeholder - add CNN model suites here as they are onboarded",
+    "test_suites": []
+}
