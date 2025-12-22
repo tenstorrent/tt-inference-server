@@ -641,6 +641,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 weights_mesh_mapper=weights_mesh_mapper,
                 kv_cache=kv_cache,
                 cross_attn_cache=cross_attn_cache,
+                max_batch_size=self.settings.max_batch_size,
             )
 
             async def _model_pipeline(
