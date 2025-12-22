@@ -39,7 +39,7 @@ class BaseMediaStrategy(ABC):
         """Run benchmark workflow for this media type."""
         pass
 
-    def get_health(self, attempt_number: int = 1) -> tuple[bool, str]:
+    def get_health(self, attempt_number: int = 1, override_num_devices: int = None) -> tuple[bool, str]:
         """
         Check health status using DeviceLivenessTest.
         DeviceLivenessTest extends BaseTest, which provides run_tests() with retry logic.
@@ -52,6 +52,10 @@ class BaseMediaStrategy(ABC):
             self.device.name if hasattr(self.device, "name") else str(self.device)
         )
         num_devices = self.model_spec.device_model_spec.max_concurrency
+        
+        if override_num_devices is not None:
+            num_devices = override_num_devices
+
         logger.info(
             f"Detected device: {device_name} with {num_devices} expected worker(s)"
         )
@@ -69,7 +73,7 @@ class BaseMediaStrategy(ABC):
 
         # Set targets for device count validation
         targets = {
-            "num_of_devices": num_devices if num_devices and num_devices > 0 else None
+            "num_of_devices": num_devices if num_devices and num_devices > 0 else 1
         }
         logger.info(f"Test targets: {targets}")
 
