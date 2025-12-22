@@ -185,8 +185,8 @@ def main():
     logger.info(f"output_path=: {args.output_path}")
     logger.info(f"tools=: {tools}")
 
-    # Route to genai-perf benchmarks if tools=genai-perf
-    if tools == "genai-perf":
+    # Route to genai-perf benchmarks if tools=genai
+    if tools == "genai":
         logger.info("Using genai-perf (Triton SDK) for benchmarking")
 
         # Determine debug mode from limit_samples_mode
