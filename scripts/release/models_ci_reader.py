@@ -399,141 +399,10 @@ def _strip_ansi(text: str) -> str:
         return text
 
 
-# Commit extraction patterns
-COMMIT_PATTERNS = {
-    "tt_metal": [
-        r"--tt-metal-commit\"\s*\"([0-9a-fA-F]+)\"",  # "--tt-metal-commit" "<hash>"
-        r"--tt-metal-commit[=\s]+\"?([0-9a-fA-F]{6,})\"?",  # --tt-metal-commit <hash> or =<hash>
-        r"\btt-metal-commit:\s*([0-9a-zA-Z._-]+)\b",  # Inputs: tt-metal-commit: <value>
-        r"\bTT_METAL_COMMIT\s*[:=]\s*\"?([0-9a-fA-F]{6,})\"?",
-    ],
-    "vllm": [
-        r"--vllm-commit\"\s*\"([0-9a-fA-F]+)\"",  # "--vllm-commit" "<hash>"
-        r"--vllm-commit[=\s]+\"?([0-9a-fA-F]{3,})\"?",  # --vllm-commit <hash> or short sha
-        r"\bvllm-commit:\s*([0-9a-zA-Z._-]+)\b",  # Inputs: vllm-commit: <value>
-        r"\bVLLM_COMMIT\s*[:=]\s*\"?([0-9a-fA-F]{3,})\"?",
-    ],
-}
-
-
-def _extract_commit(text: str, patterns: List[str]) -> Optional[str]:
-    """Try to extract commit hash from text using list of patterns."""
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _parse_commits_from_text(text: str) -> Tuple[Optional[str], Optional[str]]:
-    """Extract tt-metal and vllm commit values from a block of text using multiple patterns."""
-    text = _strip_ansi(text)
-
-    tt_metal_commit = _extract_commit(text, COMMIT_PATTERNS["tt_metal"])
-    vllm_commit = _extract_commit(text, COMMIT_PATTERNS["vllm"])
-
-    return tt_metal_commit, vllm_commit
-
-
-def find_commits_from_logs(logs_dir: Path) -> Tuple[Optional[str], Optional[str]]:
-    """Find commits from the build log in the extracted run logs directory.
-
-    This prefers a top-level file matching '*_build-inference-server*.txt'.
-    Falls back to scanning other .txt files if not found.
-    """
-    logger.info(f"Scanning logs for commits in: {logs_dir}")
-
-    # Prefer the consolidated build log file
-    build_logs: List[Path] = []
-    try:
-        build_logs = sorted(logs_dir.glob("*_build-inference-server*.txt"))
-    except Exception:
-        build_logs = []
-
-    # If not found, expand search
-    search_files: List[Path]
-    if build_logs:
-        search_files = build_logs
-    else:
-        search_files = sorted(logs_dir.rglob("*.txt"))
-
-    tt_metal_commit: Optional[str] = None
-    vllm_commit: Optional[str] = None
-
-    for fpath in search_files:
-        try:
-            logger.debug(f"Reading log file: {fpath}")
-            content = fpath.read_text(errors="ignore")
-        except Exception:
-            continue
-
-        tt, vl = _parse_commits_from_text(content)
-        if tt and not tt_metal_commit:
-            tt_metal_commit = tt
-        if vl and not vllm_commit:
-            vllm_commit = vl
-        if tt_metal_commit and vllm_commit:
-            break
-
-    return tt_metal_commit, vllm_commit
-
-
 def _strip_timestamp_prefix(line: str) -> str:
     """Strip GitHub Actions timestamp prefix from log line."""
     timestamp_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+"
     return re.sub(timestamp_pattern, "", line)
-
-
-def parse_built_docker_images_from_logs(logs_dir: Path) -> List[str]:
-    """Extract successfully built docker images from build-inference-server logs.
-
-    Looks for lines following '✅ Successfully built and pushed images:' in build logs.
-
-    Returns:
-        List of built docker image strings
-    """
-    logger.info(f"Scanning logs for built docker images in: {logs_dir}")
-
-    # Look for build-inference-server logs
-    build_logs = list(logs_dir.glob("*build-inference-server*.txt"))
-
-    built_images: List[str] = []
-
-    for fpath in build_logs:
-        try:
-            logger.debug(f"Reading build log file: {fpath}")
-            content = fpath.read_text(errors="ignore")
-        except Exception:
-            continue
-
-        content = _strip_ansi(content)
-        lines = content.splitlines()
-
-        # Look for "Successfully built and pushed images:" marker
-        for i, line in enumerate(lines):
-            stripped = _strip_timestamp_prefix(line).strip()
-
-            if "Successfully built and pushed images:" in stripped:
-                # Parse subsequent lines until we hit a line that's not an image
-                for j in range(i + 1, len(lines)):
-                    next_stripped = _strip_timestamp_prefix(lines[j]).strip()
-                    # Check if line looks like a docker image (starts with registry URL)
-                    if next_stripped.startswith("ghcr.io/") or next_stripped.startswith(
-                        "docker.io/"
-                    ):
-                        built_images.append(next_stripped)
-                        logger.debug(f"Found built image: {next_stripped}")
-                    else:
-                        # Stop when we hit a non-image line
-                        break
-                break
-
-    if built_images:
-        logger.info(f"Found {len(built_images)} successfully built docker images")
-    else:
-        logger.warning("Could not find built docker images in build logs")
-
-    return built_images
 
 
 def _extract_job_id_from_filename(
@@ -842,15 +711,6 @@ def parse_ci_job_log(
                 )
 
     return ci_logs_dict
-
-
-def format_dt(dt_str: str) -> str:
-    # Convert ISO to YYYY-MM-DD_HH-MM-SS
-    try:
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d_%H-%M-%S")
-    except Exception:
-        return dt_str.replace(":", "-").replace("T", "_").replace("Z", "")
 
 
 def parse_job_name(job_name: str) -> Optional[dict]:
