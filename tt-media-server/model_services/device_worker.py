@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import threading
 from multiprocessing import Queue
 
 from config.settings import settings
@@ -109,81 +110,134 @@ def device_worker(
     except Exception as e:
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
-    # Define streaming handler
-    async def handle_streaming(inference_request):
-        logger.info(f"Running streaming request for task {inference_request._task_id}")
-        try:
-            result_generator = await device_runner._run_inference_async(
-                [inference_request]
-            )
-            chunk_count = 0
+    # Main processing loop
+    while True:
+        inference_requests: list[object] = get_greedy_batch(
+            task_queue, settings.max_batch_size, device_runner.is_request_batchable
+        )
+        if inference_requests[0] is None:  # Sentinel to shut down
+            logger.info(f"Worker {worker_id} shutting down")
+            loop.close()
+            break
+        logger.info(
+            f"Worker {worker_id} processing tasks: {inference_requests.__len__()}"
+        )
+        inference_responses = None
 
-            async for chunk in result_generator:
-                chunk_key = f"{inference_request._task_id}_chunk_{chunk_count}"
-                logger.debug(
-                    f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
+        inference_successful = False
+        timer_ran_out = False
+
+        def timeout_handler():
+            nonlocal inference_successful, timer_ran_out
+            if not inference_successful:
+                logger.error(
+                    f"Worker {worker_id} timed out after {settings.inference_timeout_seconds}s"
                 )
-                result_queue.put((worker_id, chunk_key, chunk))
-                chunk_count += 1
+                logger.info(
+                    f"Still waiting for inference to complete, we're not stopping worker {worker_id}"
+                )
+                timer_ran_out = True
 
-            logger.info(
-                f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
-            )
-        except Exception as e:
-            logger.error(f"Streaming failed for task {inference_request._task_id}: {e}")
-            error_queue.put((worker_id, inference_request._task_id, str(e)))
+        timeout_timer = threading.Timer(
+            settings.inference_timeout_seconds, lambda: timeout_handler()
+        )
+        timeout_timer.start()
 
-    # Handle non-streaming request
-    def handle_non_streaming(inference_request):
         try:
-            response = device_runner.run_inference([inference_request])
-            if response:
-                result_queue.put((worker_id, inference_request._task_id, response[0]))
+            has_streaming_request = any(
+                (hasattr(req, "stream") and req.stream) for req in inference_requests
+            )
+
+            if has_streaming_request:
+                # Handle streaming requests (one at a time for now)
+                for inference_request in inference_requests:
+                    if (
+                        hasattr(inference_request, "stream")
+                        and inference_request.stream
+                    ):
+                        logger.info(
+                            f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"
+                        )
+
+                        async def handle_streaming():
+                            result_generator = await device_runner._run_inference_async(
+                                [inference_request]
+                            )
+                            chunk_count = 0
+
+                            async for chunk in result_generator:
+                                chunk_key = (
+                                    f"{inference_request._task_id}_chunk_{chunk_count}"
+                                )
+                                result_queue.put((worker_id, chunk_key, chunk))
+                                chunk_count += 1
+
+                            logger.info(
+                                f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
+                            )
+
+                        loop.run_until_complete(handle_streaming())
+                    else:
+                        response = device_runner.run_inference([inference_request])
+                        result_queue.put(
+                            (
+                                worker_id,
+                                inference_request._task_id,
+                                response[0] if response else None,
+                            )
+                        )
             else:
+                inference_responses = device_runner.run_inference(
+                    [request for request in inference_requests]
+                )
+
+                if inference_responses is None or len(inference_responses) == 0:
+                    for inference_request in inference_requests:
+                        error_queue.put(
+                            (
+                                worker_id,
+                                inference_request._task_id,
+                                "No responses generated",
+                            )
+                        )
+                    continue
+
+                for i, inference_request in enumerate(inference_requests):
+                    result_queue.put(
+                        (worker_id, inference_request._task_id, inference_responses[i])
+                    )
+
+            inference_successful = True
+            timeout_timer.cancel()
+
+        except Exception as e:
+            timeout_timer.cancel()
+            error_msg = f"Worker {worker_id} inference error: {str(e)}"
+            logger.error(error_msg)
+            for inference_request in inference_requests:
+                error_queue.put((worker_id, inference_request._task_id, error_msg))
+            continue
+
+        logger.debug(
+            f"Worker {worker_id} finished processing tasks: {inference_requests.__len__()}"
+        )
+
+        # Process result only if timer didn't run out
+        # Prevents memory leaks
+        if timer_ran_out:
+            # TODO need to write to error log
+            for inference_request in inference_requests:
+                logger.warning(
+                    f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"
+                )
                 error_queue.put(
-                    (worker_id, inference_request._task_id, "No response generated")
+                    (
+                        worker_id,
+                        inference_request._task_id,
+                        f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing",
+                    )
                 )
-        except Exception as e:
-            logger.error(f"Inference failed for task {inference_request._task_id}: {e}")
-            error_queue.put((worker_id, inference_request._task_id, str(e)))
-
-    # Async task that pulls from queue and feeds requests to handlers
-    async def request_feeder():
-        """Continuously pull requests from queue and submit to async handlers"""
-        while True:
-            # Run blocking queue.get() in thread pool to not block event loop
-            inference_request = await loop.run_in_executor(None, task_queue.get)
-
-            if inference_request is None:  # Sentinel to shut down
-                logger.info(f"Worker {worker_id} received shutdown signal")
-                return
-
-            logger.info(
-                f"Worker {worker_id} feeding request {inference_request._task_id}"
-            )
-
-            if hasattr(inference_request, "stream") and inference_request.stream:
-                # Fire and forget streaming task - runs concurrently
-                asyncio.create_task(handle_streaming(inference_request))
-            else:
-                # Run non-streaming in thread pool to not block other tasks
-                loop.run_in_executor(None, handle_non_streaming, inference_request)
-
-    # Run the feeder - this drives the event loop continuously
-    logger.info(f"Worker {worker_id} starting request feeder")
-    try:
-        loop.run_until_complete(request_feeder())
-    except KeyboardInterrupt:
-        logger.warning(f"Worker {worker_id} interrupted - shutting down")
-    finally:
-        # Cancel any pending tasks
-        pending = asyncio.all_tasks(loop)
-        for task in pending:
-            task.cancel()
-        if pending:
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        loop.close()
-        logger.info(f"Worker {worker_id} shut down complete")
+            continue
 
 
 def get_greedy_batch(task_queue, max_batch_size, batching_predicate):

@@ -10,6 +10,7 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
+    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -27,16 +28,17 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "1"
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
     is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = False
+    use_dynamic_batcher: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.VLLMForge.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -46,8 +48,8 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 32
-    max_batch_delay_time_ms: Optional[int] = 10
+    max_batch_size: int = 1
+    max_batch_delay_time_ms: int = 10
 
     # Worker management settings
     new_device_delay_seconds: int = 15
