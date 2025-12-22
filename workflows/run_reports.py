@@ -876,80 +876,36 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
     # TEXT BENCHMARKS SECTION
-    if vllm_text_results or aiperf_text_results:
-        release_str += "## Text-to-Text Benchmarks\n\n"
-
-        # Combine text results for comparison table: vLLM first, then AIPerf
-        combined_text_results = vllm_text_results + aiperf_text_results
-
-        # Table 1: NVIDIA-style detailed percentiles (only if AIPerf text results exist)
-        if aiperf_text_results:
-            nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
-            release_str += "#### Table 1: AIPerf Text Benchmark - Detailed Latency Percentiles (NVIDIA Format)\n\n"
-            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            release_str += nvidia_markdown_str
-            release_str += "\n\n"
-
-        # Table 2: Text throughput comparison (genai-perf style) - combines vLLM and AIPerf
-        # Dynamic header based on available results
-        if vllm_text_results and aiperf_text_results:
-            table2_header = "#### Table 2: Text Benchmark Throughput Comparison (vLLM vs AIPerf)\n\n"
-        elif vllm_text_results:
-            table2_header = "#### Table 2: Text Benchmark Throughput Summary (vLLM)\n\n"
-        else:
-            table2_header = "#### Table 2: Text Benchmark Throughput Summary (AIPerf)\n\n"
-        release_str += table2_header
+    if aiperf_text_results:
+        release_str += "## AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         
-        # Generate throughput comparison table for text benchmarks
-        throughput_markdown_str = aiperf_throughput_markdown(combined_text_results)
-        release_str += throughput_markdown_str
+        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+        release_str += nvidia_markdown_str
         release_str += "\n\n"
 
     # IMAGE BENCHMARKS SECTION
-    if vllm_image_results or aiperf_image_results:
-        release_str += "## Image (VLM) Benchmarks\n\n"
-
-        # Combine image results for comparison table: vLLM first, then AIPerf
-        combined_image_results = vllm_image_results + aiperf_image_results
-
-        # Table 3: NVIDIA-style detailed percentiles (only if AIPerf image results exist)
-        if aiperf_image_results:
-            nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
-            release_str += "#### Table 3: AIPerf Image Benchmark - Detailed Latency Percentiles (NVIDIA Format)\n\n"
-            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            release_str += nvidia_markdown_str
-            release_str += "\n\n"
-
-        # Table 4: Image throughput comparison (genai-perf style) - combines vLLM and AIPerf
-        # Dynamic header based on available results
-        if vllm_image_results and aiperf_image_results:
-            table4_header = "#### Table 4: Image Benchmark Throughput Comparison (vLLM vs AIPerf)\n\n"
-        elif vllm_image_results:
-            table4_header = "#### Table 4: Image Benchmark Throughput Summary (vLLM)\n\n"
-        else:
-            table4_header = "#### Table 4: Image Benchmark Throughput Summary (AIPerf)\n\n"
-        release_str += table4_header
+    if aiperf_image_results:
+        release_str += "## AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         
-        # Generate throughput comparison table for image benchmarks (with image columns)
-        throughput_markdown_str = aiperf_throughput_markdown_with_images(combined_image_results)
-        release_str += throughput_markdown_str
+        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
+        release_str += nvidia_markdown_str
         release_str += "\n\n"
 
     # Metric definitions
     release_str += "**Metric Definitions:**\n"
-    release_str += "> - **Source**: Benchmarking tool used (vLLM or aiperf)\n"
     release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
     release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
     release_str += "> - **Concur**: Concurrent requests (batch size)\n"
     release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT**: Time To First Token (ms)\n"
-    release_str += "> - **TPOT**: Time Per Output Token (ms)\n"
-    release_str += "> - **E2EL**: End-to-End Latency (ms)\n"
+    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
     release_str += "> - **Tok/s**: Output token throughput\n"
     release_str += "> - **Req/s**: Request throughput\n"
-    release_str += "> - **Tput User**: Tokens per second per user (1000 / TPOT)\n"
-    release_str += "> - **Tput Decode**: Total decode throughput (Tput User × Concurrency)\n"
-    release_str += "> - **Tput Prefill**: Prefill throughput ((ISL × Concurrency) / (TTFT / 1000))\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
