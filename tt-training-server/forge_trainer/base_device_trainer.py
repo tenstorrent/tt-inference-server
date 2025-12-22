@@ -5,12 +5,6 @@
 import os
 from abc import ABC, abstractmethod
 
-from config.settings import get_settings
-from utils.logger import TTLogger
-from utils.torch_utils import set_torch_thread_limits
-
-from tt_model_trainers.base_device_trainer import BaseDeviceTrainer
-
 
 class BaseDeviceTrainer(ABC):
     def __init__(self, device_id: str):
