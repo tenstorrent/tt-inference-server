@@ -141,10 +141,10 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && pip install ."
+# COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+#     && pip install ."
 
 # Cleanup build-only directories
 USER root
