@@ -6,19 +6,14 @@ import os
 
 from config.settings import get_settings
 from fastapi import FastAPI, Response
-import torch
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
     CollectorRegistry,
-    Gauge,
     Info,
     generate_latest,
 )
-from prometheus_client.gc_collector import GCCollector
 from prometheus_client.multiprocess import MultiProcessCollector
-from prometheus_client.platform_collector import PlatformCollector
-from prometheus_client.process_collector import ProcessCollector
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from utils.logger import TTLogger
 
@@ -43,13 +38,6 @@ MULTIPROC_DIR = setup_multiprocess_dir()
 # System info
 system_info = Info("tt_media_server_info", "System information")
 
-# PyTorch metrics
-pytorch_info = Info("pytorch", "PyTorch build information")
-pytorch_num_threads = Gauge("pytorch_num_threads", "PyTorch intra-op parallelism threads")
-pytorch_num_interop_threads = Gauge(
-    "pytorch_num_interop_threads", "PyTorch inter-op parallelism threads"
-)
-
 
 class PrometheusMetrics:
     def __init__(self, app: FastAPI):
@@ -58,50 +46,6 @@ class PrometheusMetrics:
         self.instrumentator = None
         self.logger = TTLogger()
         self.multiproc_dir = MULTIPROC_DIR
-        self._python_collectors_registered = False
-
-    def _register_python_collectors(self, registry: CollectorRegistry = REGISTRY):
-        """Register Python internal metrics collectors (GC, process, platform).
-
-        These provide insight into:
-        - Process: CPU time, memory (RSS/VMS), open file descriptors
-        - GC: Garbage collection counts per generation
-        - Platform: Python version and implementation
-        """
-        if self._python_collectors_registered:
-            return
-
-        try:
-            # Process metrics: cpu_seconds, memory bytes, open_fds, etc.
-            ProcessCollector(registry=registry)
-            # GC metrics: collected objects per generation
-            GCCollector(registry=registry)
-            # Platform info: python version, implementation
-            PlatformCollector(registry=registry)
-            self._python_collectors_registered = True
-            self.logger.info("Python internal metrics collectors registered")
-        except Exception as e:
-            self.logger.warning(f"Failed to register Python collectors: {e}")
-
-    def _set_pytorch_metrics(self):
-        """Set PyTorch CPU metrics (thread config and build info)."""
-        try:
-            # Thread configuration
-            pytorch_num_threads.set(torch.get_num_threads())
-            pytorch_num_interop_threads.set(torch.get_num_interop_threads())
-
-            # Build info
-            pytorch_info.info(
-                {
-                    "version": torch.__version__,
-                    "cuda_available": str(torch.cuda.is_available()),
-                    "cuda_version": torch.version.cuda or "N/A",
-                    "cudnn_version": str(torch.backends.cudnn.version() or "N/A"),
-                }
-            )
-            self.logger.info("PyTorch metrics registered")
-        except Exception as e:
-            self.logger.warning(f"Failed to set PyTorch metrics: {e}")
 
     def setup_metrics(self):
         """Setup Prometheus metrics collection"""
@@ -119,12 +63,6 @@ class PrometheusMetrics:
             except Exception as e:
                 self.logger.error(f"Failed to create multiprocess directory: {e}")
                 self.multiproc_dir = None
-
-        # Register Python internal metrics
-        self._register_python_collectors()
-
-        # Set PyTorch metrics
-        self._set_pytorch_metrics()
 
         # Initialize instrumentator
         self.instrumentator = Instrumentator(
