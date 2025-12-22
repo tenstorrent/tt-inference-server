@@ -7,6 +7,7 @@ import csv
 import json
 import logging
 import sys
+import re
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -561,8 +562,6 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     This function creates a separate report in NVIDIA's genai-perf style.
     Table 2 (Comparison) combines both vLLM and AIPerf results for easy comparison.
     """
-    import re
-
     # Look for aiperf benchmark files
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
     benchmarks_aiperf_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_aiperf_output"
@@ -988,20 +987,24 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for vLLM and genai-perf benchmark files (aiperf has its own function)
+    # Look for vLLM, genai-perf, and AIPerf benchmark files (all stack together)
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+    benchmarks_aiperf_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_aiperf_output"
+    
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+    aiperf_files = glob(f"{benchmarks_aiperf_output_dir}/{aiperf_pattern}")
 
-    files = vllm_files + genai_files
+    files = vllm_files + genai_files + aiperf_files
     logger.info(
-        f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
-    logger.info("vLLM Benchmark Summary")
+    logger.info("Combined Benchmark Summary (vLLM + genai-perf + AIPerf)")
     logger.info(f"Found {len(vllm_files)} vLLM benchmark files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
