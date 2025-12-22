@@ -20,9 +20,10 @@ class TelemetryEvent(Enum):
     TOTAL_PROCESSING = "total_processing"
     BASE_TOTAL_PROCESSING = "base_total_processing"
     BASE_SINGLE_PROCESSING = "base_single_processing"
+    DOWNLOAD_RESULT = "download_result"
 
 
-# top metric for total requests from intherited service
+# top metric for total requests from inherited service
 request_counter = Counter(
     "tt_media_server_requests_total", "Total number of requests", ["model_type"]
 )
@@ -103,6 +104,18 @@ model_load_counter = Counter(
     ["model_type", "device_id", "status"],
 )
 
+download_result_duration = Histogram(
+    "tt_media_server_download_result_duration_seconds",
+    "Download result duration in seconds",
+    ["model_type"],
+)
+
+download_result_counter = Counter(
+    "tt_media_server_download_result_total",
+    "Total number of download result operations",
+    ["model_type", "status"],
+)
+
 
 class TelemetryClient:
     """Telemetry client to record events"""
@@ -162,49 +175,35 @@ class TelemetryClient:
         duration: float = None,
         status: bool = True,
     ):
-        """Record a telemetry event"""
-
         status_str = "success" if status else "failure"
 
         if event_name == TelemetryEvent.PRE_PROCESSING:
-            self._record_pre_processing(
-                duration, preprocessing_enabled=True, status=status_str
-            )
+            self._record_pre_processing(duration, preprocessing_enabled=True)
         elif event_name == TelemetryEvent.POST_PROCESSING:
-            self._record_post_processing(
-                duration, preprocessing_enabled=True, status=status_str
-            )
+            self._record_post_processing(duration, preprocessing_enabled=True)
         elif event_name == TelemetryEvent.MODEL_INFERENCE:
             self._record_model_inference(device_id, duration, status=status_str)
         elif event_name == TelemetryEvent.DEVICE_WARMUP:
             self._record_device_warmup(device_id, duration, status=status_str)
         elif event_name == TelemetryEvent.TOTAL_PROCESSING:
-            self._record_request_duration(device_id, duration, status=status_str)
+            self._record_request_duration(duration)
         elif event_name == TelemetryEvent.BASE_TOTAL_PROCESSING:
-            self._record_base_total_request_duration(
-                device_id, duration, status=status_str
-            )
+            self._record_base_total_request_duration(duration)
         elif event_name == TelemetryEvent.BASE_SINGLE_PROCESSING:
-            self._record_single_base_request_duration(
-                device_id, duration, status=status_str
-            )
+            self._record_single_base_request_duration(duration)
+        elif event_name == TelemetryEvent.DOWNLOAD_RESULT:
+            self._record_download_result(duration, status=status_str)
         else:
             self.logger.warning(f"Unknown telemetry event: {event_name}")
 
     # Utility functions for recording metrics
-    def _record_pre_processing(
-        self, duration: float, preprocessing_enabled: bool, status: str = "success"
-    ):
-        """Record audio processing metrics"""
+    def _record_pre_processing(self, duration: float, preprocessing_enabled: bool):
         pre_processing_duration.labels(
             model_type=self.settings.model_runner,
             preprocessing_enabled=str(preprocessing_enabled),
         ).observe(duration)
 
-    def _record_post_processing(
-        self, duration: float, preprocessing_enabled: bool, status: str = "success"
-    ):
-        """Record audio processing metrics"""
+    def _record_post_processing(self, duration: float, preprocessing_enabled: bool):
         post_processing_duration.labels(
             model_type=self.settings.model_runner,
             preprocessing_enabled=str(preprocessing_enabled),
@@ -213,8 +212,6 @@ class TelemetryClient:
     def _record_model_inference(
         self, device_id: str, duration: float, status: str = "success"
     ):
-        """Record model inference metrics"""
-
         model_inference_duration.labels(
             model_type=self.settings.model_runner, device_id=device_id or "unknown"
         ).observe(duration)
@@ -228,8 +225,6 @@ class TelemetryClient:
     def _record_device_warmup(
         self, device_id: str, duration: float, status: str = "success"
     ):
-        """Record model warmup metrics"""
-
         device_warmup_duration.labels(
             model_type=self.settings.model_runner, device_id=device_id or "unknown"
         ).observe(duration)
@@ -241,33 +236,34 @@ class TelemetryClient:
             status=status,
         ).inc()
 
-    def _record_request_duration(
-        self, device_id: str, duration: float, status: str = "success"
-    ):
-        """Record end to end duration"""
+    def _record_request_duration(self, duration: float):
         request_duration.labels(model_type=self.settings.model_runner).observe(duration)
 
         request_counter.labels(model_type=self.settings.model_runner).inc()
 
-    def _record_base_total_request_duration(
-        self, device_id: str, duration: float, status: str = "success"
-    ):
-        """Record end to end duration"""
+    def _record_base_total_request_duration(self, duration: float):
         total_base_request_duration.labels(
             model_type=self.settings.model_runner
         ).observe(duration)
 
         total_base_request_counter.labels(model_type=self.settings.model_runner).inc()
 
-    def _record_single_base_request_duration(
-        self, device_id: str, duration: float, status: str = "success"
-    ):
-        """Record end to end duration"""
+    def _record_single_base_request_duration(self, duration: float):
         base_request_duration.labels(model_type=self.settings.model_runner).observe(
             duration
         )
 
         base_request_counter.labels(model_type=self.settings.model_runner).inc()
+
+    def _record_download_result(self, duration: float, status: str = "success"):
+        download_result_duration.labels(model_type=self.settings.model_runner).observe(
+            duration
+        )
+
+        download_result_counter.labels(
+            model_type=self.settings.model_runner,
+            status=status,
+        ).inc()
 
 
 @lru_cache(maxsize=1)

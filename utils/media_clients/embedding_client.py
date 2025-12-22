@@ -12,7 +12,6 @@ import sys
 import time
 from pathlib import Path
 
-from workflows.utils import get_num_calls
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -30,6 +29,7 @@ logger = logging.getLogger(__name__)
 BENCHMARK_RESULT_START = "============ Serving Benchmark Result ============"
 BENCHMARK_RESULT_END = "=================================================="
 OPENAI_API_KEY = "your-secret-key"
+MTEB_TASKS = ["STS12"]  # add AmazonCounterfactualClassification for classification
 
 
 class EmbeddingClientStrategy(BaseMediaStrategy):
@@ -38,7 +38,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
+        self.num_calls = 1000
         self.isl = 1000
+        self.dimensions = 1000
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
     def run_eval(self) -> None:
@@ -56,13 +58,17 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            return True
+            logger.info("Running embedding eval...")
+
+            status_list = self._run_embedding_transcription_eval()
+
+            self._generate_evals_report(status_list)
 
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
-    def run_benchmark(self, attempt=0) -> list[AudioTestStatus]:
+    def run_benchmark(self) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -77,20 +83,16 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            # Get num_calls from benchmark parameters
-            num_calls = get_num_calls(self)
-
             status_list = []
-            status_list = self._run_embedding_transcription_benchmark(num_calls)
+            status_list = self._run_embedding_transcription_benchmark()
 
-            return self._generate_report(status_list)
+            self._generate_benchmarking_report(status_list)
+
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _run_embedding_transcription_benchmark(
-        self, num_calls: int
-    ) -> list[EmbeddingTestStatus]:
+    def _run_embedding_transcription_benchmark(self) -> list[EmbeddingTestStatus]:
         """Run embedding transcription benchmark."""
 
         # Use the venv's python and vllm executable directly
@@ -108,7 +110,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "--random-input-len",
             str(self.isl),
             "--num-prompts",
-            str(num_calls),
+            str(self.num_calls),
             "--backend",
             "openai-embeddings",
             "--endpoint",
@@ -120,7 +122,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "benchmark",
         ]
 
-        logger.info(f"Running embedding benchmark with {num_calls} calls...")
+        logger.info(f"Running embedding benchmark with {self.num_calls} calls...")
 
         output = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
@@ -154,7 +156,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
         return metrics
 
-    def _generate_report(self, metrics: dict):
+    def _generate_benchmarking_report(self, metrics: dict):
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -191,6 +193,105 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "embedding",
         }
+
+        with open(result_filename, "w") as f:
+            json.dump(report_data, f, indent=4)
+        logger.info(f"Report generated: {result_filename}")
+
+    def _run_embedding_transcription_eval(self) -> None:
+        """Run embedding transcription evaluation."""
+
+        import mteb
+        import numpy as np
+        from mteb.models.model_implementations.openai_models import OpenAIModel
+        from openai import OpenAI
+
+        model_name = self.model
+
+        # Currently only single string encoding is supported
+        def single_string_encode(self, inputs, **kwargs):
+            sentences = [text for batch in inputs for text in batch["text"]]
+            all_embeddings = []
+            for sentence in sentences:
+                response = self._client.embeddings.create(
+                    input=sentence,
+                    model=model_name,
+                    encoding_format="float",
+                    dimensions=self._embed_dim if self._embed_dim else None,
+                )
+                all_embeddings.extend(self._to_numpy(response))
+            return np.array(all_embeddings)
+
+        client = OpenAI(
+            base_url=f"{self.base_url}/v1",
+            api_key=OPENAI_API_KEY,
+        )
+
+        # Create the model wrapper
+        model = OpenAIModel(
+            model_name=model_name,
+            max_tokens=self.isl,
+            embed_dim=self.dimensions,
+            client=client,
+        )
+        model.encode = single_string_encode.__get__(model, type(model))
+
+        # Select tasks and run evaluation
+        tasks = mteb.get_tasks(tasks=MTEB_TASKS)
+
+        logger.info("Running embedding transcription evaluation with STS12...")
+        results = mteb.evaluate(
+            model, tasks=tasks, show_progress_bar=True, encode_kwargs={"batch_size": 1}
+        )
+        return self._parse_embedding_evals_output(results)
+
+    def _parse_embedding_evals_output(self, results: dict) -> dict:
+        """Parse embedding evaluation results and extract key metrics from scores['test']."""
+        scores = {}
+        try:
+            scores = results.task_results[0].scores["test"]
+        except Exception as e:
+            logger.error(f"Could not extract scores['test']: {e}")
+            raise
+
+        # Extract the required metrics
+        keys = [
+            "pearson",
+            "spearman",
+            "cosine_pearson",
+            "cosine_spearman",
+            "manhattan_pearson",
+            "manhattan_spearman",
+            "euclidean_pearson",
+            "euclidean_spearman",
+            "main_score",
+            "languages",
+        ]
+        report_data = {k: scores.get(k) for k in keys if k in scores}
+        return report_data
+
+    def _generate_evals_report(self, metrics: dict):
+        """Generate evals report, attaching metrics to report_data."""
+        logger.info("Generating evals report...")
+        result_filename = (
+            Path(self.output_path)
+            / f"eval_{self.model_spec.model_id}"
+            / self.model_spec.hf_model_repo.replace("/", "__")
+            / f"results_{time.time()}.json"
+        )
+        result_filename.parent.mkdir(parents=True, exist_ok=True)
+
+        report_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "embedding",
+            "task_name": self.all_params.tasks[0].task_name,
+        }
+        # Attach metrics dict
+        report_data.update(metrics)
+
+        report_data = [report_data]
 
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
