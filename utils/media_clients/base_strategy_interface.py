@@ -52,7 +52,7 @@ class BaseMediaStrategy(ABC):
             self.device.name if hasattr(self.device, "name") else str(self.device)
         )
         num_devices = self.model_spec.device_model_spec.max_concurrency
-        
+
         if override_num_devices is not None:
             num_devices = override_num_devices
 
