@@ -140,11 +140,23 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# Install tt-vllm-plugin
-# COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-#     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-#     && pip install ."
+# Install tt-vllm-plugin in a separate venv
+# Create vllm venv with the same dependencies as python_env
+ENV VLLM_ENV_DIR=${TT_METAL_HOME}/vllm_env
+RUN /bin/bash -c "python3 -m venv ${VLLM_ENV_DIR} \
+    && source ${VLLM_ENV_DIR}/bin/activate \
+    && pip install --upgrade pip setuptools wheel \
+    && sed -i 's/^whisperx/#whisperx/' ${TT_METAL_HOME}/requirements.txt \
+    && pip install --default-timeout=240 --no-cache-dir -r ${TT_METAL_HOME}/requirements.txt || \
+    (echo 'Requirements installation failed, trying without pyluwen...' && \
+    grep -v pyluwen ${TT_METAL_HOME}/requirements.txt > ${TT_METAL_HOME}/requirements_no_pyluwen.txt && \
+    pip install --default-timeout=240 --no-cache-dir -r ${TT_METAL_HOME}/requirements_no_pyluwen.txt)"
+
+# Install tt-vllm-plugin in vllm venv
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+RUN /bin/bash -c "source ${VLLM_ENV_DIR}/bin/activate \
+    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+    && pip install ."
 
 # Cleanup build-only directories
 USER root
@@ -197,6 +209,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    VLLM_ENV_DIR=${HOME_DIR}/tt-metal/vllm_env \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
     VLLM_USE_V1=1
 
@@ -224,4 +237,19 @@ WORKDIR ${HOME_DIR}/tt-metal
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "cd ${TT_METAL_HOME}/server/ && \
+    if [ \"${MODEL_RUNNER}\" = \"vllm_bge_large_en_v1_5\" ]; then \
+        if [ -n \"${VLLM_ENV_DIR}\" ] && [ -f \"${VLLM_ENV_DIR}/bin/activate\" ]; then \
+            source \"${VLLM_ENV_DIR}/bin/activate\"
+        else \
+            echo \"Warning: VLLM_ENV_DIR not set or venv not found, using default venv\" && \
+            if [ -n \"${PYTHON_ENV_DIR}\" ] && [ -f \"${PYTHON_ENV_DIR}/bin/activate\" ]; then \
+                source \"${PYTHON_ENV_DIR}/bin/activate\"
+            fi; \
+        fi; \
+    else \
+        if [ -n \"${PYTHON_ENV_DIR}\" ] && [ -f \"${PYTHON_ENV_DIR}/bin/activate\" ]; then \
+            source \"${PYTHON_ENV_DIR}/bin/activate\"
+        fi; \
+    fi && \
+    source ./run_uvicorn.sh"]
