@@ -13,11 +13,6 @@ from .test_status import BaseTestStatus
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
-NUM_OF_DEVICES = {
-    "n150": 1,
-    "t3k": 4,
-    "galaxy": 32,
-}
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +51,17 @@ class BaseMediaStrategy(ABC):
         device_name = (
             self.device.name if hasattr(self.device, "name") else str(self.device)
         )
-        num_devices = NUM_OF_DEVICES.get(device_name.lower())
-        logger.info(f"Detected device: {device_name} with {num_devices} device(s)")
+        num_devices = self.model_spec.device_model_spec.max_concurrency
+        logger.info(
+            f"Detected device: {device_name} with {num_devices} expected worker(s)"
+        )
 
         # Configure test with retry logic
         test_config = TestConfig(
             {
-                "test_timeout": 30,
-                "retry_attempts": 19,  # 20 total attempts (0-indexed)
-                "retry_delay": 5,
+                "test_timeout": 1200,  # 20 minutes
+                "retry_attempts": 229,  # 230 total attempts (0-indexed)
+                "retry_delay": 10,  # 10 seconds between attempts
                 "break_on_failure": False,
             }
         )

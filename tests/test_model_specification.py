@@ -3,15 +3,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import re
+
 import pytest
 
 from workflows.model_spec import (
+    MODEL_SPECS,
+    VERSION,
+    DeviceModelSpec,
+    ImplSpec,
+    InferenceEngine,
     ModelSpec,
     ModelSpecTemplate,
-    ImplSpec,
-    DeviceModelSpec,
     get_model_spec_map,
-    MODEL_SPECS,
     spec_templates,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
@@ -48,6 +52,7 @@ class TestModelSpecTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
             device_model_specs=[
                 DeviceModelSpec(
                     device=DeviceTypes.N150,
@@ -88,6 +93,7 @@ class TestModelSpecTemplateSystem:
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
             device_model_specs=[
                 DeviceModelSpec(
                     device=DeviceTypes.N150,
@@ -98,7 +104,7 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
-        assert template.version == "0.4.0"
+        assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
 
@@ -116,6 +122,7 @@ class TestModelSpecSystem:
             model_name="TestModel-7B",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
             device_model_spec=sample_device_model_spec,
         )
 
@@ -136,9 +143,10 @@ class TestModelSpecSystem:
             model_name="model",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
             device_model_spec=sample_device_model_spec,
         )
-        spec.validate_data()  # Should not raise
+        spec._validate_data()  # Should not raise
 
         # Test validation failures
         with pytest.raises(AssertionError, match="hf_model_repo must be set"):
@@ -150,6 +158,25 @@ class TestModelSpecSystem:
                 model_name="model",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
+                inference_engine=InferenceEngine.VLLM.value,
+                device_model_spec=sample_device_model_spec,
+            )
+
+        with pytest.raises(
+            AssertionError,
+            match=re.escape(
+                f"inference_engine must be one of {[e.value for e in InferenceEngine]}"
+            ),
+        ):
+            ModelSpec(
+                device_type=DeviceTypes.N150,
+                impl=sample_impl,
+                hf_model_repo="test/model",
+                model_id="test_id",
+                model_name="model",
+                tt_metal_commit="v1.0.0",
+                vllm_commit="abc123",
+                inference_engine="my_custom_inference_engine",
                 device_model_spec=sample_device_model_spec,
             )
 
@@ -179,6 +206,7 @@ class TestModelSpecSystem:
             model_name="Llama-3.1-70B-Instruct",
             tt_metal_commit="v1.2.3-rc45",
             vllm_commit="abcdef123456",
+            inference_engine=InferenceEngine.VLLM.value,
             device_model_spec=sample_device_model_spec,
             status=ModelStatusTypes.FUNCTIONAL,
         )
@@ -204,6 +232,7 @@ class TestSystemIntegration:
                 impl=sample_impl,
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
+                inference_engine=InferenceEngine.VLLM.value,
                 device_model_specs=[
                     DeviceModelSpec(
                         device=DeviceTypes.N150,

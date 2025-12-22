@@ -34,27 +34,29 @@ async def complete_text(
         if not completion_request.stream:
             result = await service.process_request(completion_request)
             return Response(content=result.text, media_type="text/plain")
-        else:
-            try:
-                service.scheduler.check_is_model_ready()
-            except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
 
-            async def result_stream():
-                async for partial in service.process_streaming_request(
-                    completion_request
-                ):
-                    yield partial.text + "\n"
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
 
-            return StreamingResponse(
-                result_stream(),
-                media_type="text/plain",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",  # Disable nginx buffering
-                    "Transfer-Encoding": "chunked",
-                },
-            )
+        async def result_stream():
+            import json
+
+            async for partial in service.process_streaming_request(completion_request):
+                service.logger.info(f"Streaming chunk: {partial}")
+                chunk = {"choices": [partial.to_dict()]}
+                yield json.dumps(chunk) + "\n"
+
+        return StreamingResponse(
+            result_stream(),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Transfer-Encoding": "chunked",
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -76,13 +78,27 @@ async def create_embedding(
         HTTPException: If embedding generation fails.
     """
     try:
-        return await service.process_request(text_embedding_request)
+        response = await service.process_request(text_embedding_request)
+        return {
+            "object": "list",
+            "data": [
+                {"object": "embedding", "embedding": response.embedding, "index": 0}
+            ],
+            "model": text_embedding_request.model,
+            "usage": {
+                "total_tokens": response.total_tokens,
+                "prompt_tokens": response.total_tokens,
+            },
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 router = APIRouter()
-if settings.model_runner == ModelRunners.VLLMForge_QWEN_EMBEDDING.value:
+if settings.model_runner in [
+    ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
+    ModelRunners.VLLMBGELargeEN_V1_5.value,
+]:
     router.include_router(embedding_router)
 else:
     router.include_router(completions_router)

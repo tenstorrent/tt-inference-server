@@ -97,7 +97,7 @@ class SetupConfig:
         if self.model_source == ModelSource.HUGGINGFACE.value:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+                get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
                 repo_path_filter=repo_path_filter,
             )
         elif self.model_source == ModelSource.LOCAL.value:
@@ -322,7 +322,9 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
+        model_url = (
+            f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
+        )
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -339,7 +341,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.hf_weights_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -490,12 +492,12 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         base_cmd = [str(hf_exec)]
-        hf_repo = self.model_spec.hf_model_repo
+        hf_repo = self.model_spec.hf_weights_repo
         # use default huggingface repo
         # fmt: off
         cmd = base_cmd + [
             "download", hf_repo,
-            "--exclude", "original/"
+            "--exclude", "original/**"
         ]
         # fmt: on
         repo_path_filter = None
@@ -505,7 +507,7 @@ class HostSetupManager:
         assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         # need to update paths
         self.setup_config.update_host_model_weights_snapshot_dir(
-            get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+            get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
             repo_path_filter=repo_path_filter,
         )
         logger.info(

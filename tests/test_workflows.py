@@ -14,8 +14,8 @@ import pytest
 
 from run import main
 from workflows.model_spec import (
-    MODEL_SPECS, 
-    ModelSource, 
+    MODEL_SPECS,
+    ModelSource,
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
@@ -195,12 +195,12 @@ class TestWorkflowExecution:
             return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
-            assert len(return_codes) == 3  # benchmarks, evals, reports
+            assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
             assert all(code == 0 for code in return_codes)
-            assert mock_run_single.call_count == 3
+            assert mock_run_single.call_count == 4
 
             # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", "REPORTS"]
+            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )

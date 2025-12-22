@@ -1,0 +1,167 @@
+# syntax=docker/dockerfile:1
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+# ==============================================================================
+# Minimal TTNN Docker Image
+#
+# This Dockerfile creates a minimal image with only SFPI dependencies installed
+# and ttnn available via pip. It downloads only the required scripts from tt-metal.
+#
+# Build:
+#   docker build -f Dockerfile.sfpi-minimal -t ttnn-minimal .
+#
+# Run:
+#   docker run --rm -it --device /dev/tenstorrent ttnn-minimal
+#
+# Run with vLLM BGE (embeddings model):
+#   docker run -e MODEL_RUNNER=vllm_bge_large_en_v1_5 -e DEVICE=n150 \
+#     --rm -it -p 8000:8000 --user root \
+#     --device /dev/tenstorrent/ \
+#     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+#     --mount type=bind,src=$HOME/.cache/huggingface,dst=/root/.cache/huggingface \
+#     -e HF_TOKEN=$HF_TOKEN -e MESH_DEVICE='(1,1)' \
+#     ttnn-minimal
+# ==============================================================================
+
+FROM ubuntu:22.04 AS base
+
+LABEL maintainer="Tenstorrent AI ULC"
+LABEL description="Minimal TTNN environment with SFPI dependencies"
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION=3.10
+
+# ------------------------------------------------------------------------------
+# System Dependencies
+# ------------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Basic tools
+    wget \
+    curl \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    jq \
+    git \
+    # Python
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-venv \
+    python${PYTHON_VERSION}-dev \
+    # Build essentials (minimal set for ttnn)
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1
+
+# ------------------------------------------------------------------------------
+# Download SFPI Scripts from tt-metal GitHub
+# These are the only files needed for minimal SFPI installation
+# Source: https://github.com/tenstorrent/tt-metal
+# ------------------------------------------------------------------------------
+WORKDIR /tmp/tt-metal
+
+# Download the three required scripts
+RUN wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/tt_metal/sfpi-info.sh \
+        -O sfpi-info.sh \
+    && wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/tt_metal/sfpi-version \
+        -O sfpi-version \
+    && wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/install_dependencies.sh \
+        -O install_dependencies.sh \
+    && chmod +x sfpi-info.sh install_dependencies.sh
+
+# Verify downloads
+RUN echo "Downloaded files:" && ls -la /tmp/tt-metal/
+
+# ------------------------------------------------------------------------------
+# Install SFPI (minimal installation using --sfpi flag)
+# This only installs the SFPI toolchain package, nothing else
+# ------------------------------------------------------------------------------
+RUN ./install_dependencies.sh --sfpi
+
+# Cleanup downloaded scripts
+RUN rm -rf /tmp/tt-metal
+
+# ------------------------------------------------------------------------------
+# Create Python Virtual Environment
+# ------------------------------------------------------------------------------
+ENV VENV_PATH=/opt/ttnn-venv
+ENV PATH="${VENV_PATH}/bin:${PATH}"
+
+RUN python3 -m venv ${VENV_PATH}
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    ${VENV_PATH}/bin/pip install --upgrade pip setuptools wheel
+
+# ------------------------------------------------------------------------------
+# Install TTNN
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    ${VENV_PATH}/bin/pip install ttnn
+
+# ------------------------------------------------------------------------------
+# Clone tt-metal models folder (sparse checkout from arg/bge_merge_branch)
+# ------------------------------------------------------------------------------
+ARG TT_METAL_BRANCH=main
+ENV TT_METAL_HOME=/opt/tt-metal
+
+RUN mkdir -p ${TT_METAL_HOME} \
+    && cd ${TT_METAL_HOME} \
+    && git init \
+    && git remote add origin https://github.com/tenstorrent/tt-metal.git \
+    && git config core.sparseCheckout true \
+    && echo "models/" >> .git/info/sparse-checkout \
+    && echo "tt_metal/python_env/" >> .git/info/sparse-checkout \
+    && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
+    && git checkout FETCH_HEAD
+
+# Install tt-metal requirements-dev.txt (filtering out relative paths that don't exist)
+# Note: Some dependencies are filtered out as they reference files not in sparse checkout
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_METAL_HOME} \
+    && grep -v "^-r " tt_metal/python_env/requirements-dev.txt > /tmp/requirements-filtered.txt \
+    && ${VENV_PATH}/bin/pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+       -r /tmp/requirements-filtered.txt || true \
+    && rm /tmp/requirements-filtered.txt
+
+# ------------------------------------------------------------------------------
+# Clone tt-inference-server and install components
+# ------------------------------------------------------------------------------
+ENV TT_INFERENCE_SERVER_HOME=/opt/tt-inference-server
+
+RUN git clone --depth 1 --branch dev https://github.com/tenstorrent/tt-inference-server.git ${TT_INFERENCE_SERVER_HOME}
+
+# Install tt-media-server requirements
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-media-server \
+    && ${VENV_PATH}/bin/pip install -r requirements.txt
+
+# Install tt-vllm-plugin
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-vllm-plugin \
+    && ${VENV_PATH}/bin/pip install .
+
+# ------------------------------------------------------------------------------
+# Application Setup
+# ------------------------------------------------------------------------------
+WORKDIR ${TT_INFERENCE_SERVER_HOME}/tt-media-server
+
+# Set environment for interactive use
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/opt/tt-metal"
+
+# Device and model configuration
+ENV DEVICE=n150
+ENV VLLM_USE_V1=1
+ENV MODEL=bge-large-en-v1.5
+
+# Expose media server API port
+EXPOSE 8000
+
+# Default command - run the media server via uvicorn
+CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && source ./run_uvicorn.sh"]

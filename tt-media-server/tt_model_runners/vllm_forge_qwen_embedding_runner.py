@@ -7,7 +7,8 @@ from config.settings import SupportedModels
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.helpers import log_execution_time
+from tt_model_runners.embedding_response import EmbeddingResponse
+from utils.decorators import log_execution_time
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
@@ -71,6 +72,8 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         if (
             self.num_tokens_in_batch + num_tokens > self.settings.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
+            or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
+            or (batch is not None and request.model != batch[0].model)
         ):
             return False
 
@@ -84,6 +87,10 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         # if only one request in batch, validate and set dimensions
         if self.num_tokens_in_batch == 0:
+            if requests[0].model != SupportedModels.QWEN_3_EMBEDDING_4B.value:
+                raise ValueError(
+                    f"Model {requests[0].model} is not supported by VLLMForgeEmbeddingQwenRunner"
+                )
             self.dimensions_in_batch = requests[0].dimensions
             num_tokens = len(self.tokenizer.encode(requests[0].input))
             if num_tokens > self.settings.max_model_length:
@@ -98,11 +105,14 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             pooling_params = vllm.PoolingParams(dimensions=self.dimensions_in_batch)
 
         output_embedding = self.llm.embed(input, pooling_params=pooling_params)
-        embeddings = [output.outputs.embedding for output in output_embedding]
-
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
 
         self.num_tokens_in_batch = 0
         self.dimensions_in_batch = None
 
-        return embeddings
+        return [
+            EmbeddingResponse(
+                embedding=output.outputs.embedding,
+                total_tokens=len(output.prompt_token_ids),
+            )
+            for output in output_embedding
+        ]

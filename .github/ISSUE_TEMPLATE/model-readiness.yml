@@ -36,6 +36,14 @@ body:
       description: Corresponds to the evals/eval_config.py task_name.
     validations:
       required: true
+  - type: textarea
+    id: model-hardware
+    attributes:
+      label: What hardware is supported?
+      placeholder: e.g. GALAXY, T3K, N150, N300, P300, P150, etc. ...
+      description: List of hardware that is supported for the model.
+    validations:
+      required: true
   - type: checkboxes
     id: model-readiness-preconditions
     attributes:

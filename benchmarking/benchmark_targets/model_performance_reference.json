@@ -4721,22 +4721,6 @@
                         "tput": 773.0
                     }
                 }
-            },
-            {
-                "isl": 16000,
-                "osl": 64,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "image",
-                "image_height": 3500,
-                "image_width": 2500,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12121,
-                        "tput_user": 50
-                    }
-                }
             }
         ]
     },
@@ -5177,7 +5161,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5190,7 +5174,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5203,7 +5187,7 @@
             {
                 "max_concurrency": 4,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5216,7 +5200,7 @@
             {
                 "max_concurrency": 32,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5231,7 +5215,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 11000,
@@ -5244,7 +5228,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "cnn",
+                "task_type": "image",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 5000,
@@ -5254,7 +5238,87 @@
             }
         ]
     },
+    "stable-diffusion-xl-base-1.0-img-2-img": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
+    "stable-diffusion-xl-1.0-inpainting-0.1": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
     "whisper-large-v3": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 1684.6,
+                        "tput_user": 56.31,
+                        "rtr": 7.805,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 1310.0,
+                        "tput_user": 53.80,
+                        "rtr": 8.315,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "ttft_streaming_ms": 900,
+                        "tput_user": 65.55,
+                        "rtr": 10.905,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ]
+    },
+    "distil-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5407,6 +5471,56 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3-Embedding-4B": {
+         "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 50,

@@ -19,12 +19,7 @@ ARG MODEL_RUNNER=tt-xla-resnet
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV LOG_LEVEL=INFO
 ENV ENVIRONMENT=development
-ENV DEVICE_IDS=0
-# max queue size 32 x 2 for Galaxy
-ENV MAX_QUEUE_SIZE=1
-ENV MAX_BATCH_SIZE=1
 ENV MODEL_RUNNER=${MODEL_RUNNER}
 
 ENV SHELL=/bin/bash
@@ -113,6 +108,7 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"

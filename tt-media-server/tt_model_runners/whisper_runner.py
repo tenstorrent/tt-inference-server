@@ -20,13 +20,14 @@ from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
+    WHISPER_TRACE_REGION_SIZE,
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
 )
 from models.demos.whisper.tt.whisper_generator import (
     GenerationParams,
-    generate,
+    WhisperGenerator,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
@@ -36,7 +37,7 @@ from transformers import (
 )
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from ttnn.model_preprocessing import preprocess_model_parameters
-from utils.helpers import log_execution_time
+from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 
 
@@ -47,7 +48,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": WHISPER_L1_SMALL_SIZE}
+        device_params = {
+            "l1_small_size": WHISPER_L1_SMALL_SIZE,
+            "trace_region_size": WHISPER_TRACE_REGION_SIZE,
+        }
         return device_params
 
     @log_execution_time(
@@ -159,6 +163,20 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         self, request: AudioProcessingRequest
     ) -> GenerationParams:
         generation_params = GenerationParams()
+        if request.temperatures is not None:
+            generation_params.temperatures = request.temperatures
+        if request.compression_ratio_threshold is not None:
+            generation_params.compression_ratio_threshold = (
+                request.compression_ratio_threshold
+            )
+        if request.logprob_threshold is not None:
+            generation_params.logprob_threshold = request.logprob_threshold
+        if request.no_speech_threshold is not None:
+            generation_params.no_speech_threshold = request.no_speech_threshold
+        if request.return_timestamps is not None:
+            generation_params.return_timestamps = request.return_timestamps
+        if request.prompt is not None:
+            generation_params.prompt = request.prompt
         if self.settings.audio_language is not None:
             generation_params.language = self.settings.audio_language
         if self.settings.audio_task is not None:
@@ -245,7 +263,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     async def _process_segments_streaming(self, request: AudioProcessingRequest):
         """Process segments with streaming - yields tokens immediately as they're generated"""
         segments = []
-        full_text_parts = []
+        final_text = ""
         speakers_set = set()
         chunk_count = 0
 
@@ -280,7 +298,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             segment_text_parts = []
 
             async for partial_result in async_generator:
-                text_part = TextUtils.extract_text(partial_result)
+                text_part, start, end = TextUtils.extract_text(partial_result)
+                # Check is_final flag
+                if isinstance(partial_result, tuple) and len(partial_result) >= 4:
+                    is_final = partial_result[3]
+                    if is_final:
+                        final_text = text_part
+                        break
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -316,20 +340,19 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 text=segment_result,
             )
             segments.append(segment)
-            full_text_parts.append(segment_result)
             speakers_set.add(speaker)
 
         # Sort speakers for consistent ordering
         speakers = sorted(list(speakers_set))
 
         final_result = AudioTextResponse(
-            text=TextUtils.concatenate_chunks(full_text_parts),
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
+            text=final_text,
             duration=request._duration,
             segments=segments,
             speaker_count=len(speakers),
             speakers=speakers,
+            start=start,
+            end=end,
         )
 
         yield {
@@ -371,7 +394,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self._create_generation_params(request),
             )
 
-            cleaned_text = TextUtils.extract_text(segment_result)
+            cleaned_text, start, end = TextUtils.extract_text(segment_result)
 
             segment = AudioTextSegment(
                 id=i,
@@ -390,33 +413,37 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         return [
             AudioTextResponse(
                 text=TextUtils.concatenate_chunks(full_text_parts),
-                task=self.settings.audio_task,
-                language=self.settings.audio_language,
                 duration=duration,
                 segments=segments,
                 speaker_count=len(speakers),
                 speakers=speakers,
+                start=start,
+                end=end,
             )
         ]
 
     async def _format_streaming_result(
         self, result_generator, request: AudioProcessingRequest
     ):
-        streaming_chunks = []
         chunk_count = 0
+        final_text = ""
 
         async for chunk in result_generator:
-            cleaned_text = TextUtils.extract_text(chunk)
+            cleaned_text, start, end = TextUtils.extract_text(chunk)
+
+            # Check is_final flag
+            if isinstance(chunk, tuple) and len(chunk) >= 4:
+                is_final = chunk[3]
+                if is_final:
+                    final_text = cleaned_text
+                    break
 
             # Yield non-empty chunks
             if not cleaned_text:
                 continue
 
-            streaming_chunks.append(cleaned_text)
             chunk_count += 1
-
             formatted_chunk = AudioStreamChunk(text=cleaned_text, chunk_id=chunk_count)
-
             yield {
                 "type": "streaming_chunk",
                 "chunk": formatted_chunk,
@@ -424,10 +451,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             }
 
         final_result = AudioTextResponse(
-            text=TextUtils.concatenate_chunks(streaming_chunks),
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
+            text=final_text,
             duration=request._duration,
+            start=start,
+            end=end,
         )
 
         yield {
@@ -438,11 +465,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         }
 
     def _format_non_streaming_result(self, result, duration):
+        text, start, end = TextUtils.extract_text(result)
         final_result = AudioTextResponse(
-            text=TextUtils.extract_text(result),
-            task=self.settings.audio_task,
-            language=self.settings.audio_language,
+            text=text,
             duration=duration,
+            start=start,
+            end=end,
         )
         return [final_result]
 
@@ -557,12 +585,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
 
-            kv_cache = await asyncio.to_thread(_init_kv_cache)
+            kv_cache, cross_attn_cache = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully initialized TTNN model components"
             )
-            return parameters, ttnn_linear_weight, kv_cache
+            return parameters, ttnn_linear_weight, kv_cache, cross_attn_cache
 
         except Exception as e:
             self.logger.error(
@@ -595,8 +623,25 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 parameters,
                 ttnn_linear_weight,
                 kv_cache,
+                cross_attn_cache,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
+            )
+
+            generator = WhisperGenerator(
+                config=config,
+                mesh_device=self.ttnn_device,
+                parameters=parameters,
+                processor=processor,
+                feature_extractor=feature_extractor,
+                ttnn_linear_weight=ttnn_linear_weight,
+                generation_config=hf_ref_model.generation_config,
+                input_mesh_mapper=input_mesh_mapper,
+                output_mesh_composer=output_mesh_composer,
+                weights_mesh_mapper=weights_mesh_mapper,
+                kv_cache=kv_cache,
+                cross_attn_cache=cross_attn_cache,
+                max_batch_size=self.settings.max_batch_size,
             )
 
             async def _model_pipeline(
@@ -631,21 +676,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
                     # Run inference in thread pool to avoid blocking
                     def _run_inference():
-                        return generate(
-                            config,
-                            self.ttnn_device,
-                            (input_mesh_mapper, weights_mesh_mapper),
-                            current_batch,
-                            feature_extractor,
-                            parameters=parameters,
-                            processor=processor,
-                            ttnn_linear_weight=ttnn_linear_weight,
-                            mesh_device=self.ttnn_device,
-                            generation_config=hf_ref_model.generation_config,
-                            input_mesh_mapper=input_mesh_mapper,
-                            output_mesh_composer=output_mesh_composer,
-                            weights_mesh_mapper=weights_mesh_mapper,
-                            kv_cache=kv_cache,
+                        return generator.generate(
+                            current_batch=current_batch,
                             generation_params=generation_params,
                             stream_generation=stream,
                             return_perf_metrics=False,

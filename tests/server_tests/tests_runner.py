@@ -36,7 +36,7 @@ class ServerRunner:
 
                 # Handle the new return format from BaseTest
                 if isinstance(result, dict):
-                    success = result.get("success", True)
+                    success = result.get("success", False)
                     test_result = result.get("result")
                     logs = result.get("logs", [])
                     attempts = result.get("attempts", 1)
@@ -55,10 +55,11 @@ class ServerRunner:
                     result=test_result,
                     logs=logs,
                     attempts=attempts,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
                 logger.info(
-                    f"✓ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
+                    f"✅ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
                 )
 
             except SystemExit as e:
@@ -76,9 +77,10 @@ class ServerRunner:
                     attempts=case.retry_attempts + 1
                     if hasattr(case, "retry_attempts")
                     else 1,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
-                logger.error(f"✗ Test case {test_name} exited: {e}")
+                logger.error(f"❌ Test case {test_name} exited: {e}")
                 if case.break_on_failure:
                     logger.info("Breaking on failure as per configuration.")
                     break  # Stop executing further tests
@@ -100,9 +102,10 @@ class ServerRunner:
                     attempts=case.retry_attempts + 1
                     if hasattr(case, "retry_attempts")
                     else 1,
+                    descrtiption=case.description,
                 )
                 self.reports.append(report)
-                logger.error(f"✗ Test case {test_name} failed: {e}")
+                logger.error(f"❌ Test case {test_name} failed: {e}")
 
         self._generate_report()
 
@@ -127,9 +130,12 @@ class ServerRunner:
         md_filename = os.path.join(reports_dir, f"test_report_{timestamp}.md")
         self._generate_markdown_report(md_filename)
 
-        logger.info("\n📊 Reports generated:")
+        logger.info("📊 Reports generated:")
         logger.info(f"  JSON: {json_filename}")
         logger.info(f"  Markdown: {md_filename}")
+
+        # Print CLI-friendly summary
+        self._print_cli_summary()
 
     def _generate_json_report(self, filename: str):
         """Generate JSON report with all test details including new fields"""
@@ -154,6 +160,7 @@ class ServerRunner:
             test_data = {
                 "test_name": report.test_name,
                 "success": report.success,
+                "description": report.description,
                 "duration": report.duration,
                 "attempts": report.attempts,
                 "timestamp": report.timestamp,
@@ -178,65 +185,125 @@ class ServerRunner:
         total_duration = sum(r.duration for r in self.reports)
         total_attempts = sum(r.attempts for r in self.reports)
 
-        content = f"""# Test Execution Report
+        lines = [
+            "# 📊 Test Execution Report",
+            "",
+            "## 📋 Summary",
+            "| Metric | Value |",
+            "|:-------|------:|",
+            f"| Total Tests | {total} |",
+            f"| Passed | {passed} |",
+            f"| Failed | {failed} |",
+            f"| Skipped | {skipped} |",
+            f"| Attempted | {attempted} |",
+            f"| Success Rate | {success_rate:.1f}% |",
+            f"| Total Duration | {total_duration:.2f}s |",
+            f"| Total Attempts | {total_attempts} |",
+            f"| Generated | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} |",
+            "",
+            "## 🧪 Test Results",
+            "| Status | Test Name | Duration | Attempts | Description |",
+            "|:------:|:----------|----------:|---------:|:------------|",
+        ]
 
-## Summary
-| Metric | Value |
-|--------|-------|
-| Total Tests | {total} |
-| Passed | {passed} |
-| Failed | {failed} |
-| Skipped | {skipped} |
-| Attempted | {attempted} |
-| Success Rate | {success_rate:.1f}% |
-| Total Duration | {total_duration:.2f}s |
-| Total Attempts | {total_attempts} |
-| Generated | {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} |
+        for report in self.reports:
+            status = "✅" if report.success else "❌"
+            description = report.description or "-"
+            lines.append(
+                f"| {status} | {report.test_name} | {report.duration:.2f}s | {report.attempts} | {description} |"
+            )
 
-## Test Results
-
-"""
+        lines.append("")
+        lines.append("## 📝 Detailed Results")
 
         for report in self.reports:
             status_icon = "✅" if report.success else "❌"
-            content += f"### {status_icon} {report.test_name}\n\n"
-            content += f"- **Status**: {'PASS' if report.success else 'FAIL'}\n"
-            content += f"- **Duration**: {report.duration:.2f}s\n"
-            content += f"- **Attempts**: {report.attempts}\n"
+            lines.append("")
+            lines.append(f"### {status_icon} {report.test_name}")
 
             if report.targets:
-                content += f"- **Targets**: {report.targets}\n"
+                lines.append(f"**Targets**: `{json.dumps(report.targets)}`")
 
             if report.error:
-                content += f"- **Error**: {report.error}\n"
+                lines.append(f"**Error**: {report.error}")
 
             if report.result:
-                content += f"- **Result**: {report.result}\n"
+                lines.append("**Result**:")
+                lines.append("```json")
+                lines.append(json.dumps(report.result, indent=2, default=str))
+                lines.append("```")
 
             if report.logs:
-                content += f"- **Log Entries**: {len(report.logs)}\n"
-
-            content += "\n"
+                lines.append(f"**Log Entries**: {len(report.logs)}")
 
         # Add failed tests details if any
         failed_tests = [r for r in self.reports if not r.success]
         if failed_tests:
-            content += "## Failed Test Details\n\n"
+            lines.append("")
+            lines.append("## ❌ Failed Test Details")
             for report in failed_tests:
-                content += f"### {report.test_name}\n\n"
+                lines.append("")
+                lines.append(f"### {report.test_name}")
                 if report.error:
-                    content += f"**Error**: {report.error}\n\n"
+                    lines.append(f"**Error**: {report.error}")
 
                 if report.logs:
-                    content += "**Logs**:\n"
+                    lines.append("**Logs**:")
                     for log_entry in report.logs:
-                        content += f"- [{log_entry.get('level', 'INFO')}] {log_entry.get('message', str(log_entry))}\n"
-                content += "\n"
+                        lines.append(
+                            f"- [{log_entry.get('level', 'INFO')}] {log_entry.get('message', str(log_entry))}"
+                        )
 
+        # Write with single newlines
         with open(filename, "w") as f:
-            f.write(content)
+            f.write("\n".join(lines) + "\n")
 
-        # Print summary to console
+    def _print_cli_summary(self):
+        """Print a CLI-friendly summary to the console"""
+        total = len(self.test_cases)
+        passed = sum(1 for r in self.reports if r.success)
+        failed = total - passed
+        total_duration = sum(r.duration for r in self.reports)
+        total_attempts = sum(r.attempts for r in self.reports)
+
+        # Calculate column widths
+        max_name_len = max(len(r.test_name) for r in self.reports)
+        max_desc_len = max(len(r.description or "-") for r in self.reports)
+        max_desc_len = min(max_desc_len, 50)  # Cap description width
+
+        # Header
+        logger.info("=" * 80)
+        logger.info("📊 TEST EXECUTION SUMMARY")
+        logger.info("=" * 80)
         logger.info(
-            f"\n📋 Test Summary: {passed}/{total} passed ({success_rate:.1f}%), Total attempts: {total_attempts}"
+            f"  Total: {total}  |  ✅ Passed: {passed}  |  ❌ Failed: {failed}  |  ⏱️  Duration: {total_duration:.2f}s  |  Attempts: {total_attempts}"
         )
+        logger.info("=" * 80)
+
+        # Results table header
+        header = f"{'Status':<8} {'Test Name':<{max_name_len}} {'Duration':>10} {'Attempts':>8}  Description"
+        logger.info(header)
+        logger.info("-" * 80)
+
+        # Results rows
+        for report in self.reports:
+            status = "✅ PASS" if report.success else "❌ FAIL"
+            desc = (report.description or "-")[:50]
+            logger.info(
+                f"{status:<8} {report.test_name:<{max_name_len}} {report.duration:>9.2f}s {report.attempts:>8}  {desc}"
+            )
+
+        logger.info("=" * 80)
+
+        # Failed test details
+        failed_tests = [r for r in self.reports if not r.success]
+        if failed_tests:
+            logger.info("❌ FAILED TEST DETAILS:")
+            logger.info("-" * 80)
+            for report in failed_tests:
+                logger.info(f"  {report.test_name}")
+                if report.error:
+                    logger.info(f"    Error: {report.error}")
+                if report.targets:
+                    logger.info(f"    Targets: {report.targets}")
+            logger.info("=" * 80)

@@ -241,6 +241,13 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
   -F "is_preprocessing_enabled=true" \
+  -F "perform_diarization=false" \
+  -F "temperatures=0.0,0.2,0.4,0.6,0.8,1.0" \
+  -F "compression_ratio_threshold=2.4" \
+  -F "logprob_threshold=-1.0" \
+  -F "no_speech_threshold=0.6" \
+  -F "return_timestamps=true" \
+  -F "prompt=test" \
   --no-buffer
 ```
 
@@ -248,9 +255,10 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
-# Video generation test call
+# Video generation API
 
-Sample for calling the endpoint for video generation via curl:
+## Submit video generation job
+
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/video/generations' \
@@ -262,6 +270,60 @@ curl -X 'POST' \
   "negative_prompt": "low quality",
   "num_inference_steps": 20
 }'
+```
+
+**Response example:**
+```json
+{
+  "id": "video_id_1",
+  "object": "video",
+  "status": "queued",
+  "created_at": 1702860000,
+  "model": "Wan2.2-T2V-A14B-Diffusers"
+}
+```
+
+Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}` in subsequent requests.
+
+## Get video job metadata
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Download generated video
+
+The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
+The example below downloads the full file unless a `Range` header is specified.
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -o output.mp4
+```
+
+To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Range: bytes=0-1048575' \
+  -o partial_output.mp4
+```
+This will download only the first 1 MB (bytes 0–1048575) of the video file.
+
+## Cancel video job and assets
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
@@ -365,7 +427,8 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NEW_DEVICE_DELAY_SECONDS` | `30` | Delay in seconds before initializing a new device worker |
+| `NEW_DEVICE_DELAY_SECONDS` | `15` | Delay in seconds before initializing a new device worker |
+| `NEW_RUNNER_DELAY_SECONDS` | `5` | Delay in seconds before initializing a new CPU worker |
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |
@@ -377,14 +440,23 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
 
+## Job Management Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `MAX_JOBS` | `10000` | Maximum number of jobs allowed in the job manager. |
+| `JOB_CLEANUP_INTERVAL_SECONDS` | `300` | Interval in seconds between automatic job cleanup checks. The background cleanup task runs at this frequency to remove old jobs and cancel stuck jobs |
+| `JOB_RETENTION_SECONDS` | `3600` | Duration in seconds to keep completed, failed, or cancelled jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 hour |
+| `JOB_MAX_STUCK_TIME_SECONDS` | `7200` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 2 hours |
+
 ## Text Processing Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `1` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. |
-| `MAX_MODEL_LENGTH` | `2**14` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. |
-| `MAX_NUM_BATCHED_TOKENS` | `2**14` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. |
+| `MIN_CONTEXT_LENGTH` | `32` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
+| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
+| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
 
 ## Image Processing Settings
 
@@ -684,6 +756,40 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
+
+# Profiling
+
+We use [py-spy](https://github.com/benfred/py-spy) to profile the server.
+To profile the server, first run the media server:
+
+```bash
+uvicorn main:app --lifespan on --port 8000
+```
+
+The console will print the PID of the server and the worker process PID:
+```
+INFO:     Started server process [1388662]
+2025-12-11 11:58:49,925 - INFO - Started worker 0 with PID 1388679
+```
+
+Then run the profiler in two separate terminals, once for the server and once for the worker:
+```bash
+py-spy record -o profile_server.svg --pid <PID>
+py-spy record -o profile_worker.svg --pid <PID>
+```
+
+Output is a flame chart [see interactive example](./docs/profiling-example.svg).
+
+How to read the flame chart:
+
+| Color | Width | Meaning | Interpretation | Action Needed |
+|-------|-------|---------|----------------|---------------|
+| **Light/Green** | **Narrow** | Fast function, quick execution | Efficient code, no issues | Perfect! Ignore it |
+| **Light/Green** | **Wide** | I/O bound or coordinator function | Lots of waiting (network, disk, async) or delegates work to many children | Check if waiting is necessary. Optimize I/O if possible |
+| **Yellow/Orange** | **Narrow** | Moderate CPU work, short duration | Some computation, but not critical | Monitor, usually okay |
+| **Yellow/Orange** | **Wide** | Moderate CPU work, long duration | Doing noticeable work across time | Investigate if it can be optimized |
+| **Red/Dark** | **Narrow** | CPU-intensive but quick | Hot code, but doesn't run long | Low priority - fast enough despite intensity |
+| **Red/Dark** | **Wide** | CPU-intensive AND long-running | BOTTLENECK! | TOP PRIORITY - Optimize this first! |
 
 # Remaining work:
 

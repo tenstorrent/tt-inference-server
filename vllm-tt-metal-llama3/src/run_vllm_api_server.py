@@ -2,24 +2,24 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
-import runpy
-import logging
 import json
+import logging
 import multiprocessing
-from pprint import pprint
+import os
+import runpy
+import sys
 from pathlib import Path
+from pprint import pprint
 
 from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
+from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
-    resolve_commit,
     create_model_symlink,
     get_encoded_api_key,
+    resolve_commit,
 )
-from utils.prompt_client import run_background_trace_capture
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 def handle_code_versions(model_spec_json):
-    impl_id = model_spec_json["impl"]["impl_id"]
     tt_metal_home = os.getenv("TT_METAL_HOME")
     vllm_dir = os.getenv("vllm_dir")
 
@@ -70,10 +69,21 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
     )
 
-    # Qwen2.5 - Text
-    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
-    ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen_text)
+    # Qwen2.5 and Qwen3 - Text
+    qwen_text_version = os.getenv("TT_QWEN3_TEXT_VER", "tt_transformers")
+    if qwen_text_version == "tt_transformers":
+        path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
+    elif qwen_text_version == "qwen3_32b_galaxy":
+        path_qwen_text = (
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
+        )
+    else:
+        raise ValueError(
+            f"Unsupported TT Qwen version: {qwen_text_version}, "
+            "pick one of [tt_transformers, qwen3_32b_galaxy]"
+        )
+
+    ModelRegistry.register_model("TTQwenForCausalLM", path_qwen_text)
 
     # Mistral
     ModelRegistry.register_model(
@@ -83,7 +93,7 @@ def register_tt_models():
 
     ModelRegistry.register_model(
         "TTGemma3ForConditionalGeneration",
-        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration"
+        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration",
     )
 
     # Arcee AFM-4.5B - Text
@@ -92,12 +102,12 @@ def register_tt_models():
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
-
-# Note: vLLM custom model architecture registry must happen at import time, before runtime    # Qwen2.5 - Vision
+    # Note: vLLM custom model architecture registry must happen at import time, before runtime    # Qwen2.5 - Vision
     ModelRegistry.register_model(
         "TTQwen2_5_VLForConditionalGeneration",
         "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
     )
+
 
 register_tt_models()
 
@@ -229,6 +239,7 @@ def set_runtime_env_vars(model_spec_json):
         logger.info(f"setting env var: {key}={value}")
         os.environ[key] = value
 
+
 def start_trace_capture(model_spec_json):
     # Check if trace capture should be disabled
     disable_trace_capture = model_spec_json.get("cli_args", {}).get(
@@ -241,14 +252,16 @@ def start_trace_capture(model_spec_json):
             "service_port", int(os.getenv("SERVICE_PORT", "8000"))
         )
         supported_modalities = model_spec_json.get("supported_modalities", ["text"])
-        
+
         # Get max_context from device_model_spec for trace calculation
         max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
         if max_context is None:
             # Fallback to vllm_args if not in device_model_spec
-            max_model_len_str = model_spec_json.get("device_model_spec", {}).get(
-                "vllm_args", {}
-            ).get("max_model_len")
+            max_model_len_str = (
+                model_spec_json.get("device_model_spec", {})
+                .get("vllm_args", {})
+                .get("max_model_len")
+            )
             if max_model_len_str:
                 max_context = int(max_model_len_str)
 
@@ -273,7 +286,6 @@ def start_trace_capture(model_spec_json):
         logger.info("Trace capture is disabled via cli_args.disable_trace_capture")
 
 
-
 def main():
     # use raw model_spec_json to demonstrate interoperability
     # avoids importing full Python dependency tree which may not be usable in 3rd party systems
@@ -287,7 +299,7 @@ def main():
     start_trace_capture(model_spec_json)
 
     # vLLM CLI arguments
-    logger.info(f"vllm_args:")
+    logger.info("vllm_args:")
     pprint(model_spec_json["device_model_spec"]["vllm_args"])
     for key, value in model_spec_json["device_model_spec"]["vllm_args"].items():
         if value is not None:
@@ -297,7 +309,6 @@ def main():
                     sys.argv.append("--" + key)
             else:
                 sys.argv.extend(["--" + key, str(value)])
-
 
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")

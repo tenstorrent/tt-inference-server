@@ -37,18 +37,16 @@ class AudioTextSegment:
 @dataclass
 class AudioTextResponse:
     text: str
-    task: str
-    language: str
     duration: float
     segments: Optional[List[AudioTextSegment]] = None
     speaker_count: Optional[int] = None
     speakers: Optional[List[str]] = None
+    start: Optional[float] = None
+    end: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
             "text": self.text,
-            "task": self.task,
-            "language": self.language,
             "duration": self.duration,
         }
 
@@ -61,14 +59,18 @@ class AudioTextResponse:
         if self.speakers is not None:
             result["speakers"] = self.speakers
 
+        if self.start is not None:
+            result["start"] = self.start
+
+        if self.end is not None:
+            result["end"] = self.end
+
         return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AudioTextResponse":
         kwargs = {
             "text": data["text"],
-            "task": data["task"],
-            "language": data["language"],
             "duration": data["duration"],
         }
 
@@ -84,6 +86,12 @@ class AudioTextResponse:
 
         if "speakers" in data and data["speakers"] is not None:
             kwargs["speakers"] = data["speakers"]
+
+        if "start" in data and data["start"] is not None:
+            kwargs["start"] = data["start"]
+
+        if "end" in data and data["end"] is not None:
+            kwargs["end"] = data["end"]
 
         return cls(**kwargs)
 

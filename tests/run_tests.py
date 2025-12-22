@@ -25,7 +25,6 @@ from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_TESTS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
 
 
@@ -52,14 +51,20 @@ def build_test_command(
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = Path(output_path) / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
-    
+    output_dir_path = (
+        Path(output_path)
+        / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
+    )
+
     cmd = [
         str(test_exec),
         task.test_path,
-        "--model-name", model_spec.hf_model_repo,
-        "--model-backend", model_spec.impl.impl_name,
-        "--output-path", output_dir_path,
+        "--model-name",
+        model_spec.hf_model_repo,
+        "--model-backend",
+        model_spec.impl.impl_name,
+        "--output-path",
+        output_dir_path,
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
@@ -83,6 +88,20 @@ def parse_args():
         type=str,
         help="Path for benchmark output",
         required=True,
+    )
+
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
 
     parser.add_argument(
@@ -176,6 +195,7 @@ def main():
             f"⛔ tests failed with return codes: {return_codes}. See logs above for details."
         )
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

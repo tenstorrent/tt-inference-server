@@ -69,6 +69,11 @@ WORKFLOW_TESTS_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "tests" / "run_tests.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
+WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.SPEC_TESTS,
+    run_script_path=get_repo_root_path() / "tests" / "server_tests" / "run.py",
+    workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
+)
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SERVER,
     run_script_path=get_repo_root_path()
@@ -90,6 +95,7 @@ workflow_config_list = [
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_TESTS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
+    WORKFLOW_SPEC_TESTS_CONFIG,
     WORKFLOW_REPORT_CONFIG,
 ]
 
