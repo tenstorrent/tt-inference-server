@@ -259,6 +259,7 @@ def get_current_commit_sha() -> str:
 
 def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
+    logger.info("Test log")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
     WorkflowSetup.bootstrap_uv()
