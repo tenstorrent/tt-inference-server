@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = False  # used for graph device split and class init
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
