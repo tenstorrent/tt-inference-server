@@ -79,7 +79,7 @@ AVAILABLE_RUNNERS = {
 }
 
 
-def get_device_runner(worker_id: str, num_torch_threads: int) -> BaseDeviceRunner:
+def get_device_runner(worker_id: str, num_torch_threads: int = 1) -> BaseDeviceRunner:
     model_runner = settings.model_runner
     try:
         model_runner_enum = ModelRunners(model_runner)
