@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Union
 from workflows.utils import (
     get_repo_root_path,
     get_version,
+    parse_commits_from_docker_image,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
@@ -750,6 +751,12 @@ class ModelSpec:
 
         if args.override_docker_image:
             object.__setattr__(self, "docker_image", args.override_docker_image)
+            # Parse commits from docker image tag and update model_spec
+            tt_metal_commit, vllm_commit = parse_commits_from_docker_image(
+                args.override_docker_image
+            )
+            object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
+            object.__setattr__(self, "vllm_commit", vllm_commit)
 
 
 @dataclass(frozen=True)
