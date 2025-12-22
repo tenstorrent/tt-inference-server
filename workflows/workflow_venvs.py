@@ -89,7 +89,6 @@ def setup_evals_common(
 
 def setup_venv(venv_config: VenvConfig) -> bool:
     """Setup a generic virtual environment.
-
     Args:
         venv_config: Virtual environment configuration
 
@@ -114,6 +113,7 @@ def setup_evals_meta(
         model_spec.model_type == ModelType.AUDIO
         or model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
     ):
         return setup_venv(venv_config)
 
@@ -355,6 +355,21 @@ def setup_hf_setup(
     return True
 
 
+def setup_benchmarks_genai_perf(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup for genai-perf benchmarks (Docker-based, minimal local setup)."""
+    logger.info("running setup_benchmarks_genai_perf() ...")
+    # Ensure Docker is available
+    run_command("docker --version", logger=logger)
+    # Create artifacts directory
+    artifacts_dir = venv_config.venv_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    return True
+
+
 def setup_benchmarks_aiperf(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -430,7 +445,7 @@ def setup_tests_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 requests==2.32.5 pyjwt==2.7.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
         logger=logger,
     )
     return True
@@ -476,6 +491,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         setup_function=setup_hf_setup,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,
+        setup_function=setup_benchmarks_genai_perf,
     ),
 ]
 

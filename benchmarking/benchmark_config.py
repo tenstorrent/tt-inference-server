@@ -87,32 +87,34 @@ def get_num_prompts(input_len, output_len, max_concurrency):
     raise ValueError(f"Invalid output_len: {output_len}")
 
 
-def calculate_vision_tokens(image_height, image_width, images_per_prompt, model_name=None):
+def calculate_vision_tokens(
+    image_height, image_width, images_per_prompt, model_name=None
+):
     """
     Calculate vision tokens from image dimensions on the client side.
-    
+
     Different VLM models use different methods to calculate vision tokens:
     - Gemma-3 models: Fixed 256 tokens per image (images normalized to 896x896)
     - Qwen2.5-VL: (height // 28) * (width // 28)
     - Qwen3-VL: (height // 32) * (width // 32)
-    
+
     Args:
         image_height: Height of the image in pixels
         image_width: Width of the image in pixels
         images_per_prompt: Number of images per prompt
         model_name: Model name to determine calculation method (e.g., "gemma-3-27b-it", "Qwen/Qwen2.5-VL-3B-Instruct")
-    
+
     Returns:
         Total number of vision tokens
     """
     if image_height is None or image_width is None or images_per_prompt is None:
         return 0
-    
+
     if model_name is None:
         return 0
-    
+
     model_name_lower = model_name.lower()
-    
+
     # Gemma-3 models: Fixed 256 tokens per image
     if "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
         tokens_per_image = 256
@@ -125,14 +127,16 @@ def calculate_vision_tokens(image_height, image_width, images_per_prompt, model_
     else:
         # Default: return 0 for unknown models
         return 0
-    
+
     return tokens_per_image * images_per_prompt
 
 
-def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=32, vision_tokens=0):
+def get_benchmark_max_concurrency(
+    isl, osl, max_context, model_max_concurrency=32, vision_tokens=0
+):
     """
     Calculate the maximum concurrency for benchmarks based on context limits.
-    
+
     For VLM models, vision tokens must be included in the calculation to ensure
     accurate max_concurrency values that account for the full context usage.
 
@@ -160,46 +164,53 @@ def get_benchmark_max_concurrency(isl, osl, max_context, model_max_concurrency=3
     return min(max_concurrency_by_context, model_max_concurrency)
 
 
-def cap_benchmark_params(params: BenchmarkTaskParams, max_context: int, model_max_concurrency: int, model_name: str = None) -> BenchmarkTaskParams:
+def cap_benchmark_params(
+    params: BenchmarkTaskParams,
+    max_context: int,
+    model_max_concurrency: int,
+    model_name: str = None,
+) -> BenchmarkTaskParams:
     """
-    Cap max_concurrency based on context limits (including vision tokens for VLM models) 
+    Cap max_concurrency based on context limits (including vision tokens for VLM models)
     and recalculate num_prompts accordingly.
-    
+
     Args:
         params: Original benchmark task parameters
         max_context: Maximum context length supported by the model
         model_max_concurrency: Maximum concurrency supported by the model
         model_name: Model name for vision token calculation (optional)
-        
+
     Returns:
         Updated BenchmarkTaskParams with capped concurrency and recalculated num_prompts
     """
-    # Skip capping for CNN/Audio tasks that don't have isl/osl 
+    # Skip capping for CNN/Audio tasks that don't have isl/osl
     if params.isl is None or params.osl is None:
         return params
-    
+
     # Calculate vision tokens for VLM models
     vision_tokens = 0
     if params.task_type == "image" and params.image_height and params.image_width:
         vision_tokens = calculate_vision_tokens(
-            params.image_height, 
-            params.image_width, 
+            params.image_height,
+            params.image_width,
             params.images_per_prompt or 0,
-            model_name
+            model_name,
         )
-    
+
     # Calculate the allowed max_concurrency based on sequence length (including vision tokens)
     calculated_max_concurrency = get_benchmark_max_concurrency(
         params.isl, params.osl, max_context, model_max_concurrency, vision_tokens
     )
-    
+
     # Cap the max_concurrency if it exceeds the calculated limit
     capped_max_concurrency = min(params.max_concurrency, calculated_max_concurrency)
-    
+
     # If concurrency was capped, recalculate num_prompts
     if capped_max_concurrency < params.max_concurrency:
-        recalculated_num_prompts = get_num_prompts(params.isl, params.osl, capped_max_concurrency)
-        
+        recalculated_num_prompts = get_num_prompts(
+            params.isl, params.osl, capped_max_concurrency
+        )
+
         # Create new params with capped values
         return BenchmarkTaskParams(
             isl=params.isl,
@@ -215,7 +226,7 @@ def cap_benchmark_params(params: BenchmarkTaskParams, max_context: int, model_ma
             theoretical_tput_user=params.theoretical_tput_user,
             target_peak_perf=params.target_peak_perf,
         )
-    
+
     # No capping needed, return original params
     return params
 
@@ -235,12 +246,14 @@ if os.getenv("ONLY_BENCHMARK_TARGETS"):
         _model_max_concurrency = model_spec.device_model_spec.max_concurrency
         _max_context = model_spec.device_model_spec.max_context
         perf_reference = model_spec.device_model_spec.perf_reference
-        
+
         capped_perf_reference = [
-            cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+            cap_benchmark_params(
+                params, _max_context, _model_max_concurrency, model_spec.model_name
+            )
             for params in perf_reference
         ]
-        
+
         BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
             model_id=model_id,
             tasks=[BenchmarkTask(param_map={_device: capped_perf_reference})],
@@ -256,22 +269,16 @@ else:
 
         # Apply capping to each perf reference entry (including vision tokens for VLM models)
         capped_perf_reference = [
-            cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+            cap_benchmark_params(
+                params, _max_context, _model_max_concurrency, model_spec.model_name
+            )
             for params in perf_reference
         ]
 
         # Create performance reference task with capped values
-        perf_ref_task = BenchmarkTask(
-            param_map={
-                _device: capped_perf_reference
-            }
-        )
+        perf_ref_task = BenchmarkTask(param_map={_device: capped_perf_reference})
         if model_spec.model_type == ModelType.CNN:
-            perf_ref_task = BenchmarkTaskCNN(
-                param_map={
-                    _device: capped_perf_reference
-                }
-            )
+            perf_ref_task = BenchmarkTaskCNN(param_map={_device: capped_perf_reference})
 
         # get (isl, osl, max_concurrency) from capped perf_ref_task
         perf_ref_task_runs = {
@@ -369,7 +376,10 @@ else:
                                     _max_context,
                                     _model_max_concurrency,
                                     vision_tokens=calculate_vision_tokens(
-                                        height, width, images_per_prompt, model_spec.model_name
+                                        height,
+                                        width,
+                                        images_per_prompt,
+                                        model_spec.model_name,
                                     ),
                                 ),
                                 num_prompts=get_num_prompts(
@@ -381,7 +391,10 @@ else:
                                         _max_context,
                                         _model_max_concurrency,
                                         vision_tokens=calculate_vision_tokens(
-                                            height, width, images_per_prompt, model_spec.model_name
+                                            height,
+                                            width,
+                                            images_per_prompt,
+                                            model_spec.model_name,
                                         ),
                                     ),
                                 ),
@@ -403,7 +416,10 @@ else:
                                     _max_context,
                                     _model_max_concurrency,
                                     vision_tokens=calculate_vision_tokens(
-                                        height, width, images_per_prompt, model_spec.model_name
+                                        height,
+                                        width,
+                                        images_per_prompt,
+                                        model_spec.model_name,
                                     ),
                                 ),
                             )

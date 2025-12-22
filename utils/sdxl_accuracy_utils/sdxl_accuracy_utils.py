@@ -48,7 +48,7 @@ def sdxl_get_prompts(
 
 def decode_base64_image(image_base64):
     image_bytes = base64.b64decode(image_base64)
-    return Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
 
 def save_images_as_pil(status_list: list, output_folder: str):
@@ -92,9 +92,13 @@ def calculate_metrics(status_list: list):
 
 
 def calculate_accuracy_check(fid_score, average_clip_score, num_prompts, model_name):
-    logging.info(f"Calculating accuracy check for FID: {fid_score}, CLIP: {average_clip_score}, Prompts: {num_prompts}, Model name: {model_name}")
+    logging.info(
+        f"Calculating accuracy check for FID: {fid_score}, CLIP: {average_clip_score}, Prompts: {num_prompts}, Model name: {model_name}"
+    )
     if num_prompts not in set([100, 5000]):
-        logging.warning(f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check.")
+        logging.warning(
+            f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check."
+        )
         return 0
 
     # Load reference data
@@ -127,9 +131,11 @@ def _load_accuracy_reference():
     """Load accuracy reference data from JSON file."""
     logging.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
     try:
-        with open(ACCURACY_REFERENCE_PATH, 'r') as f:
+        with open(ACCURACY_REFERENCE_PATH, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        raise FileNotFoundError(f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}")
+        raise FileNotFoundError(
+            f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}"
+        )
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in accuracy reference file: {e}")

@@ -11,6 +11,10 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelType,
+)
 from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
@@ -18,6 +22,16 @@ from workflows.utils import (
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
+
+
+def format_backend_value(backend: str) -> str:
+    """Format backend value for display in summary table."""
+    if backend == "vllm":
+        return "vLLM"
+    elif backend == "genai-perf":
+        return "genai-perf"
+    else:
+        return backend if backend else NOT_MEASURED_STR
 
 
 def parse_args():
@@ -44,6 +58,29 @@ def parse_args():
         help="Output CSV file name",
     )
     return parser.parse_args()
+
+
+def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
+    if model_type == ModelType.LLM:
+        return "text"
+    if model_type == ModelType.CNN:
+        return "cnn"
+    if model_type == ModelType.AUDIO:
+        return "audio"
+    if model_type == ModelType.IMAGE:
+        return "image"
+    if model_type == ModelType.EMBEDDING:
+        return "embedding"
+
+
+def _get_task_type(model_id: str) -> str | None:
+    # model_id example: id_tt-transformers_resnet-50
+    # Extract just the model name (e.g., "resnet-50")
+    model_name = model_id.lower().split("_")[-1]
+    for _, model_spec in MODEL_SPECS.items():
+        if model_name in model_spec.model_name.lower() and model_spec.model_type:
+            return _map_model_type_to_task_type(model_spec.model_type)
+    return "unknown"
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
@@ -111,7 +148,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Try the image benchmark pattern
     image_pattern = r"""
-        ^benchmark_
+        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -146,7 +183,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Fall back to text benchmark pattern
     text_pattern = r"""
-        ^benchmark_
+        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
@@ -172,6 +209,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
 
     # Try CNN benchmark pattern (for SDXL and similar models)
+    # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
@@ -183,13 +221,15 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        # Check if this is actually an audio model (Whisper) based on model_id
-        model_id = match.group("model_id")
+        # Check if this is actually an audio model or image model based on model_id
+        model_id = match.group(
+            "model_id"
+        )  # for example, captured: id_tt-transformers_resnet-50 (id_<impl-spec>_<model-name>)
         return {
             "model_id": model_id,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "task_type": "audio" if "whisper" in model_id.lower() else "cnn",
+            "task_type": _get_task_type(model_id),
         }
 
     # If no patterns match, raise error
@@ -359,6 +399,22 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
+    if params.get("task_type") == "embedding":
+        # For IMAGE benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "embedding",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "filename": filename,
+            "task_type": "embedding",
+        }
+        return format_metrics(metrics)
+
     # Calculate statistics for text/image benchmarks
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
@@ -466,6 +522,7 @@ def save_to_csv(results: List[Dict[str, Any]], file_path: Union[Path, str]) -> N
 def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
@@ -482,6 +539,9 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_dict = {}
     for col_name, display_header in display_cols:
         value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
         display_dict[display_header] = str(value)
 
     return display_dict
@@ -490,6 +550,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping for image benchmarks
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Max Concurrency"),
@@ -509,6 +570,9 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_dict = {}
     for col_name, display_header in display_cols:
         value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
         display_dict[display_header] = str(value)
 
     return display_dict
@@ -520,6 +584,7 @@ def create_audio_display_dict(
     """Create display dictionary for audio benchmarks."""
     # Column definitions
     display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
@@ -549,6 +614,34 @@ def create_audio_display_dict(
             continue
 
         # Get value from result
+        value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
+def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for embedding benchmarks
+    display_cols: List[Tuple[str, str]] = [
+        ("input_sequence_length", "ISL"),
+        ("output_sequence_length", "OSL"),
+        ("max_con", "Max Concurrency"),
+        ("embedding_dimension", "Embedding Dimension"),
+        ("num_requests", "Num Requests"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("mean_tps", "Tput User (TPS)"),
+        ("tps_decode_throughput", "Tput Decode (TPS)"),
+        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
         value = result.get(col_name, NOT_MEASURED_STR)
         display_dict[display_header] = str(value)
 
@@ -749,6 +842,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
+    embedding_results = [r for r in results if r.get("task_type") == "embedding"]
 
     markdown_sections = []
 
@@ -776,6 +870,15 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         audio_markdown_str = get_markdown_table(audio_display_results)
         audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
         markdown_sections.append(audio_section)
+
+    # Generate embedding benchmarks section if any exist
+    if embedding_results:
+        embedding_display_results = [
+            create_embedding_display_dict(res) for res in embedding_results
+        ]
+        embedding_markdown_str = get_markdown_table(embedding_display_results)
+        embedding_section = f"#### Embedding Benchmark Sweeps for {model_name} on {device}\n\n{embedding_markdown_str}"
+        markdown_sections.append(embedding_section)
 
     # Combine sections
     if markdown_sections:

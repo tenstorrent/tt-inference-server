@@ -20,13 +20,14 @@ from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
+    WHISPER_TRACE_REGION_SIZE,
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
 )
 from models.demos.whisper.tt.whisper_generator import (
     GenerationParams,
-    generate,
+    WhisperGenerator,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
@@ -49,7 +50,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     def get_pipeline_device_params(self):
         device_params = {
             "l1_small_size": WHISPER_L1_SMALL_SIZE,
-            "trace_region_size": 100000000,
+            "trace_region_size": WHISPER_TRACE_REGION_SIZE,
         }
         return device_params
 
@@ -627,6 +628,21 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 hf_ref_model, config, weights_mesh_mapper
             )
 
+            generator = WhisperGenerator(
+                config=config,
+                mesh_device=self.ttnn_device,
+                parameters=parameters,
+                processor=processor,
+                feature_extractor=feature_extractor,
+                ttnn_linear_weight=ttnn_linear_weight,
+                generation_config=hf_ref_model.generation_config,
+                input_mesh_mapper=input_mesh_mapper,
+                output_mesh_composer=output_mesh_composer,
+                weights_mesh_mapper=weights_mesh_mapper,
+                kv_cache=kv_cache,
+                cross_attn_cache=cross_attn_cache,
+            )
+
             async def _model_pipeline(
                 audio_data,
                 stream=False,
@@ -659,22 +675,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
                     # Run inference in thread pool to avoid blocking
                     def _run_inference():
-                        return generate(
-                            config,
-                            self.ttnn_device,
-                            (input_mesh_mapper, weights_mesh_mapper),
-                            current_batch,
-                            feature_extractor,
-                            parameters=parameters,
-                            processor=processor,
-                            ttnn_linear_weight=ttnn_linear_weight,
-                            mesh_device=self.ttnn_device,
-                            generation_config=hf_ref_model.generation_config,
-                            input_mesh_mapper=input_mesh_mapper,
-                            output_mesh_composer=output_mesh_composer,
-                            cross_attn_cache=cross_attn_cache,
-                            weights_mesh_mapper=weights_mesh_mapper,
-                            kv_cache=kv_cache,
+                        return generator.generate(
+                            current_batch=current_batch,
                             generation_params=generation_params,
                             stream_generation=stream,
                             return_perf_metrics=False,

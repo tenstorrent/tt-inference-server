@@ -191,6 +191,7 @@ class ModelType(IntEnum):
     CNN = auto()
     AUDIO = auto()
     IMAGE = auto()
+    EMBEDDING = auto()
 
 
 @dataclass(frozen=True)
@@ -236,6 +237,12 @@ whisper_impl = ImplSpec(
     impl_name="whisper",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
+)
+forge_vllm_plugin_impl = ImplSpec(
+    impl_id="forge_vllm_plugin",
+    impl_name="forge-vllm-plugin",
+    repo_url="https://github.com/tenstorrent/tt-xla/tree/main",
+    code_path="integrations/vllm_plugin",
 )
 
 
@@ -1014,7 +1021,7 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "trace_region_size": 51934848,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -1028,8 +1035,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1062,8 +1069,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1096,8 +1103,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-32B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1118,8 +1125,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-72B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="5bf679a",
-        vllm_commit="48eba14",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1385,7 +1392,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 26000000,
+                    "trace_region_size": 30712832,
                 },
             ),
             DeviceModelSpec(
@@ -1394,7 +1401,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 27381760,
+                    "trace_region_size": 30712832,
                     "data_parallel": 4,
                 },
                 env_vars={
@@ -1407,7 +1414,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 27381760,
+                    "trace_region_size": 30712832,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1514,6 +1521,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 71045120,
+                },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
@@ -2128,6 +2138,43 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-Embedding-4B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.FORGE.value,
+        display_name="Qwen3-Embedding-4B",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
     ),
     ModelSpecTemplate(
         weights=["resnet-50"],

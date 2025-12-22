@@ -61,9 +61,9 @@ class Settings(BaseSettings):
     inference_timeout_seconds: int = 1000
 
     # Text processing settings
-    min_context_length: int = 1
-    max_model_length: int = 2**14
-    max_num_batched_tokens: int = 2**14
+    min_context_length: int = 32
+    max_model_length: int = 128
+    max_num_batched_tokens: int = 128
     max_num_seqs: int = 1
 
     # Image processing settings

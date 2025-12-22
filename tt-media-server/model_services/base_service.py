@@ -17,7 +17,6 @@ from utils.logger import TTLogger
 class BaseService(ABC):
     @log_execution_time("Base service init")
     def __init__(self):
-        self.result_futures = {}
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
 
@@ -126,29 +125,34 @@ class BaseService(ABC):
         "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process(self, request):
-        self.scheduler.process_request(request)
-        future = asyncio.get_running_loop().create_future()
+        queue = asyncio.Queue()
+        self.scheduler.result_queues[request._task_id] = queue
 
-        with self.scheduler.result_futures_lock:
-            self.scheduler.result_futures[request._task_id] = future
+        self.scheduler.process_request(request)
 
         try:
-            result = await future
+            result = await asyncio.wait_for(
+                queue.get(), timeout=settings.inference_timeout_seconds
+            )
             return result
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Request timed out for task {request._task_id}after {settings.inference_timeout_seconds}s"
+            )
+            raise
         except Exception as e:
             self.logger.error(f"Error processing request: {e}")
             raise e
         finally:
-            self.scheduler.pop_and_cancel_future(request._task_id)
+            self.scheduler.result_queues.pop(request._task_id, None)
 
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process_streaming(self, request):
-        """Handle model-level streaming through the scheduler/device worker using composite future keys"""
-        self.logger.info(
-            f"Starting model-level streaming via scheduler for task {request._task_id}"
-        )
+        """Handle model-level streaming through the scheduler/device worker using composite keys"""
+        queue = asyncio.Queue()
+        self.scheduler.result_queues[request._task_id] = queue
 
         # Submit the request
         self.scheduler.process_request(request)
@@ -164,91 +168,47 @@ class BaseService(ABC):
                 f"Using timeout of {dynamic_timeout}s for streaming request"
             )
 
-            # Stream results as they arrive using composite future keys
             chunk_count = 0
             while True:
-                try:
-                    # Create future for next expected chunk
-                    chunk_key = f"{request._task_id}_chunk_{chunk_count}"
-                    future = asyncio.get_running_loop().create_future()
+                chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
-                    with self.scheduler.result_futures_lock:
-                        self.scheduler.result_futures[chunk_key] = future
-
-                    self.logger.debug(f"Waiting for chunk {chunk_key}")
-                    chunk = await asyncio.wait_for(future, timeout=dynamic_timeout)
-                    self.logger.debug(f"Received chunk {chunk_key}: {type(chunk)}")
-
+                if isinstance(chunk, dict) and chunk.get("type") == "streaming_chunk":
+                    formatted_chunk = chunk.get("chunk")
+                    # Only yield non-empty chunks
                     if (
-                        isinstance(chunk, dict)
-                        and chunk.get("type") == "streaming_chunk"
+                        formatted_chunk
+                        and hasattr(formatted_chunk, "text")
+                        and formatted_chunk.text
                     ):
-                        formatted_chunk = chunk.get("chunk")
-                        if (
-                            formatted_chunk
-                            and hasattr(formatted_chunk, "text")
-                            and formatted_chunk.text
-                        ):
-                            self.logger.debug(
-                                f"Yielding streaming chunk {chunk_count} for task {request._task_id}: '{formatted_chunk.text[:50]}...'"
-                            )
-                            yield formatted_chunk
-                        else:
-                            self.logger.debug(
-                                f"Skipping empty chunk {chunk_count} for task {request._task_id}"
-                            )
-                        # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
-                        chunk_count += 1
+                        yield formatted_chunk
 
-                    elif (
-                        isinstance(chunk, dict) and chunk.get("type") == "final_result"
-                    ):
-                        self.logger.info(
-                            f"Received final result for task {request._task_id} after {chunk_count} chunks"
-                        )
-                        if chunk.get("return", False):
-                            final_result = chunk.get("result")
-                            if final_result is not None:
-                                yield final_result
-                            break
-                        else:
-                            self.logger.info(
-                                f"Not returning final result for task {request._task_id} as per 'return' flag"
-                            )
-                            break
-                    else:
-                        self.logger.error(
-                            f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
-                        )
-                        raise ValueError(
-                            f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
-                        )
+                    # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
+                    chunk_count += 1
 
-                except asyncio.TimeoutError:
+                elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
+                    if chunk.get("return", False):
+                        final_result = chunk.get("result")
+                        if final_result is not None:
+                            yield final_result
+                    break
+
+                else:
                     self.logger.error(
-                        f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
+                        f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
                     )
-                    raise
+                    raise ValueError(
+                        f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
+                    )
 
-                finally:
-                    self.scheduler.pop_and_cancel_future(chunk_key)
-
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
+            )
+            raise
         except Exception as e:
             self.logger.error(
                 f"Model-level streaming failed for task {request._task_id}: {e}"
             )
             raise
         finally:
-            # Cleanup any remaining futures for this task
-            with self.scheduler.result_futures_lock:
-                keys_to_remove = [
-                    key
-                    for key in self.scheduler.result_futures.keys()
-                    if key.startswith(f"{request._task_id}_chunk_")
-                ]
-            for key in keys_to_remove:
-                self.scheduler.pop_and_cancel_future(key)
-            if keys_to_remove:
-                self.logger.debug(
-                    f"Cleaned up {len(keys_to_remove)} pending chunk futures for task {request._task_id}"
-                )
+            self.scheduler.result_queues.pop(request._task_id, None)

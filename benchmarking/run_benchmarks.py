@@ -26,6 +26,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -52,6 +53,7 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
+    ModelType.EMBEDDING,
 ]
 
 
@@ -71,6 +73,18 @@ def parse_args():
         type=str,
         help="Path for benchmark output",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
 
     parser.add_argument(
@@ -162,11 +176,40 @@ def main():
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
+    # Check for tools selection (genai vs vllm)
+    tools = cli_args.get("tools", "vllm")
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
+    logger.info(f"tools=: {tools}")
+
+    # Route to genai-perf benchmarks if tools=genai-perf
+    if tools == "genai-perf":
+        logger.info("Using genai-perf (Triton SDK) for benchmarking")
+
+        # Determine debug mode from limit_samples_mode
+        limit_samples_mode_str = cli_args.get("limit_samples_mode")
+        debug_mode = False
+        if limit_samples_mode_str:
+            from workflows.workflow_types import EvalLimitMode
+
+            limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+            # Enable debug mode for quick test modes
+            if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
+                debug_mode = True
+                logger.info(
+                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
+                )
+
+        return run_genai_benchmarks(
+            model_spec=model_spec,
+            output_path=args.output_path,
+            jwt_secret=jwt_secret,
+            service_port=service_port,
+            debug=debug_mode,
+        )
 
     # set environment vars
     if jwt_secret:

@@ -43,6 +43,21 @@ FUNCTIONAL_TARGET = 10
 COMPLETE_TARGET = 2
 
 
+def generate_embedding_report_data(model_spec, eval_run_id):
+    """Generate embedding-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for embedding evaluation results
+    """
+    # Embedding models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
 def generate_audio_report_data(model_spec, eval_run_id):
     """Generate audio-specific report data.
 
@@ -86,6 +101,30 @@ def generate_image_report_data(model_spec, eval_run_id):
     # Image models use results_*.json pattern
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
+
+
+def get_embedding_benchmark_targets(model_spec, device_str, logger):
+    """Get embedding-specific benchmark targets.
+
+    Args:
+        model_spec: Model specification
+        device_str: Device string
+        logger: Logger instance
+
+    Returns:
+        Benchmark target data for embedding models
+    """
+    from workflows.model_spec import model_performance_reference
+
+    model_data = model_performance_reference.get(model_spec.model_name, {})
+    device_json_list = model_data.get(device_str, [])
+
+    if not device_json_list:
+        logger.warning(
+            f"No performance targets found for embedding model {model_spec.model_name} on {device_str}"
+        )
+
+    return device_json_list
 
 
 def get_audio_benchmark_targets(model_spec, device_str, logger):
@@ -146,6 +185,18 @@ def parse_args():
         type=str,
         help="Use model specification from JSON file",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
     parser.add_argument(
         "--output-path",
@@ -929,14 +980,20 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for vLLM benchmark files only (aiperf has its own function)
+    # Look for vLLM and genai-perf benchmark files (aiperf has its own function)
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
-    files = vllm_files
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    files = vllm_files + genai_files
+    logger.info(
+        f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
+    )
     output_dir = Path(args.output_path) / "benchmarks"
     logger.info("vLLM Benchmark Summary")
-    logger.info(f"Found {len(vllm_files)} vLLM benchmark files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
         return (
@@ -967,7 +1024,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         else []
     )
     perf_refs = [
-        cap_benchmark_params(params, _max_context, _model_max_concurrency, model_spec.model_name)
+        cap_benchmark_params(
+            params, _max_context, _model_max_concurrency, model_spec.model_name
+        )
         for params in raw_perf_refs
     ]
 
@@ -1122,7 +1181,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
     # Process image benchmarks if they exist
     print(f"image_release_raw: {image_release_raw}")
-    if image_perf_refs and image_release_raw:
+    if image_perf_refs and image_release_raw and False:
+        # hard coded for now - using fallback option for image benchmarks
+        # TODO: implement proper image benchmark targets retrieval
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
         image_res_dict = {
@@ -1587,6 +1648,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.EMBEDDING:
+        file_name_pattern = generate_embedding_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -1737,8 +1804,8 @@ def generate_evals_markdown_table(results, meta_data) -> str:
         for task_name, metrics in tasks.items():
             for metric_name, metric_value in metrics.items():
                 if metric_name and metric_name != " ":
-                    if (
-                        type(metric_value) != float
+                    if not isinstance(
+                        metric_value, float
                     ):  # some metrics in image evals are not floats
                         continue
                     rows.append((task_name, metric_name, f"{metric_value:.4f}"))
@@ -1929,7 +1996,6 @@ def main():
 
     server_mode = "API"
     command_flag = ""
-    local_server = False  # Not passed via CLI args anymore
     if docker_server:
         server_mode = "docker"
         command_flag = "--docker-server"
@@ -2003,6 +2069,11 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate server tests report
+    server_tests_release_str, server_tests_release_data = server_tests_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
     # Collect benchmark display content
     benchmarks_disp_md_str = ""
     try:
@@ -2036,7 +2107,7 @@ def main():
     if aiperf_release_str:
         all_benchmarks_str += aiperf_release_str + "\n\n"
 
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -2059,11 +2130,15 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read benchmark CSV data: {e}")
 
+        # Check for server tests JSON files
+        server_tests_data = []
+
         # Add target_checks for specific model if applicable
         if (
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.EMBEDDING.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -2124,6 +2199,14 @@ def main():
                     benchmark_summary_data,
                     metrics,
                 )
+            elif model_spec.model_type.name == "EMBEDDING":
+                logger.info("Adding target_checks for Embedding benchmark release data")
+                target_checks = add_target_checks_cnn_and_image(
+                    targets,
+                    evals_release_data,
+                    benchmark_summary_data,
+                    metrics,
+                )
             else:
                 logger.info("Adding target_checks for Audio benchmark release data")
                 target_checks = add_target_checks_audio(metrics)
@@ -2147,28 +2230,137 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read AIPerf CSV data: {e}")
 
-        json.dump(
-            {
-                "metadata": metadata,
-                "benchmarks_summary": benchmarks_release_data,
-                "aiperf_benchmarks": aiperf_release_data if aiperf_release_data else [],
-                "evals": evals_release_data,
-                "benchmarks": benchmarks_detailed_data
-                if benchmarks_detailed_data
-                else [
-                    {
-                        "model_id": getattr(args, "model", "unknown_model"),
-                        "device": getattr(args, "device", "unknown_device"),
-                    }
-                ],
-                "aiperf_benchmarks_detailed": aiperf_detailed_data if aiperf_detailed_data else [],
-            },
-            f,
-            indent=4,
-        )
+        # Read server tests data if available
+        server_tests_data = []
+        server_tests_path = Path(project_root) / "test_reports"
+        if server_tests_path.exists():
+            server_tests_json_files = list(server_tests_path.glob("*.json"))
+            if server_tests_json_files:
+                logger.info(
+                    f"Found {len(server_tests_json_files)} server test report(s)"
+                )
+                for json_file in server_tests_json_files:
+                    try:
+                        with open(json_file, "r", encoding="utf-8") as test_file:
+                            test_data = json.load(test_file)
+                            server_tests_data.append(test_data)
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read server test file {json_file}: {e}"
+                        )
+
+        # Build the final JSON output
+        output_data = {
+            "metadata": metadata,
+            "benchmarks_summary": benchmarks_release_data,
+            "aiperf_benchmarks": aiperf_release_data if aiperf_release_data else [],
+            "evals": evals_release_data,
+            "benchmarks": benchmarks_detailed_data
+            if benchmarks_detailed_data
+            else [
+                {
+                    "model_id": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+            "aiperf_benchmarks_detailed": aiperf_detailed_data if aiperf_detailed_data else [],
+        }
+
+        # Add server_tests only if data exists
+        if server_tests_data:
+            output_data["server_tests"] = server_tests_data
+
+        json.dump(output_data, f, indent=4)
 
     main_return_code = 0
     return main_return_code
+
+
+def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate server tests report by reading all markdown files from test_reports directory.
+
+    Args:
+        args: Command line arguments
+        server_mode: Server mode (API/docker)
+        model_spec: Model specification
+        report_id: Report identifier
+        metadata: Additional metadata
+
+    Returns:
+        Tuple of (release_str, release_data) where:
+            release_str: Markdown formatted string of all test reports
+            release_data: List of test report data
+    """
+    output_dir = Path(args.output_path) / "server_tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Look for markdown files in project_root/test_reports
+    test_reports_path = Path(project_root) / "test_reports"
+
+    logger.info("Server Tests Summary")
+
+    if not test_reports_path.exists():
+        logger.info(f"Test reports directory not found: {test_reports_path}")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+
+    # Find all markdown files
+    md_files = list(test_reports_path.glob("*.md"))
+
+    logger.info(f"Processing: {len(md_files)} markdown file(s)")
+
+    if not md_files:
+        logger.info("No server test report markdown files found. Skipping.")
+        return (
+            "",
+            [
+                {
+                    "model": getattr(args, "model", "unknown_model"),
+                    "device": getattr(args, "device", "unknown_device"),
+                }
+            ],
+        )
+
+    # Read and combine all markdown files
+    combined_markdown = []
+    release_data = []
+
+    for md_file in sorted(md_files):
+        try:
+            logger.info(f"Reading: {md_file.name}")
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                combined_markdown.append(f"#### {md_file.stem}\n\n{content}")
+
+                # Try to extract JSON data if corresponding JSON file exists
+                json_file = md_file.with_suffix(".json")
+                if json_file.exists():
+                    with open(json_file, "r", encoding="utf-8") as jf:
+                        json_data = json.load(jf)
+                        release_data.append(json_data)
+        except Exception as e:
+            logger.warning(f"Could not read file {md_file}: {e}")
+
+    # Join all markdown content
+    markdown_str = "\n\n---\n\n".join(combined_markdown)
+
+    release_str = f"### Server Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+
+    # Save combined report
+    summary_fpath = output_dir / f"summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(markdown_str)
+
+    logger.info(f"Server tests summary saved to: {summary_fpath}")
+
+    return release_str, release_data
 
 
 if __name__ == "__main__":

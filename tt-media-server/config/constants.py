@@ -19,6 +19,7 @@ class SupportedModels(Enum):
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
+    BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
 
 
 # MODEL environment variable
@@ -43,6 +44,7 @@ class ModelNames(Enum):
     UNET = "unet"
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
+    BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
 
 
 class ModelRunners(Enum):
@@ -58,6 +60,7 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
+    VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -66,6 +69,7 @@ class ModelRunners(Enum):
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
     MOCK = "mock"
+    TEST = "test"
 
 
 class ModelServices(Enum):
@@ -89,6 +93,8 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.VLLMBGELargeEN_V1_5,
+        ModelRunners.TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -131,6 +137,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
+    ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
 }
 
 
@@ -367,6 +374,36 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 8,
+    },
 }
 
 for runner in [
@@ -381,7 +418,7 @@ for runner in [
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
     ModelConfigs[(runner, DeviceTypes.N300)] = {
         "is_galaxy": False,
