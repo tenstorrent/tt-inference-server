@@ -287,9 +287,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
         tps_prefill_throughput = None
         if data.get("mean_ttft_ms") and data.get("mean_ttft_ms") > 0:
-            tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-                data.get("mean_ttft_ms") / 1000
-            )
+            tps_prefill_throughput = (
+                params["input_sequence_length"] * actual_max_con
+            ) / (data.get("mean_ttft_ms") / 1000)
 
         metrics = {
             "timestamp": params["timestamp"],
@@ -317,13 +317,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "filename": filename,
             "task_type": params["task_type"],
         }
-        
+
         # Add image-specific fields if this is an image benchmark
         if params["task_type"] == "image":
             metrics["images_per_prompt"] = params.get("images_per_prompt", 1)
             metrics["image_height"] = params.get("image_height", 0)
             metrics["image_width"] = params.get("image_width", 0)
-        
+
         return format_metrics(metrics)
 
     # Check if this is a CNN/SDXL-style benchmark (old format with benchmarks_data structure)
@@ -339,7 +339,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "cnn",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+                "num_requests": benchmarks_data.get("benchmarks").get(
+                    "num_requests", 0
+                ),
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
@@ -361,7 +363,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "image",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+                "num_requests": benchmarks_data.get("benchmarks").get(
+                    "num_requests", 0
+                ),
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
@@ -850,18 +854,23 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         osl = result.get("output_sequence_length", 0)
         concurrency = result.get("max_con", 1)
         backend = result.get("backend", "")
-        
+
         # Define source priority: vllm=0, aiperf=1, genai-perf=2
         # Note: "openai-chat" is vLLM's backend label for image/VLM benchmarks
-        source_priority = {"vllm": 0, "openai-chat": 0, "aiperf": 1, "genai-perf": 2}.get(backend, 3)
-        
+        source_priority = {
+            "vllm": 0,
+            "openai-chat": 0,
+            "aiperf": 1,
+            "genai-perf": 2,
+        }.get(backend, 3)
+
         # For image benchmarks, also include image dimensions
         images = result.get("images_per_prompt", 0)
         height = result.get("image_height", 0)
         width = result.get("image_width", 0)
-        
+
         return (isl, osl, concurrency, images, height, width, source_priority)
-    
+
     results.sort(key=get_sort_key)
 
     # Save to CSV

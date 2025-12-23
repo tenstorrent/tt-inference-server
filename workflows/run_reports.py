@@ -554,7 +554,9 @@ def aiperf_throughput_markdown_with_images(release_raw):
     return markdown_str
 
 
-def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+def aiperf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
     """Generate benchmark report specifically for AIPerf results.
 
     AIPerf provides more detailed metrics than vLLM's benchmark_serving.py,
@@ -564,7 +566,7 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     """
     # All benchmark tools now use the same output directory
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
-    
+
     # Look for aiperf benchmark files
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
     aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
@@ -587,10 +589,10 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     # Helper function to keep only the latest file for each (isl, osl, concurrency, task_type) config
     def deduplicate_by_config(files):
         """Keep only the latest file for each unique benchmark configuration.
-        
+
         Files are sorted by name (which includes timestamp) in reverse order,
         so we keep the first occurrence of each config.
-        
+
         Config key includes:
         - isl, osl, concurrency, num_requests (base params)
         - images, height, width (for image benchmarks - treated as separate configs)
@@ -603,16 +605,18 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
             match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
             if match:
                 isl, osl, con, n = map(int, match.groups())
-                
+
                 # Check if this is an image benchmark (has images-X in filename)
-                img_match = re.search(r"images-(\d+)_height-(\d+)_width-(\d+)", filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
                 if img_match:
                     images, height, width = map(int, img_match.groups())
                     config_key = (isl, osl, con, n, images, height, width)
                 else:
                     # Text-only benchmark
                     config_key = (isl, osl, con, n, 0, 0, 0)
-                
+
                 # Only keep the first (latest) file for each config
                 if config_key not in config_to_file:
                     config_to_file[config_key] = filepath
@@ -624,18 +628,24 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     # Deduplicate files to keep only latest run for each config
     vllm_files = deduplicate_by_config(vllm_files)
     aiperf_files = deduplicate_by_config(aiperf_files)
-    
-    logger.info(f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf files")
+
+    logger.info(
+        f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf files"
+    )
 
     # Separate text-only and image benchmarks
     vllm_text_only_files = [f for f in vllm_files if "images" not in Path(f).name]
     vllm_image_files = [f for f in vllm_files if "images" in Path(f).name]
     aiperf_text_only_files = [f for f in aiperf_files if "images" not in Path(f).name]
     aiperf_image_files = [f for f in aiperf_files if "images" in Path(f).name]
-    
-    logger.info(f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf")
-    logger.info(f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf")
-    
+
+    logger.info(
+        f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf"
+    )
+    logger.info(
+        f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf"
+    )
+
     # Process text-only vLLM benchmarks
     vllm_text_results = []
     for filepath in sorted(vllm_text_only_files):
@@ -651,8 +661,12 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
                 isl, osl, concurrency, num_requests = map(int, match.groups())
             else:
                 # Fallback to data fields
-                isl = data.get("total_input_tokens", 0) // max(data.get("num_prompts", 1), 1)
-                osl = data.get("total_output_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
                 concurrency = data.get("max_concurrency", 1)
                 num_requests = data.get("num_prompts", 0)
 
@@ -708,8 +722,12 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
                 isl, osl, concurrency, num_requests = map(int, match.groups())
             else:
                 # Fallback to data fields
-                isl = data.get("total_input_tokens", 0) // max(data.get("num_prompts", 1), 1)
-                osl = data.get("total_output_tokens", 0) // max(data.get("num_prompts", 1), 1)
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
                 concurrency = data.get("max_concurrency", 1)
                 num_requests = data.get("num_prompts", 0)
 
@@ -759,9 +777,14 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
 
             # Extract parameters from filename
             filename = Path(filepath).name
-            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)", filename)
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
             if match:
-                isl, osl, concurrency, num_requests, images, height, width = map(int, match.groups())
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
             else:
                 logger.warning(f"Could not parse image parameters from {filename}")
                 continue
@@ -815,9 +838,14 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
 
             # Extract parameters from filename
             filename = Path(filepath).name
-            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)", filename)
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
             if match:
-                isl, osl, concurrency, num_requests, images, height, width = map(int, match.groups())
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
             else:
                 logger.warning(f"Could not parse image parameters from {filename}")
                 continue
@@ -862,7 +890,12 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
             logger.warning(f"Error processing AIPerf image file {filepath}: {e}")
             continue
 
-    if not aiperf_text_results and not vllm_text_results and not aiperf_image_results and not vllm_image_results:
+    if (
+        not aiperf_text_results
+        and not vllm_text_results
+        and not aiperf_image_results
+        and not vllm_image_results
+    ):
         return "", [], None, None
 
     # Sort text benchmarks by ISL, OSL, concurrency
@@ -870,8 +903,24 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
 
     # Sort image benchmarks by ISL, OSL, concurrency, image size
-    vllm_image_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"], x["image_height"], x["image_width"]))
-    aiperf_image_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"], x["image_height"], x["image_width"]))
+    vllm_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+    aiperf_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
 
     # Build the complete report
     release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
@@ -879,8 +928,10 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     # TEXT BENCHMARKS SECTION
     if aiperf_text_results:
         release_str += "## AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        
+        release_str += (
+            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+        )
+
         # Only show AIPerf-specific detailed percentiles (mean, median, P99)
         nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
         release_str += nvidia_markdown_str
@@ -889,8 +940,10 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     # IMAGE BENCHMARKS SECTION
     if aiperf_image_results:
         release_str += "## AIPerf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        
+        release_str += (
+            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+        )
+
         # Only show AIPerf-specific detailed percentiles (mean, median, P99)
         nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
         release_str += nvidia_markdown_str
@@ -915,7 +968,9 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
     logger.info(f"AIPerf report saved to: {disp_md_path}")
 
     # Save CSV data for text benchmarks
-    text_data_file_path = output_dir / "data" / f"aiperf_benchmark_text_stats_{report_id}.csv"
+    text_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_text_stats_{report_id}.csv"
+    )
     text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
 
     if aiperf_text_results:
@@ -928,7 +983,9 @@ def aiperf_benchmark_generate_report(args, server_mode, model_spec, report_id, m
         logger.info(f"AIPerf text benchmark data saved to: {text_data_file_path}")
 
     # Save CSV data for image benchmarks
-    image_data_file_path = output_dir / "data" / f"aiperf_benchmark_image_stats_{report_id}.csv"
+    image_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_image_stats_{report_id}.csv"
+    )
     if aiperf_image_results:
         headers = list(aiperf_image_results[0].keys())
         with open(image_data_file_path, "w", newline="") as f:
@@ -951,7 +1008,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
-    
+
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
     aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
@@ -971,16 +1028,18 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
             if match:
                 isl, osl, con, n = map(int, match.groups())
-                
+
                 # Check if this is an image benchmark (has images-X in filename)
-                img_match = re.search(r"images-(\d+)_height-(\d+)_width-(\d+)", filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
                 if img_match:
                     images, height, width = map(int, img_match.groups())
                     config_key = (isl, osl, con, n, images, height, width)
                 else:
                     # Text-only benchmark
                     config_key = (isl, osl, con, n, 0, 0, 0)
-                
+
                 # Only keep the first (latest) file for each config
                 if config_key not in config_to_file:
                     config_to_file[config_key] = filepath
@@ -2780,7 +2839,9 @@ def main():
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
-            "aiperf_benchmarks_detailed": aiperf_detailed_data if aiperf_detailed_data else [],
+            "aiperf_benchmarks_detailed": aiperf_detailed_data
+            if aiperf_detailed_data
+            else [],
         }
 
         # Add server_tests only if data exists
