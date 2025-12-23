@@ -193,7 +193,6 @@ def validate_markers(config_path: Path) -> None:
     issues = []
 
     for test_group in test_cases:
-        models = test_group.get("weights", [])
         device = test_group.get("device", "")
 
         for test in test_group.get("test_cases", []):
