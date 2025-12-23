@@ -847,7 +847,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "audio_transcription_time": 4,
+                    "audio_transcription_time": 5,
                     "num_of_devices": 4
                 }
             },
@@ -937,7 +937,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "audio_transcription_time": 3,
+                    "audio_transcription_time": 4,
                     "num_of_devices": 32
                 }
             },
@@ -954,7 +954,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "audio_transcription_time": 10,
+                    "audio_transcription_time": 7,
                     "num_of_devices": 32,
                     "dataset": "60s"
                 }
