@@ -11,13 +11,13 @@ from utils.torch_utils import set_torch_thread_limits
 
 
 class BaseDeviceRunner(ABC):
-    def __init__(self, device_id: str):
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
         self.device_id = device_id
         self.logger = TTLogger()
         self.settings = get_settings()
         self.ttnn_device = None
 
-        set_torch_thread_limits()
+        set_torch_thread_limits(num_torch_threads)
 
         if not os.getenv("HF_TOKEN", None) and not (
             os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
