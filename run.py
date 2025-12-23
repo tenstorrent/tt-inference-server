@@ -199,6 +199,67 @@ def parse_arguments():
         help="Run server tests using server_tests/run.py (true/false). Default is false.",
     )
 
+    # SPEC_TESTS workflow arguments (server tests filtering)
+    spec_tests_group = parser.add_argument_group(
+        "SPEC_TESTS workflow",
+        "Arguments for --workflow spec_tests (server tests with marker-based filtering)",
+    )
+    spec_tests_group.add_argument(
+        "--markers",
+        type=str,
+        nargs="+",
+        help="Filter tests by markers (e.g., load smoke fast)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--match-all-markers",
+        action="store_true",
+        help="Require ALL markers to match (default: ANY marker matches)",
+    )
+    spec_tests_group.add_argument(
+        "--exclude-markers",
+        type=str,
+        nargs="+",
+        help="Exclude tests with these markers (e.g., slow heavy)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--model-category",
+        type=str,
+        nargs="+",
+        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--suite-category",
+        type=str,
+        help="Load suites for a specific category (e.g., image, audio)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--suite-file",
+        type=str,
+        nargs="+",
+        help="Load specific suite file(s) from test_suites/ (e.g., image.json audio.json)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--test-name",
+        type=str,
+        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--skip-prerequisites",
+        action="store_true",
+        help="Skip prerequisite tests (DeviceLivenessTest)",
+    )
+    spec_tests_group.add_argument(
+        "--list-tests",
+        action="store_true",
+        help="List matching tests without running them (dry-run)",
+    )
+
     args = parser.parse_args()
 
     # indirectly set additional flags for CI-mode
@@ -331,8 +392,27 @@ def format_cli_args_summary(args, model_spec):
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
         f"  server_tests:               {args.server_tests}",
         "",
-        "=" * 60,
     ]
+
+    # Add SPEC_TESTS args if workflow is spec_tests
+    if args.workflow.lower() == "spec_tests":
+        lines.extend(
+            [
+                "SPEC_TESTS args:",
+                f"  markers:                    {args.markers}",
+                f"  match_all_markers:          {args.match_all_markers}",
+                f"  exclude_markers:            {args.exclude_markers}",
+                f"  model_category:             {args.model_category}",
+                f"  suite_category:             {args.suite_category}",
+                f"  suite_file:                 {args.suite_file}",
+                f"  test_name:                  {args.test_name}",
+                f"  skip_prerequisites:         {args.skip_prerequisites}",
+                f"  list_tests:                 {args.list_tests}",
+                "",
+            ]
+        )
+
+    lines.append("=" * 60)
 
     return "\n".join(lines)
 
@@ -384,13 +464,6 @@ def validate_runtime_args(model_spec):
                 raise ValueError(
                     "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
                 )
-
-    if workflow_type == WorkflowType.SPEC_TESTS:
-        # SPEC_TESTS (server tests) requires a running inference server
-        if not (args.docker_server or args.local_server):
-            raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server argument (server must be running for tests)"
-            )
 
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks

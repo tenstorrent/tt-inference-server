@@ -51,8 +51,8 @@ sys.path.insert(0, project_root)
 tests_dir = os.path.join(project_root, "tests")
 sys.path.insert(0, tests_dir)
 
-from server_tests.test_classes import TestConfig, TestReport
 from server_tests.test_categorization_system import TestFilter
+from server_tests.test_classes import TestConfig, TestReport
 from server_tests.tests_runner import ServerRunner
 
 SERVER_TESTS_CONFIG_PATH = os.path.join(

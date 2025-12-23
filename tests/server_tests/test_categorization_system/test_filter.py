@@ -562,7 +562,7 @@ class TestFilter:
 
             for test in suite.get("test_cases", []):
                 markers = ", ".join(sorted(test.get("markers", [])))
-                enabled = "✓" if test.get("enabled", True) else "✗"
+                enabled = "✅" if test.get("enabled", True) else "❌"
                 logger.info(f"    {enabled} {test.get('name')}: [{markers}]")
                 if test.get("description"):
                     logger.info(f"      └─ {test.get('description')}")

@@ -144,6 +144,10 @@ class WorkflowSetup:
         ]
         # fmt: on
 
+        # Add SPEC_TESTS-specific arguments
+        if self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
+            cmd.extend(self._get_spec_tests_args())
+
         return_code = run_command(cmd, logger=logger)
         if return_code != 0:
             logger.error(
@@ -152,6 +156,46 @@ class WorkflowSetup:
         else:
             logger.info(f"✅ Completed workflow: {self.workflow_config.name}")
         return return_code
+
+    def _get_spec_tests_args(self):
+        """Build additional CLI arguments for SPEC_TESTS workflow."""
+        args = self.model_spec.cli_args
+        extra_args = []
+
+        # Marker filtering
+        if hasattr(args, "markers") and args.markers:
+            extra_args.extend(["--markers"] + args.markers)
+
+        if hasattr(args, "match_all_markers") and args.match_all_markers:
+            extra_args.append("--match-all-markers")
+
+        if hasattr(args, "exclude_markers") and args.exclude_markers:
+            extra_args.extend(["--exclude-markers"] + args.exclude_markers)
+
+        # Model category filtering
+        if hasattr(args, "model_category") and args.model_category:
+            extra_args.extend(["--model-category"] + args.model_category)
+
+        # Suite loading options
+        if hasattr(args, "suite_category") and args.suite_category:
+            extra_args.extend(["--suite-category", args.suite_category])
+
+        if hasattr(args, "suite_file") and args.suite_file:
+            extra_args.extend(["--suite-file"] + args.suite_file)
+
+        # Test selection
+        if hasattr(args, "test_name") and args.test_name:
+            extra_args.extend(["--test-name", args.test_name])
+
+        # Prerequisite control
+        if hasattr(args, "skip_prerequisites") and args.skip_prerequisites:
+            extra_args.append("--skip-prerequisites")
+
+        # Dry-run mode
+        if hasattr(args, "list_tests") and args.list_tests:
+            extra_args.append("--list-tests")
+
+        return extra_args
 
 
 def run_single_workflow(model_spec, json_fpath):
