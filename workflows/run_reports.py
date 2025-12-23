@@ -2551,15 +2551,6 @@ def main():
     except (TypeError, FileNotFoundError):
         pass
 
-    # Collect AIPerf display content
-    aiperf_disp_md_str = ""
-    try:
-        if aiperf_disp_md_path:
-            with open(aiperf_disp_md_path, "r", encoding="utf-8") as f:
-                aiperf_disp_md_str = f.read()
-    except (TypeError, FileNotFoundError):
-        pass
-
     logging.info("Release Summary\n\n")
 
     release_header = (

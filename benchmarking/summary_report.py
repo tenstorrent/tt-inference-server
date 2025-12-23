@@ -332,48 +332,48 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     if benchmarks_data and benchmarks_data.get("benchmarks"):
         # This is a CNN/SDXL-style benchmark
         if params.get("task_type") == "cnn":
-            metrics = {
-                "timestamp": params["timestamp"],
-                "model": data.get("model", ""),
-                "model_name": data.get("model", ""),
-                "model_id": data.get("model", ""),
-                "backend": "cnn",
-                "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                    "inference_steps_per_second", 0
-                ),
-                "filename": filename,
-                "task_type": "cnn",
-            }
-            return format_metrics(metrics)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "cnn",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                "num_inference_steps", 0
+            ),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "inference_steps_per_second", 0
+            ),
+            "filename": filename,
+            "task_type": "cnn",
+        }
+        return format_metrics(metrics)
         elif params.get("task_type") == "image":
             # SDXL-style image benchmark
-            metrics = {
-                "timestamp": params["timestamp"],
-                "model": data.get("model", ""),
-                "model_name": data.get("model", ""),
-                "model_id": data.get("model", ""),
-                "backend": "image",
-                "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                    "inference_steps_per_second", 0
-                ),
-                "filename": filename,
-                "task_type": "image",
-            }
-            return format_metrics(metrics)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "image",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                "num_inference_steps", 0
+            ),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "inference_steps_per_second", 0
+            ),
+            "filename": filename,
+            "task_type": "image",
+        }
+        return format_metrics(metrics)
 
     if params.get("task_type") == "audio":
         # For audio benchmarks, extract data from JSON content
