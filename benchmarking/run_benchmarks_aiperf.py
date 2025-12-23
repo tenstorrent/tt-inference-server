@@ -557,6 +557,21 @@ def main():
             f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
         )
 
+    # Check for limit_samples_mode (smoke-test, ci-commit) to enable debug mode
+    limit_samples_mode_str = cli_args.get("limit_samples_mode")
+    if limit_samples_mode_str:
+        from workflows.workflow_types import EvalLimitMode
+        
+        limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+        if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
+            # Limit to 2 benchmarks for quick testing (1 small, 1 medium)
+            original_count = len(all_params)
+            all_params = all_params[:2]
+            logger.info(
+                f"Enabling AIPerf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
+            )
+            logger.info(f"Reduced from {original_count} to {len(all_params)} benchmarks")
+
     # Log benchmark parameters
     log_str = "Running AIPerf benchmarks for:\n"
     log_str += f"  {'#':<3} {'Type':<8} {'isl':<6} {'osl':<6} {'Concur':<8} {'N':<6} {'Images':<8}\n"
