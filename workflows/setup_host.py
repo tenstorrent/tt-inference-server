@@ -110,7 +110,7 @@ class SetupConfig:
     def _set_model_source(self, inference_engine):
         if self.model_source:
             return
-        
+
         # Use noaction only for Forge inference engine for now
         if inference_engine == InferenceEngine.FORGE.value:
             self.model_source = ModelSource.NOACTION.value
