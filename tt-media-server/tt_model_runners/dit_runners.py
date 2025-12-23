@@ -341,8 +341,6 @@ class TTWan22Runner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         device_params = {
-            "l1_small_size": 32768,
-            "trace_region_size": 34000000,
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
         if ttnn.device.is_blackhole():

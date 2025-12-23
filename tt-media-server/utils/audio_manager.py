@@ -22,7 +22,21 @@ if settings.model_service == ModelServices.AUDIO.value:
     from whisperx.diarize import DiarizationPipeline
     from whisperx.vads import Silero
 
-torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+# Add safe globals for pyannote models
+import pyannote.audio.core.task
+import pyannote.core
+
+torch.serialization.add_safe_globals(
+    [
+        torch.torch_version.TorchVersion,
+        pyannote.audio.core.task.Specifications,
+        pyannote.audio.core.task.Problem,
+        pyannote.audio.core.task.Resolution,
+        pyannote.core.Segment,
+        pyannote.core.Timeline,
+        pyannote.core.Annotation,
+    ]
+)
 
 
 class AudioManager:

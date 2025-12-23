@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from open_ai_api import api_router
 from resolver.service_resolver import service_resolver
 from telemetry.prometheus_metrics import PrometheusMetrics
+from utils.job_manager import get_job_manager
 
 env = os.getenv("ENVIRONMENT", "production")
 # TODO load proper development later
@@ -18,10 +19,10 @@ env = "development"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # warmup model on startup
     service_resolver().start_workers()
     yield
     service_resolver().stop_workers()
+    await get_job_manager().shutdown()
 
 
 app = FastAPI(
