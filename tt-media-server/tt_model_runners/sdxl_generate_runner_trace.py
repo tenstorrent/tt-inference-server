@@ -16,9 +16,11 @@ from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.helpers import log_execution_time
 
+from loguru import logger
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
     def __init__(self, device_id: str):
+        logger.warning(f"{device_id=}")
         super().__init__(device_id)
 
     def _load_pipeline(self):

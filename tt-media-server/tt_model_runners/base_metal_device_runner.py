@@ -50,7 +50,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
         dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
         fabric_tensix_config = new_device_params.get("fabric_tensix_config", None)
-
+        from loguru import logger
+        logger.warning(f"{fabric_tensix_config=}")
         if ttnn.device.is_blackhole():
             # Only when both fabric_config and fabric_tensix_config are set, we can use ROW dispatch, otherwise force to use COL dispatch
             fabric_config = new_device_params.get("fabric_config", None)

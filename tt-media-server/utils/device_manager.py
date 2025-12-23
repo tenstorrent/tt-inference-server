@@ -4,6 +4,9 @@
 
 import subprocess
 from utils.logger import TTLogger
+import os
+import csv
+from pathlib import Path
 
 class DeviceManager:
 
@@ -100,13 +103,29 @@ class DeviceManager:
         return device_pairs
     
     def get_device_pairs_from_system(self):
-        """Convenience method to get tray mapping and create device pairs in one call"""
-        tray_mapping = self.get_tray_mapping_from_system()
-        if not tray_mapping:
-            self.logger.error("Failed to get tray mapping, cannot create device pairs")
-            return []
-        
-        return self.create_device_pairs(tray_mapping)
+        """Convenience method to get device pairs from pairs.csv if it exists, otherwise from system"""
+
+        # Check if TT_METAL_HOME is set and pairs.csv exists
+        tt_metal_home = os.environ.get('TT_METAL_HOME')
+        if tt_metal_home:
+            pairs_csv_path = Path(tt_metal_home) / 'pairs.csv'
+            if pairs_csv_path.exists():
+                try:
+                    self.logger.info(f"Reading device pairs from {pairs_csv_path}")
+                    device_pairs = []
+                    with open(pairs_csv_path, 'r') as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        for row in reader:
+                            device_id1 = int(row['device_id1'])
+                            device_id2 = int(row['device_id2'])
+                            device_pairs.append((device_id1, device_id2))
+                    
+                    self.logger.info(f"Loaded {len(device_pairs)} device pairs from CSV: {device_pairs}")
+                    return device_pairs
+                except Exception as e:
+                    self.logger.error(f"Error reading pairs.csv: {e}, falling back to system detection")
+                    raise AssertionError(f"pairs.csv exists at {pairs_csv_path} but failed to load")
+
     
     def create_single_devices(self, tray_mapping):
         """Create single devices from tray mapping. Each device is returned as individual integer"""

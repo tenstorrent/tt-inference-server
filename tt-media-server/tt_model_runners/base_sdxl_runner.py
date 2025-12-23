@@ -35,11 +35,13 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             or SDXL_TRACE_REGION_SIZE,
         }
         if self.is_tensor_parallel:
-            device_params["fabric_config"] = SDXL_FABRIC_CONFIG
+            device_params["fabric_tensix_config"] = SDXL_FABRIC_CONFIG
+            from loguru import logger
+            logger.warning(f"I {device_params=}")
         return device_params
 
     def _configure_fabric(self, updated_device_params):
-        fabric_config = updated_device_params.pop("fabric_config", None)
+        fabric_config = updated_device_params.pop("fabric_tensix_config", None)
         if fabric_config:
             ttnn.set_fabric_config(fabric_config)
         return None

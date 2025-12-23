@@ -21,6 +21,7 @@ from config.constants import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 
+from loguru import logger
 
 class Settings(BaseSettings):
     # General settings
@@ -28,13 +29,13 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    device_ids: str = "(1,4)"
     is_galaxy: bool = True  # used for graph device split and class init
-    device_mesh_shape: tuple = (1, 1)
+    device_mesh_shape: tuple = (2, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
-    use_greedy_based_allocation: bool = True
+    use_greedy_based_allocation: bool = False
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
@@ -126,10 +127,12 @@ class Settings(BaseSettings):
             if self.device_mesh_shape == (2, 1):
                 # use device manager to pair devices
                 devices = device_manager.get_device_pairs_from_system()
+                logger.warning(f"{devices=}")
             elif self.device_mesh_shape == (2, 4):
                 devices = device_manager.get_device_groups_of_eight_from_system()
             if devices:
                 self.device_ids = ",".join([f"({device})" for device in devices])
+                logger.warning(f"{self.device_ids=}")
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
