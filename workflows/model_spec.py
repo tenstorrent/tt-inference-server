@@ -1958,7 +1958,6 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         # img2img uses the same weights as base SDXL
