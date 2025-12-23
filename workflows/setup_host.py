@@ -24,6 +24,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import (
+    InferenceEngine,
     ModelSpec,
     ModelSource,
 )
@@ -43,9 +44,7 @@ class SetupConfig:
     # Environment configuration parameters
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
-    model_source: str = os.getenv(
-        "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
-    )  # Either 'huggingface', 'local' or 'noaction'
+    model_source: str = ""  # Either 'huggingface', 'local' or 'noaction'
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
@@ -66,7 +65,6 @@ class SetupConfig:
 
     def __post_init__(self):
         self._infer_data()
-        self._validate_data()
 
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
@@ -94,6 +92,8 @@ class SetupConfig:
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
+
+        self._set_model_source(self.model_spec.inference_engine)
         if self.model_source == ModelSource.HUGGINGFACE.value:
             repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
@@ -107,12 +107,15 @@ class SetupConfig:
         elif self.model_source == ModelSource.NOACTION.value:
             pass
 
-    def _validate_data(self):
-        # Validate that model_source is a valid enum value
-        try:
-            ModelSource(self.model_source)
-        except ValueError:
-            raise ValueError("⛔ Invalid model source.")
+    def _set_model_source(self, inference_engine):
+        if self.model_source:
+            return
+        
+        # Use noaction only for Forge inference engine for now
+        if inference_engine == InferenceEngine.FORGE.value:
+            self.model_source = ModelSource.NOACTION.value
+        else:
+            self.model_source = ModelSource.HUGGINGFACE.value
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
@@ -322,9 +325,7 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = (
-            f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
-        )
+        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -341,7 +342,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_weights_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -492,7 +493,7 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         base_cmd = [str(hf_exec)]
-        hf_repo = self.model_spec.hf_weights_repo
+        hf_repo = self.model_spec.hf_model_repo
         # use default huggingface repo
         # fmt: off
         cmd = base_cmd + [
@@ -507,7 +508,7 @@ class HostSetupManager:
         assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         # need to update paths
         self.setup_config.update_host_model_weights_snapshot_dir(
-            get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
+            get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
             repo_path_filter=repo_path_filter,
         )
         logger.info(
