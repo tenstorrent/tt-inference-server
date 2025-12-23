@@ -955,13 +955,49 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
     aiperf_files = glob(f"{benchmarks_aiperf_output_dir}/{aiperf_pattern}")
 
+    logger.info(
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files before deduplication"
+    )
+
+    # Deduplicate files - keep only latest run for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+                
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(r"images-(\d+)_height-(\d+)_width-(\d+)", filename)
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+                
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    vllm_files = deduplicate_by_config(vllm_files)
+    genai_files = deduplicate_by_config(genai_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+
     files = vllm_files + genai_files + aiperf_files
     logger.info(
-        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files"
+        f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, {len(aiperf_files)} AIPerf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
     logger.info("Combined Benchmark Summary (vLLM + genai-perf + AIPerf)")
-    logger.info(f"Found {len(vllm_files)} vLLM benchmark files")
     if not files:
         logger.info("No benchmark files found. Skipping.")
         return (
@@ -975,11 +1011,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
-    # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = (
-        benchmark_generate_report_helper(
-            files, output_dir, report_id, metadata, model_spec=model_spec
-        )
+    # extract summary data (results are already sorted by config + source in generate_report)
+    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+        files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)

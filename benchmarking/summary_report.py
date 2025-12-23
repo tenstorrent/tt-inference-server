@@ -843,6 +843,27 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
+    # Sort results by config then source (vllm, aiperf, genai-perf) for consistent ordering
+    def get_sort_key(result):
+        """Generate sort key: (isl, osl, concurrency, images, height, width, source_priority)"""
+        isl = result.get("input_sequence_length", 0)
+        osl = result.get("output_sequence_length", 0)
+        concurrency = result.get("max_con", 1)
+        backend = result.get("backend", "")
+        
+        # Define source priority: vllm=0, aiperf=1, genai-perf=2
+        # Note: "openai-chat" is vLLM's backend label for image/VLM benchmarks
+        source_priority = {"vllm": 0, "openai-chat": 0, "aiperf": 1, "genai-perf": 2}.get(backend, 3)
+        
+        # For image benchmarks, also include image dimensions
+        images = result.get("images_per_prompt", 0)
+        height = result.get("image_height", 0)
+        width = result.get("image_width", 0)
+        
+        return (isl, osl, concurrency, images, height, width, source_priority)
+    
+    results.sort(key=get_sort_key)
+
     # Save to CSV
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
