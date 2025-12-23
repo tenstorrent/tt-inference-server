@@ -88,7 +88,7 @@ jobs:
       - name: Checkout dev branch
         uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: vmaksimovic/add_prerelease_automation
           fetch-depth: 1
 
       - name: Run models CI reader
@@ -149,69 +149,6 @@ jobs:
           # username: ${{ github.repository_owner }}
           # password: ${{ github.token }}
 
-      - name: Print model_spec.py contents
-        run: |
-          echo "=================================================================================="
-          echo "FULL CONTENTS OF workflows/model_spec.py"
-          echo "=================================================================================="
-          cat workflows/model_spec.py
-
-      - name: Debug ModelSpec for stable-diffusion-xl-base-1.0
-        run: |
-          python3 << 'EOF'
-          import sys
-          from pathlib import Path
-          sys.path.insert(0, str(Path.cwd()))
-          
-          from workflows.model_spec import MODEL_SPECS, spec_templates
-          
-          # Find the template for stable-diffusion-xl-base-1.0
-          print("=" * 80)
-          print("DEBUG: ModelSpecTemplate for stable-diffusion-xl-base-1.0")
-          print("=" * 80)
-          
-          for template in spec_templates:
-              if "stable-diffusion-xl-base-1.0" in template.weights:
-                  print(f"\nTemplate found:")
-                  print(f"  weights: {template.weights}")
-                  print(f"  tt_metal_commit: {template.tt_metal_commit}")
-                  print(f"  vllm_commit: {template.vllm_commit}")
-                  print(f"  inference_engine: {template.inference_engine}")
-                  print(f"  model_type: {template.model_type}")
-                  print(f"  docker_image (template): {template.docker_image}")
-                  print(f"  version: {template.version}")
-                  break
-          else:
-              print("Template not found!")
-          
-          # Find the ModelSpec for id_tt-transformers_stable-diffusion-xl-base-1.0_galaxy
-          print("\n" + "=" * 80)
-          print("DEBUG: ModelSpec for id_tt-transformers_stable-diffusion-xl-base-1.0_galaxy")
-          print("=" * 80)
-          
-          model_id = "id_tt-transformers_stable-diffusion-xl-base-1.0_galaxy"
-          if model_id in MODEL_SPECS:
-              spec = MODEL_SPECS[model_id]
-              print(f"\nModelSpec found:")
-              print(f"  model_id: {spec.model_id}")
-              print(f"  model_name: {spec.model_name}")
-              print(f"  device_type: {spec.device_type}")
-              print(f"  tt_metal_commit: {spec.tt_metal_commit}")
-              print(f"  vllm_commit: {spec.vllm_commit}")
-              print(f"  inference_engine: {spec.inference_engine}")
-              print(f"  model_type: {spec.model_type}")
-              print(f"  docker_image: {spec.docker_image}")
-              print(f"  version: {spec.version}")
-          else:
-              print(f"ModelSpec not found for: {model_id}")
-              print(f"\nAvailable model_ids containing 'stable-diffusion-xl-base-1.0':")
-              for mid in sorted(MODEL_SPECS.keys()):
-                  if "stable-diffusion-xl-base-1.0" in mid:
-                      print(f"  - {mid}")
-          
-          print("\n" + "=" * 80)
-          EOF
-
       - name: Make release image artifacts
         run: |
           python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --increment ${{ inputs.release-increment }} --dev
@@ -263,6 +200,42 @@ jobs:
       #     git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
       #     echo "✓ Committed all changes"
       #     git push -u origin "$BRANCH_NAME"
+
+      - name: Debug PR description
+        run: |
+          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
+          PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
+
+          # Build PR body from markdown files
+          PR_BODY_FILE=$(mktemp)
+          echo "# Summary of Changes" > "$PR_BODY_FILE"
+          echo "" >> "$PR_BODY_FILE"
+
+          # Add model spec updates if file exists
+          if [ -f "release_logs/release_models_diff.md" ]; then
+            cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
+            echo "" >> "$PR_BODY_FILE"
+          fi
+
+          # Add release artifacts summary if file exists
+          if [ -f "release_logs/dev_artifacts_summary.md" ]; then
+            cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
+          fi
+
+          echo "=================================================================================="
+          echo "DEBUG: PR Title and Description (would be used for PR creation)"
+          echo "=================================================================================="
+          echo ""
+          echo "PR Title: $PR_TITLE"
+          echo "Branch: $BRANCH_NAME"
+          echo "Base: dev"
+          echo ""
+          echo "PR Body:"
+          echo "=================================================================================="
+          cat "$PR_BODY_FILE"
+          echo "=================================================================================="
+
+          rm -f "$PR_BODY_FILE"
 
       # - name: Create PR
       #   # env:

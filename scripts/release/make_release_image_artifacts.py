@@ -165,7 +165,7 @@ def check_image_exists(image: str, cache: Optional[Dict[str, bool]] = None) -> b
 
     try:
         result = subprocess.run(
-            ["crane", "manifest", image],
+            ["docker", "manifest", "inspect", image],
             capture_output=True,
             text=True,
             timeout=30,
