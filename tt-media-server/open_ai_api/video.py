@@ -5,6 +5,7 @@
 import os
 import tempfile
 
+from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -34,7 +35,7 @@ async def submit_generate_video_request(
         HTTPException: If video generation submission fails.
     """
     try:
-        job_data = await service.create_job("video", video_generation_request)
+        job_data = await service.create_job(JobTypes.VIDEO, video_generation_request)
         return JSONResponse(content=job_data, status_code=202)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

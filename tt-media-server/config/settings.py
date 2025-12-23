@@ -62,10 +62,10 @@ class Settings(BaseSettings):
     inference_timeout_seconds: int = 1000
 
     # Job management settings
-    max_jobs: int = 10000  # Maximum number of jobs allowed in the job manager
-    job_cleanup_interval_seconds: int = 300  # Check for cleanup every 5 minutes
-    job_retention_seconds: int = 3600  # Keep completed/failed jobs for 1 hour
-    job_max_stuck_time_seconds: int = 7200  # Cancel jobs stuck for more than 2 hours
+
+    # Job persistence settings
+    enable_job_persistence: bool = False
+    job_db_path: str = "./storage/jobs.db"
 
     # Text processing settings
     min_context_length: int = 32

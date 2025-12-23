@@ -446,8 +446,8 @@ The TT Inference Server can be configured using environment variables or by modi
 |---------------------|---------------|-------------|
 | `MAX_JOBS` | `10000` | Maximum number of jobs allowed in the job manager. |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | `300` | Interval in seconds between automatic job cleanup checks. The background cleanup task runs at this frequency to remove old jobs and cancel stuck jobs |
-| `JOB_RETENTION_SECONDS` | `3600` | Duration in seconds to keep completed, failed, or cancelled jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 hour |
-| `JOB_MAX_STUCK_TIME_SECONDS` | `7200` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 2 hours |
+| `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
+| `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 
 ## Text Processing Settings
 
