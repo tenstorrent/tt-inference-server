@@ -1356,25 +1356,25 @@ def add_target_checks_embedding(metrics):
 
 
 def calculate_target_metrics(metrics_config):
-    """Calculate metric metrics for functional, complete, and target thresholds.
+    """Calculate metrics for functional, complete, and target thresholds.
 
     Args:
         metrics_config: List of metric configurations. Each config is a dict with:
             - avg_metric: Average metric from benchmark results
             - target_metric: Target metric from performance reference
             - field_name: Name of the metric field
-            - higher_is_better: If True, higher values are better (e.g., throughput).
-                               If False, lower values are better (e.g., latency, TTFT).
+            - is_ascending_metric: If True, higher values are preffered (e.g., throughput).
+                               If False, lower values are preffered (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
     """
 
-    def get_metric_ratio_and_check(avg_metric, ref_metric, higher_is_better):
+    def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
         if not ref_metric:
             return "Undefined", "Undefined"
         ratio = avg_metric / ref_metric
-        if higher_is_better:
+        if is_ascending_metric:
             check = 2 if ratio > 1.0 else 3
         else:
             check = 2 if ratio < 1.0 else 3
@@ -1392,12 +1392,12 @@ def calculate_target_metrics(metrics_config):
         avg_metric = config["avg_metric"]
         target_metric = config["target_metric"]
         field_name = config["field_name"]
-        higher_is_better = config.get("higher_is_better", False)
+        is_ascending_metric = config.get("is_ascending_metric", False)
 
         for level, multiplier in target_multipliers.items():
             level_metric = target_metric * multiplier
             ratio, check = get_metric_ratio_and_check(
-                avg_metric, level_metric, higher_is_better
+                avg_metric, level_metric, is_ascending_metric
             )
 
             metrics[f"{level}_{field_name}"] = level_metric
@@ -1613,14 +1613,14 @@ def main():
             )
 
             # Calculate all target metrics using centralized function
-            # TTFT: lower is better, so higher_is_better=False
+            # TTFT: lower is better, so is_ascending_metric=False
             metrics = calculate_target_metrics(
                 [
                     {
                         "avg_metric": avg_ttft,
                         "target_metric": target_ttft,
                         "field_name": "ttft",
-                        "higher_is_better": False,
+                        "is_ascending_metric": False,
                     },
                 ]
             )
@@ -1691,19 +1691,19 @@ def main():
                         "avg_metric": avg_tput_user,
                         "target_metric": targets.tput_user,
                         "field_name": "tput_user",
-                        "higher_is_better": True,
+                        "is_ascending_metric": True,
                     },
                     {
                         "avg_metric": avg_tput_prefill,
                         "target_metric": targets.tput_prefill,
                         "field_name": "tput_prefill",
-                        "higher_is_better": True,
+                        "is_ascending_metric": True,
                     },
                     {
                         "avg_metric": avg_e2el_ms,
                         "target_metric": targets.e2el_ms,
                         "field_name": "e2el_ms",
-                        "higher_is_better": False,
+                        "is_ascending_metric": False,
                     },
                 ]
             )
