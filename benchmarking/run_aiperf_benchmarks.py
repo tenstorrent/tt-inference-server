@@ -115,10 +115,12 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
     # Also search in subdirectories
     for subdir in glob.glob(os.path.join(artifact_dir, "*")):
         if os.path.isdir(subdir):
-            json_candidates.extend([
-                os.path.join(subdir, "profile_export_aiperf.json"),
-                os.path.join(subdir, "profile_export.json"),
-            ])
+            json_candidates.extend(
+                [
+                    os.path.join(subdir, "profile_export_aiperf.json"),
+                    os.path.join(subdir, "profile_export.json"),
+                ]
+            )
 
     json_path = None
     for candidate in json_candidates:
@@ -160,12 +162,10 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
             "p99_e2el_ms": summary.get("request_latency", {}).get("p99", 0),
             "std_e2el_ms": summary.get("request_latency", {}).get("std", 0),
             # Throughput metrics
-            "output_token_throughput": summary.get(
-                "output_token_throughput", {}
-            ).get("avg", 0),
-            "request_throughput": summary.get("request_throughput", {}).get(
+            "output_token_throughput": summary.get("output_token_throughput", {}).get(
                 "avg", 0
             ),
+            "request_throughput": summary.get("request_throughput", {}).get("avg", 0),
             # Request counts
             "completed": int(summary.get("request_count", {}).get("avg", 0)),
             "total_input_tokens": int(
@@ -183,6 +183,7 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
     except Exception as e:
         logger.error(f"Error parsing AIPerf output: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         return {}
 
@@ -211,9 +212,15 @@ def print_detailed_results(
     logger.info(
         f"Total output tokens:                     {metrics.get('total_output_tokens', 0)}"
     )
-    logger.info(f"Mean TTFT (ms):                          {metrics.get('mean_ttft_ms', 0):.2f}")
-    logger.info(f"Mean TPOT (ms):                          {metrics.get('mean_tpot_ms', 0):.2f}")
-    logger.info(f"Mean E2EL (ms):                          {metrics.get('mean_e2el_ms', 0):.2f}")
+    logger.info(
+        f"Mean TTFT (ms):                          {metrics.get('mean_ttft_ms', 0):.2f}"
+    )
+    logger.info(
+        f"Mean TPOT (ms):                          {metrics.get('mean_tpot_ms', 0):.2f}"
+    )
+    logger.info(
+        f"Mean E2EL (ms):                          {metrics.get('mean_e2el_ms', 0):.2f}"
+    )
     logger.info("=" * 80)
 
 
@@ -278,7 +285,7 @@ def run_benchmark(
     image_width: int = 0,
 ) -> int:
     """Run a single AIPerf benchmark with specified parameters.
-    
+
     Args:
         images: Number of images per prompt (0 for text-only)
         image_height: Height of images in pixels
@@ -292,9 +299,13 @@ def run_benchmark(
     artifact_dir = os.path.join(artifact_base, run_id)
 
     if images > 0:
-        logger.info(f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}, Images={images}, Size={image_width}x{image_height}")
+        logger.info(
+            f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}, Images={images}, Size={image_width}x{image_height}"
+        )
     else:
-        logger.info(f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}")
+        logger.info(
+            f"Running: ISL={isl}, OSL={osl}, Concur={concurrency}, N={num_prompts}"
+        )
 
     if not auth_token:
         logger.warning("No auth token provided, benchmark may fail")
@@ -341,18 +352,20 @@ def run_benchmark(
 
     # Add image parameters if this is an image benchmark
     if images > 0:
-        cmd.extend([
-            "--image-width-mean",
-            str(image_width),
-            "--image-width-stddev",
-            "0",
-            "--image-height-mean",
-            str(image_height),
-            "--image-height-stddev",
-            "0",
-            "--image-batch-size",
-            str(images),
-        ])
+        cmd.extend(
+            [
+                "--image-width-mean",
+                str(image_width),
+                "--image-width-stddev",
+                "0",
+                "--image-height-mean",
+                str(image_height),
+                "--image-height-stddev",
+                "0",
+                "--image-batch-size",
+                str(images),
+            ]
+        )
 
     # Add auth token if available
     if auth_token:
@@ -368,7 +381,9 @@ def run_benchmark(
     if return_code != 0:
         logger.error(f"AIPerf benchmark failed with return code: {return_code}")
         aggregator.add_result(
-            BenchmarkResult(isl, osl, concurrency, num_prompts, error="Benchmark failed")
+            BenchmarkResult(
+                isl, osl, concurrency, num_prompts, error="Benchmark failed"
+            )
         )
         return return_code
 
@@ -378,8 +393,17 @@ def run_benchmark(
     if metrics:
         print_detailed_results(isl, osl, concurrency, num_prompts, metrics)
         save_individual_result(
-            metrics, isl, osl, concurrency, num_prompts, model_name, model_id, output_dir,
-            images, image_height, image_width
+            metrics,
+            isl,
+            osl,
+            concurrency,
+            num_prompts,
+            model_name,
+            model_id,
+            output_dir,
+            images,
+            image_height,
+            image_width,
         )
         aggregator.add_result(
             BenchmarkResult(
@@ -440,11 +464,10 @@ def send_warmup_requests(
             # Add auth if available
             if prompt_client.env_config.jwt_secret:
                 import jwt as jwt_lib
+
                 json_payload = {"team_id": "tenstorrent", "token_id": "warmup"}
                 token = jwt_lib.encode(
-                    json_payload,
-                    prompt_client.env_config.jwt_secret,
-                    algorithm="HS256"
+                    json_payload, prompt_client.env_config.jwt_secret, algorithm="HS256"
                 )
                 headers["Authorization"] = f"Bearer {token}"
 
@@ -540,7 +563,9 @@ def main():
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
         auth_token = encoded_jwt
-        logger.info("OPENAI_API_KEY environment variable set using provided JWT secret.")
+        logger.info(
+            "OPENAI_API_KEY environment variable set using provided JWT secret."
+        )
 
     # Get venv config for aiperf
     from workflows.workflow_types import WorkflowVenvType
@@ -571,7 +596,7 @@ def main():
     limit_samples_mode_str = cli_args.get("limit_samples_mode")
     if limit_samples_mode_str:
         from workflows.workflow_types import EvalLimitMode
-        
+
         limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
         if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
             # Limit to 2 benchmarks for quick testing (1 small, 1 medium)
@@ -580,7 +605,9 @@ def main():
             logger.info(
                 f"Enabling AIPerf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
             )
-            logger.info(f"Reduced from {original_count} to {len(all_params)} benchmarks")
+            logger.info(
+                f"Reduced from {original_count} to {len(all_params)} benchmarks"
+            )
 
     # Log benchmark parameters
     log_str = "Running AIPerf benchmarks for:\n"
@@ -589,7 +616,9 @@ def main():
     for i, param in enumerate(all_params, 1):
         img_str = ""
         if param.task_type == "image":
-            img_str = f"{param.images_per_prompt}@{param.image_width}x{param.image_height}"
+            img_str = (
+                f"{param.images_per_prompt}@{param.image_width}x{param.image_height}"
+            )
         log_str += f"  {i:<3} {param.task_type:<8} {param.isl:<6} {param.osl:<6} {param.max_concurrency:<8} {param.num_prompts:<6} {img_str:<8}\n"
     logger.info(log_str)
 
