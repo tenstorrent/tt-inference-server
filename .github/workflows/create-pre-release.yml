@@ -1,7 +1,6 @@
 name: Create Release
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       release-candidate-run-id:
@@ -47,6 +46,8 @@ jobs:
           echo "✓ Release increment validated: $INCREMENT"
 
       - name: Check if workflow run exists and is of correct type
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
           set +e
 
@@ -57,7 +58,7 @@ jobs:
             exit 1
           fi
 
-          RUN_INFO=$(gh api repos/${{ github.repository }}/actions/runs/$RUN_ID 2>&1)
+          RUN_INFO=$(gh api repos/tenstorrent/tt-shield/actions/runs/$RUN_ID 2>&1)
           EXIT_CODE=$?
 
           if [ $EXIT_CODE -ne 0 ]; then
@@ -91,7 +92,7 @@ jobs:
 
       - name: Run models CI reader
         env:
-          GH_PAT: ${{ github.token }}
+          GH_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
           python3 scripts/release/models_ci_reader.py --run-id ${{ inputs.release-candidate-run-id }}
 
@@ -142,75 +143,10 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # username: acvejicTT
-          # password: ${{ secrets.TMP_DEMO_RELEASE }}
-          username: ${{ github.repository_owner }}
-          password: ${{ github.token }}
-
-
-      - name: Verify Docker authentication
-        run: |
-            echo "=== Docker Authentication Status ==="
-            echo ""
-            echo "Checking authenticated GitHub user..."
-            GITHUB_USER=$(curl -s -H "Authorization: token ${{ secrets.TMP_DEMO_RELEASE }}" https://api.github.com/user | jq -r '.login // "Could not determine user"' 2>/dev/null || echo "Could not check user via API")
-            echo "Authenticated GitHub user: $GITHUB_USER"
-            echo ""
-            echo "Checking token scopes..."
-            TOKEN_SCOPES=$(curl -s -I -H "Authorization: token ${{ secrets.TMP_DEMO_RELEASE }}" https://api.github.com/user | grep -i "x-oauth-scopes" | cut -d' ' -f2- || echo "Could not determine scopes")
-            echo "Token scopes: $TOKEN_SCOPES"
-            echo ""
-            echo "Checking package access via GitHub API..."
-            PACKAGE_OWNER="tenstorrent"
-            PACKAGE_NAME="tt-shield"
-            echo "Checking if package '${PACKAGE_NAME}' is accessible for org '${PACKAGE_OWNER}'..."
-            curl -s -H "Authorization: token ${{ secrets.TMP_DEMO_RELEASE }}" \
-              "https://api.github.com/orgs/${PACKAGE_OWNER}/packages?package_type=container" | \
-              jq -r ".[] | select(.name == \"${PACKAGE_NAME}\") | \"Package found: \(.name) (visibility: \(.visibility))\" || echo \"Package not found or not accessible\"" || \
-              echo "Could not check package access via API"
-            echo ""
-            echo "Docker login username (from workflow): acvejicTT"
-            echo ""
-            echo "Checking docker config for ghcr.io authentication..."
-            if [ -f ~/.docker/config.json ]; then
-              echo "Docker config file exists"
-              echo ""
-              echo "Auths for ghcr.io:"
-              cat ~/.docker/config.json | jq -r '.auths."ghcr.io" // "Not found"' || echo "Could not parse auths"
-              echo ""
-              echo "Full auths section:"
-              cat ~/.docker/config.json | jq -r '.auths // {}' || echo "Could not parse config"
-            else
-              echo "⚠️  Docker config file not found at ~/.docker/config.json"
-            fi
-            echo ""
-            echo "Testing authentication with crane (alternative to docker manifest inspect)..."
-            TEST_IMAGE="ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.5.0-a007f6e8168cb4bf6c471e6cf74aa8b47e056864-1728d69-58652643369"
-            if crane manifest "$TEST_IMAGE" > /dev/null 2>&1; then
-              echo "✅ Successfully authenticated with crane - can access ghcr.io/tenstorrent/tt-shield"
-            else
-              echo "❌ Authentication failed with crane - cannot access ghcr.io/tenstorrent/tt-shield"
-              echo "Crane error details:"
-              crane manifest "$TEST_IMAGE" 2>&1 | head -10 || true
-            fi
-            echo ""
-            echo "Testing authentication with docker manifest inspect..."
-            if docker manifest inspect "$TEST_IMAGE" > /dev/null 2>&1; then
-              echo "✅ Successfully authenticated with docker - can access ghcr.io/tenstorrent/tt-shield"
-            else
-              echo "❌ Authentication failed with docker - cannot access ghcr.io/tenstorrent/tt-shield"
-              echo "Docker error details:"
-              docker manifest inspect "$TEST_IMAGE" 2>&1 | head -10 || true
-            fi
-            echo ""
-            echo "=== Note: If authentication fails, the PAT may need 'read:packages' scope ==="
-            echo "The workflow has 'packages: read' permission, but the PAT (${{ secrets.TMP_DEMO_RELEASE }})"
-            echo "needs to have the 'read:packages' scope enabled in GitHub settings."
-            echo "Check: https://github.com/settings/tokens"
-
-
-
-
+          username: acvejicTT
+          password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          # username: ${{ github.repository_owner }}
+          # password: ${{ github.token }}
 
       - name: Make release image artifacts
         run: |
@@ -238,167 +174,167 @@ jobs:
           echo "✓ Read version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # - name: Configure git
-      #   run: |
-      #     git config user.name "vmaksimovicTT"
-      #     git config user.email "vmaksimovic@tenstorrent.com"
-
-      # - name: Create pre-release branch
-      #   run: |
-      #     BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
-
-      #     echo "Creating branch: $BRANCH_NAME"
-      #     git checkout -b "$BRANCH_NAME"
-      #     echo "✓ Created branch: $BRANCH_NAME"
-
-      # - name: Commit changes and push branch
-      #   run: |
-      #     BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
-      #     git add -A
-
-      #     git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
-      #     echo "✓ Committed all changes"
-      #     git push -u origin "$BRANCH_NAME"
-
-      # - name: Create PR
-      #   env:
-      #     GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
-      #   run: |
-      #     BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
-      #     PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
-
-      #     # Build PR body from markdown files
-      #     PR_BODY_FILE=$(mktemp)
-      #     echo "# Summary of Changes" > "$PR_BODY_FILE"
-      #     echo "" >> "$PR_BODY_FILE"
-
-      #     # Add model spec updates if file exists
-      #     if [ -f "release_logs/release_models_diff.md" ]; then
-      #       cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
-      #       echo "" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     # Add release artifacts summary if file exists
-      #     if [ -f "release_logs/dev_artifacts_summary.md" ]; then
-      #       cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     echo "Creating draft PR: $PR_TITLE"
-      #     gh pr create \
-      #       --title "$PR_TITLE" \
-      #       --body-file "$PR_BODY_FILE" \
-      #       --base dev \
-      #       --head "$BRANCH_NAME" \
-      #       --draft
-
-      #     rm -f "$PR_BODY_FILE"
-      #     echo "✓ Created draft PR for $BRANCH_NAME"
-
-      - name: Create release assets
-        id: create-assets
+      - name: Configure git
         run: |
-          RELEASE_TAG="v${{ steps.read-version.outputs.version }}"
-          WORKFLOW_LOGS="${RELEASE_TAG}-release-artifacts.zip"
+          git config user.name "vmaksimovicTT"
+          git config user.email "vmaksimovic@tenstorrent.com"
 
-          # Name source code assets to match GitHub's automatic source code asset pattern
-          # GitHub displays these as "Source code (zip)" and "Source code (tar.gz)"
-          REPO_ZIP="tt-inference-server-${RELEASE_TAG}.zip"
-          REPO_TAR_GZ="tt-inference-server-${RELEASE_TAG}.tar.gz"
-
-          if [ -d "release_logs/ci_run_logs" ]; then
-            echo "Creating zip file with workflow logs..."
-            cd release_logs/ci_run_logs
-            # cd into the only folder (we don't know its name)
-            if [ -z "$(ls -A)" ]; then
-              echo "❌ Error: release_logs/ci_run_logs is empty"
-              exit 1
-            fi
-            cd */
-            # Now zip all workflow_logs_* folders from this location
-            zip -r "../../../${WORKFLOW_LOGS}" workflow_logs_* 2>/dev/null || {
-              echo "❌ Error: No workflow_logs_* folders found in release_logs/ci_run_logs/*/"
-              exit 1
-            }
-            cd ../../..
-          else
-            echo "❌ Error: release_logs/ci_run_logs directory not found"
-            exit 1
-          fi
-
-          echo "Creating archives of tt-inference-server repo..."
-          cd ..
-          zip -r "${REPO_ZIP}" tt-inference-server || {
-            echo "❌ Error: Failed to create zip archive of tt-inference-server"
-            exit 1
-          }
-          tar -czf "${REPO_TAR_GZ}" tt-inference-server || {
-            echo "❌ Error: Failed to create tar.gz archive of tt-inference-server"
-            exit 1
-          }
-          cd tt-inference-server
-
-          # Export asset paths as newline-separated list
-          ASSET_PATHS="${WORKFLOW_LOGS}"$'\n'"../${REPO_ZIP}"$'\n'"../${REPO_TAR_GZ}"
-          echo "assets<<EOF" >> "$GITHUB_OUTPUT"
-          echo "${ASSET_PATHS}" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-          echo "✓ Created release assets: ${WORKFLOW_LOGS}, ${REPO_ZIP}, ${REPO_TAR_GZ}"
-
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
+      - name: Create pre-release branch
         run: |
-          RELEASE_TAG="v${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
 
-          # Build release notes from markdown files
-          RELEASE_NOTES_FILE=$(mktemp)
-          echo "# Summary of Changes" > "$RELEASE_NOTES_FILE"
-          echo "" >> "$RELEASE_NOTES_FILE"
+          echo "Creating branch: $BRANCH_NAME"
+          git checkout -b "$BRANCH_NAME"
+          echo "✓ Created branch: $BRANCH_NAME"
+
+      - name: Commit changes and push branch
+        run: |
+          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
+          git add -A
+
+          git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
+          echo "✓ Committed all changes"
+          git push -u origin "$BRANCH_NAME"
+
+      - name: Create PR
+        # env:
+        #   GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
+        run: |
+          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
+          PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
+
+          # Build PR body from markdown files
+          PR_BODY_FILE=$(mktemp)
+          echo "# Summary of Changes" > "$PR_BODY_FILE"
+          echo "" >> "$PR_BODY_FILE"
 
           # Add model spec updates if file exists
           if [ -f "release_logs/release_models_diff.md" ]; then
-            cat "release_logs/release_models_diff.md" >> "$RELEASE_NOTES_FILE"
-            echo "" >> "$RELEASE_NOTES_FILE"
+            cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
+            echo "" >> "$PR_BODY_FILE"
           fi
 
           # Add release artifacts summary if file exists
           if [ -f "release_logs/dev_artifacts_summary.md" ]; then
-            cat "release_logs/dev_artifacts_summary.md" >> "$RELEASE_NOTES_FILE"
+            cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
           fi
 
-          # Read asset paths from previous step output into array
-          IFS=$'\n' read -d '' -r -a ASSET_ARRAY <<< "${{ steps.create-assets.outputs.assets }}" || true
+          echo "Creating draft PR: $PR_TITLE"
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body-file "$PR_BODY_FILE" \
+            --base dev \
+            --head "$BRANCH_NAME" \
+            --draft
 
-          echo "Creating draft release: ${RELEASE_TAG}"
+          rm -f "$PR_BODY_FILE"
+          echo "✓ Created draft PR for $BRANCH_NAME"
 
-          # Create release first without assets
-          gh release create "${RELEASE_TAG}" \
-            --repo "${{ github.repository }}" \
-            --draft \
-            --title "${RELEASE_TAG}" \
-            --notes-file "$RELEASE_NOTES_FILE" || {
-              echo "❌ Error: Failed to create release"
-              rm -f "$RELEASE_NOTES_FILE"
-              exit 1
-          }
+      # - name: Create release assets
+      #   id: create-assets
+      #   run: |
+      #     RELEASE_TAG="v${{ steps.read-version.outputs.version }}"
+      #     WORKFLOW_LOGS="${RELEASE_TAG}-release-artifacts.zip"
 
-          # Upload assets separately
-          echo "Uploading ${#ASSET_ARRAY[@]} asset(s): ${ASSET_ARRAY[*]}"
-          for asset in "${ASSET_ARRAY[@]}"; do
-            if [ -f "$asset" ]; then
-              echo "Uploading: $asset"
-              gh release upload "${RELEASE_TAG}" "$asset" \
-                --repo "${{ github.repository }}" || {
-                  echo "⚠️  Warning: Failed to upload asset: $asset"
-                }
-            else
-              echo "⚠️  Warning: Asset file not found: $asset"
-            fi
-          done
+      #     # Name source code assets to match GitHub's automatic source code asset pattern
+      #     # GitHub displays these as "Source code (zip)" and "Source code (tar.gz)"
+      #     REPO_ZIP="tt-inference-server-${RELEASE_TAG}.zip"
+      #     REPO_TAR_GZ="tt-inference-server-${RELEASE_TAG}.tar.gz"
 
-          rm -f "$RELEASE_NOTES_FILE"
-          echo "✓ Created draft release: ${RELEASE_TAG}"
+      #     if [ -d "release_logs/ci_run_logs" ]; then
+      #       echo "Creating zip file with workflow logs..."
+      #       cd release_logs/ci_run_logs
+      #       # cd into the only folder (we don't know its name)
+      #       if [ -z "$(ls -A)" ]; then
+      #         echo "❌ Error: release_logs/ci_run_logs is empty"
+      #         exit 1
+      #       fi
+      #       cd */
+      #       # Now zip all workflow_logs_* folders from this location
+      #       zip -r "../../../${WORKFLOW_LOGS}" workflow_logs_* 2>/dev/null || {
+      #         echo "❌ Error: No workflow_logs_* folders found in release_logs/ci_run_logs/*/"
+      #         exit 1
+      #       }
+      #       cd ../../..
+      #     else
+      #       echo "❌ Error: release_logs/ci_run_logs directory not found"
+      #       exit 1
+      #     fi
+
+      #     echo "Creating archives of tt-inference-server repo..."
+      #     cd ..
+      #     zip -r "${REPO_ZIP}" tt-inference-server || {
+      #       echo "❌ Error: Failed to create zip archive of tt-inference-server"
+      #       exit 1
+      #     }
+      #     tar -czf "${REPO_TAR_GZ}" tt-inference-server || {
+      #       echo "❌ Error: Failed to create tar.gz archive of tt-inference-server"
+      #       exit 1
+      #     }
+      #     cd tt-inference-server
+
+      #     # Export asset paths as newline-separated list
+      #     ASSET_PATHS="${WORKFLOW_LOGS}"$'\n'"../${REPO_ZIP}"$'\n'"../${REPO_TAR_GZ}"
+      #     echo "assets<<EOF" >> "$GITHUB_OUTPUT"
+      #     echo "${ASSET_PATHS}" >> "$GITHUB_OUTPUT"
+      #     echo "EOF" >> "$GITHUB_OUTPUT"
+
+      #     echo "✓ Created release assets: ${WORKFLOW_LOGS}, ${REPO_ZIP}, ${REPO_TAR_GZ}"
+
+      # - name: Create release
+      #   env:
+      #     GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
+      #   run: |
+      #     RELEASE_TAG="v${{ steps.read-version.outputs.version }}"
+
+      #     # Build release notes from markdown files
+      #     RELEASE_NOTES_FILE=$(mktemp)
+      #     echo "# Summary of Changes" > "$RELEASE_NOTES_FILE"
+      #     echo "" >> "$RELEASE_NOTES_FILE"
+
+      #     # Add model spec updates if file exists
+      #     if [ -f "release_logs/release_models_diff.md" ]; then
+      #       cat "release_logs/release_models_diff.md" >> "$RELEASE_NOTES_FILE"
+      #       echo "" >> "$RELEASE_NOTES_FILE"
+      #     fi
+
+      #     # Add release artifacts summary if file exists
+      #     if [ -f "release_logs/dev_artifacts_summary.md" ]; then
+      #       cat "release_logs/dev_artifacts_summary.md" >> "$RELEASE_NOTES_FILE"
+      #     fi
+
+      #     # Read asset paths from previous step output into array
+      #     IFS=$'\n' read -d '' -r -a ASSET_ARRAY <<< "${{ steps.create-assets.outputs.assets }}" || true
+
+      #     echo "Creating draft release: ${RELEASE_TAG}"
+
+      #     # Create release first without assets
+      #     gh release create "${RELEASE_TAG}" \
+      #       --repo "${{ github.repository }}" \
+      #       --draft \
+      #       --title "${RELEASE_TAG}" \
+      #       --notes-file "$RELEASE_NOTES_FILE" || {
+      #         echo "❌ Error: Failed to create release"
+      #         rm -f "$RELEASE_NOTES_FILE"
+      #         exit 1
+      #     }
+
+      #     # Upload assets separately
+      #     echo "Uploading ${#ASSET_ARRAY[@]} asset(s): ${ASSET_ARRAY[*]}"
+      #     for asset in "${ASSET_ARRAY[@]}"; do
+      #       if [ -f "$asset" ]; then
+      #         echo "Uploading: $asset"
+      #         gh release upload "${RELEASE_TAG}" "$asset" \
+      #           --repo "${{ github.repository }}" || {
+      #             echo "⚠️  Warning: Failed to upload asset: $asset"
+      #           }
+      #       else
+      #         echo "⚠️  Warning: Asset file not found: $asset"
+      #       fi
+      #     done
+
+      #     rm -f "$RELEASE_NOTES_FILE"
+      #     echo "✓ Created draft release: ${RELEASE_TAG}"
 
       - name: Cleanup on failure
         if: failure()
