@@ -26,8 +26,8 @@ xla_backend = "tt"
 
 
 class ForgeRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.device_id = device_id
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.dtype = torch.bfloat16

@@ -44,7 +44,6 @@ async def complete_text(
             import json
 
             async for partial in service.process_streaming_request(completion_request):
-                service.logger.info(f"Streaming chunk: {partial}")
                 chunk = {"choices": [partial.to_dict()]}
                 yield json.dumps(chunk) + "\n"
 

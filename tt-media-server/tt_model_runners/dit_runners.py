@@ -38,8 +38,8 @@ dit_runner_log_map = {
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.pipeline = None
 
     def _configure_fabric(self, updated_device_params):
@@ -147,8 +147,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
 
 class TTSD35Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return StableDiffusion3Pipeline.create_pipeline(
@@ -162,8 +162,8 @@ class TTSD35Runner(TTDiTRunner):
 
 # TODO: Merge dev and schnell
 class TTFlux1DevRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -176,8 +176,8 @@ class TTFlux1DevRunner(TTDiTRunner):
 
 
 class TTFlux1SchnellRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -190,8 +190,8 @@ class TTFlux1SchnellRunner(TTDiTRunner):
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return MotifPipeline.create_pipeline(
@@ -204,8 +204,8 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
 
 class TTMochi1Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         # TODO: Set optimal configuration settings in tt-metal code.
@@ -307,8 +307,8 @@ class TTMochi1Runner(TTDiTRunner):
 
 
 class TTWan22Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
