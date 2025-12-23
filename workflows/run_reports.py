@@ -1247,6 +1247,26 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
 
+def benchmarks_release_data_format_embedding(model_spec, device_str, benchmark_summary_data):
+    """Convert the benchmark release data to the desired format for EMBEDDING models"""
+
+    return [{
+        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "model": model_spec.model_name,
+        "model_name": model_spec.model_name,
+        "model_id": model_spec.model_id,
+        "backend": model_spec.model_type.name.lower(),
+        "device": device_str,
+        "num_requests": benchmark_summary_data.get("num_requests", 1),
+        "ISL": benchmark_summary_data.get("input_sequence_length", 0),
+        "concurrency": benchmark_summary_data.get("max_con", 0),
+        "tput_user": benchmark_summary_data.get("mean_tps", 0),
+        "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
+        "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
+        "filename": benchmark_summary_data.get("filename", ""),
+        "task_type": model_spec.model_type.name.lower(),
+    }]
+
 
 def add_target_checks_cnn_and_image(
     targets, evals_release_data, benchmark_summary_data, metrics
@@ -1280,6 +1300,67 @@ def add_target_checks_cnn_and_image(
             "ttft_ratio": metrics["target_ttft_ratio"],
             "ttft_check": metrics["target_ttft_check"],
             "tput_check": 2 if tput_user > target_tput_user else 3,
+        },
+    }
+
+    return target_checks
+
+def add_target_checks_embedding(
+    targets, benchmark_summary_data
+):
+    """Add target checks for EMBEDDING models based on evals and benchmark data."""
+    logger.info("Adding target_checks to EMBEDDING benchmark release data")
+
+    # extract targets for functional, complete, target and calculate them
+    tput_user = benchmark_summary_data.get("mean_tps", 0)
+    functional_tput_user = targets.tput_user / 100
+    complete_tput_user = targets.tput_user / 10
+    target_tput_user = targets.tput_user
+
+    tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
+    functional_tput_prefill = targets.tput_prefill / 100
+    complete_tput_prefill = targets.tput_prefill / 10
+    target_tput_prefill = targets.tput_prefill
+
+    e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
+    functional_e2el_ms = targets.e2el_ms * 100
+    complete_e2el_ms = targets.e2el_ms * 10
+    target_e2el_ms = targets.e2el_ms
+
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "tput_user": functional_tput_user,
+            "tput_user_ratio": tput_user / functional_tput_user,
+            "tput_user_check": 2 if tput_user > functional_tput_user else 3,
+            "tput_prefill": functional_tput_prefill,
+            "tput_prefill_ratio": tput_prefill / functional_tput_prefill,
+            "tput_prefill_check": 2 if tput_prefill > functional_tput_prefill else 3,
+            "e2el_ms": functional_e2el_ms,
+            "e2el_ms_ratio": e2el_ms / functional_e2el_ms,
+            "e2el_ms_check": 2 if e2el_ms < functional_e2el_ms else 3,
+        },
+        "complete": {
+            "tput_user": complete_tput_user,
+            "tput_user_ratio": tput_user / complete_tput_user,
+            "tput_user_check": 2 if tput_user > complete_tput_user else 3,
+            "tput_prefill": complete_tput_prefill,
+            "tput_prefill_ratio": tput_prefill / complete_tput_prefill,
+            "tput_prefill_check": 2 if tput_prefill > complete_tput_prefill else 3,
+            "e2el_ms": complete_e2el_ms,
+            "e2el_ms_ratio": e2el_ms / complete_e2el_ms,
+            "e2el_ms_check": 2 if e2el_ms < complete_e2el_ms else 3,
+        },
+        "target": {
+            "tput_user": target_tput_user,
+            "tput_user_ratio": tput_user / target_tput_user,
+            "tput_user_check": 2 if tput_user > target_tput_user else 3,
+            "tput_prefill": target_tput_prefill,
+            "tput_prefill_ratio": tput_prefill / target_tput_prefill,
+            "tput_prefill_check": 2 if tput_prefill > target_tput_prefill else 3,
+            "e2el_ms": target_e2el_ms,
+            "e2el_ms_ratio": e2el_ms / target_e2el_ms,
+            "e2el_ms_check": 2 if e2el_ms < target_e2el_ms else 3,
         },
     }
 
@@ -1550,14 +1631,6 @@ def main():
                     benchmark_summary_data,
                     metrics,
                 )
-            elif model_spec.model_type.name == "EMBEDDING":
-                logger.info("Adding target_checks for Embedding benchmark release data")
-                target_checks = add_target_checks_cnn_and_image(
-                    targets,
-                    evals_release_data,
-                    benchmark_summary_data,
-                    metrics,
-                )
             else:
                 logger.info("Adding target_checks for Audio benchmark release data")
                 target_checks = add_target_checks_audio(metrics)
@@ -1587,6 +1660,32 @@ def main():
                             logger.warning(
                                 f"Could not read server test file {json_file}: {e}"
                             )
+        elif model_spec.model_type.name == ModelType.EMBEDDING.name:
+            # Get performance targets using the shared utility
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+            targets = get_performance_targets(
+                model_spec.model_name,
+                device_str,
+                model_type=model_spec.model_type.name,
+            )
+            logger.info(f"Performance targets: {targets}")
+
+            benchmark_summary_data = benchmarks_release_data[0]
+
+            logger.info("Adding target_checks for Embedding benchmark release data")
+            target_checks = add_target_checks_embedding(
+                targets,
+                benchmark_summary_data,
+            )
+
+            benchmarks_release_data = benchmarks_release_data_format_embedding(
+                model_spec, device_str, benchmark_summary_data
+            )
+
+            if benchmarks_release_data:
+                benchmarks_release_data[0]["target_checks"] = target_checks
+
 
         # Build the final JSON output
         output_data = {
