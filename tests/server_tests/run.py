@@ -4,6 +4,32 @@
 
 #!/usr/bin/env python3
 
+"""
+Server tests runner with marker-based filtering support.
+
+Usage examples:
+    # Run all tests for a model/device
+    python run.py --model stable-diffusion-xl-base-1.0 --device n150
+
+    # Filter by test markers
+    python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
+
+    # Filter by model category on specific hardware
+    python run.py --model-category IMAGE --device n150
+
+    # Run all load tests across all models/devices
+    python run.py --markers load
+
+    # Exclude slow tests
+    python run.py --model stable-diffusion-xl-base-1.0 --device n150 --exclude-markers slow heavy
+
+    # Run specific test
+    python run.py --model stable-diffusion-xl-base-1.0 --device n150 --test-name ImageGenerationLoadTest
+
+    # Skip prerequisite tests (DeviceLivenessTest)
+    python run.py --model stable-diffusion-xl-base-1.0 --device n150 --skip-prerequisites
+"""
+
 import argparse
 import importlib
 import json
@@ -26,7 +52,12 @@ tests_dir = os.path.join(project_root, "tests")
 sys.path.insert(0, tests_dir)
 
 from server_tests.test_classes import TestConfig, TestReport
+from server_tests.test_filter import TestFilter
 from server_tests.tests_runner import ServerRunner
+
+SERVER_TESTS_CONFIG_PATH = os.path.join(
+    project_root, "tests", "server_tests", "server_tests_config.json"
+)
 
 
 def configure_logging():
@@ -44,99 +75,68 @@ def configure_logging():
     logging.getLogger("whisper_eval_test").setLevel(logging.INFO)
 
 
-def load_test_cases_from_json(json_file_path: str) -> List:
-    """Load test cases from JSON configuration file"""
-    try:
-        with open(json_file_path, "r") as f:
-            json_config = json.load(f)
+def load_test_instances_from_suites(test_suites: List[dict]) -> List:
+    """
+    Load test instances from filtered test suites.
 
-        # Create test cases from JSON
-        test_cases = []
-        for test_case_data in json_config.get("test_cases", []):
+    Args:
+        test_suites: List of test suite dictionaries from TestFilter.get_tests()
+
+    Returns:
+        List of instantiated test case objects
+    """
+    test_cases = []
+
+    for suite in test_suites:
+        suite_id = suite.get("id", "unknown")
+        device = suite.get("device", "unknown")
+        weights = suite.get("weights", [])
+
+        logger.info(
+            f"Loading tests for suite: {suite_id} (device={device}, models={weights})"
+        )
+
+        for test_case_data in suite.get("test_cases", []):
             if not test_case_data.get("enabled", True):
-                logger.info(f"Skipping disabled test: {test_case_data['name']}")
+                logger.info(f"  Skipping disabled test: {test_case_data.get('name')}")
                 continue
 
             try:
-                # Create config from test case's test_config
                 config_dict = test_case_data.get("test_config", {})
                 config = TestConfig(config_dict)
-
-                # Create targets from test case's targets
                 targets = test_case_data.get("targets", {})
-
                 description = test_case_data.get("description", "")
 
-                # Import the test class dynamically using name as class name
                 module_name = test_case_data["module"]
-                class_name = test_case_data["name"]  # Use name as class name
+                class_name = test_case_data["name"]
 
                 module = importlib.import_module(module_name)
                 test_class = getattr(module, class_name)
 
-                # Create test instance
                 test_instance = test_class(config, targets)
                 test_instance.config = config
                 test_instance.targets = targets
                 test_instance.description = description
+                test_instance.markers = test_case_data.get("markers", [])
+                test_instance.suite_id = suite_id
 
                 test_cases.append(test_instance)
 
+                markers_str = ", ".join(test_case_data.get("markers", []))
+                logger.info(f"  ✅ Loaded: {class_name} - {description}")
+                logger.info(f"     Markers: [{markers_str}]")
                 logger.info(
-                    f"✅ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
+                    f"     Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
                 )
-                logger.info(
-                    f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
-                )
-                logger.info(f"  Targets: {targets}")
+                logger.info(f"     Targets: {targets}")
 
             except Exception as e:
-                logger.error(f"❌ Failed to load test {test_case_data['name']}: {e}")
+                logger.error(
+                    f"  ❌ Failed to load test {test_case_data.get('name')}: {e}"
+                )
                 continue
 
-        return test_cases
-
-    except FileNotFoundError:
-        logger.error(f"JSON config file not found: {json_file_path}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in config file: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Error loading test cases from JSON: {e}")
-        return []
-
-
-def find_test_config_by_model_and_device(model: str, device: str) -> dict:
-    """Find test configuration in server_tests_config.json by matching model and device"""
-    config_path = os.path.join(os.path.dirname(__file__), "server_tests_config.json")
-
-    try:
-        with open(config_path, "r") as f:
-            configs = json.load(f)
-
-        # Find matching configuration
-        for config in configs:
-            # Check if model is in weights array and device matches
-            if model in config.get("weights", []) and config.get("device") == device:
-                logger.info(f"Found matching config for model={model}, device={device}")
-                logger.info(f"  Weights: {config.get('weights')}")
-                logger.info(f"  Device: {config.get('device')}")
-                logger.info(f"  Test cases: {len(config.get('test_cases', []))}")
-                return config
-
-        logger.warning(f"No matching config found for model={model}, device={device}")
-        return None
-
-    except FileNotFoundError:
-        logger.error(f"Config file not found: {config_path}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in config file: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error loading config file: {e}")
-        return None
+    return test_cases
 
 
 def print_summary(reports: List[TestReport], test_cases):
@@ -148,7 +148,6 @@ def print_summary(reports: List[TestReport], test_cases):
     failed = attempted - passed
     total_duration = sum(report.duration for report in reports)
 
-    # Summary table
     logger.info("=" * 70)
     logger.info("TEST EXECUTION SUMMARY")
     logger.info("=" * 70)
@@ -162,7 +161,6 @@ def print_summary(reports: List[TestReport], test_cases):
     logger.info(f"{'Total duration':<20} {total_duration:>9.2f}s")
     logger.info("=" * 70)
 
-    # Detailed results table
     logger.info("Detailed Results:")
     logger.info("-" * 70)
     logger.info(f"{'Status':<8} {'Test Name':<40} {'Duration':>10} {'Attempts':>10}")
@@ -179,10 +177,99 @@ def print_summary(reports: List[TestReport], test_cases):
     return failed == 0
 
 
+def apply_filters(args) -> List[dict]:
+    """
+    Apply CLI filters to get matching test suites.
+
+    Args:
+        args: Parsed CLI arguments
+
+    Returns:
+        List of filtered test suite dictionaries
+    """
+    from pathlib import Path
+
+    # Determine how to load TestFilter based on arguments
+    suite_files = None
+    if hasattr(args, "suite_file") and args.suite_file:
+        # Load specific suite file(s)
+        suite_files = [Path(f) for f in args.suite_file]
+        logger.info(f"Loading suite files: {[str(f) for f in suite_files]}")
+
+    if hasattr(args, "suite_category") and args.suite_category:
+        # Load by category name (e.g., "image", "audio")
+        try:
+            logger.info(f"Loading suite category: {args.suite_category}")
+            test_filter = TestFilter.from_category(args.suite_category)
+        except FileNotFoundError as e:
+            logger.error(str(e))
+            return []
+    elif hasattr(args, "config") and args.config:
+        # Load from custom config file
+        config_path = Path(args.config)
+        logger.info(f"Loading config from: {config_path}")
+        try:
+            test_filter = TestFilter(config_path=config_path)
+        except FileNotFoundError:
+            logger.error(f"Config file not found: {config_path}")
+            return []
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config file: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error loading config file: {e}")
+            return []
+    else:
+        # Default: load schema + auto-discover suite files
+        test_filter = TestFilter(suite_files=suite_files)
+
+    # Apply model category filter
+    if args.model_category:
+        logger.info(f"Filtering by model categories: {args.model_category}")
+        test_filter.filter_by_model_category(args.model_category)
+
+    # Apply model filter
+    if args.model:
+        logger.info(f"Filtering by model: {args.model}")
+        test_filter.filter_by_model(args.model)
+
+    # Apply device filter
+    if args.device:
+        logger.info(f"Filtering by device: {args.device}")
+        test_filter.filter_by_device(args.device)
+
+    # Apply marker filter
+    if args.markers:
+        match_all = args.match_all_markers
+        logger.info(f"Filtering by markers: {args.markers} (match_all={match_all})")
+        test_filter.filter_by_markers(args.markers, match_all=match_all)
+
+    # Apply test name filter
+    if args.test_name:
+        logger.info(f"Filtering by test name: {args.test_name}")
+        test_filter.filter_by_test_name(args.test_name)
+
+    # Apply marker exclusion
+    if args.exclude_markers:
+        logger.info(f"Excluding markers: {args.exclude_markers}")
+        test_filter.exclude_markers(args.exclude_markers)
+
+    # Handle prerequisites
+    if args.skip_prerequisites:
+        logger.info("Skipping prerequisite tests (DeviceLivenessTest)")
+        test_filter.include_prerequisites(False)
+
+    # Get filtered tests
+    test_suites = test_filter.get_tests()
+
+    # Print filter summary
+    test_filter.print_summary()
+
+    return test_suites
+
+
 def main():
     """Main entry point"""
-
-    # Configure logging first
     configure_logging()
     args = parse_args()
 
@@ -192,103 +279,23 @@ def main():
     logger.info(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
 
     try:
-        json_file_path = os.getenv("TEST_CONFIG_JSON")
+        # Use TestFilter with CLI arguments
+        test_suites = apply_filters(args)
 
-        if json_file_path:
-            # Load test cases from specified JSON config
-            logger.info(f"Loading test config from: {json_file_path}")
-            with open(json_file_path, "r") as f:
-                json_config = json.load(f)
-            test_cases_config = json_config
-        elif args.model and args.device:
-            # Find config by model and device in server_tests_config.json
-            logger.info(
-                f"Finding test config for model={args.model}, device={args.device}"
-            )
-            config = find_test_config_by_model_and_device(args.model, args.device)
+        if not test_suites:
+            logger.error("No test suites match the specified filters")
+            logger.info("Available options:")
+            test_filter = TestFilter()
+            logger.info(f"  Devices: {test_filter.get_all_devices()}")
+            logger.info(f"  Models: {test_filter.get_all_models()}")
+            return 1
 
-            if config:
-                # Use only the test_cases attribute from the matched config
-                test_cases_config = {"test_cases": config.get("test_cases", {})}
-            else:
-                logger.warning(
-                    f"No test configuration found for model={args.model}, device={args.device}"
-                )
-                logger.warning("Available configurations in server_tests_config.json:")
-                try:
-                    config_path = os.path.join(
-                        os.path.dirname(__file__), "server_tests_config.json"
-                    )
-                    with open(config_path, "r") as f:
-                        configs = json.load(f)
-                        for cfg in configs:
-                            logger.error(
-                                f"  - weights={cfg.get('weights')}, device={cfg.get('device')}"
-                            )
-                except Exception:
-                    logger.warning("  (Failed to load available configurations)")
-                    # return success to not fail CI runs that don't have spec tests
-                    return 0
-                # gracefully exit
-                return 0
-        else:
-            logger.warning("TEST_CONFIG_JSON environment variable not set")
-            logger.warning("Please either:")
-            logger.warning(
-                "  1. Set TEST_CONFIG_JSON to point to your test configuration file"
-            )
-            logger.warning(
-                "  2. Provide --model and --device arguments to auto-select from server_tests_config.json"
-            )
-            sys.exit(0)
-
-        # Load test cases from the test_cases_config
-        test_cases = []
-        for test_case_data in test_cases_config.get("test_cases", []):
-            if not test_case_data.get("enabled", True):
-                logger.info(f"Skipping disabled test: {test_case_data['name']}")
-                continue
-
-            try:
-                # Create config from test case's test_config
-                config_dict = test_case_data.get("test_config", {})
-                config = TestConfig(config_dict)
-
-                # Create targets from test case's targets
-                targets = test_case_data.get("targets", {})
-
-                description = test_case_data.get("description", "")
-
-                # Import the test class dynamically using name as class name
-                module_name = test_case_data["module"]
-                class_name = test_case_data["name"]  # Use name as class name
-
-                module = importlib.import_module(module_name)
-                test_class = getattr(module, class_name)
-
-                # Create test instance
-                test_instance = test_class(config, targets)
-                test_instance.config = config
-                test_instance.targets = targets
-                test_instance.description = description
-
-                test_cases.append(test_instance)
-
-                logger.info(
-                    f"✅ Loaded test: {test_case_data['name']} - {test_case_data.get('description', '')}"
-                )
-                logger.info(
-                    f"  Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
-                )
-                logger.info(f"  Targets: {targets}")
-
-            except Exception as e:
-                logger.error(f"❌ Failed to load test {test_case_data['name']}: {e}")
-                continue
+        # Load test instances from filtered suites
+        test_cases = load_test_instances_from_suites(test_suites)
 
         if not test_cases:
             logger.error("No test cases loaded")
-            sys.exit(1)
+            return 1
 
         logger.info(f"Created {len(test_cases)} test case(s)")
 
@@ -305,60 +312,225 @@ def main():
         # Print summary
         success = print_summary(reports, test_cases)
 
-        # Exit with appropriate code
         return 0 if success else 1
 
     except KeyboardInterrupt:
         logger.info("Test execution interrupted by user")
-        sys.exit(130)
+        return 130
     except Exception as e:
         logger.error(f"Fatal error during test execution: {e}")
         import traceback
 
         traceback.print_exc()
-        sys.exit(1)
+        return 1
 
 
 def parse_args():
-    """
-    Parse command line arguments.
-    """
-    parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
+    """Parse command line arguments with marker-based filtering support."""
+    parser = argparse.ArgumentParser(
+        description="Run server tests with marker-based filtering",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run all tests for a model on specific device
+  python run.py --model stable-diffusion-xl-base-1.0 --device n150
+
+  # Run all IMAGE model tests on N150
+  python run.py --model-category IMAGE --device n150
+
+  # Run load tests only
+  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
+
+  # Run all load tests across all models
+  python run.py --markers load
+
+  # Run fast smoke tests
+  python run.py --markers smoke fast --match-all-markers
+
+  # Exclude slow and heavy tests
+  python run.py --device n150 --exclude-markers slow heavy
+
+  # Run a specific test class
+  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --test-name ImageGenerationLoadTest
+
+  # Skip prerequisite tests
+  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --skip-prerequisites
+
+  # Load only IMAGE category suites (efficient for CI)
+  python run.py --suite-category image --device n150
+
+  # Load specific suite files
+  python run.py --suite-file image.json audio.json --markers load
+        """,
+    )
+
+    # Config file arguments
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to custom test config JSON file",
+        default=None,
+    )
+    parser.add_argument(
+        "--suite-file",
+        type=str,
+        nargs="+",
+        help="Load specific suite file(s) from test_suites/ (e.g., image.json audio.json)",
+        default=None,
+    )
+    parser.add_argument(
+        "--suite-category",
+        type=str,
+        help="Load suites for a specific category (e.g., image, audio, forge)",
+        default=None,
+    )
+
+    # Workflow integration arguments
     parser.add_argument(
         "--model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
-        required=True,
+        help="Path to model specification JSON file (passed by workflow)",
+        required=False,
     )
     parser.add_argument(
         "--output-path",
         type=str,
-        help="Path for benchmark output",
-        required=True,
-    )
-
-    parser.add_argument(
-        "--model",
-        type=str,
-        help="Model name",
-        default=os.getenv("MODEL", ""),
-    )
-
-    parser.add_argument(
-        "--device",
-        type=str,
-        help="Device name",
-        default=os.getenv("DEVICE", ""),
+        help="Path for test output",
+        required=False,
     )
     parser.add_argument(
         "--hf-token",
         type=str,
-        help="HF_TOKEN",
+        help="HuggingFace token",
         default=os.getenv("HF_TOKEN", ""),
     )
-    ret_args = parser.parse_args()
-    return ret_args
+
+    # Model/Device filtering
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Filter by model name (e.g., stable-diffusion-xl-base-1.0)",
+        default=os.getenv("MODEL", ""),
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Filter by device (n150, n300, t3k, galaxy)",
+        default=os.getenv("DEVICE", ""),
+    )
+    parser.add_argument(
+        "--model-category",
+        type=str,
+        nargs="+",
+        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        default=None,
+    )
+
+    # Marker-based filtering
+    parser.add_argument(
+        "--markers",
+        type=str,
+        nargs="+",
+        help="Filter by test markers (e.g., load smoke fast)",
+        default=None,
+    )
+    parser.add_argument(
+        "--match-all-markers",
+        action="store_true",
+        help="Require ALL markers to match (default: ANY marker matches)",
+    )
+    parser.add_argument(
+        "--exclude-markers",
+        type=str,
+        nargs="+",
+        help="Exclude tests with these markers (e.g., slow heavy)",
+        default=None,
+    )
+
+    # Test selection
+    parser.add_argument(
+        "--test-name",
+        type=str,
+        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        default=None,
+    )
+
+    # Prerequisite control
+    parser.add_argument(
+        "--skip-prerequisites",
+        action="store_true",
+        help="Skip prerequisite tests (DeviceLivenessTest)",
+    )
+
+    # Utility arguments
+    parser.add_argument(
+        "--list-markers",
+        action="store_true",
+        help="List all available markers and exit",
+    )
+    parser.add_argument(
+        "--list-tests",
+        action="store_true",
+        help="List matching tests without running them",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print test plan without executing",
+    )
+
+    args = parser.parse_args()
+
+    # Handle utility commands
+    if args.list_markers:
+        test_filter = TestFilter()
+        markers = test_filter.get_available_markers()
+        logger.info("Available Markers:")
+        logger.info("=" * 50)
+        for category, items in markers.items():
+            logger.info(f"{category}:")
+            for marker, desc in items.items():
+                logger.info(f"  {marker}: {desc}")
+        sys.exit(0)
+
+    if args.list_tests:
+        # Create TestFilter respecting suite file/category arguments
+        if args.suite_category:
+            try:
+                test_filter = TestFilter.from_category(args.suite_category)
+            except FileNotFoundError as e:
+                logger.error(f"Error: {e}")
+                sys.exit(1)
+        elif args.suite_file:
+            from pathlib import Path
+
+            suite_files = [Path(f) for f in args.suite_file]
+            test_filter = TestFilter(suite_files=suite_files)
+        else:
+            test_filter = TestFilter()
+
+        if args.model_category:
+            test_filter.filter_by_model_category(args.model_category)
+        if args.model:
+            test_filter.filter_by_model(args.model)
+        if args.device:
+            test_filter.filter_by_device(args.device)
+        if args.markers:
+            test_filter.filter_by_markers(
+                args.markers, match_all=args.match_all_markers
+            )
+        if args.test_name:
+            test_filter.filter_by_test_name(args.test_name)
+        if args.exclude_markers:
+            test_filter.exclude_markers(args.exclude_markers)
+        if args.skip_prerequisites:
+            test_filter.include_prerequisites(False)
+
+        test_filter.print_summary()
+        sys.exit(0)
+
+    return args
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
