@@ -21,7 +21,7 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: Optional[str]) -> str:
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
@@ -30,10 +30,13 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: str
+    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
-    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    if vllm_commit is None:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
+    else:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 

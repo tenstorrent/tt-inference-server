@@ -89,7 +89,7 @@ jobs:
       - name: Checkout dev branch
         uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: vmaksimovic/add_prerelease_automation
           fetch-depth: 1
 
       - name: Run models CI reader
