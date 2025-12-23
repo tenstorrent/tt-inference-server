@@ -20,6 +20,7 @@ permissions:
   actions: read
   contents: write
   packages: write
+  pull-requests: write
 
 env:
   GH_TOKEN: ${{ github.token }}
@@ -170,9 +171,13 @@ jobs:
             exit 1
           fi
 
+          BRANCH_NAME="pre-release-v${VERSION}"
+
           echo "✅ VERSION file has been changed"
           echo "✓ Read version: $VERSION"
+          echo "✓ Branch name: $BRANCH_NAME"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Configure git
         run: |
@@ -181,7 +186,7 @@ jobs:
 
       - name: Create pre-release branch
         run: |
-          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
 
           echo "Creating branch: $BRANCH_NAME"
           git checkout -b "$BRANCH_NAME"
@@ -189,7 +194,7 @@ jobs:
 
       - name: Commit changes and push branch
         run: |
-          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
           git add -A
 
           git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
@@ -200,7 +205,7 @@ jobs:
         # env:
         #   GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
         run: |
-          BRANCH_NAME="pre-release-v${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
           PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
 
           # Build PR body from markdown files
@@ -339,7 +344,7 @@ jobs:
       - name: Cleanup on failure
         if: failure()
         run: |
-          BRANCH_NAME="rc-v${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
 
           echo "Cleaning up branch: $BRANCH_NAME"
           git push origin --delete "$BRANCH_NAME" || echo "⚠️  Failed to delete branch (may not exist or already deleted)"
