@@ -530,9 +530,9 @@ def validate_inputs(ubuntu_version, container_app_uid):
     # Make sure we are in the git root
     try:
         git_root = subprocess.check_output(
-            ['git', 'rev-parse', '--show-toplevel'],
+            ["git", "rev-parse", "--show-toplevel"],
             stderr=subprocess.DEVNULL,
-            text=True
+            text=True,
         ).strip()
         current_dir = os.getcwd()
         if current_dir != git_root:
