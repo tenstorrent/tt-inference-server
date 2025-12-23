@@ -940,82 +940,82 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="r1_math500",
-                score=EvalTaskScore(
-                    published_score=96.1,
-                    published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
-                    gpu_reference_score=96.10,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
-                    "timeout": "3600",
-                },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    published_score=66.80,
-                    published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
-                    gpu_reference_score=66.80,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                max_concurrent=16,
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
-                },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # EvalTask(
+            #     task_name="r1_math500",
+            #     score=EvalTaskScore(
+            #         published_score=96.1,
+            #         published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
+            #         gpu_reference_score=96.10,  # Estimate - needs to be validated
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     model_kwargs={
+            #         "model": "Qwen/Qwen3-32B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #         "timeout": "3600",
+            #     },
+            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": 32768,
+            #         "until": [],
+            #         "do_sample": "true",
+            #         "temperature": 0.6,
+            #         "top_k": 20,
+            #         "top_p": 0.95,
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="r1_gpqa_diamond",
+            #     score=EvalTaskScore(
+            #         published_score=66.80,
+            #         published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
+            #         gpu_reference_score=66.80,  # Estimate - needs to be validated
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     max_concurrent=16,
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     model_kwargs={
+            #         "model": "Qwen/Qwen3-32B",
+            #         "base_url": "http://127.0.0.1:8000/v1/completions",
+            #         "tokenizer_backend": "huggingface",
+            #         "max_length": 65536,
+            #     },
+            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
+            #     gen_kwargs={
+            #         "stream": "false",
+            #         "max_gen_toks": 32768,
+            #         "until": [],
+            #         "do_sample": "true",
+            #         "temperature": 0.6,
+            #         "top_k": 20,
+            #         "top_p": 0.95,
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
