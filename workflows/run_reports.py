@@ -1315,56 +1315,53 @@ def add_target_checks_embedding(targets, benchmark_summary_data):
     """Add target checks for EMBEDDING models based on evals and benchmark data."""
     logger.info("Adding target_checks to EMBEDDING benchmark release data")
 
-    # extract targets for functional, complete, target and calculate them
-    tput_user = benchmark_summary_data.get("mean_tps", 0)
-    functional_tput_user = targets.tput_user / 100
-    complete_tput_user = targets.tput_user / 10
-    target_tput_user = targets.tput_user
+    avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
+    avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
+    avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
 
-    tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
-    functional_tput_prefill = targets.tput_prefill / 100
-    complete_tput_prefill = targets.tput_prefill / 10
-    target_tput_prefill = targets.tput_prefill
-
-    e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
-    functional_e2el_ms = targets.e2el_ms * 100
-    complete_e2el_ms = targets.e2el_ms * 10
-    target_e2el_ms = targets.e2el_ms
+    metrics = calculate_target_metrics_embedding(
+        avg_tput_user,
+        targets.tput_user,
+        avg_tput_prefill,
+        targets.tput_prefill,
+        avg_e2el_ms,
+        targets.e2el_ms,
+    )
 
     logger.info("Calculating target checks")
     target_checks = {
         "functional": {
-            "tput_user": functional_tput_user,
-            "tput_user_ratio": tput_user / functional_tput_user,
-            "tput_user_check": 2 if tput_user > functional_tput_user else 3,
-            "tput_prefill": functional_tput_prefill,
-            "tput_prefill_ratio": tput_prefill / functional_tput_prefill,
-            "tput_prefill_check": 2 if tput_prefill > functional_tput_prefill else 3,
-            "e2el_ms": functional_e2el_ms,
-            "e2el_ms_ratio": e2el_ms / functional_e2el_ms,
-            "e2el_ms_check": 2 if e2el_ms < functional_e2el_ms else 3,
+            "tput_user": metrics["functional_tput_user"],
+            "tput_user_ratio": metrics["functional_tput_user_ratio"],
+            "tput_user_check": metrics["functional_tput_user_check"],
+            "tput_prefill": metrics["functional_tput_prefill"],
+            "tput_prefill_ratio": metrics["functional_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["functional_tput_prefill_check"],
+            "e2el_ms": metrics["functional_e2el_ms"],
+            "e2el_ms_ratio": metrics["functional_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["functional_e2el_ms_check"],
         },
         "complete": {
-            "tput_user": complete_tput_user,
-            "tput_user_ratio": tput_user / complete_tput_user,
-            "tput_user_check": 2 if tput_user > complete_tput_user else 3,
-            "tput_prefill": complete_tput_prefill,
-            "tput_prefill_ratio": tput_prefill / complete_tput_prefill,
-            "tput_prefill_check": 2 if tput_prefill > complete_tput_prefill else 3,
-            "e2el_ms": complete_e2el_ms,
-            "e2el_ms_ratio": e2el_ms / complete_e2el_ms,
-            "e2el_ms_check": 2 if e2el_ms < complete_e2el_ms else 3,
+            "tput_user": metrics["complete_tput_user"],
+            "tput_user_ratio": metrics["complete_tput_user_ratio"],
+            "tput_user_check": metrics["complete_tput_user_check"],
+            "tput_prefill": metrics["complete_tput_prefill"],
+            "tput_prefill_ratio": metrics["complete_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["complete_tput_prefill_check"],
+            "e2el_ms": metrics["complete_e2el_ms"],
+            "e2el_ms_ratio": metrics["complete_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["complete_e2el_ms_check"],
         },
         "target": {
-            "tput_user": target_tput_user,
-            "tput_user_ratio": tput_user / target_tput_user,
-            "tput_user_check": 2 if tput_user > target_tput_user else 3,
-            "tput_prefill": target_tput_prefill,
-            "tput_prefill_ratio": tput_prefill / target_tput_prefill,
-            "tput_prefill_check": 2 if tput_prefill > target_tput_prefill else 3,
-            "e2el_ms": target_e2el_ms,
-            "e2el_ms_ratio": e2el_ms / target_e2el_ms,
-            "e2el_ms_check": 2 if e2el_ms < target_e2el_ms else 3,
+            "tput_user": metrics["target_tput_user"],
+            "tput_user_ratio": metrics["target_tput_user_ratio"],
+            "tput_user_check": metrics["target_tput_user_check"],
+            "tput_prefill": metrics["target_tput_prefill"],
+            "tput_prefill_ratio": metrics["target_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["target_tput_prefill_check"],
+            "e2el_ms": metrics["target_e2el_ms"],
+            "e2el_ms_ratio": metrics["target_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["target_e2el_ms_check"],
         },
     }
 
@@ -1409,6 +1406,71 @@ def calculate_target_metrics(avg_ttft, target_ttft):
         metrics[f"{level}_ttft"] = level_ttft
         metrics[f"{level}_ttft_ratio"] = ratio
         metrics[f"{level}_ttft_check"] = check
+
+    return metrics
+
+
+def calculate_target_metrics_embedding(
+    avg_tput_user,
+    target_tput_user,
+    avg_tput_prefill,
+    target_tput_prefill,
+    avg_e2el_ms,
+    target_e2el_ms,
+):
+    """Calculate TPUT and E2EL metrics for functional, complete, and target thresholds.
+
+    Args:
+        avg_tput_user: Average user throughput from benchmark results
+        target_tput_user: Target user throughput from performance reference
+        avg_tput_prefill: Average prefill throughput from benchmark results
+        target_tput_prefill: Target prefill throughput from performance reference
+        avg_e2el_ms: Average end-to-end latency from benchmark results
+        target_e2el_ms: Target end-to-end latency from performance reference
+
+    Returns:
+        Dict containing metrics for all target levels (functional, complete, target)
+    """
+
+    def get_tput_ratio_and_check(avg_tput, ref_tput):
+        if not ref_tput:
+            return "Undefined", "Undefined"
+        ratio = avg_tput / ref_tput
+        check = 2 if avg_tput > ref_tput else 3
+        return ratio, check
+
+    def get_e2el_ratio_and_check(avg_e2el, ref_e2el):
+        if not ref_e2el:
+            return "Undefined", "Undefined"
+        ratio = avg_e2el / ref_e2el
+        check = 2 if avg_e2el < ref_e2el else 3
+        return ratio, check
+
+    target_multipliers = {
+        "functional": FUNCTIONAL_TARGET,  # 10x slower than target
+        "complete": COMPLETE_TARGET,  # 2x slower than target
+        "target": 1,  # actual target
+    }
+
+    metrics = {}
+    for level, multiplier in target_multipliers.items():
+        level_tput_user = target_tput_user / multiplier
+        ratio, check = get_tput_ratio_and_check(avg_tput_user, level_tput_user)
+        metrics[f"{level}_tput_user"] = level_tput_user
+        metrics[f"{level}_tput_user_ratio"] = ratio
+        metrics[f"{level}_tput_user_check"] = check
+
+        level_tput_prefill = target_tput_prefill / multiplier
+        ratio, check = get_tput_ratio_and_check(avg_tput_prefill, level_tput_prefill)
+        metrics[f"{level}_tput_prefill"] = level_tput_prefill
+        metrics[f"{level}_tput_prefill_ratio"] = ratio
+        metrics[f"{level}_tput_prefill_check"] = check
+
+        level_e2el_ms = target_e2el_ms * multiplier
+        ratio, check = get_e2el_ratio_and_check(avg_e2el_ms, level_e2el_ms)
+        metrics[f"{level}_e2el_ms"] = level_e2el_ms
+        metrics[f"{level}_e2el_ms_ratio"] = ratio
+        metrics[f"{level}_e2el_ms_check"] = check
 
     return metrics
 
