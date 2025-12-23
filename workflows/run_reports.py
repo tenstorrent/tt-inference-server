@@ -1247,25 +1247,30 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     reformated_benchmarks_release_data.append(benchmark_summary)
     return reformated_benchmarks_release_data
 
-def benchmarks_release_data_format_embedding(model_spec, device_str, benchmark_summary_data):
+
+def benchmarks_release_data_format_embedding(
+    model_spec, device_str, benchmark_summary_data
+):
     """Convert the benchmark release data to the desired format for EMBEDDING models"""
 
-    return [{
-        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        "model": model_spec.model_name,
-        "model_name": model_spec.model_name,
-        "model_id": model_spec.model_id,
-        "backend": model_spec.model_type.name.lower(),
-        "device": device_str,
-        "num_requests": benchmark_summary_data.get("num_requests", 1),
-        "ISL": benchmark_summary_data.get("input_sequence_length", 0),
-        "concurrency": benchmark_summary_data.get("max_con", 0),
-        "tput_user": benchmark_summary_data.get("mean_tps", 0),
-        "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
-        "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
-        "filename": benchmark_summary_data.get("filename", ""),
-        "task_type": model_spec.model_type.name.lower(),
-    }]
+    return [
+        {
+            "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+            "model": model_spec.model_name,
+            "model_name": model_spec.model_name,
+            "model_id": model_spec.model_id,
+            "backend": model_spec.model_type.name.lower(),
+            "device": device_str,
+            "num_requests": benchmark_summary_data.get("num_requests", 1),
+            "ISL": benchmark_summary_data.get("input_sequence_length", 0),
+            "concurrency": benchmark_summary_data.get("max_con", 0),
+            "tput_user": benchmark_summary_data.get("mean_tps", 0),
+            "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
+            "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
+            "filename": benchmark_summary_data.get("filename", ""),
+            "task_type": model_spec.model_type.name.lower(),
+        }
+    ]
 
 
 def add_target_checks_cnn_and_image(
@@ -1305,9 +1310,8 @@ def add_target_checks_cnn_and_image(
 
     return target_checks
 
-def add_target_checks_embedding(
-    targets, benchmark_summary_data
-):
+
+def add_target_checks_embedding(targets, benchmark_summary_data):
     """Add target checks for EMBEDDING models based on evals and benchmark data."""
     logger.info("Adding target_checks to EMBEDDING benchmark release data")
 
@@ -1685,7 +1689,6 @@ def main():
 
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
-
 
         # Build the final JSON output
         output_data = {
