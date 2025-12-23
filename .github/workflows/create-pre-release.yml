@@ -144,66 +144,66 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: acvejicTT
+          username: vmaksimovicTT
           password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-          # username: ${{ github.repository_owner }}
-          # password: ${{ github.token }}
+
+      - name: Verify Docker login access
+        run: |
+          docker manifest inspect ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.5.0-9b67e09-a91b644
+          docker manifest inspect ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.5.0-4506b8b48034c2e6cddcf629a107aec0a8b6a73c-109f4cd-58796694484
 
       - name: Make release image artifacts
         run: |
           python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --increment ${{ inputs.release-increment }} --dev
 
-      # - name: Read VERSION file
-      #   id: read-version
-      #   run: |
-      #     # Check if VERSION file has been changed (and if it exists at all)
-      #     if ! git diff --name-only | grep -q "^VERSION$" && ! git diff --cached --name-only | grep -q "^VERSION$"; then
-      #       echo "❌ Error: VERSION file has NOT been changed"
-      #       exit 1
-      #     fi
+      - name: Read VERSION file
+        id: read-version
+        run: |
+          # Check if VERSION file has been changed (and if it exists at all)
+          if ! git diff --name-only | grep -q "^VERSION$" && ! git diff --cached --name-only | grep -q "^VERSION$"; then
+            echo "❌ Error: VERSION file has NOT been changed"
+            exit 1
+          fi
 
-      #     VERSION=$(cat VERSION | tr -d '[:space:]')
+          VERSION=$(cat VERSION | tr -d '[:space:]')
 
-      #     # Validate version format (x.y.z)
-      #     if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      #       echo "❌ Error: Invalid version format: $VERSION"
-      #       echo "Expected format: x.y.z (where x, y, z are positive whole numbers)"
-      #       exit 1
-      #     fi
+          # Validate version format (x.y.z)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Error: Invalid version format: $VERSION"
+            echo "Expected format: x.y.z (where x, y, z are positive whole numbers)"
+            exit 1
+          fi
 
-      #     BRANCH_NAME="pre-release-v${VERSION}"
+          BRANCH_NAME="pre-release-v${VERSION}"
 
-      #     echo "✅ VERSION file has been changed"
-      #     echo "✓ Read version: $VERSION"
-      #     echo "✓ Branch name: $BRANCH_NAME"
-      #     echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      #     echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "✅ VERSION file has been changed"
+          echo "✓ Read version: $VERSION"
+          echo "✓ Branch name: $BRANCH_NAME"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
 
-      # - name: Configure git
-      #   run: |
-      #     git config user.name "vmaksimovicTT"
-      #     git config user.email "vmaksimovic@tenstorrent.com"
+      - name: Configure git
+        run: |
+          git config user.name "vmaksimovicTT"
+          git config user.email "vmaksimovic@tenstorrent.com"
 
-      # - name: Create pre-release branch
-      #   run: |
-      #     BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
-
-      #     echo "Creating branch: $BRANCH_NAME"
-      #     git checkout -b "$BRANCH_NAME"
-      #     echo "✓ Created branch: $BRANCH_NAME"
-
-      # - name: Commit changes and push branch
-      #   run: |
-      #     BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
-      #     git add -A
-
-      #     git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
-      #     echo "✓ Committed all changes"
-      #     git push -u origin "$BRANCH_NAME"
-
-      - name: Debug PR description
+      - name: Create pre-release branch
         run: |
           BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
+
+          echo "Creating branch: $BRANCH_NAME"
+          git checkout -b "$BRANCH_NAME"
+          echo "✓ Created branch: $BRANCH_NAME"
+
+      - name: Commit changes and push branch
+        run: |
+          git add -A
+          git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
+          echo "✓ Committed all changes"
+          git push -u origin "${{ steps.read-version.outputs.branch_name }}"
+
+      - name: Create PR
+        run: |
           PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
 
           # Build PR body from markdown files
@@ -222,54 +222,16 @@ jobs:
             cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
           fi
 
-          echo "=================================================================================="
-          echo "DEBUG: PR Title and Description (would be used for PR creation)"
-          echo "=================================================================================="
-          echo ""
-          echo "PR Title: $PR_TITLE"
-          echo "Branch: $BRANCH_NAME"
-          echo "Base: dev"
-          echo ""
-          echo "PR Body:"
-          echo "=================================================================================="
-          cat "$PR_BODY_FILE"
-          echo "=================================================================================="
+          echo "Creating draft PR: $PR_TITLE"
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body-file "$PR_BODY_FILE" \
+            --base dev \
+            --head "${{ steps.read-version.outputs.branch_name }}" \
+            --draft
 
           rm -f "$PR_BODY_FILE"
-
-      # - name: Create PR
-      #   # env:
-      #   #   GH_TOKEN: ${{ secrets.TMP_DEMO_RELEASE }}
-      #   run: |
-      #     BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
-      #     PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
-
-      #     # Build PR body from markdown files
-      #     PR_BODY_FILE=$(mktemp)
-      #     echo "# Summary of Changes" > "$PR_BODY_FILE"
-      #     echo "" >> "$PR_BODY_FILE"
-
-      #     # Add model spec updates if file exists
-      #     if [ -f "release_logs/release_models_diff.md" ]; then
-      #       cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
-      #       echo "" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     # Add release artifacts summary if file exists
-      #     if [ -f "release_logs/dev_artifacts_summary.md" ]; then
-      #       cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     echo "Creating draft PR: $PR_TITLE"
-      #     gh pr create \
-      #       --title "$PR_TITLE" \
-      #       --body-file "$PR_BODY_FILE" \
-      #       --base dev \
-      #       --head "$BRANCH_NAME" \
-      #       --draft
-
-      #     rm -f "$PR_BODY_FILE"
-      #     echo "✓ Created draft PR for $BRANCH_NAME"
+          echo "✓ Created draft PR for ${{ steps.read-version.outputs.branch_name }}"
 
       # - name: Create release assets
       #   id: create-assets
@@ -380,8 +342,6 @@ jobs:
       - name: Cleanup on failure
         if: failure()
         run: |
-          BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
-
-          echo "Cleaning up branch: $BRANCH_NAME"
-          git push origin --delete "$BRANCH_NAME" || echo "⚠️  Failed to delete branch (may not exist or already deleted)"
+          echo "Cleaning up branch: ${{ steps.read-version.outputs.branch_name }}"
+          git push origin --delete "${{ steps.read-version.outputs.branch_name }}" || echo "⚠️  Failed to delete branch (may not exist or already deleted)"
           echo "✓ Cleanup completed"
