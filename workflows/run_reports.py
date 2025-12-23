@@ -1311,22 +1311,9 @@ def add_target_checks_cnn_and_image(
     return target_checks
 
 
-def add_target_checks_embedding(targets, benchmark_summary_data):
+def add_target_checks_embedding(metrics):
     """Add target checks for EMBEDDING models based on evals and benchmark data."""
     logger.info("Adding target_checks to EMBEDDING benchmark release data")
-
-    avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
-    avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
-    avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
-
-    metrics = calculate_target_metrics_embedding(
-        avg_tput_user,
-        targets.tput_user,
-        avg_tput_prefill,
-        targets.tput_prefill,
-        avg_e2el_ms,
-        targets.e2el_ms,
-    )
 
     logger.info("Calculating target checks")
     target_checks = {
@@ -1368,27 +1355,29 @@ def add_target_checks_embedding(targets, benchmark_summary_data):
     return target_checks
 
 
-def calculate_target_metrics(avg_ttft, target_ttft):
-    """Calculate TTFT metrics for functional, complete, and target thresholds.
+def calculate_target_metrics(metrics_config):
+    """Calculate metric metrics for functional, complete, and target thresholds.
 
     Args:
-        avg_ttft: Average TTFT from benchmark results
-        target_ttft: Target TTFT from performance reference
+        metrics_config: List of metric configurations. Each config is a dict with:
+            - avg_metric: Average metric from benchmark results
+            - target_metric: Target metric from performance reference
+            - field_name: Name of the metric field
+            - higher_is_better: If True, higher values are better (e.g., throughput).
+                               If False, lower values are better (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
     """
 
-    def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-        if not ref_ttft:
+    def get_metric_ratio_and_check(avg_metric, ref_metric, higher_is_better):
+        if not ref_metric:
             return "Undefined", "Undefined"
-        ratio = avg_ttft / ref_ttft
-        if ratio < 1.0:
-            check = 2
-        elif ratio > 1.0:
-            check = 3
+        ratio = avg_metric / ref_metric
+        if higher_is_better:
+            check = 2 if ratio > 1.0 else 3
         else:
-            check = "Undefined"
+            check = 2 if ratio < 1.0 else 3
         return ratio, check
 
     # Define target level multipliers
@@ -1399,78 +1388,21 @@ def calculate_target_metrics(avg_ttft, target_ttft):
     }
 
     metrics = {}
-    for level, multiplier in target_multipliers.items():
-        level_ttft = target_ttft * multiplier
-        ratio, check = get_ttft_ratio_and_check(avg_ttft, level_ttft)
+    for config in metrics_config:
+        avg_metric = config["avg_metric"]
+        target_metric = config["target_metric"]
+        field_name = config["field_name"]
+        higher_is_better = config.get("higher_is_better", False)
 
-        metrics[f"{level}_ttft"] = level_ttft
-        metrics[f"{level}_ttft_ratio"] = ratio
-        metrics[f"{level}_ttft_check"] = check
+        for level, multiplier in target_multipliers.items():
+            level_metric = target_metric * multiplier
+            ratio, check = get_metric_ratio_and_check(
+                avg_metric, level_metric, higher_is_better
+            )
 
-    return metrics
-
-
-def calculate_target_metrics_embedding(
-    avg_tput_user,
-    target_tput_user,
-    avg_tput_prefill,
-    target_tput_prefill,
-    avg_e2el_ms,
-    target_e2el_ms,
-):
-    """Calculate TPUT and E2EL metrics for functional, complete, and target thresholds.
-
-    Args:
-        avg_tput_user: Average user throughput from benchmark results
-        target_tput_user: Target user throughput from performance reference
-        avg_tput_prefill: Average prefill throughput from benchmark results
-        target_tput_prefill: Target prefill throughput from performance reference
-        avg_e2el_ms: Average end-to-end latency from benchmark results
-        target_e2el_ms: Target end-to-end latency from performance reference
-
-    Returns:
-        Dict containing metrics for all target levels (functional, complete, target)
-    """
-
-    def get_tput_ratio_and_check(avg_tput, ref_tput):
-        if not ref_tput:
-            return "Undefined", "Undefined"
-        ratio = avg_tput / ref_tput
-        check = 2 if avg_tput > ref_tput else 3
-        return ratio, check
-
-    def get_e2el_ratio_and_check(avg_e2el, ref_e2el):
-        if not ref_e2el:
-            return "Undefined", "Undefined"
-        ratio = avg_e2el / ref_e2el
-        check = 2 if avg_e2el < ref_e2el else 3
-        return ratio, check
-
-    target_multipliers = {
-        "functional": FUNCTIONAL_TARGET,  # 10x slower than target
-        "complete": COMPLETE_TARGET,  # 2x slower than target
-        "target": 1,  # actual target
-    }
-
-    metrics = {}
-    for level, multiplier in target_multipliers.items():
-        level_tput_user = target_tput_user / multiplier
-        ratio, check = get_tput_ratio_and_check(avg_tput_user, level_tput_user)
-        metrics[f"{level}_tput_user"] = level_tput_user
-        metrics[f"{level}_tput_user_ratio"] = ratio
-        metrics[f"{level}_tput_user_check"] = check
-
-        level_tput_prefill = target_tput_prefill / multiplier
-        ratio, check = get_tput_ratio_and_check(avg_tput_prefill, level_tput_prefill)
-        metrics[f"{level}_tput_prefill"] = level_tput_prefill
-        metrics[f"{level}_tput_prefill_ratio"] = ratio
-        metrics[f"{level}_tput_prefill_check"] = check
-
-        level_e2el_ms = target_e2el_ms * multiplier
-        ratio, check = get_e2el_ratio_and_check(avg_e2el_ms, level_e2el_ms)
-        metrics[f"{level}_e2el_ms"] = level_e2el_ms
-        metrics[f"{level}_e2el_ms_ratio"] = ratio
-        metrics[f"{level}_e2el_ms_check"] = check
+            metrics[f"{level}_{field_name}"] = level_metric
+            metrics[f"{level}_{field_name}_ratio"] = ratio
+            metrics[f"{level}_{field_name}_check"] = check
 
     return metrics
 
@@ -1681,7 +1613,17 @@ def main():
             )
 
             # Calculate all target metrics using centralized function
-            metrics = calculate_target_metrics(avg_ttft, target_ttft)
+            # TTFT: lower is better, so higher_is_better=False
+            metrics = calculate_target_metrics(
+                [
+                    {
+                        "avg_metric": avg_ttft,
+                        "target_metric": target_ttft,
+                        "field_name": "ttft",
+                        "higher_is_better": False,
+                    },
+                ]
+            )
 
             target_checks = {}
             if (
@@ -1739,10 +1681,36 @@ def main():
 
             benchmark_summary_data = benchmarks_release_data[0]
 
+            avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
+            avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
+            avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
+
+            metrics = calculate_target_metrics(
+                [
+                    {
+                        "avg_metric": avg_tput_user,
+                        "target_metric": targets.tput_user,
+                        "field_name": "tput_user",
+                        "higher_is_better": True,
+                    },
+                    {
+                        "avg_metric": avg_tput_prefill,
+                        "target_metric": targets.tput_prefill,
+                        "field_name": "tput_prefill",
+                        "higher_is_better": True,
+                    },
+                    {
+                        "avg_metric": avg_e2el_ms,
+                        "target_metric": targets.e2el_ms,
+                        "field_name": "e2el_ms",
+                        "higher_is_better": False,
+                    },
+                ]
+            )
+
             logger.info("Adding target_checks for Embedding benchmark release data")
             target_checks = add_target_checks_embedding(
-                targets,
-                benchmark_summary_data,
+                metrics,
             )
 
             benchmarks_release_data = benchmarks_release_data_format_embedding(
