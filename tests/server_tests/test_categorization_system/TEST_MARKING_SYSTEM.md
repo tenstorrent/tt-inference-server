@@ -15,7 +15,7 @@ The marking system is implemented through:
    - `hardware_defaults`: Device-specific defaults (num_devices, retry_attempts)
    - `model_categories`: Category to model mappings
 
-2. **TestFilter** in `test_filter.py` for programmatic test selection with:
+2. **TestFilter** in `test_categorization_system/test_filter.py` for programmatic test selection with:
    - Auto-derivation of markers from context (model, device, category)
    - Prerequisite test injection
    - Method chaining for filter composition
@@ -131,7 +131,7 @@ python run.py --model-category IMAGE --device n150
 python run.py --model-category IMAGE AUDIO
 
 # Programmatically
-from tests.server_tests.test_filter import TestFilter
+from tests.server_tests.test_categorization_system import TestFilter
 
 filter = TestFilter()
 tests = filter.filter_by_model_category(["IMAGE", "AUDIO"]) \
@@ -311,7 +311,7 @@ These are automatically applied to:
 ### TestFilter Methods
 
 ```python
-from tests.server_tests.test_filter import TestFilter
+from tests.server_tests.test_categorization_system import TestFilter
 
 filter = TestFilter()
 

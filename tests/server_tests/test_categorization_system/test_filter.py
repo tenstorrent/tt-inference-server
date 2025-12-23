@@ -80,7 +80,8 @@ class TestFilter:
             config_dict: Optional dictionary config (overrides config_path).
             suite_files: Optional list of specific suite files to load.
         """
-        self._config_dir = Path(__file__).parent
+        # Config files are in parent directory (server_tests/)
+        self._config_dir = Path(__file__).parent.parent
 
         if config_dict is not None:
             self.config = config_dict
@@ -177,7 +178,8 @@ class TestFilter:
             filter.filter_by_device("n150")
             tests = filter.get_tests()
         """
-        config_dir = Path(__file__).parent
+        # Config files are in parent directory (server_tests/)
+        config_dir = Path(__file__).parent.parent
         suite_file = config_dir / "test_suites" / f"{category.lower()}.json"
 
         if not suite_file.exists():
