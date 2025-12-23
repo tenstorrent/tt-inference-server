@@ -1479,8 +1479,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="fbbbd2d",
-        vllm_commit="7a9b86f",
+        tt_metal_commit="a007f6e",
+        vllm_commit="1728d69",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1877,8 +1877,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="fbbbd2d",
-        vllm_commit="7a9b86f",
+        tt_metal_commit="a007f6e",
+        vllm_commit="1728d69",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1954,7 +1954,7 @@ spec_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="a007f6e",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -1989,7 +1989,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
@@ -2133,7 +2133,7 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="fbbbd2d",
+        tt_metal_commit="a007f6e",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2160,7 +2160,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-4B"],
