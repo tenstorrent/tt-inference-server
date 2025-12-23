@@ -4,6 +4,7 @@
 
 import asyncio
 from abc import ABC
+from typing import Any, Optional
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -11,6 +12,7 @@ from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
 
@@ -19,6 +21,7 @@ class BaseService(ABC):
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
+        self._job_manager = get_job_manager()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int
@@ -66,7 +69,7 @@ class BaseService(ABC):
             result = self.combine_results(results)
 
         if result is not None:
-            return await self.post_process(result)
+            return await self.post_process(result, input_request)
         else:
             self.logger.error(f"Post processing failed for task {request._task_id}")
             raise ValueError("Post processing failed")
@@ -115,7 +118,7 @@ class BaseService(ABC):
     def stop_workers(self):
         return self.scheduler.stop_workers()
 
-    async def post_process(self, result):
+    async def post_process(self, result, input_request=None):
         return result
 
     async def pre_process(self, request):
@@ -212,3 +215,21 @@ class BaseService(ABC):
             raise
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
+
+    async def create_job(self, job_type: str, request: BaseRequest) -> dict:
+        return await self._job_manager.create_job(
+            job_id=request._task_id,
+            job_type=job_type,
+            model=settings.model_weights_path,
+            request=request,
+            task_function=self.process_request,
+        )
+
+    def get_job_metadata(self, job_id: str) -> Optional[dict]:
+        return self._job_manager.get_job_metadata(job_id)
+
+    def get_job_result(self, job_id: str) -> Optional[Any]:
+        return self._job_manager.get_job_result(job_id)
+
+    def cancel_job(self, job_id: str) -> bool:
+        return self._job_manager.cancel_job(job_id)

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import subprocess
 import uuid
 
 from utils.decorators import log_execution_time
@@ -43,23 +44,9 @@ class VideoManager:
             # Process frames for diffusers
             processed_frames = self._process_frames_for_export(frames)
             export_to_video(processed_frames, output_video_path=output_path, fps=fps)
-            self._logger.info("Successfully exported video using diffusers")
 
-            # Read the video file as bytes for HTTP response
-            with open(output_path, "rb") as f:
-                video_bytes = f.read()
-
-            self._logger.info(f"Video file size: {len(video_bytes)} bytes")
-
-            try:
-                os.remove(output_path)
-                self._logger.info(f"Cleaned up temporary file: {output_path}")
-            except Exception as cleanup_error:
-                self._logger.warning(
-                    f"Failed to clean up temporary file: {cleanup_error}"
-                )
-
-            return video_bytes
+            self._logger.info(f"Video export completed successfully: {output_path}")
+            return output_path
 
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
@@ -128,3 +115,57 @@ class VideoManager:
             )
 
         return frame_list
+
+    @staticmethod
+    def parse_range_header(range_header, file_size):
+        """
+        Parse a Range header and return (start, end) byte positions.
+        Raises ValueError if invalid.
+        """
+        range_value = range_header.strip().lower()
+        if not range_value.startswith("bytes="):
+            raise ValueError
+        range_value = range_value.replace("bytes=", "")
+        start_str, end_str = range_value.split("-")
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
+        if start > end or end >= file_size:
+            raise ValueError
+        return start, end
+
+    @staticmethod
+    def file_iterator(path, start, end):
+        """
+        Generator that yields chunks of bytes from a file within a specified byte range.
+        """
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = end - start + 1
+            chunk = 8192
+            while remaining > 0:
+                read_size = min(chunk, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                yield data
+                remaining -= len(data)
+
+    @staticmethod
+    def ensure_faststart(input_path, output_path):
+        """
+        Rewrites the MP4 file with -movflags faststart using ffmpeg.
+        """
+        cmd = [
+            "ffmpeg",
+            "-y",  # Overwrite output file if it exists
+            "-i",
+            input_path,
+            "-c",
+            "copy",
+            "-movflags",
+            "faststart",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {result.stderr}")

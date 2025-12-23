@@ -455,8 +455,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -563,7 +563,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -671,8 +671,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -779,8 +779,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -1905,6 +1905,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
         tasks=[
             EvalTask(
@@ -2059,7 +2076,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="embedding",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,  # Using META as a placeholder
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,

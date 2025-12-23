@@ -8,8 +8,8 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
 class MockRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.logger.info(f"MockRunner initialized for device {self.device_id}")
 
     def close_device(self) -> bool:

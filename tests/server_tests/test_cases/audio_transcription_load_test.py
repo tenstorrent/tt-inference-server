@@ -36,7 +36,7 @@ class AudioTranscriptionLoadTest(BaseTest):
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         audio_transcription_time = self.targets.get(
-            "image_generation_time", 9
+            "audio_transcription_time", 9
         )  # in seconds
         dataset_name = self.targets.get("dataset", "30s")  # in seconds
 
@@ -55,7 +55,7 @@ class AudioTranscriptionLoadTest(BaseTest):
             "average_duration": average_duration,
             "target_time": audio_transcription_time,
             "devices": devices,
-            "success": requests_duration <= audio_transcription_time,
+            "success": average_duration <= audio_transcription_time,
         }
 
     async def test_concurrent_audio_transribtion(self, batch_size):

@@ -1060,6 +1060,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
+        or model_spec.model_type.name == ModelType.EMBEDDING.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
@@ -1489,7 +1490,6 @@ def main():
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
-            or model_spec.model_type.name == ModelType.EMBEDDING.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on

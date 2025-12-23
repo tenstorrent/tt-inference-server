@@ -42,8 +42,8 @@ from utils.text_utils import TextUtils
 
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.pipeline = None
         setup_cpu_threading_limits("1")
 
@@ -641,6 +641,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 weights_mesh_mapper=weights_mesh_mapper,
                 kv_cache=kv_cache,
                 cross_attn_cache=cross_attn_cache,
+                max_batch_size=self.settings.max_batch_size,
             )
 
             async def _model_pipeline(

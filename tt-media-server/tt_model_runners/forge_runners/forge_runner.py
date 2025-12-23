@@ -26,8 +26,8 @@ xla_backend = "tt"
 
 
 class ForgeRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.device_id = device_id
         self.logger.info(f"ForgeRunner initialized for device {self.device_id}")
         self.dtype = torch.bfloat16
@@ -80,7 +80,8 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info("## Run inference ##")
 
         with torch.no_grad():
-            self.compiled_model(inputs)
+            output = self.compiled_model(inputs)
+            predictions = self.loader.output_postprocess(output)  # noqa: F841
 
         return True
 

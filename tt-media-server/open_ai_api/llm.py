@@ -44,7 +44,6 @@ async def complete_text(
             import json
 
             async for partial in service.process_streaming_request(completion_request):
-                service.logger.info(f"Streaming chunk: {partial}")
                 chunk = {"choices": [partial.to_dict()]}
                 yield json.dumps(chunk) + "\n"
 
@@ -78,19 +77,27 @@ async def create_embedding(
         HTTPException: If embedding generation fails.
     """
     try:
-        embeddings = await service.process_request(text_embedding_request)
-
+        response = await service.process_request(text_embedding_request)
         return {
             "object": "list",
-            "data": [{"object": "embedding", "embedding": embeddings, "index": 0}],
+            "data": [
+                {"object": "embedding", "embedding": response.embedding, "index": 0}
+            ],
+            "model": text_embedding_request.model,
+            "usage": {
+                "total_tokens": response.total_tokens,
+                "prompt_tokens": response.total_tokens,
+            },
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 router = APIRouter()
-if settings.model_runner == ModelRunners.VLLMForge_QWEN_EMBEDDING.value:
+if settings.model_runner in [
+    ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
+    ModelRunners.VLLMBGELargeEN_V1_5.value,
+]:
     router.include_router(embedding_router)
 else:
     router.include_router(completions_router)

@@ -7,13 +7,14 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 import shlex
 import subprocess
 import tempfile
 import threading
 import uuid
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,62 @@ def get_version() -> str:
     assert version_file.exists(), f"Version file not found: {version_file}"
     with version_file.open("r", encoding="utf-8") as file:
         return file.read().strip()
+
+
+def parse_commits_from_docker_image(
+    docker_image: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Extract tt-metal and vllm commits from docker image tag.
+
+    Supports two tag formats:
+
+    1. Format for LLMs: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
+       Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
+    2. Format for media server: version-tt_metal_commit(40)-tt_inference_sha(7)-timestamp
+       Example: 0.4.0-d2f891d4af7a12911f9029bbf788462624fcf980-ca7e3d6-57576349393
+       (vllm_commit will be None for media server images)
+
+    Note: Media server images are detected by checking if image name contains "tt-media-inference-server".
+    For media images, the third component in the tag is NOT a vllm commit, so we ignore it.
+
+    Args:
+        docker_image: Full docker image string with tag
+
+    Returns:
+        Tuple of (tt_metal_commit, vllm_commit) or (None, None) if parsing fails
+    """
+    if not docker_image or ":" not in docker_image:
+        return None, None
+
+    try:
+        image_name, tag = docker_image.rsplit(":", 1)
+        is_media_server = "tt-media-inference-server" in image_name
+
+        # Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
+        expected_tag_pattern = r"^([0-9.]+)-([0-9a-fA-F]{40})-([0-9a-fA-F]{7})-(\d+)$"
+        match = re.match(expected_tag_pattern, tag)
+
+        if match:
+            version, tt_metal_commit, vllm_commit, timestamp = match.groups()
+            if is_media_server:
+                # For media server images, ignore the third component (tt_inference_sha) as it's not a vllm commit
+                logger.info(
+                    f"Parsed commits from media server docker image tag: tt-metal={tt_metal_commit}"
+                )
+                return tt_metal_commit, None
+            else:
+                # For vLLM images, return both commits
+                logger.info(
+                    f"Parsed commits from docker image tag: tt-metal={tt_metal_commit}, vllm={vllm_commit}"
+                )
+                return tt_metal_commit, vllm_commit
+
+        logger.debug(f"Docker image tag does not match expected format: {tag}")
+        return None, None
+
+    except Exception as e:
+        logger.debug(f"Failed to parse commits from docker image '{docker_image}': {e}")
+        return None, None
 
 
 def get_run_id(timestamp, model_id, workflow):

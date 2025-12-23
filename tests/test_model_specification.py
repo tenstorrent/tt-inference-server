@@ -4,16 +4,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import re
+
 import pytest
 
 from workflows.model_spec import (
+    MODEL_SPECS,
+    VERSION,
+    DeviceModelSpec,
+    ImplSpec,
     InferenceEngine,
     ModelSpec,
     ModelSpecTemplate,
-    ImplSpec,
-    DeviceModelSpec,
     get_model_spec_map,
-    MODEL_SPECS,
     spec_templates,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
@@ -102,7 +104,7 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
-        assert template.version == "0.4.0"
+        assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
 
@@ -218,6 +220,50 @@ class TestModelSpecSystem:
         assert loaded_spec.model_id == original_spec.model_id
         assert loaded_spec.model_name == original_spec.model_name
         assert loaded_spec.status == original_spec.status
+
+    def test_apply_runtime_args_overrides_commits_from_docker_image(
+        self, sample_impl, sample_device_model_spec
+    ):
+        """Test that apply_runtime_args updates commits from docker image tag."""
+        import argparse
+
+        # Create ModelSpec with default commits
+        default_tt_metal_commit = "default-tt-metal-commit-1234567890"
+        default_vllm_commit = "default-vllm"
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=sample_impl,
+            hf_model_repo="test/TestModel-7B",
+            model_id="id_test-impl_TestModel-7B_n150",
+            model_name="TestModel-7B",
+            tt_metal_commit=default_tt_metal_commit,
+            vllm_commit=default_vllm_commit,
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=sample_device_model_spec,
+        )
+
+        # Verify initial commits are the defaults
+        assert spec.tt_metal_commit == default_tt_metal_commit
+        assert spec.vllm_commit == default_vllm_commit
+
+        # Create args with override_docker_image containing commits in tag
+        # Format: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
+        new_tt_metal_commit = "fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
+        new_vllm_commit = "7a9b86f"
+        docker_image_with_commits = f"ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.4.0-{new_tt_metal_commit}-{new_vllm_commit}-58111263717"
+        args = argparse.Namespace()
+        args.override_docker_image = docker_image_with_commits
+        args.override_tt_config = None
+        args.vllm_override_args = None
+        args.service_port = None
+        args.dev_mode = False
+
+        # Apply runtime args
+        spec.apply_runtime_args(args)
+
+        assert spec.tt_metal_commit == new_tt_metal_commit
+        assert spec.vllm_commit == new_vllm_commit
+        assert spec.docker_image == docker_image_with_commits
 
 
 class TestSystemIntegration:

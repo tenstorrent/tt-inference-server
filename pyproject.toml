@@ -1,4 +1,4 @@
-# departure from defaults, see: https://docs.astral.sh/ruff/configuration/ 
+# departure from defaults, see: https://docs.astral.sh/ruff/configuration/
 [tool.ruff]
 
 # Python 3.8
@@ -14,7 +14,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 # Optional: specify test file patterns
 python_files = ["test_*.py"]
-# Optional: specify test function patterns  
+# Optional: specify test function patterns
 python_functions = ["test_*"]
 # Optional: specify test class patterns
 python_classes = ["Test*"]
@@ -26,30 +26,30 @@ markers = [
     "integration: Medium-speed tests with local dependencies (pre-commit validation)",
     "e2e: Full system tests covering complete workflows (release validation)",
     "smoke: Quick sanity checks for basic functionality (post-deployment verification)",
-    
+
     # Test Types
     "load: Load testing with concurrent requests",
     "performance: Benchmark and performance regression tests",
     "param: Parameter validation tests",
     "functional: Functional correctness tests",
-    
+
     # Performance Characteristics
     "slow: Tests taking >30 seconds to complete (nightly builds only)",
     "heavy: Resource-intensive tests (large models, high memory)",
-    
+
     # Hardware Targets
     "n150: Tests for N150 device",
     "n300: Tests for N300 device",
     "t3k: Tests for T3K device (4-chip)",
     "galaxy: Tests for Galaxy device (32-chip)",
     "cpu: Tests requiring CPU hardware acceleration",
-    
+
     # Model Categories
     "image: Image generation/processing model tests",
     "audio: Audio transcription model tests",
     "cnn: CNN model tests (ResNet, VoVNet, MobileNet, embeddings)",
     "llm: Large Language Model tests",
-    
+
     # Specific Models
     "sdxl: Stable Diffusion XL tests (base, img2img, inpainting)",
     "sd35: Stable Diffusion 3.5 tests",
@@ -58,4 +58,15 @@ markers = [
     "vovnet: VoVNet tests",
     "mobilenet: MobileNetV2 tests",
     "qwen: Qwen embedding model tests",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "@abstractmethod",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "if.*not in sys.path:",
+    "sys.path.insert",
 ]

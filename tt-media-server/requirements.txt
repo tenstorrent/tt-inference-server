@@ -4,12 +4,15 @@ colorama
 diffusers>=0.35.0
 fastapi
 httpx
+imageio-ffmpeg
 loguru
 numpy
+prometheus-client
+prometheus-fastapi-instrumentator
 psutil
 pybind11
 pydantic
-pydantic_settings
+pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
@@ -18,6 +21,3 @@ tqdm
 transformers
 uvicorn
 whisperx
-prometheus-client
-prometheus-fastapi-instrumentator
-imageio-ffmpeg

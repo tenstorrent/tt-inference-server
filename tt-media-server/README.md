@@ -255,9 +255,10 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
-# Video generation test call
+# Video generation API
 
-Sample for calling the endpoint for video generation via curl:
+## Submit video generation job
+
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/video/generations' \
@@ -269,6 +270,60 @@ curl -X 'POST' \
   "negative_prompt": "low quality",
   "num_inference_steps": 20
 }'
+```
+
+**Response example:**
+```json
+{
+  "id": "video_id_1",
+  "object": "video",
+  "status": "queued",
+  "created_at": 1702860000,
+  "model": "Wan2.2-T2V-A14B-Diffusers"
+}
+```
+
+Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}` in subsequent requests.
+
+## Get video job metadata
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Download generated video
+
+The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
+The example below downloads the full file unless a `Range` header is specified.
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -o output.mp4
+```
+
+To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Range: bytes=0-1048575' \
+  -o partial_output.mp4
+```
+This will download only the first 1 MB (bytes 0–1048575) of the video file.
+
+## Cancel video job and assets
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
@@ -364,15 +419,34 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
+| `MAX_QUEUE_SIZE` | `5000` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
-| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
+| `MAX_BATCH_DELAY_TIME_MS` | `None` | Maximum wait time in milliseconds after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency |
+| `USE_DYNAMIC_BATCHER` | `False` | Boolean flag to enable dynamic batching for improved throughput. When enabled, the server attempts to batch multiple requests together for more efficient processing |
+
+### Dynamic Batching
+
+The `USE_DYNAMIC_BATCHER` setting controls whether the server uses dynamic batching to improve throughput:
+
+- **When `False` (default)**: While one request is in process, new requests are not added
+- **When `True`**: The server attempts to add multiple requests during the inference
+
+**Usage:**
+```bash
+# Enable dynamic batching for higher throughput scenarios
+export USE_DYNAMIC_BATCHER=true
+export MAX_BATCH_SIZE=4
+export MAX_BATCH_DELAY_TIME_MS=50
+```
+
+**Note:** Dynamic batching is currently experimental and may not be supported by all model runners. Check your specific model runner documentation for batching support.
 
 ## Worker Management
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NEW_DEVICE_DELAY_SECONDS` | `30` | Delay in seconds before initializing a new device worker |
+| `NEW_DEVICE_DELAY_SECONDS` | `15` | Delay in seconds before initializing a new device worker |
+| `NEW_RUNNER_DELAY_SECONDS` | `5` | Delay in seconds before initializing a new CPU worker |
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |
@@ -383,6 +457,15 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
+
+## Job Management Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `MAX_JOBS` | `10000` | Maximum number of jobs allowed in the job manager. |
+| `JOB_CLEANUP_INTERVAL_SECONDS` | `300` | Interval in seconds between automatic job cleanup checks. The background cleanup task runs at this frequency to remove old jobs and cancel stuck jobs |
+| `JOB_RETENTION_SECONDS` | `3600` | Duration in seconds to keep completed, failed, or cancelled jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 hour |
+| `JOB_MAX_STUCK_TIME_SECONDS` | `7200` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 2 hours |
 
 ## Text Processing Settings
 

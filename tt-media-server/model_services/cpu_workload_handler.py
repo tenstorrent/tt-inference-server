@@ -114,7 +114,7 @@ class CpuWorkloadHandler:
             worker.start()
             self.workers.append(worker)
             self.logger.info(f"Started {self.name} worker {i} with PID {worker.pid}")
-            time.sleep(settings.new_device_delay_seconds)
+            time.sleep(settings.new_runner_delay_seconds)
 
     def _warmup_workers(self, warmup_task_data=None):
         if warmup_task_data is None:
