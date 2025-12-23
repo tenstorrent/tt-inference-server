@@ -18,11 +18,9 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 class TestRunner(BaseDeviceRunner):
     MILLISECONDS_PER_SECOND = 1000
 
-    def __init__(
-        self,
-        device_id: str,
-    ):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
+        self.num_torch_threads = num_torch_threads
         self.streaming_frequency_ms = int(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
 
         self.logger.info(

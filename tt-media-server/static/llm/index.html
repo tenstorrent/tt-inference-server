@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Chat Interface</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 10px;
+        }
+        #prompt {
+            width: 100%;
+            height: 100px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        #response {
+            width: 100%;
+            min-height: 200px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+            font-size: 14px;
+            background: #f9f9f9;
+        }
+        #submit {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        #submit:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ccc;
+            border-top-color: #333;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        #controls {
+            margin-top: 10px;
+        }
+        label {
+            display: inline-block;
+            margin-right: 20px;
+        }
+        input[type="number"] {
+            width: 80px;
+        }
+        #model {
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>LLM Completions</h1>
+    
+    <div>
+        <label>Model: <input type="text" id="model" value="default" placeholder="Model name"></label>
+    </div>
+    
+    <div id="controls">
+        <label>Max Tokens: <input type="number" id="maxTokens" value="256" min="1" max="4096"></label>
+        <label>Temperature: <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1"></label>
+        <label><input type="checkbox" id="stream" checked> Stream</label>
+    </div>
+    
+    <div style="margin-top: 10px;">
+        <textarea id="prompt" placeholder="Enter your prompt here..."></textarea>
+    </div>
+    
+    <div>
+        <button id="submit">Submit</button>
+        <span id="spinner" class="spinner hidden"></span>
+        <label style="margin-left: 20px;"><input type="checkbox" id="showTimestamps"> Show chunk timestamps</label>
+    </div>
+    
+    <div id="status" style="font-size: 12px; color: #666; margin-top: 5px;"></div>
+    <div id="response"></div>
+
+    <script>
+        const API_URL = '/v1/completions';
+        const API_KEY = 'your-secret-key';
+
+        const promptEl = document.getElementById('prompt');
+        const responseEl = document.getElementById('response');
+        const submitBtn = document.getElementById('submit');
+        const spinner = document.getElementById('spinner');
+        const modelEl = document.getElementById('model');
+        const maxTokensEl = document.getElementById('maxTokens');
+        const temperatureEl = document.getElementById('temperature');
+        const streamEl = document.getElementById('stream');
+        const showTimestampsEl = document.getElementById('showTimestamps');
+        const statusEl = document.getElementById('status');
+        
+        let requestStartTime = null;
+        let firstChunkTime = null;
+        let chunkCount = 0;
+
+        function setLoading(loading) {
+            submitBtn.disabled = loading;
+            spinner.classList.toggle('hidden', !loading);
+        }
+
+        function showError(message) {
+            responseEl.innerHTML = '<span class="error">Error: ' + escapeHtml(message) + '</span>';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function submitPrompt() {
+            const prompt = promptEl.value.trim();
+            if (!prompt) {
+                showError('Please enter a prompt');
+                return;
+            }
+
+            const useStream = streamEl.checked;
+            responseEl.textContent = '';
+            statusEl.textContent = '';
+            setLoading(true);
+            
+            // Reset timing
+            requestStartTime = performance.now();
+            firstChunkTime = null;
+            chunkCount = 0;
+
+            const requestBody = {
+                model: modelEl.value || 'default',
+                prompt: prompt,
+                max_tokens: parseInt(maxTokensEl.value) || 256,
+                temperature: parseFloat(temperatureEl.value) || 0.7,
+                stream: useStream
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + API_KEY
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    let errorMsg = 'HTTP ' + response.status + ': ' + response.statusText;
+                    try {
+                        const errorBody = await response.json();
+                        if (errorBody.error) {
+                            errorMsg = errorBody.error.message || JSON.stringify(errorBody.error);
+                        } else if (errorBody.detail) {
+                            errorMsg = errorBody.detail;
+                        }
+                    } catch (e) {
+                        // Use default error message
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                if (useStream) {
+                    await handleStreamResponse(response);
+                } else {
+                    await handleNonStreamResponse(response);
+                }
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function handleNonStreamResponse(response) {
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error.message || JSON.stringify(data.error));
+            }
+            if (data.choices && data.choices.length > 0) {
+                responseEl.textContent = data.choices[0].text || '';
+            } else {
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            }
+        }
+
+        async function handleStreamResponse(response) {
+            const contentType = response.headers.get('content-type') || '';
+            
+            // Check if it's SSE or plain text streaming
+            if (contentType.includes('text/event-stream')) {
+                await handleSSEStream(response);
+            } else {
+                // Plain text streaming (tt-media-server format)
+                await handlePlainTextStream(response);
+            }
+        }
+
+        async function handlePlainTextStream(response) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let isFirst = true;
+            const showTs = showTimestampsEl.checked;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const now = performance.now();
+                if (!firstChunkTime) {
+                    firstChunkTime = now;
+                    const ttfb = ((firstChunkTime - requestStartTime) / 1000).toFixed(2);
+                    statusEl.textContent = `Time to first chunk: ${ttfb}s`;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                // Each chunk may contain one or more tokens separated by newlines
+                const tokens = chunk.split('\n');
+                for (const token of tokens) {
+                    if (token) {
+                        chunkCount++;
+                        
+                        // Add space before token unless it's punctuation or first token
+                        const needsSpace = !isFirst && 
+                            !token.match(/^[.,!?;:'")\]}>]/) && 
+                            !responseEl.textContent.match(/[(\[{<'"]\s*$/);
+                        
+                        if (needsSpace) {
+                            responseEl.textContent += ' ';
+                        }
+                        
+                        if (showTs) {
+                            const elapsed = ((now - requestStartTime) / 1000).toFixed(2);
+                            responseEl.textContent += `[${elapsed}s]`;
+                        }
+                        responseEl.textContent += token;
+                        isFirst = false;
+                    }
+                }
+                
+                // Update status
+                const elapsed = ((now - requestStartTime) / 1000).toFixed(2);
+                statusEl.textContent = `TTFB: ${((firstChunkTime - requestStartTime) / 1000).toFixed(2)}s | Chunks: ${chunkCount} | Elapsed: ${elapsed}s`;
+            }
+            
+            // Final status
+            const totalTime = ((performance.now() - requestStartTime) / 1000).toFixed(2);
+            statusEl.textContent = `Done. TTFB: ${((firstChunkTime - requestStartTime) / 1000).toFixed(2)}s | Total chunks: ${chunkCount} | Total time: ${totalTime}s`;
+        }
+
+        async function handleSSEStream(response) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith(':')) continue;
+                    
+                    if (trimmed.startsWith('data: ')) {
+                        const data = trimmed.slice(6);
+                        if (data === '[DONE]') {
+                            continue;
+                        }
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed.error) {
+                                throw new Error(parsed.error.message || JSON.stringify(parsed.error));
+                            }
+                            if (parsed.choices && parsed.choices.length > 0) {
+                                const text = parsed.choices[0].text || '';
+                                responseEl.textContent += text;
+                            }
+                        } catch (e) {
+                            if (e.message.includes('JSON')) {
+                                console.warn('Failed to parse SSE data:', data);
+                            } else {
+                                throw e;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        submitBtn.addEventListener('click', submitPrompt);
+        
+        promptEl.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                submitPrompt();
+            }
+        });
+    </script>
+</body>
+</html>

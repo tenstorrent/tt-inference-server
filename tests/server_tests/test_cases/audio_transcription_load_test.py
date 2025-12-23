@@ -55,7 +55,7 @@ class AudioTranscriptionLoadTest(BaseTest):
             "average_duration": average_duration,
             "target_time": audio_transcription_time,
             "devices": devices,
-            "success": requests_duration <= audio_transcription_time,
+            "success": average_duration <= audio_transcription_time,
         }
 
     async def test_concurrent_audio_transribtion(self, batch_size):
