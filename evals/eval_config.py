@@ -917,6 +917,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=1,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -955,6 +956,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=1,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
@@ -993,7 +995,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                max_concurrent=16,
+                max_concurrent=1,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",
