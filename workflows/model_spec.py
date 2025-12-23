@@ -21,7 +21,9 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: Optional[str]) -> str:
+def generate_docker_tag(
+    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+) -> str:
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
