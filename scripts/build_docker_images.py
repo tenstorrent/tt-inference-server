@@ -526,12 +526,23 @@ def validate_inputs(ubuntu_version, container_app_uid):
     """
     Validate input parameters.
     """
-    repo_root = get_repo_root_path()
-    expected_suffix = "tt-inference-server"
 
-    if not str(repo_root).endswith(expected_suffix):
+    # Make sure we are in the git root
+    try:
+        git_root = subprocess.check_output(
+            ['git', 'rev-parse', '--show-toplevel'],
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+        current_dir = os.getcwd()
+        if current_dir != git_root:
+            raise ValueError(
+                f"Script must be run in tt-inference-server repo root. "
+                f"Current directory: {current_dir}, git root: {git_root}"
+            )
+    except subprocess.CalledProcessError:
         raise ValueError(
-            f"Script must be run in tt-inference-server repo root, found: {repo_root}"
+            "Script must be run in a git repository. Could not determine git root directory."
         )
 
     if ubuntu_version not in ["22.04", "20.04"]:
