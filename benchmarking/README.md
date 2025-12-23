@@ -8,12 +8,11 @@ See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#perfo
 
 ## Benchmarking Tools
 
-The tt-inference-server supports multiple benchmarking tools. Use the `--tools` argument to select:
+The tt-inference-server supports three benchmarking tools:
 
-### vLLM benchmark_serving.py (default)
-```bash
-python run.py --model <model> --device <device> --workflow benchmarks --docker-server
-# or explicitly:
+
+### vLLM (default) - server-side measurements
+```
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools vllm
 ```
 
@@ -22,14 +21,14 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools genai
 ```
 
-### AIPerf (ai-dynamo/aiperf)
-[AIPerf](https://github.com/ai-dynamo/aiperf) is a comprehensive benchmarking tool that measures the performance of generative AI models.
-
-```bash
+### AIPerf - detailed percentile metrics (mean, P50, P99)
+```
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
 ```
 
-For manual usage of AIPerf, see [AIPerf Manual Usage Guide](../docs/aiperf_manual.md).
+**Key differences:** vLLM provides baseline metrics, GenAI-Perf validates against NVIDIA Triton standards, and AIPerf adds detailed latency percentiles for performance analysis.
+
+For detailed comparison, TTFT measurement differences, and usage guide, see [Benchmarking Tools Guide](../docs/benchmarking_tools.md).
 
 ### `run_benchmarks.py`
 
