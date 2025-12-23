@@ -5,6 +5,7 @@
 import importlib
 import os
 import subprocess
+
 from .forge_runner import ForgeRunner
 
 """
@@ -14,44 +15,44 @@ Loaders are dynamically imported from the corresponding loader modules.
 
 
 class ForgeMobilenetv2Runner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("mobilenetv2")
 
 
 class ForgeResnetRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("resnet")
 
 
 class ForgeVovnetRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("vovnet")
 
 
 class ForgeEfficientnetRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("efficientnet")
 
 
 class ForgeSegformerRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("segformer")
 
 
 class ForgeUnetRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("unet")
 
 
 class ForgeVitRunner(ForgeRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.loader = load_dynamic("vit")
 
 
