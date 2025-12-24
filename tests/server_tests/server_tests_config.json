@@ -23,13 +23,8 @@
         "test_types": {
             "load": "Load testing with concurrent requests",
             "param": "Parameter validation tests",
-            "functional": "Functional correctness tests",
-            "smoke": "Quick sanity checks for basic functionality",
             "e2e": "Full system tests covering complete workflows",
-            "stability": "Long-running stability tests",
-            "eval": "Model evaluation tests",
-            "unit": "Fast, isolated tests with no external dependencies",
-            "integration": "Medium-speed tests with local dependencies"
+            "eval": "Model evaluation tests"
         },
         "performance_characteristics": {
             "slow": "Tests taking >30 seconds to complete",
@@ -81,8 +76,6 @@
             "module": "tests.server_tests.test_cases.device_liveness_test",
             "description": "Test for device liveness checks - runs before all other tests",
             "markers": [
-                "smoke",
-                "functional",
                 "fast",
                 "prerequisite"
             ],

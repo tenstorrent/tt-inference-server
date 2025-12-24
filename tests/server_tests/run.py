@@ -32,7 +32,6 @@ Usage examples:
 
 import argparse
 import importlib
-import json
 import logging
 import os
 import sys
@@ -51,8 +50,10 @@ sys.path.insert(0, project_root)
 tests_dir = os.path.join(project_root, "tests")
 sys.path.insert(0, tests_dir)
 
+from pathlib import Path
+
 from server_tests.test_categorization_system import TestFilter
-from server_tests.test_classes import TestConfig, TestReport
+from server_tests.test_classes import TestConfig
 from server_tests.tests_runner import ServerRunner
 
 SERVER_TESTS_CONFIG_PATH = os.path.join(
@@ -60,7 +61,7 @@ SERVER_TESTS_CONFIG_PATH = os.path.join(
 )
 
 
-def configure_logging():
+def _configure_logging():
     """Configure logging to display to console with proper formatting"""
     # Set up root logger
     logging.basicConfig(
@@ -75,7 +76,7 @@ def configure_logging():
     logging.getLogger("whisper_eval_test").setLevel(logging.INFO)
 
 
-def load_test_instances_from_suites(test_suites: List[dict]) -> List:
+def _load_test_instances_from_suites(test_suites: List[dict]) -> List:
     """
     Load test instances from filtered test suites.
 
@@ -139,63 +140,19 @@ def load_test_instances_from_suites(test_suites: List[dict]) -> List:
     return test_cases
 
 
-def print_summary(reports: List[TestReport], test_cases):
-    """Print test execution summary as a formatted table"""
-    total = len(test_cases)
-    passed = sum(1 for report in reports if report.success)
-    attempted = len(reports)
-    skipped = total - attempted
-    failed = attempted - passed
-    total_duration = sum(report.duration for report in reports)
-
-    logger.info("=" * 70)
-    logger.info("TEST EXECUTION SUMMARY")
-    logger.info("=" * 70)
-    logger.info(f"{'Metric':<20} {'Value':>10}")
-    logger.info("-" * 32)
-    logger.info(f"{'Total tests':<20} {total:>10}")
-    logger.info(f"{'Passed':<20} {passed:>10}")
-    logger.info(f"{'Failed':<20} {failed:>10}")
-    logger.info(f"{'Skipped':<20} {skipped:>10}")
-    logger.info(f"{'Attempted':<20} {attempted:>10}")
-    logger.info(f"{'Total duration':<20} {total_duration:>9.2f}s")
-    logger.info("=" * 70)
-
-    logger.info("Detailed Results:")
-    logger.info("-" * 70)
-    logger.info(f"{'Status':<8} {'Test Name':<40} {'Duration':>10} {'Attempts':>10}")
-    logger.info("-" * 70)
-    for report in reports:
-        status = "✅ PASS" if report.success else "❌ FAIL"
-        logger.info(
-            f"{status:<8} {report.test_name:<40} {report.duration:>9.2f}s {report.attempts:>10}"
-        )
-        if report.error:
-            logger.error(f"         Error: {report.error}")
-    logger.info("=" * 70)
-
-    return failed == 0
-
-
-def apply_filters(args) -> List[dict]:
+def _apply_filters(args) -> List[dict]:
     """
     Apply CLI filters to get matching test suites.
 
     Args:
-        args: Parsed CLI arguments
+        Parsed CLI arguments.
 
     Returns:
-        List of filtered test suite dictionaries
+        List of filtered test suite dictionaries.
     """
-    from pathlib import Path
-
-    # Determine how to load TestFilter based on arguments
-    suite_files = None
-    if hasattr(args, "suite_file") and args.suite_file:
-        # Load specific suite file(s)
-        suite_files = [Path(f) for f in args.suite_file]
-        logger.info(f"Loading suite files: {[str(f) for f in suite_files]}")
-
+    logger.info(
+        f"Determine how to load TestFilter based on arguments. Applying filters: {args}"
+    )
     if hasattr(args, "suite_category") and args.suite_category:
         # Load by category name (e.g., "image", "audio")
         try:
@@ -204,57 +161,35 @@ def apply_filters(args) -> List[dict]:
         except FileNotFoundError as e:
             logger.error(str(e))
             return []
-    elif hasattr(args, "config") and args.config:
-        # Load from custom config file
-        config_path = Path(args.config)
-        logger.info(f"Loading config from: {config_path}")
-        try:
-            test_filter = TestFilter(config_path=config_path)
-        except FileNotFoundError:
-            logger.error(f"Config file not found: {config_path}")
-            return []
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in config file: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Error loading config file: {e}")
-            return []
     else:
         # Default: load schema + auto-discover suite files
-        test_filter = TestFilter(suite_files=suite_files)
+        test_filter = TestFilter()
 
-    # Apply model category filter
     if args.model_category:
         logger.info(f"Filtering by model categories: {args.model_category}")
         test_filter.filter_by_model_category(args.model_category)
 
-    # Apply model filter
     if args.model:
         logger.info(f"Filtering by model: {args.model}")
         test_filter.filter_by_model(args.model)
 
-    # Apply device filter
     if args.device:
         logger.info(f"Filtering by device: {args.device}")
         test_filter.filter_by_device(args.device)
 
-    # Apply marker filter
     if args.markers:
         match_all = args.match_all_markers
         logger.info(f"Filtering by markers: {args.markers} (match_all={match_all})")
         test_filter.filter_by_markers(args.markers, match_all=match_all)
 
-    # Apply test name filter
     if args.test_name:
         logger.info(f"Filtering by test name: {args.test_name}")
         test_filter.filter_by_test_name(args.test_name)
 
-    # Apply marker exclusion
     if args.exclude_markers:
         logger.info(f"Excluding markers: {args.exclude_markers}")
         test_filter.exclude_markers(args.exclude_markers)
 
-    # Handle prerequisites
     if args.skip_prerequisites:
         logger.info("Skipping prerequisite tests (DeviceLivenessTest)")
         test_filter.include_prerequisites(False)
@@ -268,116 +203,13 @@ def apply_filters(args) -> List[dict]:
     return test_suites
 
 
-def main():
-    """Main entry point"""
-    configure_logging()
-    args = parse_args()
-
-    logger.info("Starting server tests...")
-    logger.info(f"Service port: {os.getenv('SERVICE_PORT', '8000')}")
-    logger.info(f"Test timeout: {os.getenv('TEST_TIMEOUT', '60')}s")
-    logger.info(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
-
-    try:
-        # Use TestFilter with CLI arguments
-        test_suites = apply_filters(args)
-
-        if not test_suites:
-            logger.error("No test suites match the specified filters")
-            logger.info("Available options:")
-            test_filter = TestFilter()
-            logger.info(f"  Devices: {test_filter.get_all_devices()}")
-            logger.info(f"  Models: {test_filter.get_all_models()}")
-            return 1
-
-        # Load test instances from filtered suites
-        test_cases = load_test_instances_from_suites(test_suites)
-
-        if not test_cases:
-            logger.error("No test cases loaded")
-            return 1
-
-        logger.info(f"Created {len(test_cases)} test case(s)")
-
-        # Initialize ServerRunner
-        runner = ServerRunner(test_cases)
-
-        # Run tests
-        start_time = time.perf_counter()
-        reports = runner.run()
-        total_duration = time.perf_counter() - start_time
-
-        logger.info(f"All tests completed in {total_duration:.2f}s")
-
-        # Print summary
-        success = print_summary(reports, test_cases)
-
-        return 0 if success else 1
-
-    except KeyboardInterrupt:
-        logger.info("Test execution interrupted by user")
-        return 130
-    except Exception as e:
-        logger.error(f"Fatal error during test execution: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return 1
-
-
-def parse_args():
+def _parse_args():
     """Parse command line arguments with marker-based filtering support."""
     parser = argparse.ArgumentParser(
         description="Run server tests with marker-based filtering",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run all tests for a model on specific device
-  python run.py --model stable-diffusion-xl-base-1.0 --device n150
-
-  # Run all IMAGE model tests on N150
-  python run.py --model-category IMAGE --device n150
-
-  # Run load tests only
-  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
-
-  # Run all load tests across all models
-  python run.py --markers load
-
-  # Run fast smoke tests
-  python run.py --markers smoke fast --match-all-markers
-
-  # Exclude slow and heavy tests
-  python run.py --device n150 --exclude-markers slow heavy
-
-  # Run a specific test class
-  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --test-name ImageGenerationLoadTest
-
-  # Skip prerequisite tests
-  python run.py --model stable-diffusion-xl-base-1.0 --device n150 --skip-prerequisites
-
-  # Load only IMAGE category suites (efficient for CI)
-  python run.py --suite-category image --device n150
-
-  # Load specific suite files
-  python run.py --suite-file image.json audio.json --markers load
-        """,
     )
 
-    # Config file arguments
-    parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to custom test config JSON file",
-        default=None,
-    )
-    parser.add_argument(
-        "--suite-file",
-        type=str,
-        nargs="+",
-        help="Load specific suite file(s) from test_suites/ (e.g., image.json audio.json)",
-        default=None,
-    )
+    # Suite category filter
     parser.add_argument(
         "--suite-category",
         type=str,
@@ -391,18 +223,6 @@ Examples:
         type=str,
         help="Path to model specification JSON file (passed by workflow)",
         required=False,
-    )
-    parser.add_argument(
-        "--output-path",
-        type=str,
-        help="Path for test output",
-        required=False,
-    )
-    parser.add_argument(
-        "--hf-token",
-        type=str,
-        help="HuggingFace token",
-        default=os.getenv("HF_TOKEN", ""),
     )
 
     # Model/Device filtering
@@ -431,7 +251,7 @@ Examples:
         "--markers",
         type=str,
         nargs="+",
-        help="Filter by test markers (e.g., load smoke fast)",
+        help="Filter by test markers (e.g., load fast)",
         default=None,
     )
     parser.add_argument(
@@ -502,8 +322,6 @@ Examples:
                 logger.error(f"Error: {e}")
                 sys.exit(1)
         elif args.suite_file:
-            from pathlib import Path
-
             suite_files = [Path(f) for f in args.suite_file]
             test_filter = TestFilter(suite_files=suite_files)
         else:
@@ -530,6 +348,62 @@ Examples:
         sys.exit(0)
 
     return args
+
+
+def main():
+    """Main entry point"""
+    _configure_logging()
+    args = _parse_args()
+
+    logger.info("Starting server tests...")
+    logger.info(f"Service port: {os.getenv('SERVICE_PORT', '8000')}")
+    logger.info(f"Test timeout: {os.getenv('TEST_TIMEOUT', '60')}s")
+    logger.info(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
+
+    try:
+        # Use TestFilter with CLI arguments
+        test_suites = _apply_filters(args)
+
+        if not test_suites:
+            logger.error("No test suites match the specified filters")
+            logger.info("Available options:")
+            test_filter = TestFilter()
+            logger.info(f"  Devices: {test_filter.get_all_devices()}")
+            logger.info(f"  Models: {test_filter.get_all_models()}")
+            return 1
+
+        # Load test instances from filtered suites
+        test_cases = _load_test_instances_from_suites(test_suites)
+
+        if not test_cases:
+            logger.error("No test cases loaded")
+            return 1
+
+        logger.info(f"Created {len(test_cases)} test case(s)")
+
+        # Initialize ServerRunner
+        runner = ServerRunner(test_cases)
+
+        # Run tests
+        start_time = time.perf_counter()
+        reports = runner.run()
+        total_duration = time.perf_counter() - start_time
+
+        logger.info(f"All tests completed in {total_duration:.2f}s")
+
+        # Determine success from reports (ServerRunner already prints summary)
+        success = all(report.success for report in reports)
+        return 0 if success else 1
+
+    except KeyboardInterrupt:
+        logger.info("Test execution interrupted by user")
+        return 130
+    except Exception as e:
+        logger.error(f"Fatal error during test execution: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
