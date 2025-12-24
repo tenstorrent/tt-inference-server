@@ -328,6 +328,87 @@ curl -X 'DELETE' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
+# Fine-tuning API
+
+## Create fine-tuning job
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "training_file": "file-abc123",
+  "hyperparameters": {
+    "n_epochs": 3,
+    "batch_size": 4,
+    "learning_rate_multiplier": 1.0
+  }
+}'
+```
+
+**Response example:**
+```json
+{
+  "id": "ftjob-abc123",
+  "object": "training",
+  "status": "queued",
+  "created_at": 1702860000,
+  "model": "meta-llama/Llama-3.1-8B-Instruct"
+}
+```
+
+Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}` in subsequent requests.
+
+## List fine-tuning jobs
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs?limit=20' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Get fine-tuning job details
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Cancel fine-tuning job
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## List fine-tuning job events
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/events?limit=20' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## List fine-tuning job checkpoints
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints?limit=10' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 ## Unit Testing Setup in VS Code
 
 To set up and run unit tests in VS Code with pytest support, follow these steps:
