@@ -1502,6 +1502,9 @@ spec_templates = [
                 vllm_args={
                     "num_scheduler_steps": 1,
                 },
+                env_vars={
+                    "LINE_RS": "1",
+                },
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
