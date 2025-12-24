@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release-candidate-run-id:
-        description: "Run ID of the on-release-candidates.yml workflow run (from tt-shield repo)"
+        description: "Run ID of the release.yml workflow run (from tt-shield repo)"
         required: true
         type: string
       release-increment:

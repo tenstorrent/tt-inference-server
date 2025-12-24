@@ -2141,7 +2141,6 @@ spec_templates = [
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.AUDIO,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
