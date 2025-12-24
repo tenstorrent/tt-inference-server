@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
+    use_dynamic_batcher: bool = False
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value

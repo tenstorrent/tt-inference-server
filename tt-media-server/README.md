@@ -419,9 +419,27 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MAX_QUEUE_SIZE` | `64` | Maximum number of requests that can be queued for processing |
+| `MAX_QUEUE_SIZE` | `5000` | Maximum number of requests that can be queued for processing |
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
-| `MAX_BATCH_DELAY_TME_MS` | `10` | Maximum wait time in ms after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency. |
+| `MAX_BATCH_DELAY_TIME_MS` | `None` | Maximum wait time in milliseconds after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency |
+| `USE_DYNAMIC_BATCHER` | `False` | Boolean flag to enable dynamic batching for improved throughput. When enabled, the server attempts to batch multiple requests together for more efficient processing |
+
+### Dynamic Batching
+
+The `USE_DYNAMIC_BATCHER` setting controls whether the server uses dynamic batching to improve throughput:
+
+- **When `False` (default)**: While one request is in process, new requests are not added
+- **When `True`**: The server attempts to add multiple requests during the inference
+
+**Usage:**
+```bash
+# Enable dynamic batching for higher throughput scenarios
+export USE_DYNAMIC_BATCHER=true
+export MAX_BATCH_SIZE=4
+export MAX_BATCH_DELAY_TIME_MS=50
+```
+
+**Note:** Dynamic batching is currently experimental and may not be supported by all model runners. Check your specific model runner documentation for batching support.
 
 ## Worker Management
 

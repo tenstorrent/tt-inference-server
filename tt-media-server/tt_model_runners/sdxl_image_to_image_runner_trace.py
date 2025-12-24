@@ -19,8 +19,8 @@ from utils.image_manager import ImageManager
 
 
 class TTSDXLImageToImageRunner(BaseSDXLRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.image_manager = ImageManager("img")
         self.image_size = (1024, 1024)
         self.image_mode = "RGB"

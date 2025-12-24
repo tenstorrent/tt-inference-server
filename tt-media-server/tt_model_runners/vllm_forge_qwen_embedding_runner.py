@@ -12,8 +12,8 @@ from utils.decorators import log_execution_time
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.num_tokens_in_batch = 0
         self.dimensions_in_batch = None
 

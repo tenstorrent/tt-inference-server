@@ -42,8 +42,8 @@ from utils.text_utils import TextUtils
 
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.pipeline = None
         setup_cpu_threading_limits("1")
 
