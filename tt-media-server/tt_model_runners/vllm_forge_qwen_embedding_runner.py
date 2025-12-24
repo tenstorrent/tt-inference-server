@@ -4,10 +4,10 @@
 
 import vllm
 from config.settings import SupportedModels
+from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.embedding_response import EmbeddingResponse
 from utils.decorators import log_execution_time
 
 
