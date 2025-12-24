@@ -11,6 +11,9 @@ from multiprocessing import Queue as Queue
 from config.settings import get_settings
 from fastapi import HTTPException
 from model_services.device_worker import device_worker
+from model_services.device_worker_dynamic_batch import (
+    device_worker as device_worker_dynamic_batch,
+)
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -125,7 +128,9 @@ class Scheduler:
             worker_id = worker_id.lstrip("(").rstrip(")")
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
-            target=device_worker,
+            target=device_worker_dynamic_batch
+            if self.settings.use_dynamic_batcher
+            else device_worker,
             args=(
                 worker_id,
                 self.task_queue,

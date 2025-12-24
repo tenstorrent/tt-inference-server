@@ -16,8 +16,8 @@ from vllm.sampling_params import RequestOutputKind
 
 
 class VLLMForgeRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def set_device(self):
         return {}
@@ -66,13 +66,33 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
             self.logger.debug(f"Device {self.device_id}: Running inference")
 
             request = requests[0]
+            # Harcode those sampling params
+            # SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], include_stop_str_in_output=False, ignore_eos=False, max_tokens=231, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, truncate_prompt_tokens=None, guided_decoding=None, extra_args=None)
             sampling_params = SamplingParams(
-                temperature=request.temperature if request.temperature else 0.8,
-                top_p=request.top_p if request.top_p else 0.95,
-                max_tokens=request.max_tokens if request.max_tokens else 16,
-                output_kind=RequestOutputKind.DELTA
-                if request.stream
-                else RequestOutputKind.FINAL_ONLY,
+                n=1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                repetition_penalty=1.0,
+                seed=None,
+                stop=[],
+                stop_token_ids=[],
+                bad_words=[],
+                include_stop_str_in_output=False,
+                ignore_eos=False,
+                min_tokens=0,
+                logprobs=None,
+                prompt_logprobs=None,
+                temperature=0.0,
+                top_p=1.0,
+                top_k=0,
+                min_p=0.0,
+                max_tokens=request.max_tokens if request.max_tokens else 65536,
+                skip_special_tokens=True,
+                spaces_between_special_tokens=True,
+                truncate_prompt_tokens=None,
+                guided_decoding=None,
+                extra_args=None,
+                output_kind=RequestOutputKind.DELTA,
             )
             if request.stream:
                 return self._generate_streaming(request, sampling_params)
@@ -92,27 +112,31 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     ):
         self.logger.info(f"Device {self.device_id}: Starting streaming generation")
 
-        generated_text = ""
+        chunks = []  # Use list for O(n) accumulation instead of O(n²) string concat
         async for request_output in self.llm_engine.generate(
             request.prompt, sampling_params, request._task_id
         ):
             for output in request_output.outputs:
-                cleaned_text = TextUtils.clean_text(output.text)
+                # Minimal cleaning for streaming - only strip EOS tokens
+                chunk_text = TextUtils.strip_eos(output.text)
 
                 # Yield non-empty chunks
-                if not cleaned_text:
+                if not chunk_text:
                     continue
-                generated_text += cleaned_text
+                chunks.append(chunk_text)
 
                 yield {
                     "type": "streaming_chunk",
-                    "chunk": CompletionStreamChunk(text=cleaned_text),
+                    "chunk": CompletionStreamChunk(text=chunk_text),
                     "task_id": request._task_id,
                 }
 
+        # Clean only the final aggregated text (single clean_text call)
+        final_text = TextUtils.clean_text("".join(chunks))
+
         yield {
             "type": "final_result",
-            "result": CompletionStreamChunk(text=generated_text),
+            "result": CompletionStreamChunk(text=final_text),
             "task_id": request._task_id,
             "return": False,
         }
