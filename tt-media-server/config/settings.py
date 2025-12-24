@@ -68,10 +68,7 @@ class Settings(BaseSettings):
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
-
-    # Job persistence settings
     enable_job_persistence: bool = False
-    job_db_path: str = "./storage/jobs.db"
 
     # Text processing settings
     min_context_length: int = 32
