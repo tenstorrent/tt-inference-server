@@ -140,11 +140,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# Install tt-vllm-plugin
-# COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-#     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-#     && pip install ."
+# Copy tt-vllm-plugin (will be installed conditionally at runtime if needed)
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 
 # Cleanup build-only directories
 USER root
@@ -224,4 +221,15 @@ WORKDIR ${HOME_DIR}/tt-metal
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "cd ${TT_METAL_HOME}/server/ && \
+    if [ -n \"${PYTHON_ENV_DIR}\" ] && [ -f \"${PYTHON_ENV_DIR}/bin/activate\" ]; then \
+        source \"${PYTHON_ENV_DIR}/bin/activate\"; \
+    fi && \
+    if [ \"${MODEL_RUNNER}\" = \"vllm_bge_large_en_v1_5\" ]; then \
+        if [ -d \"${TT_METAL_HOME}/tt-vllm-plugin\" ]; then \
+            cd ${TT_METAL_HOME}/tt-vllm-plugin && \
+            pip install .; \
+        fi; \
+    fi && \
+    cd ${TT_METAL_HOME}/server && \
+    source ./run_uvicorn.sh"]
