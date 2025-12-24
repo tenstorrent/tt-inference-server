@@ -17,9 +17,8 @@ based on markers, models, devices, and other criteria. It handles:
 import json
 import logging
 from copy import deepcopy
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +29,6 @@ TEST_SUITE_CATEGORY_KEY = "_category"
 TEST_CONFIG = "test_config"
 NUM_OF_DEVICES = "num_of_devices"
 TARGETS = "targets"
-
-
-@dataclass
-class ExpandedTestCase:
-    """Represents a fully expanded test case with all markers and config."""
-
-    name: str
-    module: str
-    enabled: bool
-    description: str
-    markers: Set[str]
-    test_config: Dict
-    targets: Dict
-    suite_id: str
-    model: str
-    device: str
 
 
 class TestFilter:
@@ -581,97 +564,3 @@ class TestFilter:
         for suite in self.test_suites:
             models.update(suite.get("weights", []))
         return list(models)
-
-
-def main():
-    """Example usage of TestFilter demonstrating all 4 use cases."""
-    # Configure logging for standalone execution
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    logger.info("=" * 70)
-    logger.info("Test Filter - Modular Suite Architecture")
-    logger.info("=" * 70)
-
-    # Show loaded suites
-    filter_base = TestFilter()
-    logger.info(f"Total suites loaded: {len(filter_base.test_suites)}")
-    logger.info(f"Available devices: {filter_base.get_all_devices()}")
-    logger.info(f"Available models: {filter_base.get_all_models()}")
-
-    # Case 1: Run all IMAGE/AUDIO/CNN tests on specific hardware
-    logger.info("=" * 70)
-    logger.info("CASE 1a: All IMAGE/AUDIO/CNN tests on N150")
-    logger.info("=" * 70)
-    filter1a = TestFilter()
-    filter1a.filter_by_model_category(["IMAGE", "AUDIO", "CNN"]).filter_by_device(
-        "n150"
-    )
-    filter1a.print_summary()
-
-    logger.info("=" * 70)
-    logger.info("CASE 1b: All IMAGE tests on ALL hardware")
-    logger.info("=" * 70)
-    filter1b = TestFilter()
-    filter1b.filter_by_model_category(["IMAGE"])
-    filter1b.print_summary()
-
-    # Case 2: Run specific model on specific hardware with specific test category
-    logger.info("=" * 70)
-    logger.info("CASE 2: Img2Img model on N150, only 'load' tests")
-    logger.info("=" * 70)
-    filter2 = TestFilter()
-    filter2.filter_by_model("stable-diffusion-xl-base-1.0-img-2-img").filter_by_device(
-        "n150"
-    ).filter_by_markers(["load"])
-    filter2.print_summary()
-
-    # Case 3: Run specific model + hardware + category + specific test
-    logger.info("=" * 70)
-    logger.info(
-        "CASE 3: Img2Img on N150, 'load' category, ImageGenerationLoadTest only"
-    )
-    logger.info("=" * 70)
-    filter3 = TestFilter()
-    filter3.filter_by_model("stable-diffusion-xl-base-1.0-img-2-img").filter_by_device(
-        "n150"
-    ).filter_by_markers(["load"]).filter_by_test_name("ImageGenerationLoadTest")
-    filter3.print_summary()
-
-    # Case 4: Run all tests of a type across all models
-    logger.info("=" * 70)
-    logger.info("CASE 4a: All 'load' tests across all models")
-    logger.info("=" * 70)
-    filter4a = TestFilter()
-    filter4a.filter_by_markers(["load"])
-    filter4a.print_summary()
-
-    logger.info("=" * 70)
-    logger.info("CASE 4b: All 'param' tests across all models")
-    logger.info("=" * 70)
-    filter4b = TestFilter()
-    filter4b.filter_by_markers(["param"])
-    filter4b.print_summary()
-
-    # Modular loading: Load only specific category file (efficient for CI)
-    logger.info("=" * 70)
-    logger.info("MODULAR: Load only IMAGE category (from image.json)")
-    logger.info("=" * 70)
-    try:
-        filter5 = TestFilter.from_category("image")
-        filter5.print_summary()
-    except FileNotFoundError as e:
-        logger.warning(f"  (Skipped: {e})")
-
-    logger.info("=" * 70)
-    logger.info("MODULAR: Load only AUDIO category, filter to galaxy")
-    logger.info("=" * 70)
-    try:
-        filter6 = TestFilter.from_category("audio")
-        filter6.filter_by_device("galaxy")
-        filter6.print_summary()
-    except FileNotFoundError as e:
-        logger.warning(f"  (Skipped: {e})")
-
-
-if __name__ == "__main__":
-    main()

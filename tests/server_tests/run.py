@@ -38,7 +38,7 @@ import sys
 import time
 from typing import List
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("server_tests.run")
 
 # Add the project root to the Python path
 project_root = os.path.dirname(
