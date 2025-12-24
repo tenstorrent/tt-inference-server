@@ -1,8 +1,7 @@
+#!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#!/bin/bash
 
 # Script to fetch specific folders from tt-forge-models using git sparse checkout
 
