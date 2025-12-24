@@ -366,7 +366,7 @@ Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs?limit=20' \
+  'http://127.0.0.1:8000/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -383,17 +383,8 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'POST' \
+curl -X 'DELETE' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer your-secret-key'
-```
-
-## List fine-tuning job events
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/events?limit=20' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -402,7 +393,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints?limit=10' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```

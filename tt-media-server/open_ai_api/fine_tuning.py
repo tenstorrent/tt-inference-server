@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Optional
 
 from config.constants import JobTypes
 from domain.training_request import TrainingRequest
@@ -16,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/jobs")
-async def create_training_job(
+async def submit_fine_tuning_request(
     request: TrainingRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
@@ -28,19 +27,17 @@ async def create_training_job(
         JSONResponse: Fine-tuning job object with job ID and metadata.
 
     Raises:
-        HTTPException: If job creation fails.
+        HTTPException: If fine tuning job submission fails.
     """
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request)
         return JSONResponse(content=job_data, status_code=201)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
+        raise HTTPException(status_code=500, detail={str(e)})
 
 
 @router.get("/jobs")
 async def list_fine_tuning_jobs(
-    limit: int = 20,
-    after: Optional[str] = None,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -54,16 +51,14 @@ async def list_fine_tuning_jobs(
         HTTPException: If listing jobs fails.
     """
     try:
-        # TODO: Implement pagination with limit and after
-        # For now, return empty list structure
-        service.get_all_jobs_metadata(JobTypes.TRAINING)
-        return JSONResponse(content={"object": "list", "data": [], "has_more": False})
+        jobs = service.get_all_jobs_metadata(JobTypes.TRAINING)
+        return JSONResponse(content={"object": "list", "data": jobs, "has_more": False})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {str(e)}")
 
 
 @router.get("/jobs/{job_id}")
-async def get_fine_tuning_job(
+async def get_fine_tuning_job_metadata(
     job_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
@@ -75,7 +70,7 @@ async def get_fine_tuning_job(
         JSONResponse: Fine-tuning job object.
 
     Raises:
-        HTTPException: If job not found.
+        HTTPException: If fine-tuning job not found.
     """
     job_data = service.get_job_metadata(job_id)
     if job_data is None:
@@ -84,7 +79,7 @@ async def get_fine_tuning_job(
     return JSONResponse(content=job_data)
 
 
-@router.post("/jobs/{job_id}/cancel")
+@router.delete("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
     service: BaseService = Depends(service_resolver),
@@ -105,42 +100,18 @@ async def cancel_fine_tuning_job(
             status_code=400, detail="Job not found or cannot be cancelled"
         )
 
-    job_data = service.get_job_metadata(job_id)
-    return JSONResponse(content=job_data)
+    return JSONResponse(
+        content={
+            "id": job_id,
+            "object": JobTypes.TRAINING.value,
+            "deleted": True,
+        }
+    )
 
 
-@router.get("/jobs/{job_id}/events")
-async def list_fine_tuning_events(
-    job_id: str,
-    limit: int = 20,
-    after: Optional[str] = None,
-    service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-):
-    """
-    List events/logs for a fine-tuning job.
-
-    Returns:
-        JSONResponse: List of training events with metrics.
-
-    Raises:
-        HTTPException: If job not found.
-    """
-    try:
-        # TODO: Implement event/metrics retrieval from database
-        # For now, return empty list structure
-        return JSONResponse(content={"object": "list", "data": [], "has_more": False})
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get events: {str(e)}")
-
-
-@router.get("/jobs/{fine_tuning_job_id}/checkpoints")
+@router.get("/jobs/{job_id}/checkpoints")
 async def list_fine_tuning_checkpoints(
-    fine_tuning_job_id: str,
-    limit: int = 10,
-    after: Optional[str] = None,
+    job_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -155,7 +126,7 @@ async def list_fine_tuning_checkpoints(
     """
     try:
         # TODO: Implement checkpoint retrieval from database
-        # For now, return empty list structure
+        service.get_job_result(job_id)
         return JSONResponse(content={"object": "list", "data": [], "has_more": False})
     except Exception as e:
         raise HTTPException(
