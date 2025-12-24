@@ -5,9 +5,9 @@
 import os
 
 from config.constants import SupportedModels
+from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.embedding_response import EmbeddingResponse
 from utils.decorators import log_execution_time
 from vllm import LLM
 
