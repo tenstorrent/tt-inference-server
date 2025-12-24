@@ -52,7 +52,7 @@ class TestFilter:
     - Hardware target (device field -> "n150", "t3k", etc.)
     """
 
-    def __init__(self):
+    def __init__(self, suites: list[dict] = None):
         """
         Initialize TestFilter with server test configuration from /test_suites/*.json.
         """
@@ -64,8 +64,12 @@ class TestFilter:
         self.test_templates = self.config.get("test_templates", {})
         self.prerequisite_tests = self.config.get("prerequisite_tests", [])
 
-        logger.info("Load test suites")
-        self.test_suites = load_suite_files()
+        if suites is None:
+            logger.info("Load test suites")
+            self.test_suites = load_suite_files()
+        else:
+            logger.info(f"Using {len(suites)} pre-loaded test suites")
+            self.test_suites = suites
 
         # Build reverse mapping: model -> category
         self._model_to_category = {}

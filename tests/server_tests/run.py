@@ -50,7 +50,6 @@ sys.path.insert(0, project_root)
 tests_dir = os.path.join(project_root, "tests")
 sys.path.insert(0, tests_dir)
 
-from pathlib import Path
 
 from server_tests.test_categorization_system import TestFilter
 from server_tests.test_classes import TestConfig
@@ -321,9 +320,6 @@ def _parse_args():
             except FileNotFoundError as e:
                 logger.error(f"Error: {e}")
                 sys.exit(1)
-        elif args.suite_file:
-            suite_files = [Path(f) for f in args.suite_file]
-            test_filter = TestFilter(suite_files=suite_files)
         else:
             test_filter = TestFilter()
 

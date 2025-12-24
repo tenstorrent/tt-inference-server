@@ -6,6 +6,8 @@
 This module provides utilities to load suite files from /test_suites/*.json.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
