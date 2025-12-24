@@ -38,8 +38,10 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
+        self.isl = int(
+            model_spec.device_model_spec.env_vars.get("MAX_MODEL_LENGTH", 1024)
+        )
         self.num_calls = 1000
-        self.isl = 1000
         self.dimensions = 1000
         self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
@@ -204,6 +206,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         import mteb
         import numpy as np
         from mteb.models.model_implementations.openai_models import OpenAIModel
+        from mteb.models.model_meta import ModelMeta
         from openai import OpenAI
 
         model_name = self.model
@@ -236,13 +239,33 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
         model.encode = single_string_encode.__get__(model, type(model))
 
+        # Attach ModelMeta so MTEB can extract model name and revision
+        model_meta = ModelMeta(
+            name=model_name,
+            revision=None,
+            embed_dim=self.dimensions,
+            max_tokens=self.isl,
+            open_weights=False,
+            loader=None,
+            loader_kwargs={},
+            framework=[],
+            similarity_fn_name=None,
+            use_instructions=None,
+        )
+        model.mteb_model_meta = model_meta
+
         # Select tasks and run evaluation
         tasks = mteb.get_tasks(tasks=MTEB_TASKS)
 
         logger.info("Running embedding transcription evaluation with STS12...")
         results = mteb.evaluate(
-            model, tasks=tasks, show_progress_bar=True, encode_kwargs={"batch_size": 1}
+            model,
+            tasks=tasks,
+            encode_kwargs={"batch_size": 1},
+            cache=None,
+            overwrite_strategy="always",
         )
+        logger.info(f"Evaluation results: {results}")
         return self._parse_embedding_evals_output(results)
 
     def _parse_embedding_evals_output(self, results: dict) -> dict:
@@ -250,6 +273,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         scores = {}
         try:
             scores = results.task_results[0].scores["test"]
+            if isinstance(scores, list) and len(scores) > 0:
+                scores = scores[0]
         except Exception as e:
             logger.error(f"Could not extract scores['test']: {e}")
             raise
@@ -268,6 +293,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "languages",
         ]
         report_data = {k: scores.get(k) for k in keys if k in scores}
+        logger.info(f"Parsed evaluation results: {report_data}")
         return report_data
 
     def _generate_evals_report(self, metrics: dict):

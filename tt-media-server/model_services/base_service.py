@@ -13,6 +13,7 @@ from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.hugging_face_utils import HuggingFaceUtils
 from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
@@ -23,6 +24,8 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
         self._job_manager = get_job_manager()
+        if settings.download_weights_from_service:
+            HuggingFaceUtils().download_weights()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int

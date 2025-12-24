@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
+    download_weights_from_service: bool = True
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -52,8 +53,8 @@ class Settings(BaseSettings):
     max_batch_delay_time_ms: Optional[int] = None
 
     # Worker management settings
-    new_device_delay_seconds: int = 15
-    new_runner_delay_seconds: int = 5
+    new_device_delay_seconds: int = 0
+    new_runner_delay_seconds: int = 2
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
@@ -119,6 +120,23 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Model service could not be deduced from model runner {self.model_runner}."
                 )
+
+        # set model weights path using model name
+        if self.model_weights_path is None or self.model_weights_path == "":
+            # Convert string to enum first
+            model_runner_enum = ModelRunners(self.model_runner)
+
+            # Use dictionary key access
+            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+
+            if model_names_set:
+                # Get first model name from the set
+                model_name = list(model_names_set)[0]
+                if model_name:
+                    self.model_weights_path = getattr(
+                        SupportedModels, model_name.name
+                    ).value
+
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
