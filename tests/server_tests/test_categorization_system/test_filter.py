@@ -5,27 +5,31 @@
 """
 Test filtering utilities for server tests configuration.
 
-This module provides utilities to filter and select tests from server_tests_config.json
-based on markers, models, devices, and other criteria. It handles:
-- Template expansion from test_templates
+This module provides utilities to filter and select tests from /test_suites/*.json
+based on markers, models, devices, and other criteria.
+
+It handles the following:
 - Auto-derivation of markers from model category and hardware
 - Prerequisite test injection (DeviceLivenessTest)
 - Hardware defaults for num_of_devices and retry_attempts
 - Auto-discovery and merging of suite files from test_suites/*.json
 """
 
-import json
+from __future__ import annotations
+
 import logging
 from copy import deepcopy
-from pathlib import Path
 from typing import Dict, List, Optional
+
+from .suite_loader import (
+    load_server_tests_config,
+    load_suite_files,
+    load_suite_files_by_category,
+)
 
 logger = logging.getLogger(__name__)
 
 # Constants
-SERVER_TESTS_CONFIG_FILE = "server_tests_config.json"
-TEST_SUITES_DIR = "test_suites"
-TEST_SUITE_CATEGORY_KEY = "_category"
 TEST_CONFIG = "test_config"
 NUM_OF_DEVICES = "num_of_devices"
 TARGETS = "targets"
@@ -33,10 +37,9 @@ TARGETS = "targets"
 
 class TestFilter:
     """
-    Filter tests from server_tests_config.json based on various criteria.
+    Filter tests from /test_suites/*.json based on various criteria.
 
     The filter handles config format with:
-    - test_templates: Reusable test definitions
     - test_suites: Model/device specific test configurations
     - prerequisite_tests: Tests that run before all others (e.g., DeviceLivenessTest)
     - hardware_defaults: Device-specific defaults
@@ -49,43 +52,20 @@ class TestFilter:
     - Hardware target (device field -> "n150", "t3k", etc.)
     """
 
-    def __init__(
-        self,
-        config_path: Optional[Path] = None,
-        config_dict: Optional[Dict] = None,
-        suite_files: Optional[List[Path]] = None,
-    ):
+    def __init__(self):
         """
-        Initialize TestFilter with server test configuration.
-
-        Args:
-            config_path: Path to server_tests_config.json. If None, uses default location.
-            config_dict: Optional dictionary config (overrides config_path).
-            suite_files: Optional list of specific suite files to load.
+        Initialize TestFilter with server test configuration from /test_suites/*.json.
         """
-        # Config files are in parent directory (server_tests/)
-        self._config_dir = Path(__file__).parent.parent
-
-        if config_dict is not None:
-            self.config = config_dict
-        elif config_path is None:
-            config_path = self._config_dir / SERVER_TESTS_CONFIG_FILE
-            with open(config_path, "r") as f:
-                self.config = json.load(f)
-        else:
-            config_path = Path(config_path)
-            self._config_dir = config_path.parent
-            with open(config_path, "r") as f:
-                self.config = json.load(f)
+        logger.info("Loading server tests configuration")
+        self.config = load_server_tests_config()
 
         self.model_categories = self.config.get("model_categories", {})
         self.hardware_defaults = self.config.get("hardware_defaults", {})
         self.test_templates = self.config.get("test_templates", {})
         self.prerequisite_tests = self.config.get("prerequisite_tests", [])
-        self.test_suites = self.config.get("test_suites", [])
 
-        # Load suite files: either specific files or auto-discover
-        self._load_suite_files(suite_files)
+        logger.info("Load test suites")
+        self.test_suites = load_suite_files()
 
         # Build reverse mapping: model -> category
         self._model_to_category = {}
@@ -97,53 +77,11 @@ class TestFilter:
         self.expanded_suites = self._expand_all_suites()
         self.filtered_suites = list(self.expanded_suites)
 
-        # Track if prerequisites should be included
+        # Include prerequisites by default
         self._include_prerequisites = True
 
-    def _load_suite_files(self, suite_files: Optional[List[Path]] = None):
-        """
-        Load and merge test suite files from test_suites/ directory.
-
-        Args:
-            suite_files: Optional list of specific suite files to load.
-                        If None, discovers all *.json files in test_suites/.
-        """
-        suites_dir = self._config_dir / TEST_SUITES_DIR
-        if not suites_dir.exists():
-            raise FileNotFoundError(f"test_suites directory not found: {suites_dir}")
-
-        if suite_files is None:
-            logger.info(f"Auto-discovering all suite files in {suites_dir}")
-            suite_files = list(suites_dir.glob("*.json"))
-
-        for suite_file in sorted(suite_files):
-            if not suite_file.exists():
-                logger.error(f"Suite file not found: {suite_file}")
-                raise FileNotFoundError(f"Suite file not found: {suite_file}")
-
-            try:
-                with open(suite_file, "r") as f:
-                    suite_data = json.load(f)
-
-                suites = suite_data.get(TEST_SUITES_DIR, [])
-                if suites:
-                    category = suite_data.get(TEST_SUITE_CATEGORY_KEY, suite_file.stem)
-                    logger.info(
-                        f"Loaded {len(suites)} suites from {suite_file.name} ({category})"
-                    )
-                    self.test_suites.extend(suites)
-
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in suite file {suite_file}: {e}")
-                raise json.JSONDecodeError(
-                    f"Invalid JSON in suite file {suite_file}: {e}"
-                )
-            except Exception as e:
-                logger.error(f"Error loading suite file {suite_file}: {e}")
-                raise RuntimeError(f"Error loading suite file {suite_file}: {e}")
-
     @classmethod
-    def from_category(cls, category: str) -> "TestFilter":
+    def from_category(cls, category: str) -> TestFilter:
         """
         Create a TestFilter loading only suites from a specific category file.
 
@@ -161,29 +99,35 @@ class TestFilter:
             filter.filter_by_device("n150")
             tests = filter.get_tests()
         """
-        # Config files are in parent directory (server_tests/)
-        config_dir = Path(__file__).parent.parent
-        suite_file = config_dir / "test_suites" / f"{category.lower()}.json"
-
-        if not suite_file.exists():
-            raise FileNotFoundError(
-                f"Suite file not found: {suite_file}. "
-                f"Available: {list((config_dir / 'test_suites').glob('*.json'))}"
-            )
-
-        return cls(suite_files=[suite_file])
+        suites = load_suite_files_by_category(category)
+        return cls(suites=suites)
 
     def _get_category_marker(self, model: str) -> Optional[str]:
-        """Get the category marker for a model (e.g., 'image', 'audio')."""
+        """Get the category marker for a model.
+
+        Args:
+            model: Model name (e.g., "stable-diffusion-xl-base-1.0")
+
+        Returns:
+            Category marker in lowercase (e.g., "image", "audio") or None if not found.
+        """
         category = self._model_to_category.get(model)
         if category:
             return category.lower()
         return None
 
     def _expand_test_case(self, test_case: Dict, suite: Dict) -> Dict:
-        """
-        Expand a test case by merging template defaults with overrides.
-        Auto-derives markers from model category, model marker, and hardware.
+        """Expand a test case by merging template defaults with overrides.
+
+        Applies template config, hardware defaults, and auto-derives markers
+        from model category, model marker, and device.
+
+        Args:
+            test_case: Raw test case dict with template reference
+            suite: Parent suite containing device and weights info
+
+        Returns:
+            Expanded test case dict with all fields populated.
         """
         template_name = test_case.get("template")
         if not template_name:
@@ -283,7 +227,11 @@ class TestFilter:
         return expanded
 
     def _expand_all_suites(self) -> List[Dict]:
-        """Expand all test suites, injecting prerequisite tests and applying templates."""
+        """Expand all test suites by applying templates to each test case.
+
+        Returns:
+            List of expanded suite dicts with fully populated test cases.
+        """
         expanded_suites = []
 
         for suite in self.test_suites:
@@ -305,14 +253,21 @@ class TestFilter:
         return expanded_suites
 
     def _get_prerequisite_for_suite(self, suite: Dict) -> List[Dict]:
-        """Get prerequisite tests configured for a specific suite."""
+        """Get expanded prerequisite tests for a specific suite.
+
+        Args:
+            suite: Suite dict for hardware context
+
+        Returns:
+            List of expanded prerequisite test dicts.
+        """
         prereqs = []
         for prereq in self.prerequisite_tests:
             expanded = self._expand_prerequisite_test(prereq, suite)
             prereqs.append(expanded)
         return prereqs
 
-    def include_prerequisites(self, include: bool = True) -> "TestFilter":
+    def include_prerequisites(self, include: bool = True) -> TestFilter:
         """
         Control whether prerequisite tests (DeviceLivenessTest) are included.
 
@@ -325,7 +280,7 @@ class TestFilter:
         self._include_prerequisites = include
         return self
 
-    def filter_by_model_category(self, categories: List[str]) -> "TestFilter":
+    def filter_by_model_category(self, categories: List[str]) -> TestFilter:
         """
         Filter tests by model category (IMAGE, AUDIO, CNN, etc.).
 
@@ -352,7 +307,7 @@ class TestFilter:
 
         return self
 
-    def filter_by_model(self, model_name: str) -> "TestFilter":
+    def filter_by_model(self, model_name: str) -> TestFilter:
         """
         Filter tests by specific model name.
 
@@ -370,7 +325,7 @@ class TestFilter:
 
         return self
 
-    def filter_by_device(self, device: str) -> "TestFilter":
+    def filter_by_device(self, device: str) -> TestFilter:
         """
         Filter tests by device type.
 
@@ -390,7 +345,7 @@ class TestFilter:
 
     def filter_by_markers(
         self, markers: List[str], match_all: bool = False
-    ) -> "TestFilter":
+    ) -> TestFilter:
         """
         Filter tests by markers (tags).
 
@@ -427,7 +382,7 @@ class TestFilter:
         self.filtered_suites = filtered_suites
         return self
 
-    def filter_by_test_name(self, test_name: str) -> "TestFilter":
+    def filter_by_test_name(self, test_name: str) -> TestFilter:
         """
         Filter tests by test class name.
 
@@ -453,7 +408,7 @@ class TestFilter:
         self.filtered_suites = filtered_suites
         return self
 
-    def exclude_markers(self, markers: List[str]) -> "TestFilter":
+    def exclude_markers(self, markers: List[str]) -> TestFilter:
         """
         Exclude tests that have any of the specified markers.
 
@@ -551,15 +506,27 @@ class TestFilter:
                     logger.info(f"      └─ {test.get('description')}")
 
     def get_available_markers(self) -> Dict:
-        """Get all available markers defined in config."""
+        """Get all available markers defined in server_tests_config.json.
+
+        Returns:
+            Dict of marker categories and their descriptions.
+        """
         return self.config.get("available_markers", {})
 
     def get_all_devices(self) -> List[str]:
-        """Get list of all devices in test suites."""
+        """Get list of all unique devices across all test suites.
+
+        Returns:
+            List of device names (e.g., ["n150", "t3k", "galaxy"]).
+        """
         return list(set(suite.get("device", "") for suite in self.test_suites))
 
     def get_all_models(self) -> List[str]:
-        """Get list of all models in test suites."""
+        """Get list of all unique models across all test suites.
+
+        Returns:
+            List of model names from suite weights.
+        """
         models = set()
         for suite in self.test_suites:
             models.update(suite.get("weights", []))
