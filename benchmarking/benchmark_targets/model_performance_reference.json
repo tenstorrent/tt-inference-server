@@ -5480,6 +5480,60 @@
             }
         ]
     },
+    "bge-large-en-v1.5": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-Embedding-4B": {
          "n150": [
             {
