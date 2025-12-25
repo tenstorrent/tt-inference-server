@@ -110,34 +110,49 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest, sampling_params: SamplingParams
     ):
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+        task_id = request._task_id
+        chunk_type = "streaming_chunk"
+        final_type = "final_result"
 
-        chunks = []  # Use list for O(n) accumulation instead of O(n²) string concat
+        chunks = []
+        chunks_append = chunks.append
+
+        strip_eos = TextUtils.strip_eos
+
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+            request.prompt, sampling_params, task_id
         ):
-            for output in request_output.outputs:
-                # Minimal cleaning for streaming - only strip EOS tokens
-                chunk_text = TextUtils.strip_eos(output.text)
+            outputs = request_output.outputs
+            if not outputs:
+                continue
 
-                # Yield non-empty chunks
+            for output in outputs:
+                chunk_text = output.text
                 if not chunk_text:
                     continue
-                chunks.append(chunk_text)
+
+                if chunk_text.endswith(("</s>", "<|endoftext|>", "<|im_end|>")):
+                    chunk_text = strip_eos(chunk_text)
+                    if not chunk_text:
+                        continue
+
+                chunks_append(chunk_text)
 
                 yield {
-                    "type": "streaming_chunk",
+                    "type": chunk_type,
                     "chunk": CompletionStreamChunk(text=chunk_text),
-                    "task_id": request._task_id,
+                    "task_id": task_id,
                 }
 
-        # Clean only the final aggregated text (single clean_text call)
-        final_text = TextUtils.clean_text("".join(chunks))
+        if chunks:
+            final_text = TextUtils.clean_text("".join(chunks))
+        else:
+            final_text = ""
 
         yield {
-            "type": "final_result",
+            "type": final_type,
             "result": CompletionStreamChunk(text=final_text),
-            "task_id": request._task_id,
+            "task_id": task_id,
             "return": False,
         }
 
