@@ -185,7 +185,7 @@ class Scheduler:
     async def result_listener(self):
         while self.listener_running:
             try:
-                worker_id, result_key, input = await asyncio.to_thread(
+                worker_id, result_key, input_data = await asyncio.to_thread(
                     self.result_queue.get
                 )
 
@@ -193,15 +193,28 @@ class Scheduler:
                     self.listener_running = False
                     break
 
-                queue = self.result_queues.get(result_key)
-
-                if queue:
-                    await queue.put(input)
+                # ✅ Handle batched results
+                if result_key == "batch":
+                    # input_data is a list of (worker_id, task_id, chunk) tuples
+                    for batch_worker_id, batch_task_id, batch_chunk in input_data:
+                        queue = self.result_queues.get(batch_task_id)
+                        if queue:
+                            await queue.put(batch_chunk)
+                        else:
+                            current_queues = list(self.result_queues.keys())
+                            self.logger.warning(
+                                f"No result queue found for task {batch_task_id}. Current queues: {current_queues}"
+                            )
                 else:
-                    current_queues = list(self.result_queues.keys())
-                    self.logger.warning(
-                        f"No result queue found for task {result_key}. Current queues: {current_queues}"
-                    )
+                    # ✅ Handle individual results (non-streaming, errors)
+                    queue = self.result_queues.get(result_key)
+                    if queue:
+                        await queue.put(input_data)
+                    else:
+                        current_queues = list(self.result_queues.keys())
+                        self.logger.warning(
+                            f"No result queue found for task {result_key}. Current queues: {current_queues}"
+                        )
 
                 # Reset worker restart count on successful job
                 self.worker_info[worker_id]["restart_count"] = 0
