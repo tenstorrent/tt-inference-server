@@ -414,6 +414,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
+| `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Download weights when initializing service - makes sure that weights are downloaded once per instance of the server |
 
 ## Queue and Batch Configuration
 
@@ -445,8 +446,8 @@ export MAX_BATCH_DELAY_TIME_MS=50
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NEW_DEVICE_DELAY_SECONDS` | `15` | Delay in seconds before initializing a new device worker |
-| `NEW_RUNNER_DELAY_SECONDS` | `5` | Delay in seconds before initializing a new CPU worker |
+| `NEW_DEVICE_DELAY_SECONDS` | `0` | Delay in seconds before initializing a new device worker, 0 by default |
+| `NEW_RUNNER_DELAY_SECONDS` | `2` | Delay in seconds before initializing a new CPU worker |
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |

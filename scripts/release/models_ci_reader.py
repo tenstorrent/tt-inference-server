@@ -1757,7 +1757,7 @@ def write_summary_output(
         f"Wrote {len(all_models_text.encode('utf-8'))} bytes to {all_models_path}"
     )
 
-    # Create last good passing models summary (for backward compatibility)
+    # Create last good models summary (most recent entry per model, for backward compatibility)
     models_ci_last_good: Dict[str, dict] = {}
     for model_id in MODEL_SPECS.keys():
         entries = all_models_dict.get(model_id, [])
@@ -1767,19 +1767,14 @@ def write_summary_output(
         hardware_name = model_spec.device_type.name if model_spec else None
         impl_name = model_spec.impl.impl_name if model_spec else None
 
-        # Filter to only passing entries
-        passing_entries = [
-            e
-            for e in entries
-            if e.get("workflow_logs", {}).get("summary", {}).get("is_passing", False)
-        ]
-        if not passing_entries:
+        # Check if there are any entries
+        if not entries:
             models_ci_last_good[model_id] = {}
             continue
 
-        # Choose entry with max run_number
+        # Choose entry with max run_number (most recent entry)
         entries_sorted = sorted(
-            passing_entries,
+            entries,
             key=lambda e: int(e.get("ci_metadata", {}).get("run_number", -1)),
         )
         chosen = entries_sorted[-1]
@@ -1809,7 +1804,7 @@ def write_summary_output(
             "driver_version": ci_logs.get("kmd_version"),
         }
 
-    # Write models_ci_last_good to file (only passing models)
+    # Write models_ci_last_good to file (most recent entry per model)
     last_good_name = f"models_ci_last_good_{earliest}_to_{latest}.json"
     last_good_path = out_root / last_good_name
     logger.info(f"Writing last good passing models JSON to: {last_good_path}")
