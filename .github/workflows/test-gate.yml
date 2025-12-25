@@ -594,8 +594,6 @@ jobs:
           diff-cover $COVERAGE_FILES \
             --compare-branch=origin/${BASE_REF} \
             --fail-under=50 \
-            --html-report=coverage-diff.html \
-            --markdown-report=coverage-diff.md \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
           cat diff-cover-output.txt
@@ -613,38 +611,20 @@ jobs:
       - name: Fail if coverage below threshold
         if: ${{ steps.diff-cover.outputs.coverage_passed == 'false' }}
         run: |
-          echo "=============================================="
-          echo "❌ COVERAGE FAILED - Below 50% threshold"
-          echo "=============================================="
           echo ""
-          echo "Current coverage: ${{ steps.diff-cover.outputs.coverage_pct }}%"
-          echo "Required: 50%"
-          echo ""
-          echo "=============================================="
-          echo "📋 FILES NEEDING TEST COVERAGE:"
-          echo "=============================================="
+          echo "❌ COVERAGE FAILED"
+          echo "=================="
+          echo "Coverage: ${{ steps.diff-cover.outputs.coverage_pct }}% (required: 50%)"
           echo ""
 
-          # Show the full diff-cover report
+          # Show just the summary from diff-cover (first ~20 lines)
           if [ -f diff-cover-output.txt ]; then
-            cat diff-cover-output.txt
+            head -25 diff-cover-output.txt
           fi
 
           echo ""
-          echo "=============================================="
-          echo "📝 DETAILED REPORT (Markdown):"
-          echo "=============================================="
+          echo "💡 Add tests for the files listed above to increase coverage."
           echo ""
-
-          # Show the markdown report with specific lines
-          if [ -f coverage-diff.md ]; then
-            cat coverage-diff.md
-          fi
-
-          echo ""
-          echo "=============================================="
-          echo "💡 To fix: Add tests for the uncovered lines listed above"
-          echo "=============================================="
 
           exit 1
 
@@ -697,7 +677,7 @@ jobs:
             | **Status** | ${statusIcon} ${statusText} |
 
             > 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage.
-            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches at least50%.**' : ''}
+            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches at least 50%.**' : ''}`;
 
             // Find existing coverage comment
             const comments = await github.rest.issues.listComments({
@@ -735,8 +715,7 @@ jobs:
           path: |
             coverage-main.xml
             coverage-media.xml
-            coverage-diff.html
-            coverage-diff.md
+            diff-cover-output.txt
           retention-days: 14
 
   ci-gate:
