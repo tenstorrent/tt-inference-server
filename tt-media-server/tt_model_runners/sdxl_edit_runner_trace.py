@@ -44,7 +44,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
 
     def _warmup_inference_block(self):
         dummy_data = "R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
-        self.run_inference(
+        self.run(
             [
                 ImageEditRequest.model_construct(
                     prompt="Sunrise on a beach",
@@ -117,7 +117,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageEditRequest]):
+    def run(self, requests: list[ImageEditRequest]):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )

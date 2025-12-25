@@ -530,7 +530,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
+| `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
 
 ## Job Management Settings
 
@@ -717,7 +717,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export INFERENCE_TIMEOUT_SECONDS=300
+export REQUEST_PROCESSING_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration

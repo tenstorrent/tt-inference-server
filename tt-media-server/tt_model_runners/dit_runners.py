@@ -76,7 +76,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         def distribute_block():
@@ -104,7 +104,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         # we use model construct to create the request without validation
         if self.settings.model_service == ModelServices.IMAGE.value:
-            self.run_inference(
+            self.run(
                 [
                     ImageGenerateRequest.model_construct(
                         prompt="Sunrise on a beach",
@@ -114,7 +114,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 ]
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run_inference(
+            self.run(
                 [
                     VideoGenerateRequest.model_construct(
                         prompt="Sunrise on a beach",
@@ -133,7 +133,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         image = self.pipeline.run_single_prompt(
@@ -285,7 +285,7 @@ class TTMochi1Runner(TTDiTRunner):
         )
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
-    def run_inference(self, requests: list[VideoGenerateRequest]):
+    def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         frames = self.pipeline(
@@ -314,7 +314,7 @@ class TTWan22Runner(TTDiTRunner):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
-    def run_inference(self, requests: list[VideoGenerateRequest]):
+    def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         # TODO: Move parameterization outside of runner class.

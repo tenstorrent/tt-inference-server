@@ -34,7 +34,7 @@ def setup_worker_environment(worker_id: str):
     os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
 
     if settings.enable_telemetry:
-        get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
+        get_telemetry_client()  # initialize telemetry client for the worker
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
     # use cache per device to reduce number of "binary not found" errors
@@ -81,7 +81,7 @@ def device_worker(
         device_runner.set_device()
         # Use the same loop for model loading
         try:
-            loop.run_until_complete(device_runner.load_model())
+            loop.run_until_complete(device_runner.warmup())
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
@@ -110,12 +110,12 @@ def device_worker(
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
     # Define streaming handler
-    async def handle_streaming(inference_request):
-        base_key = inference_request._task_id
+    async def handle_streaming(request):
+        base_key = request._task_id
 
         try:
-            result_generator = await device_runner._run_inference_async(
-                [inference_request]
+            result_generator = await device_runner._run_async(
+                [request]
             )
 
             logger.info("Starting streaming")
@@ -124,43 +124,43 @@ def device_worker(
                 result_queue.put((worker_id, base_key, chunk))
 
             logger.info(
-                f"Worker {worker_id} finished streaming chunks for task {inference_request._task_id}"
+                f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
             )
         except Exception as e:
-            logger.error(f"Streaming failed for task {inference_request._task_id}: {e}")
-            error_queue.put((worker_id, inference_request._task_id, str(e)))
+            logger.error(f"Streaming failed for task {request._task_id}: {e}")
+            error_queue.put((worker_id, request._task_id, str(e)))
 
     # Handle non-streaming request
-    def handle_non_streaming(inference_request):
+    def handle_non_streaming(request):
         try:
-            response = device_runner.run_inference([inference_request])
+            response = device_runner.run([request])
             if response:
-                result_queue.put((worker_id, inference_request._task_id, response[0]))
+                result_queue.put((worker_id, request._task_id, response[0]))
             else:
                 error_queue.put(
-                    (worker_id, inference_request._task_id, "No response generated")
+                    (worker_id, request._task_id, "No response generated")
                 )
         except Exception as e:
-            logger.error(f"Inference failed for task {inference_request._task_id}: {e}")
-            error_queue.put((worker_id, inference_request._task_id, str(e)))
+            logger.error(f"Execution failed for task {request._task_id}: {e}")
+            error_queue.put((worker_id, request._task_id, str(e)))
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
         """Continuously pull requests from queue and submit to async handlers"""
         while True:
             # Run blocking queue.get() in thread pool to not block event loop
-            inference_request = await loop.run_in_executor(None, task_queue.get)
+            request = await loop.run_in_executor(None, task_queue.get)
 
-            if inference_request is None:  # Sentinel to shut down
+            if request is None:  # Sentinel to shut down
                 logger.info(f"Worker {worker_id} received shutdown signal")
                 return
 
-            if hasattr(inference_request, "stream") and inference_request.stream:
+            if hasattr(request, "stream") and request.stream:
                 # Fire and forget streaming task - runs concurrently
-                asyncio.create_task(handle_streaming(inference_request))
+                asyncio.create_task(handle_streaming(request))
             else:
                 # Run non-streaming in thread pool to not block other tasks
-                loop.run_in_executor(None, handle_non_streaming, inference_request)
+                loop.run_in_executor(None, handle_non_streaming, request)
 
     try:
         loop.run_until_complete(request_feeder())

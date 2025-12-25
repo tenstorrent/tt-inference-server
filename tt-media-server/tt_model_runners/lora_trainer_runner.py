@@ -19,7 +19,7 @@ class LoraTrainerRunner(BaseDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def load_model(self) -> bool:
+    def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Lora training...")
         # TODO: implement Lora training setup logic her
         self.logger.info(f"Device {self.device_id}: Lora training setup completed")
@@ -31,7 +31,7 @@ class LoraTrainerRunner(BaseDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[TrainingRequest]) -> list:
+    def run(self, requests: list[TrainingRequest]) -> list:
         self.logger.debug(f"Device {self.device_id}: Starting training...")
         # TODO: implement lora training logic here
         result = None

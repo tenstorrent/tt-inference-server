@@ -43,9 +43,9 @@ sys.modules[
 # Mock device runner and fabric
 mock_device_runner = Mock()
 mock_device_runner.set_device.return_value = Mock()
-mock_device_runner.load_model = Mock(return_value=asyncio.Future())
-mock_device_runner.load_model.return_value.set_result(None)
-mock_device_runner.run_inference.return_value = [Mock(), Mock()]
+mock_device_runner.warmup = Mock(return_value=asyncio.Future())
+mock_device_runner.warmup.return_value.set_result(None)
+mock_device_runner.run.return_value = [Mock(), Mock()]
 
 # Note: tt_model_runners mocking (including base_device_runner) is handled in conftest.py
 
@@ -110,8 +110,8 @@ class TestDeviceWorker:
         async def mock_coro(*args, **kwargs):
             return None
 
-        mock_load_model_future = mock_coro()
-        mock_device_runner.load_model = Mock(return_value=mock_load_model_future)
+        mock_warmup_future = mock_coro()
+        mock_device_runner.warmup = Mock(return_value=mock_warmup_future)
 
         # Mock the device runner factory
         mock_get_device_runner = Mock(return_value=mock_device_runner)
@@ -140,7 +140,7 @@ class TestDeviceWorker:
                         mock_get_device_runner.assert_called_once_with("worker_0")
                         mock_device_runner.set_device.assert_called_once()
 
-                        # Check the asyncio.run was called (not load_model directly since it's passed to asyncio.run)
+                        # Check the asyncio.run was called (not warmup directly since it's passed to asyncio.run)
                         mock_asyncio_run.assert_called_once()
 
                         # Verify the warmup signal was sent
@@ -194,7 +194,7 @@ class TestDeviceWorker:
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
         fresh_device_runner.close_device = Mock()
-        fresh_device_runner.run_inference.return_value = [
+        fresh_device_runner.run.return_value = [
             Mock(),
             Mock(),
         ]  # Return mock images
@@ -220,8 +220,8 @@ class TestDeviceWorker:
                         )
 
         # Verify inference was called with the request objects
-        assert fresh_device_runner.run_inference.call_count == 1
-        call_args = fresh_device_runner.run_inference.call_args[0][0]
+        assert fresh_device_runner.run.call_count == 1
+        call_args = fresh_device_runner.run.call_args[0][0]
         assert len(call_args) == 2
         assert call_args[0]._task_id == "task_1"
         assert call_args[1]._task_id == "task_2"
@@ -232,7 +232,7 @@ class TestDeviceWorker:
 
         # Verify results were queued - format is (worker_id, task_id, response)
         assert result_queue.put.call_count == 2
-        # The responses come from fresh_device_runner.run_inference.return_value which is [Mock(), Mock()]
+        # The responses come from fresh_device_runner.run.return_value which is [Mock(), Mock()]
         calls = result_queue.put.call_args_list
         # Extract the tuples passed to put()
         first_call_args = calls[0][0][0]  # (worker_id, task_id, response)
@@ -260,9 +260,9 @@ class TestDeviceWorker:
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
         fresh_device_runner.close_device = Mock()
-        # Don't set load_model as a Mock with return_value - let it be auto-mocked
+        # Don't set warmup as a Mock with return_value - let it be auto-mocked
         # This avoids asyncio.run issues
-        fresh_device_runner.run_inference.side_effect = Exception("Inference failed")
+        fresh_device_runner.run.side_effect = Exception("Inference failed")
 
         # Mock the event loop to avoid actually running async code
         mock_loop = Mock()
@@ -284,7 +284,7 @@ class TestDeviceWorker:
                             error_queue,
                         )
 
-        # Verify error handling - when run_inference raises an exception,
+        # Verify error handling - when run raises an exception,
         # the code calls error_queue.put once per request in the batch
         assert error_queue.put.call_count == 2  # One for each request
         # Verify both tasks got error messages
@@ -310,7 +310,7 @@ class TestDeviceWorker:
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
         fresh_device_runner.close_device = Mock()
-        fresh_device_runner.run_inference.return_value = []  # No images
+        fresh_device_runner.run.return_value = []  # No images
 
         # Mock the event loop to avoid actually running async code
         mock_loop = Mock()
@@ -488,7 +488,7 @@ class TestDeviceWorkerIntegration:
                 fresh_device_runner = Mock()
                 fresh_device_runner.set_device.return_value = Mock()
                 fresh_device_runner.close_device = Mock()
-                fresh_device_runner.run_inference.return_value = [Mock()]
+                fresh_device_runner.run.return_value = [Mock()]
 
                 with patch(
                     "model_services.device_worker.get_device_runner",
@@ -547,7 +547,7 @@ class TestDeviceWorkerIntegration:
                 fresh_device_runner.set_device.return_value = Mock()
                 fresh_device_runner.close_device = Mock()
 
-                # Set up run_inference to trigger timeout and then return
+                # Set up run to trigger timeout and then return
                 def slow_inference(*args, **kwargs):
                     # Trigger the timeout callback
                     if mock_timer_instance.callback:
@@ -555,7 +555,7 @@ class TestDeviceWorkerIntegration:
                     # Then return the result (too late)
                     return [Mock()]
 
-                fresh_device_runner.run_inference.side_effect = slow_inference
+                fresh_device_runner.run.side_effect = slow_inference
 
                 with patch(
                     "model_services.device_worker.get_device_runner",
@@ -601,9 +601,9 @@ def reset_mocks():
 
     # Reset device runner defaults
     mock_device_runner.set_device.return_value = Mock()
-    mock_device_runner.load_model = Mock(return_value=asyncio.Future())
-    mock_device_runner.load_model.return_value.set_result(None)
-    mock_device_runner.run_inference.return_value = [Mock(), Mock()]
+    mock_device_runner.warmup = Mock(return_value=asyncio.Future())
+    mock_device_runner.warmup.return_value.set_result(None)
+    mock_device_runner.run.return_value = [Mock(), Mock()]
 
 
 if __name__ == "__main__":
