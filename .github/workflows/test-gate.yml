@@ -506,10 +506,219 @@ jobs:
           source venv-3.11/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
+  test-coverage:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' && github.event_name == 'pull_request' }}
+    name: Test Coverage Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'requirements-dev.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
+          pip install pytest-cov diff-cover
+
+      - name: Run tests with coverage
+        env:
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
+        run: |
+          # Run main tests with coverage
+          pytest tests/ --ignore=tests/server_tests \
+            --cov=. \
+            --cov=tt-media-server \
+            --cov-report=xml:coverage-main.xml \
+            --cov-report=term-missing \
+            -v --tb=short --continue-on-collection-errors || true
+
+          # Run tt-media-server tests with coverage (append)
+          cd tt-media-server
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml:../coverage-media.xml \
+            --cov-report=term-missing \
+            -v --tb=short --continue-on-collection-errors || true
+          cd ..
+
+      - name: Check coverage of changed lines
+        id: diff-cover
+        run: |
+          # Get the base branch
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
+          # Build list of available coverage files
+          # diff-cover natively supports multiple XML files
+          COVERAGE_FILES=""
+          if [ -f coverage-main.xml ]; then
+            COVERAGE_FILES="coverage-main.xml"
+            echo "Found: coverage-main.xml"
+          fi
+          if [ -f coverage-media.xml ]; then
+            COVERAGE_FILES="$COVERAGE_FILES coverage-media.xml"
+            echo "Found: coverage-media.xml"
+          fi
+
+          if [ -z "$COVERAGE_FILES" ]; then
+            echo "⚠️ No coverage files found"
+            echo "coverage_passed=false" >> $GITHUB_OUTPUT
+            echo "coverage_pct=0" >> $GITHUB_OUTPUT
+            echo "lines_covered=0 of 0 lines" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Using coverage files: $COVERAGE_FILES"
+
+          # Generate diff-cover report for changed lines only
+          # diff-cover accepts multiple coverage XML files and merges them
+          diff-cover $COVERAGE_FILES \
+            --compare-branch=origin/${BASE_REF} \
+            --fail-under=50 \
+            --html-report=coverage-diff.html \
+            --markdown-report=coverage-diff.md \
+            > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
+
+          cat diff-cover-output.txt
+
+          # Extract coverage percentage
+          COVERAGE_PCT=$(grep -oE "Coverage: [0-9]+(\.[0-9]+)?%" diff-cover-output.txt | grep -oE "[0-9]+(\.[0-9]+)?" | tail -1 || echo "0")
+          echo "coverage_pct=$COVERAGE_PCT" >> $GITHUB_OUTPUT
+
+          # Extract lines covered/total
+          LINES_COVERED=$(grep -oE "[0-9]+ of [0-9]+ lines" diff-cover-output.txt | head -1 || echo "0 of 0 lines")
+          echo "lines_covered=$LINES_COVERED" >> $GITHUB_OUTPUT
+
+          if [ "$DIFF_COVER_FAILED" = "true" ]; then
+            echo "coverage_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate coverage summary
+        run: |
+          COVERAGE_PCT="${{ steps.diff-cover.outputs.coverage_pct }}"
+          LINES_COVERED="${{ steps.diff-cover.outputs.lines_covered }}"
+          COVERAGE_PASSED="${{ steps.diff-cover.outputs.coverage_passed }}"
+
+          # Determine status
+          if [ "$COVERAGE_PASSED" = "true" ]; then
+            STATUS_ICON="✅"
+            STATUS_TEXT="PASSED"
+          else
+            STATUS_ICON="⚠️"
+            STATUS_TEXT="BELOW THRESHOLD"
+          fi
+
+          echo "## $STATUS_ICON Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage of Changed Lines" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coverage** | ${COVERAGE_PCT}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Lines** | ${LINES_COVERED} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Threshold** | 50% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | $STATUS_ICON $STATUS_TEXT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment coverage on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coveragePct = '${{ steps.diff-cover.outputs.coverage_pct }}';
+            const linesCovered = '${{ steps.diff-cover.outputs.lines_covered }}';
+            const coveragePassed = '${{ steps.diff-cover.outputs.coverage_passed }}' === 'true';
+
+            const statusIcon = coveragePassed ? '✅' : '❌';
+            const statusText = coveragePassed ? 'PASSED' : 'BELOW THRESHOLD (50%) - PR BLOCKED';
+
+            const commentBody = `## ${statusIcon} Test Coverage Report
+
+            ### Coverage of Changed Lines
+
+            | Metric | Value |
+            |--------|-------|
+            | **Coverage** | ${coveragePct}% |
+            | **Lines** | ${linesCovered} |
+            | **Threshold** | 50% |
+            | **Status** | ${statusIcon} ${statusText} |
+
+            > 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage.
+            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches 50%.**' : ''}
+
+            <details>
+            <summary>What does this mean?</summary>
+
+            - **Coverage %**: Percentage of new/changed lines that are executed by tests
+            - **Threshold**: Minimum required coverage for new code (50%)
+            - Lines not covered by tests may indicate missing test cases
+            - **PRs below threshold will be blocked from merging to dev**
+
+            </details>`;
+
+            // Find existing coverage comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Coverage Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage-main.xml
+            coverage-media.xml
+            coverage-diff.html
+            coverage-diff.md
+          retention-days: 14
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance]
+    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage]
     if: always()
     steps:
       - name: Check results
@@ -525,6 +734,10 @@ jobs:
           fi
           if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
             echo "❌ Forge runner tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
+            echo "❌ Test coverage below 50% threshold - PR blocked"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"
