@@ -61,7 +61,7 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger.return_value = mock_logger
 
 # Now import the module under test
-from model_services.device_worker import device_worker, get_greedy_batch
+from device_workers.device_worker import device_worker, get_greedy_batch
 
 
 # Module level fixtures that can be used by all test classes
@@ -121,12 +121,12 @@ class TestDeviceWorker:
 
         # Apply patches
         with patch(
-            "model_services.device_worker.get_device_runner", mock_get_device_runner
+            "device_workers.device_worker.get_device_runner", mock_get_device_runner
         ):
-            with patch("model_services.device_worker.get_greedy_batch", mock_get_batch):
+            with patch("device_workers.device_worker.get_greedy_batch", mock_get_batch):
                 with patch("asyncio.run", Mock(return_value=None)) as mock_asyncio_run:
                     with patch(
-                        "model_services.device_worker.get_telemetry_client", Mock()
+                        "device_workers.device_worker.get_telemetry_client", Mock()
                     ):
                         device_worker(
                             "worker_0",
@@ -158,9 +158,9 @@ class TestDeviceWorker:
         )
 
         with patch(
-            "model_services.device_worker.get_device_runner", mock_get_device_runner
+            "device_workers.device_worker.get_device_runner", mock_get_device_runner
         ):
-            with patch("model_services.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
                 device_worker(
                     "worker_0",
                     task_queue,
@@ -174,8 +174,8 @@ class TestDeviceWorker:
             ("worker_0", -1, "Device initialization failed")
         )
 
-    @patch("model_services.device_worker.get_greedy_batch")
-    @patch("model_services.device_worker.threading.Timer")
+    @patch("device_workers.device_worker.get_greedy_batch")
+    @patch("device_workers.device_worker.threading.Timer")
     def test_device_worker_successful_inference(
         self, mock_timer, mock_get_batch, mock_queues, mock_requests
     ):
@@ -205,10 +205,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "model_services.device_worker.get_device_runner",
+            "device_workers.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("model_services.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -243,8 +243,8 @@ class TestDeviceWorker:
         assert second_call_args[0] == "worker_0"  # worker_id
         assert second_call_args[1] == "task_2"  # task_id
 
-    @patch("model_services.device_worker.get_greedy_batch")
-    @patch("model_services.device_worker.threading.Timer")
+    @patch("device_workers.device_worker.get_greedy_batch")
+    @patch("device_workers.device_worker.threading.Timer")
     def test_device_worker_inference_error(
         self, mock_timer, mock_get_batch, mock_queues, mock_requests
     ):
@@ -270,10 +270,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "model_services.device_worker.get_device_runner",
+            "device_workers.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("model_services.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -293,8 +293,8 @@ class TestDeviceWorker:
         assert "task_1" in task_ids
         assert "task_2" in task_ids
 
-    @patch("model_services.device_worker.get_greedy_batch")
-    @patch("model_services.device_worker.threading.Timer")
+    @patch("device_workers.device_worker.get_greedy_batch")
+    @patch("device_workers.device_worker.threading.Timer")
     def test_device_worker_no_images_generated(
         self, mock_timer, mock_get_batch, mock_queues, mock_requests
     ):
@@ -318,10 +318,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "model_services.device_worker.get_device_runner",
+            "device_workers.device_worker.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("model_services.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -472,8 +472,8 @@ class TestDeviceWorkerIntegration:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Create a test scenario that just verifies the timer is created
-        with patch("model_services.device_worker.get_greedy_batch") as mock_get_batch:
-            with patch("model_services.device_worker.threading.Timer") as mock_timer:
+        with patch("device_workers.device_worker.get_greedy_batch") as mock_get_batch:
+            with patch("device_workers.device_worker.threading.Timer") as mock_timer:
                 # Mock the request
                 mock_request = MockImageGenerateRequest(
                     "timeout_task", "test prompt", 30
@@ -491,11 +491,11 @@ class TestDeviceWorkerIntegration:
                 fresh_device_runner.run.return_value = [Mock()]
 
                 with patch(
-                    "model_services.device_worker.get_device_runner",
+                    "device_workers.device_worker.get_device_runner",
                     return_value=fresh_device_runner,
                 ):
                     with patch(
-                        "model_services.device_worker.get_telemetry_client", Mock()
+                        "device_workers.device_worker.get_telemetry_client", Mock()
                     ):
                         with patch("asyncio.run", Mock(return_value=None)):
                             # Run the worker
@@ -523,8 +523,8 @@ class TestDeviceWorkerIntegration:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Create a test scenario where timeout is triggered
-        with patch("model_services.device_worker.get_greedy_batch") as mock_get_batch:
-            with patch("model_services.device_worker.threading.Timer") as mock_timer:
+        with patch("device_workers.device_worker.get_greedy_batch") as mock_get_batch:
+            with patch("device_workers.device_worker.threading.Timer") as mock_timer:
                 # Mock the request
                 mock_request = MockImageGenerateRequest(
                     "timeout_task", "test prompt", 30
@@ -558,11 +558,11 @@ class TestDeviceWorkerIntegration:
                 fresh_device_runner.run.side_effect = slow_inference
 
                 with patch(
-                    "model_services.device_worker.get_device_runner",
+                    "device_workers.device_worker.get_device_runner",
                     return_value=fresh_device_runner,
                 ):
                     with patch(
-                        "model_services.device_worker.get_telemetry_client", Mock()
+                        "device_workers.device_worker.get_telemetry_client", Mock()
                     ):
                         with patch("asyncio.run", Mock(return_value=None)):
                             # Run the worker
