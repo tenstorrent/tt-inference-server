@@ -111,23 +111,20 @@ def device_worker(
 
     # Define streaming handler
     async def handle_streaming(inference_request):
-        logger.info(f"Running streaming request for task {inference_request._task_id}")
+        base_key = inference_request._task_id
+
         try:
             result_generator = await device_runner._run_inference_async(
                 [inference_request]
             )
-            chunk_count = 0
+
+            logger.info("Starting streaming")
 
             async for chunk in result_generator:
-                chunk_key = f"{inference_request._task_id}_chunk_{chunk_count}"
-                logger.debug(
-                    f"Worker {worker_id} streaming chunk {chunk_count} for task {inference_request._task_id} with key {chunk_key}"
-                )
-                result_queue.put((worker_id, chunk_key, chunk))
-                chunk_count += 1
+                result_queue.put((worker_id, base_key, chunk))
 
             logger.info(
-                f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
+                f"Worker {worker_id} finished streaming chunks for task {inference_request._task_id}"
             )
         except Exception as e:
             logger.error(f"Streaming failed for task {inference_request._task_id}: {e}")

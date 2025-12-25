@@ -170,11 +170,7 @@ class BaseService(ABC):
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
-            self.logger.debug(
-                f"Using timeout of {dynamic_timeout}s for streaming request"
-            )
 
-            chunk_count = 0
             while True:
                 chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
@@ -187,9 +183,6 @@ class BaseService(ABC):
                         and formatted_chunk.text
                     ):
                         yield formatted_chunk
-
-                    # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
-                    chunk_count += 1
 
                 elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
                     if chunk.get("return", False):
@@ -208,7 +201,7 @@ class BaseService(ABC):
 
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
+                f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
             )
             raise
         except Exception as e:

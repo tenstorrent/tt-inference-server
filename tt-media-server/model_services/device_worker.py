@@ -163,17 +163,13 @@ def device_worker(
                             result_generator = await device_runner._run_inference_async(
                                 [inference_request]
                             )
-                            chunk_count = 0
 
+                            chunk_key = inference_request._task_id
                             async for chunk in result_generator:
-                                chunk_key = (
-                                    f"{inference_request._task_id}_chunk_{chunk_count}"
-                                )
                                 result_queue.put((worker_id, chunk_key, chunk))
-                                chunk_count += 1
 
                             logger.info(
-                                f"Worker {worker_id} finished streaming {chunk_count} chunks for task {inference_request._task_id}"
+                                f"Worker {worker_id} finished streaming chunks for task {inference_request._task_id}"
                             )
 
                         loop.run_until_complete(handle_streaming())
