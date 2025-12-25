@@ -613,8 +613,39 @@ jobs:
       - name: Fail if coverage below threshold
         if: ${{ steps.diff-cover.outputs.coverage_passed == 'false' }}
         run: |
-          echo "❌ Coverage is below 50% threshold"
-          echo "Coverage: ${{ steps.diff-cover.outputs.coverage_pct }}%"
+          echo "=============================================="
+          echo "❌ COVERAGE FAILED - Below 50% threshold"
+          echo "=============================================="
+          echo ""
+          echo "Current coverage: ${{ steps.diff-cover.outputs.coverage_pct }}%"
+          echo "Required: 50%"
+          echo ""
+          echo "=============================================="
+          echo "📋 FILES NEEDING TEST COVERAGE:"
+          echo "=============================================="
+          echo ""
+
+          # Show the full diff-cover report
+          if [ -f diff-cover-output.txt ]; then
+            cat diff-cover-output.txt
+          fi
+
+          echo ""
+          echo "=============================================="
+          echo "📝 DETAILED REPORT (Markdown):"
+          echo "=============================================="
+          echo ""
+
+          # Show the markdown report with specific lines
+          if [ -f coverage-diff.md ]; then
+            cat coverage-diff.md
+          fi
+
+          echo ""
+          echo "=============================================="
+          echo "💡 To fix: Add tests for the uncovered lines listed above"
+          echo "=============================================="
+
           exit 1
 
       - name: Generate coverage summary
@@ -653,7 +684,7 @@ jobs:
             const coveragePassed = '${{ steps.diff-cover.outputs.coverage_passed }}' === 'true';
 
             const statusIcon = coveragePassed ? '✅' : '❌';
-            const statusText = coveragePassed ? 'PASSED' : 'BELOW THRESHOLD (50%) - PR BLOCKED';
+            const statusText = coveragePassed ? 'PASSED' : 'FAILED';
 
             const commentBody = `## ${statusIcon} Test Coverage Report
 
@@ -666,17 +697,7 @@ jobs:
             | **Status** | ${statusIcon} ${statusText} |
 
             > 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage.
-            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches 50%.**' : ''}
-
-            <details>
-            <summary>What does this mean?</summary>
-
-            - **Coverage %**: Percentage of new/changed lines that are executed by tests
-            - **Threshold**: Minimum required coverage for new code (50%)
-            - Lines not covered by tests may indicate missing test cases
-            - **PRs below threshold will be blocked from merging to dev**
-
-            </details>`;
+            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches at least50%.**' : ''}
 
             // Find existing coverage comment
             const comments = await github.rest.issues.listComments({
