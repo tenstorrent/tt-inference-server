@@ -610,7 +610,15 @@ jobs:
             echo "coverage_passed=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Fail if coverage below threshold
+        if: ${{ steps.diff-cover.outputs.coverage_passed == 'false' }}
+        run: |
+          echo "❌ Coverage is below 50% threshold"
+          echo "Coverage: ${{ steps.diff-cover.outputs.coverage_pct }}%"
+          exit 1
+
       - name: Generate coverage summary
+        if: always()
         run: |
           COVERAGE_PCT="${{ steps.diff-cover.outputs.coverage_pct }}"
           COVERAGE_PASSED="${{ steps.diff-cover.outputs.coverage_passed }}"
@@ -637,6 +645,7 @@ jobs:
           echo "> 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage." >> $GITHUB_STEP_SUMMARY
 
       - name: Comment coverage on PR
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
@@ -698,6 +707,7 @@ jobs:
             }
 
       - name: Upload coverage artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports
