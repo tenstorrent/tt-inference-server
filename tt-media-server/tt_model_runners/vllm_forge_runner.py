@@ -27,7 +27,7 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
@@ -56,12 +56,12 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[CompletionRequest]):
+    def run(self, requests: list[CompletionRequest]):
         """Synchronous wrapper for async inference"""
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._run_inference_async(requests))
+        return loop.run_until_complete(self._run_async(requests))
 
-    async def _run_inference_async(self, requests: list[CompletionRequest]):
+    async def _run_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
 

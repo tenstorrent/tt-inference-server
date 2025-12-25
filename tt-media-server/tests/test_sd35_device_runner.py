@@ -31,8 +31,8 @@ def test_sd35_runner(monkeypatch) -> None:
     prompt = "Happy Robot in a park"
 
     runner = TTSD35Runner(device_id=settings.device_ids[0])
-    runner.load_model()
-    tt_out = runner.run_inference(
+    runner.warmup()
+    tt_out = runner.run(
         [ImageGenerateRequest.model_construct(prompt=prompt, negative_prompt="")]
     )
 

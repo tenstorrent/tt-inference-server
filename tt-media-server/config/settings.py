@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     default_throttle_level: str = "5"
 
     # Timeout settings
-    inference_timeout_seconds: int = 1000
+    request_processing_timeout_seconds: int = 1000
 
     # Job management settings
     max_jobs: int = 10000

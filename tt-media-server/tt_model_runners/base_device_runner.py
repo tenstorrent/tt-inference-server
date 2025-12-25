@@ -34,11 +34,11 @@ class BaseDeviceRunner(ABC):
             )
 
     @abstractmethod
-    def load_model(self):
+    def warmup(self):
         pass
 
     @abstractmethod
-    def run_inference(self, *args, **kwargs):
+    def run(self, *args, **kwargs):
         pass
 
     def set_device(self):

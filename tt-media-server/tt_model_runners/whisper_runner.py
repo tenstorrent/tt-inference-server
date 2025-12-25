@@ -59,7 +59,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
 
@@ -112,18 +112,16 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[AudioProcessingRequest]):
+    def run(self, requests: list[AudioProcessingRequest]):
         """Synchronous wrapper for async inference"""
-        return asyncio.run(self._run_inference_async(requests))
+        return asyncio.run(self._run_async(requests))
 
-    async def _run_inference_async(self, requests: list[AudioProcessingRequest]):
+    async def _run_async(self, requests: list[AudioProcessingRequest]):
         """Main inference method - validates input and routes to appropriate processing"""
         try:
             # Validate prerequisites and input
             if self.pipeline is None:
-                raise RuntimeError(
-                    "Model pipeline not loaded. Call load_model() first."
-                )
+                raise RuntimeError("Model pipeline not loaded. Call warmup() first.")
             if self.ttnn_device is None:
                 raise RuntimeError("TTNN device not initialized")
             request = self._validate_and_extract_request(requests)
@@ -675,7 +673,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     )
 
                     # Run inference in thread pool to avoid blocking
-                    def _run_inference():
+                    def _run():
                         return generator.generate(
                             current_batch=current_batch,
                             generation_params=generation_params,
@@ -683,7 +681,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             return_perf_metrics=False,
                         )
 
-                    return await asyncio.to_thread(_run_inference)
+                    return await asyncio.to_thread(_run)
                 except Exception as e:
                     self.logger.error(
                         f"Device {self.device_id}: Pipeline execution failed: {e}"

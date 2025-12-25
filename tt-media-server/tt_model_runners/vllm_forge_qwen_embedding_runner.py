@@ -18,7 +18,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         self.dimensions_in_batch = None
 
     @log_execution_time("Model warmup")
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -82,7 +82,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         return True
 
     @log_execution_time("Qwen text embedding inference")
-    def run_inference(self, requests: list[TextEmbeddingRequest]):
+    def run(self, requests: list[TextEmbeddingRequest]):
         input = [req.input for req in requests]
 
         # if only one request in batch, validate and set dimensions

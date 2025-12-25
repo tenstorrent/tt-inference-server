@@ -17,7 +17,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
         super().__init__(device_id, num_torch_threads)
 
     @log_execution_time("Model warmup")
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         # Disable vLLM multiprocessing to ensure full batch utilization.
         # When enabled, the engine core runs in a separate process (ZMQ IPC),
         # causing non-deterministic scheduling that splits batches inefficiently
@@ -43,7 +43,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
 
         return True
 
-    def run_inference(self, requests: list[TextEmbeddingRequest]):
+    def run(self, requests: list[TextEmbeddingRequest]):
         self.logger.debug(
             f"VLLMBGELargeENRunner: Running inference for {len(requests)} requests"
         )

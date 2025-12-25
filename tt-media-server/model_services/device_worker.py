@@ -35,7 +35,7 @@ def setup_worker_environment(worker_id: str):
     os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
 
     if settings.enable_telemetry:
-        get_telemetry_client()  # initialize telemetry client for the worker, it will save time from inference
+        get_telemetry_client()  # initialize telemetry client for the worker
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
     # use cache per device to reduce number of "binary not found" errors
@@ -82,7 +82,7 @@ def device_worker(
         device_runner.set_device()
         # Use the same loop for model loading
         try:
-            loop.run_until_complete(device_runner.load_model())
+            loop.run_until_complete(device_runner.warmup())
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
@@ -112,125 +112,114 @@ def device_worker(
 
     # Main processing loop
     while True:
-        inference_requests: list[object] = get_greedy_batch(
+        requests: list[object] = get_greedy_batch(
             task_queue, settings.max_batch_size, device_runner.is_request_batchable
         )
-        if inference_requests[0] is None:  # Sentinel to shut down
+        if requests[0] is None:  # Sentinel to shut down
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
-        logger.info(
-            f"Worker {worker_id} processing tasks: {inference_requests.__len__()}"
-        )
-        inference_responses = None
+        logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
+        responses = None
 
-        inference_successful = False
+        successful = False
         timer_ran_out = False
 
         def timeout_handler():
-            nonlocal inference_successful, timer_ran_out
-            if not inference_successful:
+            nonlocal successful, timer_ran_out
+            if not successful:
                 logger.error(
-                    f"Worker {worker_id} timed out after {settings.inference_timeout_seconds}s"
+                    f"Worker {worker_id} timed out after {settings.request_processing_timeout_seconds}s"
                 )
                 logger.info(
-                    f"Still waiting for inference to complete, we're not stopping worker {worker_id}"
+                    f"Still waiting for worker to complete, we're not stopping worker {worker_id}"
                 )
                 timer_ran_out = True
 
         timeout_timer = threading.Timer(
-            settings.inference_timeout_seconds, lambda: timeout_handler()
+            settings.request_processing_timeout_seconds, lambda: timeout_handler()
         )
         timeout_timer.start()
 
         try:
             has_streaming_request = any(
-                (hasattr(req, "stream") and req.stream) for req in inference_requests
+                (hasattr(req, "stream") and req.stream) for req in requests
             )
 
             if has_streaming_request:
                 # Handle streaming requests (one at a time for now)
-                for inference_request in inference_requests:
-                    if (
-                        hasattr(inference_request, "stream")
-                        and inference_request.stream
-                    ):
+                for request in requests:
+                    if hasattr(request, "stream") and request.stream:
                         logger.info(
-                            f"Worker {worker_id} processing streaming request for task {inference_request._task_id}"
+                            f"Worker {worker_id} processing streaming request for task {request._task_id}"
                         )
 
                         async def handle_streaming():
-                            result_generator = await device_runner._run_inference_async(
-                                [inference_request]
-                            )
+                            result_generator = await device_runner._run_async([request])
 
-                            chunk_key = inference_request._task_id
+                            chunk_key = request._task_id
                             async for chunk in result_generator:
                                 result_queue.put((worker_id, chunk_key, chunk))
 
                             logger.info(
-                                f"Worker {worker_id} finished streaming chunks for task {inference_request._task_id}"
+                                f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
                             )
 
                         loop.run_until_complete(handle_streaming())
                     else:
-                        response = device_runner.run_inference([inference_request])
+                        response = device_runner.run([request])
                         result_queue.put(
                             (
                                 worker_id,
-                                inference_request._task_id,
+                                request._task_id,
                                 response[0] if response else None,
                             )
                         )
             else:
-                inference_responses = device_runner.run_inference(
-                    [request for request in inference_requests]
-                )
+                responses = device_runner.run([request for request in requests])
 
-                if inference_responses is None or len(inference_responses) == 0:
-                    for inference_request in inference_requests:
+                if responses is None or len(responses) == 0:
+                    for request in requests:
                         error_queue.put(
                             (
                                 worker_id,
-                                inference_request._task_id,
+                                request._task_id,
                                 "No responses generated",
                             )
                         )
                     continue
 
-                for i, inference_request in enumerate(inference_requests):
-                    result_queue.put(
-                        (worker_id, inference_request._task_id, inference_responses[i])
-                    )
+                for i, request in enumerate(requests):
+                    result_queue.put((worker_id, request._task_id, responses[i]))
 
-            inference_successful = True
+            successful = True
             timeout_timer.cancel()
 
         except Exception as e:
             timeout_timer.cancel()
-            error_msg = f"Worker {worker_id} inference error: {str(e)}"
+            error_msg = f"Worker {worker_id} execution error: {str(e)}"
             logger.error(error_msg)
-            for inference_request in inference_requests:
-                error_queue.put((worker_id, inference_request._task_id, error_msg))
+            for request in requests:
+                error_queue.put((worker_id, request._task_id, error_msg))
             continue
 
         logger.debug(
-            f"Worker {worker_id} finished processing tasks: {inference_requests.__len__()}"
+            f"Worker {worker_id} finished processing tasks: {requests.__len__()}"
         )
 
         # Process result only if timer didn't run out
         # Prevents memory leaks
         if timer_ran_out:
             # TODO need to write to error log
-            for inference_request in inference_requests:
+            for request in requests:
                 logger.warning(
-                    f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing"
+                    f"Worker {worker_id} task {request._task_id} ran out of time, skipping result processing"
                 )
                 error_queue.put(
                     (
                         worker_id,
-                        inference_request._task_id,
-                        f"Worker {worker_id} task {inference_request._task_id} ran out of time, skipping result processing",
+                        request._task_id,
+                        f"Worker {worker_id} task {request._task_id} ran out of time, skipping result processing",
                     )
                 )
             continue
