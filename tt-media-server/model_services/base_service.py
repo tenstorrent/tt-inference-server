@@ -139,12 +139,12 @@ class BaseService(ABC):
 
         try:
             result = await asyncio.wait_for(
-                queue.get(), timeout=settings.inference_timeout_seconds
+                queue.get(), timeout=settings.request_processing_timeout_seconds
             )
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.inference_timeout_seconds}s"
+                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
             )
             raise
         except Exception as e:
@@ -167,7 +167,7 @@ class BaseService(ABC):
         try:
             # Add extra time based on request duration if available (e.g., audio duration)
             # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            dynamic_timeout = settings.inference_timeout_seconds
+            dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout

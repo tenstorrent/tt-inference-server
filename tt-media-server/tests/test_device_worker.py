@@ -22,7 +22,7 @@ mock_settings.default_throttle_level = "5"  # Must be string for os.environ
 mock_settings.enable_telemetry = False
 mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
-mock_settings.inference_timeout_seconds = 100
+mock_settings.request_processing_timeout_seconds = 100
 sys.modules["config.settings"] = Mock()
 sys.modules["config.settings"].settings = mock_settings
 

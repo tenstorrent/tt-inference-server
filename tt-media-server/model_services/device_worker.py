@@ -131,7 +131,7 @@ def device_worker(
             nonlocal successful, timer_ran_out
             if not successful:
                 logger.error(
-                    f"Worker {worker_id} timed out after {settings.inference_timeout_seconds}s"
+                    f"Worker {worker_id} timed out after {settings.request_processing_timeout_seconds}s"
                 )
                 logger.info(
                     f"Still waiting for worker to complete, we're not stopping worker {worker_id}"
@@ -139,7 +139,7 @@ def device_worker(
                 timer_ran_out = True
 
         timeout_timer = threading.Timer(
-            settings.inference_timeout_seconds, lambda: timeout_handler()
+            settings.request_processing_timeout_seconds, lambda: timeout_handler()
         )
         timeout_timer.start()
 
