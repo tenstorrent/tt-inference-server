@@ -180,9 +180,6 @@ class WorkflowSetup:
         if hasattr(args, "suite_category") and args.suite_category:
             extra_args.extend(["--suite-category", args.suite_category])
 
-        if hasattr(args, "suite_file") and args.suite_file:
-            extra_args.extend(["--suite-file"] + args.suite_file)
-
         # Test selection
         if hasattr(args, "test_name") and args.test_name:
             extra_args.extend(["--test-name", args.test_name])

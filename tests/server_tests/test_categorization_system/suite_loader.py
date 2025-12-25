@@ -58,7 +58,7 @@ def load_suite_files() -> list[dict]:
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in suite file {suite_file}: {e}")
-            raise json.JSONDecodeError(f"Invalid JSON in suite file {suite_file}: {e}")
+            raise ValueError(f"Invalid JSON in suite file {suite_file}: {e}") from e
         except Exception as e:
             logger.error(f"Error loading suite file {suite_file}: {e}")
             raise RuntimeError(f"Error loading suite file {suite_file}: {e}")

@@ -216,14 +216,6 @@ def _parse_args():
         default=None,
     )
 
-    # Workflow integration arguments
-    parser.add_argument(
-        "--model-spec-json",
-        type=str,
-        help="Path to model specification JSON file (passed by workflow)",
-        required=False,
-    )
-
     # Model/Device filtering
     parser.add_argument(
         "--model",
@@ -291,11 +283,6 @@ def _parse_args():
         "--list-tests",
         action="store_true",
         help="List matching tests without running them",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print test plan without executing",
     )
 
     args = parser.parse_args()

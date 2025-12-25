@@ -237,13 +237,6 @@ def parse_arguments():
         default=None,
     )
     spec_tests_group.add_argument(
-        "--suite-file",
-        type=str,
-        nargs="+",
-        help="Load specific suite file(s) from test_suites/ (e.g., image.json audio.json)",
-        default=None,
-    )
-    spec_tests_group.add_argument(
         "--test-name",
         type=str,
         help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
@@ -404,7 +397,6 @@ def format_cli_args_summary(args, model_spec):
                 f"  exclude_markers:            {args.exclude_markers}",
                 f"  model_category:             {args.model_category}",
                 f"  suite_category:             {args.suite_category}",
-                f"  suite_file:                 {args.suite_file}",
                 f"  test_name:                  {args.test_name}",
                 f"  skip_prerequisites:         {args.skip_prerequisites}",
                 f"  list_tests:                 {args.list_tests}",
