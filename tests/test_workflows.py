@@ -195,7 +195,7 @@ class TestWorkflowExecution:
             return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
-            assert len(return_codes) == 4  # evals, benchmarks, spec_tests, reports
+            assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
             assert all(code == 0 for code in return_codes)
             assert mock_run_single.call_count == 4
 

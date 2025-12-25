@@ -36,6 +36,7 @@ def load_suite_files() -> list[dict]:
     """
     Load and merge test suite files from test_suites/ directory.
     """
+    logger.info(f"Loading suite files from {SUITES_DIR}")
     if not SUITES_DIR.exists():
         raise FileNotFoundError(f"test_suites directory not found: {SUITES_DIR}")
 
@@ -71,14 +72,15 @@ def load_suite_files_by_category(category: str) -> list[dict]:
     Load suites from a specific category file (e.g., 'image' -> image.json).
 
     Args:
-        category: Category name (e.g., "image", "audio", "forge")
+        category: Category name (e.g., "image", "audio", "forge").
 
     Returns:
-        List of test suite dictionaries from that category file
+        List of test suite dictionaries from that category file.
 
     Raises:
-        FileNotFoundError: If the category file doesn't exist
+        FileNotFoundError: If the category file doesn't exist.
     """
+    logger.info(f"Loading suite file for category: {category}")
     suite_file = SUITES_DIR / f"{category.lower()}.json"
 
     if not suite_file.exists():

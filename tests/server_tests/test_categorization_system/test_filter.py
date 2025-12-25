@@ -71,17 +71,17 @@ class TestFilter:
             logger.info(f"Using {len(suites)} pre-loaded test suites")
             self.test_suites = suites
 
-        # Build reverse mapping: model -> category
+        logger.info("Building reverse mapping: model -> category")
         self._model_to_category = {}
         for category, models in self.model_categories.items():
             for model in models:
                 self._model_to_category[model] = category
 
-        # Expand all test suites
+        logger.info("Expanding all test suites")
         self.expanded_suites = self._expand_all_suites()
         self.filtered_suites = list(self.expanded_suites)
 
-        # Include prerequisites by default
+        logger.info("Including prerequisites by default")
         self._include_prerequisites = True
 
     @classmethod
@@ -135,7 +135,7 @@ class TestFilter:
         """
         template_name = test_case.get("template")
         if not template_name:
-            # Direct test case definition (no template)
+            logger.info(f"Direct test case definition: {test_case}")
             return test_case
 
         template = self.test_templates.get(template_name, {})
@@ -265,6 +265,7 @@ class TestFilter:
         Returns:
             List of expanded prerequisite test dicts.
         """
+        logger.info(f"Getting prerequisite tests for suite: {suite}")
         prereqs = []
         for prereq in self.prerequisite_tests:
             expanded = self._expand_prerequisite_test(prereq, suite)
@@ -453,6 +454,7 @@ class TestFilter:
             Each suite has prerequisite tests (e.g., DeviceLivenessTest) prepended
             if include_prerequisites is True.
         """
+        logger.info("Getting filtered tests")
         result = []
 
         for suite in self.filtered_suites:
