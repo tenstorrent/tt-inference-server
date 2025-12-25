@@ -45,6 +45,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLMBGELargeEN_V1_5: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_bge_large_en_runner", fromlist=["VLLMBGELargeENRunner"]
     ).VLLMBGELargeENRunner(wid, num_threads),
+    ModelRunners.VLLM_TINYLLAMA_CHAT: lambda wid, num_threads: __import__(
+        "tt_model_runners.vllm_tinyllama_chat_runner", fromlist=["VLLMTinyLlamaChatRunner"]
+    ).VLLMTinyLlamaChatRunner(wid, num_threads),
     ModelRunners.TEST: lambda wid, num_threads: __import__(
         "tt_model_runners.test_runner", fromlist=["TestRunner"]
     ).TestRunner(wid, num_threads),

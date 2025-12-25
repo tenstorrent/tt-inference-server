@@ -20,6 +20,7 @@ class SupportedModels(Enum):
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    TINYLLAMA_1_1B_CHAT_V1_0 = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
 
 # MODEL environment variable
@@ -45,6 +46,7 @@ class ModelNames(Enum):
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    TINYLLAMA_1_1B_CHAT_V1_0 = "TinyLlama-1.1B-Chat-v1.0"
 
 
 class ModelRunners(Enum):
@@ -61,6 +63,7 @@ class ModelRunners(Enum):
     VLLMForge = "vllm_forge"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
+    VLLM_TINYLLAMA_CHAT = "vllm_tinyllama_chat"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -96,6 +99,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLMBGELargeEN_V1_5,
+        ModelRunners.VLLM_TINYLLAMA_CHAT,
         ModelRunners.TEST,
     },
     ModelServices.CNN: {
@@ -431,6 +435,12 @@ ModelConfigs = {
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 256,
+    },
+    (ModelRunners.VLLM_TINYLLAMA_CHAT, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 8,
     },
 }
 
