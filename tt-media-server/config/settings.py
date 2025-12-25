@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
-    use_dynamic_batcher: bool = False
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
@@ -51,6 +50,7 @@ class Settings(BaseSettings):
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
+    use_dynamic_batcher: bool = False
 
     # Worker management settings
     new_device_delay_seconds: int = 0

@@ -476,6 +476,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
 | `RESET_DEVICE_SLEEP_TIME` | `5.0` | Time in seconds to wait after device reset before attempting reconnection |
 | `ALLOW_DEEP_RESET` | `False` | Boolean flag to enable deep device reset functionality. When enabled, allows more aggressive device reset operations beyond standard reset procedures |
+| `USE_GREEDY_BASED_ALLOCATION` | `True` | Boolean flag to enable greedy-based device allocation strategy. When enabled with single device mesh shape (1,1), automatically allocates all available devices from the system |
 
 ## Model Configuration
 
@@ -486,7 +487,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
-| `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Download weights when initializing service - makes sure that weights are downloaded once per instance of the server |
+| `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
 ## Queue and Batch Configuration
 
@@ -545,7 +546,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `32` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
 | `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
 | `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
 | `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
@@ -570,7 +571,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
 | `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
 
-### Telemetry settings
+### Telemetry Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
