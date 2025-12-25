@@ -73,6 +73,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_VIT: lambda wid, num_threads: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
     ).ForgeVitRunner(wid, num_threads),
+    ModelRunners.LORA_TRAINER: lambda wid, num_threads: __import__(
+        "tt_model_runners.lora_trainer_runner", fromlist=["LoraTrainerRunner"]
+    ).LoraTrainerRunner(wid, num_threads),
     ModelRunners.MOCK: lambda wid, num_threads: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid, num_threads),

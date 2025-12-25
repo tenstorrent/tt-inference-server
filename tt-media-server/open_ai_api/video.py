@@ -5,6 +5,7 @@
 import os
 import tempfile
 
+from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -20,7 +21,7 @@ router = APIRouter()
 
 @router.post("/generations")
 async def submit_generate_video_request(
-    video_generation_request: VideoGenerateRequest,
+    request: VideoGenerateRequest,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -31,18 +32,18 @@ async def submit_generate_video_request(
         JSONResponse: Video job object with job ID and initial metadata.
 
     Raises:
-        HTTPException: If video generation submission fails.
+        HTTPException: If video generation job submission fails.
     """
     try:
-        job_data = await service.create_job("video", video_generation_request)
+        job_data = await service.create_job(JobTypes.VIDEO, request)
         return JSONResponse(content=job_data, status_code=202)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/generations/{video_id}")
+@router.get("/generations/{job_id}")
 def get_video_metadata(
-    video_id: str,
+    job_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -53,19 +54,19 @@ def get_video_metadata(
         JSONResponse: Video job object with current status and metadata.
 
     Raises:
-        HTTPException: If video not found.
+        HTTPException: If video job not found.
     """
-    job_data = service.get_job_metadata(video_id)
+    job_data = service.get_job_metadata(job_id)
     if job_data is None:
-        raise HTTPException(status_code=404, detail="Video not found")
+        raise HTTPException(status_code=404, detail="Video job not found")
 
     return JSONResponse(content=job_data)
 
 
 @log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
-@router.get("/generations/{video_id}/download")
+@router.get("/generations/{job_id}/download")
 def download_video_content(
-    video_id: str,
+    job_id: str,
     request: Request,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
@@ -81,7 +82,7 @@ def download_video_content(
         HTTPException: If video not found, not completed, or failed.
         HTTPException: If Range header is invalid (416).
     """
-    file_path = service.get_job_result(video_id)
+    file_path = service.get_job_result(job_id)
     if (
         file_path is None
         or not isinstance(file_path, str)
@@ -132,9 +133,9 @@ def download_video_content(
     )
 
 
-@router.delete("/generations/{video_id}")
-def delete_video_metadata(
-    video_id: str,
+@router.delete("/generations/{job_id}")
+def cancel_video_job(
+    job_id: str,
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -147,14 +148,14 @@ def delete_video_metadata(
     Raises:
         HTTPException: If video not found.
     """
-    cancellation_result = service.cancel_job(video_id)
-    if not cancellation_result:
-        raise HTTPException(status_code=404, detail="Video not found")
+    success = service.cancel_job(job_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Video job not found")
 
     return JSONResponse(
         content={
-            "id": video_id,
-            "object": "video",
+            "id": job_id,
+            "object": JobTypes.VIDEO.value,
             "deleted": True,
         }
     )

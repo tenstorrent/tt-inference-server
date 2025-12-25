@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
-    use_dynamic_batcher: bool = False
 
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
@@ -51,6 +50,7 @@ class Settings(BaseSettings):
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
+    use_dynamic_batcher: bool = False
 
     # Worker management settings
     new_device_delay_seconds: int = 0
@@ -64,10 +64,11 @@ class Settings(BaseSettings):
     inference_timeout_seconds: int = 1000
 
     # Job management settings
-    max_jobs: int = 10000  # Maximum number of jobs allowed in the job manager
-    job_cleanup_interval_seconds: int = 300  # Check for cleanup every 5 minutes
-    job_retention_seconds: int = 3600  # Keep completed/failed jobs for 1 hour
-    job_max_stuck_time_seconds: int = 7200  # Cancel jobs stuck for more than 2 hours
+    max_jobs: int = 10000
+    job_cleanup_interval_seconds: int = 300
+    job_retention_seconds: int = 86400
+    job_max_stuck_time_seconds: int = 10800
+    enable_job_persistence: bool = False
 
     # Text processing settings
     min_context_length: int = 32

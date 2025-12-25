@@ -9,6 +9,7 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
+from config.constants import JobTypes
 from domain.base_request import BaseRequest
 from utils.job_manager import Job, JobManager, JobStatus, get_job_manager
 
@@ -175,7 +176,7 @@ class TestJobManager:
 
         job_data = await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -202,7 +203,7 @@ class TestJobManager:
         for i in range(10):
             await job_manager.create_job(
                 job_id=f"job-{i}",
-                job_type="video",
+                job_type=JobTypes.VIDEO,
                 model="test-model",
                 request=mock_request,
                 task_function=task_func,
@@ -212,11 +213,278 @@ class TestJobManager:
         with pytest.raises(Exception, match="Maximum job limit reached"):
             await job_manager.create_job(
                 job_id="job-overflow",
-                job_type="video",
+                job_type=JobTypes.VIDEO,
                 model="test-model",
                 request=mock_request,
                 task_function=task_func,
             )
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_empty(self, job_manager):
+        """Test get_all_jobs_metadata returns empty list when no jobs exist"""
+        result = job_manager.get_all_jobs_metadata()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_all_jobs(self, job_manager, mock_request):
+        """Test get_all_jobs_metadata returns all jobs"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return b"result"
+
+        # Create multiple jobs
+        await job_manager.create_job(
+            job_id="job-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="job-2",
+            job_type=JobTypes.VIDEO,
+            model="test-model-2",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="job-3",
+            job_type=JobTypes.TRAINING,
+            model="test-model-3",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        result = job_manager.get_all_jobs_metadata()
+
+        assert len(result) == 3
+        job_ids = [job["id"] for job in result]
+        assert "job-1" in job_ids
+        assert "job-2" in job_ids
+        assert "job-3" in job_ids
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_filtered_by_type(
+        self, job_manager, mock_request
+    ):
+        """Test get_all_jobs_metadata filters by job type"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return b"result"
+
+        # Create jobs of different types
+        await job_manager.create_job(
+            job_id="video-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="video-2",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="training-1",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="training-2",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        # Filter by VIDEO type
+        result = job_manager.get_all_jobs_metadata(job_type=JobTypes.VIDEO)
+
+        assert len(result) == 2
+        for job in result:
+            assert job["object"] == "video"
+        job_ids = [job["id"] for job in result]
+        assert "video-1" in job_ids
+        assert "video-2" in job_ids
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_filtered_by_training_type(
+        self, job_manager, mock_request
+    ):
+        """Test get_all_jobs_metadata filters by TRAINING type"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return b"result"
+
+        await job_manager.create_job(
+            job_id="video-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await job_manager.create_job(
+            job_id="training-1",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        result = job_manager.get_all_jobs_metadata(job_type=JobTypes.TRAINING)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "training-1"
+        assert result[0]["object"] == "training"
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_filtered_no_matches(
+        self, job_manager, mock_request
+    ):
+        """Test get_all_jobs_metadata returns empty list when filter has no matches"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return b"result"
+
+        await job_manager.create_job(
+            job_id="video-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        # Filter by TRAINING type when only VIDEO exists
+        result = job_manager.get_all_jobs_metadata(job_type=JobTypes.TRAINING)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_includes_all_statuses(
+        self, job_manager, mock_request
+    ):
+        """Test get_all_jobs_metadata includes jobs in all statuses"""
+
+        async def quick_task(req):
+            return b"result"
+
+        async def slow_task(req):
+            await asyncio.sleep(10)
+            return b"result"
+
+        async def failing_task(req):
+            raise ValueError("Test error")
+
+        # Create jobs with different statuses
+        await job_manager.create_job(
+            job_id="completed-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=quick_task,
+        )
+        await job_manager.create_job(
+            job_id="in-progress-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=slow_task,
+        )
+        await job_manager.create_job(
+            job_id="failed-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=failing_task,
+        )
+
+        # Wait for status changes
+        await asyncio.sleep(0.3)
+
+        result = job_manager.get_all_jobs_metadata()
+
+        assert len(result) == 3
+
+        statuses = {job["id"]: job["status"] for job in result}
+        assert statuses["completed-job"] == "completed"
+        assert statuses["in-progress-job"] == "in_progress"
+        assert statuses["failed-job"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_returns_public_dict(
+        self, job_manager, mock_request
+    ):
+        """Test get_all_jobs_metadata returns public dict format (no private fields)"""
+
+        async def task_func(req):
+            return b"result"
+
+        await job_manager.create_job(
+            job_id="job-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        await asyncio.sleep(0.2)  # Wait for completion
+
+        result = job_manager.get_all_jobs_metadata()
+
+        assert len(result) == 1
+        job_data = result[0]
+
+        # Check required fields are present
+        assert "id" in job_data
+        assert "object" in job_data
+        assert "status" in job_data
+        assert "created_at" in job_data
+        assert "model" in job_data
+
+        # Check private fields are NOT present
+        assert "_task" not in job_data
+        assert (
+            "result" not in job_data
+        )  # Result not in metadata, only in get_job_result
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_thread_safety(self, job_manager, mock_request):
+        """Test get_all_jobs_metadata is thread-safe with concurrent access"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return b"result"
+
+        # Create some jobs
+        for i in range(5):
+            await job_manager.create_job(
+                job_id=f"job-{i}",
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=task_func,
+            )
+
+        # Concurrently read metadata multiple times
+        results = await asyncio.gather(
+            asyncio.to_thread(job_manager.get_all_jobs_metadata),
+            asyncio.to_thread(job_manager.get_all_jobs_metadata),
+            asyncio.to_thread(job_manager.get_all_jobs_metadata),
+        )
+
+        # All reads should return the same number of jobs
+        assert len(results[0]) == 5
+        assert len(results[1]) == 5
+        assert len(results[2]) == 5
 
     @pytest.mark.asyncio
     async def test_get_job_metadata_not_found(self, job_manager):
@@ -234,7 +502,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -253,7 +521,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -278,7 +546,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -302,7 +570,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -336,7 +604,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -359,7 +627,7 @@ class TestJobManager:
         # Create and complete a job
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -389,7 +657,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,
@@ -425,7 +693,7 @@ class TestJobManager:
 
             await job_manager.create_job(
                 job_id="job-123",
-                job_type="video",
+                job_type=JobTypes.VIDEO,
                 model="test-model",
                 request=mock_request,
                 task_function=task_func,
@@ -473,9 +741,9 @@ class TestJobManager:
 
         # Create multiple jobs
         for i in range(3):
-            job_manager.create_job(
+            await job_manager.create_job(
                 job_id=f"job-{i}",
-                job_type="video",
+                job_type=JobTypes.VIDEO,
                 model="test-model",
                 request=mock_request,
                 task_function=task_func,
@@ -524,7 +792,7 @@ class TestJobManager:
                 try:
                     await job_manager.create_job(
                         job_id=f"job-{prefix}-{i}",
-                        job_type="video",
+                        job_type=JobTypes.VIDEO,
                         model="test-model",
                         request=mock_request,
                         task_function=task_func,
@@ -555,7 +823,7 @@ class TestJobManager:
 
         await job_manager.create_job(
             job_id="job-123",
-            job_type="video",
+            job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
             task_function=task_func,

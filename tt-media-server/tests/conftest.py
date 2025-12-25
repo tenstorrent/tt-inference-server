@@ -537,7 +537,10 @@ runner_mocks = {
     "tt_model_runners.mock_runner": {
         "MockRunner": create_mock_runner_class("MockRunner")
     },
-    "tt_model_runners.forge_runners": {},  # Parent package module
+    "tt_model_runners.lora_trainer_runner": {
+        "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    },
+    "tt_model_runners.forge_runners": {},
     "tt_model_runners.forge_runners.runners": {
         "ForgeResnetRunner": create_mock_runner_class("ForgeResnetRunner"),
         "ForgeVovnetRunner": create_mock_runner_class("ForgeVovnetRunner"),

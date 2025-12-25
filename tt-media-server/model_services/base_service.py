@@ -6,6 +6,7 @@ import asyncio
 from abc import ABC
 from typing import Any, Optional
 
+from config.constants import JobTypes
 from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
@@ -212,7 +213,7 @@ class BaseService(ABC):
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
 
-    async def create_job(self, job_type: str, request: BaseRequest) -> dict:
+    async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
@@ -220,6 +221,9 @@ class BaseService(ABC):
             request=request,
             task_function=self.process_request,
         )
+
+    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
+        return self._job_manager.get_all_jobs_metadata(job_type)
 
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
         return self._job_manager.get_job_metadata(job_id)

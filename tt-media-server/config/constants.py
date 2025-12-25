@@ -68,6 +68,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    LORA_TRAINER = "lora_trainer"
     MOCK = "mock"
     TEST = "test"
 
@@ -78,6 +79,7 @@ class ModelServices(Enum):
     CNN = "cnn"
     AUDIO = "audio"
     VIDEO = "video"
+    TRAINING = "training"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -111,6 +113,9 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
+    },
+    ModelServices.TRAINING: {
+        ModelRunners.LORA_TRAINER,
     },
 }
 
@@ -170,6 +175,11 @@ class AudioTasks(Enum):
 class AudioResponseFormat(Enum):
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
+
+
+class JobTypes(Enum):
+    VIDEO = "video"
+    TRAINING = "training"
 
 
 # Combined model-device specific configurations
