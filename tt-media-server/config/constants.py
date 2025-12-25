@@ -415,13 +415,13 @@ ModelConfigs = {
         "max_batch_size": 8,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 32,
