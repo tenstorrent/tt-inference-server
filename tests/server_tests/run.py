@@ -285,6 +285,20 @@ def _parse_args():
         help="List matching tests without running them",
     )
 
+    # Workflow integration arguments (passed by run_workflows.py)
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Path to model spec JSON file (passed by workflow runner)",
+        default=None,
+    )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        help="Output directory for test results (passed by workflow runner)",
+        default=None,
+    )
+
     args = parser.parse_args()
 
     # Handle utility commands
