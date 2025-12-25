@@ -114,9 +114,7 @@ def device_worker(
         base_key = request._task_id
 
         try:
-            result_generator = await device_runner._run_async(
-                [request]
-            )
+            result_generator = await device_runner._run_async([request])
 
             logger.info("Starting streaming")
 
@@ -137,9 +135,7 @@ def device_worker(
             if response:
                 result_queue.put((worker_id, request._task_id, response[0]))
             else:
-                error_queue.put(
-                    (worker_id, request._task_id, "No response generated")
-                )
+                error_queue.put((worker_id, request._task_id, "No response generated"))
         except Exception as e:
             logger.error(f"Execution failed for task {request._task_id}: {e}")
             error_queue.put((worker_id, request._task_id, str(e)))

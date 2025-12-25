@@ -119,9 +119,7 @@ def device_worker(
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
-        logger.info(
-            f"Worker {worker_id} processing tasks: {requests.__len__()}"
-        )
+        logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None
 
         successful = False
@@ -151,18 +149,13 @@ def device_worker(
             if has_streaming_request:
                 # Handle streaming requests (one at a time for now)
                 for request in requests:
-                    if (
-                        hasattr(request, "stream")
-                        and request.stream
-                    ):
+                    if hasattr(request, "stream") and request.stream:
                         logger.info(
                             f"Worker {worker_id} processing streaming request for task {request._task_id}"
                         )
 
                         async def handle_streaming():
-                            result_generator = await device_runner._run_async(
-                                [request]
-                            )
+                            result_generator = await device_runner._run_async([request])
 
                             chunk_key = request._task_id
                             async for chunk in result_generator:
@@ -183,9 +176,7 @@ def device_worker(
                             )
                         )
             else:
-                responses = device_runner.run(
-                    [request for request in requests]
-                )
+                responses = device_runner.run([request for request in requests])
 
                 if responses is None or len(responses) == 0:
                     for request in requests:
@@ -199,9 +190,7 @@ def device_worker(
                     continue
 
                 for i, request in enumerate(requests):
-                    result_queue.put(
-                        (worker_id, request._task_id, responses[i])
-                    )
+                    result_queue.put((worker_id, request._task_id, responses[i]))
 
             successful = True
             timeout_timer.cancel()

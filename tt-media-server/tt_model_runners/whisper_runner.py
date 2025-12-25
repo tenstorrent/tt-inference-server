@@ -121,9 +121,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         try:
             # Validate prerequisites and input
             if self.pipeline is None:
-                raise RuntimeError(
-                    "Model pipeline not loaded. Call warmup() first."
-                )
+                raise RuntimeError("Model pipeline not loaded. Call warmup() first.")
             if self.ttnn_device is None:
                 raise RuntimeError("TTNN device not initialized")
             request = self._validate_and_extract_request(requests)
