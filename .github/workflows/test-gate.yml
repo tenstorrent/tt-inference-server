@@ -604,10 +604,6 @@ jobs:
           COVERAGE_PCT=$(grep -oE "Coverage: [0-9]+(\.[0-9]+)?%" diff-cover-output.txt | grep -oE "[0-9]+(\.[0-9]+)?" | tail -1 || echo "0")
           echo "coverage_pct=$COVERAGE_PCT" >> $GITHUB_OUTPUT
 
-          # Extract lines covered/total
-          LINES_COVERED=$(grep -oE "[0-9]+ of [0-9]+ lines" diff-cover-output.txt | head -1 || echo "0 of 0 lines")
-          echo "lines_covered=$LINES_COVERED" >> $GITHUB_OUTPUT
-
           if [ "$DIFF_COVER_FAILED" = "true" ]; then
             echo "coverage_passed=false" >> $GITHUB_OUTPUT
           else
@@ -617,7 +613,6 @@ jobs:
       - name: Generate coverage summary
         run: |
           COVERAGE_PCT="${{ steps.diff-cover.outputs.coverage_pct }}"
-          LINES_COVERED="${{ steps.diff-cover.outputs.lines_covered }}"
           COVERAGE_PASSED="${{ steps.diff-cover.outputs.coverage_passed }}"
 
           # Determine status
@@ -636,7 +631,6 @@ jobs:
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Coverage** | ${COVERAGE_PCT}% |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Lines** | ${LINES_COVERED} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Threshold** | 50% |" >> $GITHUB_STEP_SUMMARY
           echo "| **Status** | $STATUS_ICON $STATUS_TEXT |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -647,7 +641,6 @@ jobs:
         with:
           script: |
             const coveragePct = '${{ steps.diff-cover.outputs.coverage_pct }}';
-            const linesCovered = '${{ steps.diff-cover.outputs.lines_covered }}';
             const coveragePassed = '${{ steps.diff-cover.outputs.coverage_passed }}' === 'true';
 
             const statusIcon = coveragePassed ? '✅' : '❌';
@@ -660,7 +653,6 @@ jobs:
             | Metric | Value |
             |--------|-------|
             | **Coverage** | ${coveragePct}% |
-            | **Lines** | ${linesCovered} |
             | **Threshold** | 50% |
             | **Status** | ${statusIcon} ${statusText} |
 
