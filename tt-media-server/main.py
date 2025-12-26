@@ -13,6 +13,8 @@ from telemetry.prometheus_metrics import PrometheusMetrics
 from utils.job_manager import get_job_manager
 
 env = os.getenv("ENVIRONMENT", "production")
+os.environ["HF_MODEL"] = "meta-llama/Llama-3.1-8B-Instruct"
+os.environ["VLLM_USE_V1"] = "1"
 # TODO load proper development later
 env = "development"
 

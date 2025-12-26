@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import time
 from multiprocessing import Queue
 
 from config.settings import settings
@@ -63,12 +62,24 @@ def setup_worker_environment(worker_id: str):
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue: Queue,
+    result_queue,  # This is NOT the SharedRingQueue object - it's passed as an argument
     warmup_signals_queue: Queue,
     error_queue: Queue,
 ):
     setup_worker_environment(worker_id)
     logger = TTLogger()
+
+    # ✅ ATTACH TO THE SHARED RING QUEUE BY NAME
+    from utils.shared_ring_buffer import SharedRingQueue
+
+    # The result_queue parameter is actually just the name
+    # But you're passing the object... let me fix this differently
+
+    # ✅ RECREATE/ATTACH TO SHARED MEMORY IN WORKER PROCESS
+    shared_result_queue = SharedRingQueue(
+        "result_queue", 50000, 512, 100, 50, create=False
+    )
+    logger.info(f"Worker {worker_id} attached to SharedRingQueue: result_queue")
 
     # Create a single event loop for this worker process
     # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
@@ -110,59 +121,6 @@ def device_worker(
     except Exception as e:
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
-    # ✅ BATCH QUEUE MANAGER - Collects chunks and sends every 10ms
-    class BatchQueueManager:
-        def __init__(self, queue, batch_window_ms=10):
-            self.queue = queue
-            self.batch_window_ms = batch_window_ms / 1000.0  # Convert to seconds
-            self.batch = []
-            self.last_send_time = time.perf_counter()
-            self.batch_lock = asyncio.Lock()
-
-        async def add_to_batch(self, item):
-            """Add item to batch and send if window expired"""
-            async with self.batch_lock:
-                self.batch.append(item)
-                current_time = time.perf_counter()
-
-                # Check if 10ms window has passed or batch is large
-                if (
-                    current_time - self.last_send_time >= self.batch_window_ms
-                    or len(self.batch) >= 100
-                ):  # Also batch by size to prevent memory issues
-                    await self._flush_batch()
-
-        async def _flush_batch(self):
-            """Send current batch to queue"""
-            if not self.batch:
-                return
-
-            try:
-                # Send entire batch as single queue operation
-                await loop.run_in_executor(
-                    None, self.queue.put, (worker_id, "batch", self.batch.copy())
-                )
-                logger.debug(f"Sent batch of {len(self.batch)} items")
-                self.batch.clear()
-                self.last_send_time = time.perf_counter()
-            except Exception as e:
-                logger.error(f"Failed to send batch: {e}")
-
-        async def force_flush(self):
-            """Force send any remaining items"""
-            async with self.batch_lock:
-                await self._flush_batch()
-
-    # ✅ Create batch manager instance
-    batch_manager = BatchQueueManager(result_queue, batch_window_ms=10)
-
-    # ✅ Background task to ensure batches are sent every 10ms
-    async def batch_sender():
-        """Periodically flush batches every 10ms"""
-        while True:
-            await asyncio.sleep(0.01)  # 10ms
-            await batch_manager.force_flush()
-
     # Define streaming handler
     async def handle_streaming(inference_request):
         base_key = inference_request._task_id
@@ -175,11 +133,8 @@ def device_worker(
             logger.info("Starting streaming")
 
             async for chunk in result_generator:
-                # ✅ Add to batch instead of direct queue put
-                await batch_manager.add_to_batch((worker_id, base_key, chunk))
-
-            # ✅ Force flush remaining chunks for this request
-            await batch_manager.force_flush()
+                # ✅ USE THE ATTACHED SHARED QUEUE
+                shared_result_queue.put(worker_id, base_key, chunk)
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {inference_request._task_id}"
@@ -193,7 +148,10 @@ def device_worker(
         try:
             response = device_runner.run_inference([inference_request])
             if response:
-                result_queue.put((worker_id, inference_request._task_id, response[0]))
+                # ✅ USE THE ATTACHED SHARED QUEUE
+                shared_result_queue.put(
+                    worker_id, inference_request._task_id, response[0]
+                )
             else:
                 error_queue.put(
                     (worker_id, inference_request._task_id, "No response generated")
@@ -205,17 +163,12 @@ def device_worker(
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
         """Continuously pull requests from queue and submit to async handlers"""
-        # ✅ Start background batch sender
-        batch_task = asyncio.create_task(batch_sender())
-
         try:
             while True:
                 inference_request = await loop.run_in_executor(None, task_queue.get)
 
                 if inference_request is None:  # Sentinel to shut down
                     logger.info(f"Worker {worker_id} received shutdown signal")
-                    await batch_manager.force_flush()  # Flush any remaining items
-                    batch_task.cancel()
                     return
 
                 if hasattr(inference_request, "stream") and inference_request.stream:
@@ -224,7 +177,6 @@ def device_worker(
                     loop.run_in_executor(None, handle_non_streaming, inference_request)
         except Exception as e:
             logger.error(f"Request feeder error: {e}")
-            batch_task.cancel()
 
     try:
         loop.run_until_complete(request_feeder())

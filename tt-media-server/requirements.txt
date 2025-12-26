@@ -18,6 +18,7 @@ pytest-asyncio
 python-multipart
 torch
 tqdm
+huggingface_hub
 transformers
 uvicorn
 whisperx

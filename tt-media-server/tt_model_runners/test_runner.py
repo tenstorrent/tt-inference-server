@@ -24,7 +24,9 @@ class TestRunner(BaseDeviceRunner):
         self.num_torch_threads = num_torch_threads
         # use float to allow fractional values
         self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.tokens_per_second = int(os.getenv("TOKENS_PER_SECOND", 0))
 
+        self.tokens_per_second = 12000
         self.logger.info(
             f"TestRunner initialized for device {self.device_id}: "
             f"frequency={self.streaming_frequency_ms}ms, "
@@ -58,28 +60,42 @@ class TestRunner(BaseDeviceRunner):
                 ),
                 task_id=task_id,
             )
-            for i in range(request.max_tokens)
+            for i in range(self.tokens_per_second)
         ]
 
         start_time = time.perf_counter()
 
-        for i, chunk in enumerate(streaming_chunks):
-            # Calculate exact target time for this token
-            target_time = start_time + (i * frequency_seconds)
-            current_time = time.perf_counter()
+        self.logger.info("Starting device streaming")
 
-            # Only sleep if we're running ahead of schedule
-            sleep_time = target_time - current_time
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+        if self.tokens_per_second:
+            for i, chunk in enumerate(streaming_chunks):
+                yield chunk
+            # wait till the second elapses
+            elapsed = time.perf_counter() - start_time
+            wait_time = 1.0 - elapsed  # 1 second minus elapsed time
+            if wait_time > 0:
+                self.logger.info("Timer didn't elapse")
+                await asyncio.sleep(wait_time)
+            else:
+                self.logger.info("Timer already elapsed, no need to wait")
+        else:
+            for i, chunk in enumerate(streaming_chunks):
+                # Calculate exact target time for this token
+                target_time = start_time + (i * frequency_seconds)
+                current_time = time.perf_counter()
 
-            yield chunk
+                # Only sleep if we're running ahead of schedule
+                sleep_time = target_time - current_time
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+
+                yield chunk
 
         yield FinalResultOutput(
             type="final_result",
             result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
             task_id=task_id,
-            return_result=True,
+            return_result=False,
         )
 
     def run_inference(self, requests: list[CompletionRequest]):

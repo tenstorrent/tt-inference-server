@@ -17,6 +17,7 @@ from model_services.device_worker_dynamic_batch import (
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+from utils.shared_ring_buffer import SharedRingQueue
 
 
 class Scheduler:
@@ -33,8 +34,13 @@ class Scheduler:
             self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
         )
         self.warmup_signals_queue = Queue(worker_count)
-        self.result_queue = Queue()
         self.error_queue = Queue()
+
+        # ✅ CREATE THE SHARED RING QUEUE
+        self.result_queue = SharedRingQueue(
+            "result_queue", 50000, 512, 100, 50, create=True
+        )
+        self.logger.info("Created SharedRingQueue: result_queue")
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
