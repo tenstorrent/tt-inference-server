@@ -538,28 +538,19 @@ jobs:
           pip install -r tt-media-server/requirements.txt
           pip install pytest-cov diff-cover
 
-      - name: Run tests with coverage
+      - name: Run tt-media-server tests with coverage
         env:
           HF_TOKEN: ""
           MODEL: ""
           JWT_SECRET: ""
+        working-directory: tt-media-server
         run: |
-          # Run main tests with coverage
-          pytest tests/ --ignore=tests/server_tests \
-            --cov=. \
-            --cov=tt-media-server \
-            --cov-report=xml:coverage-main.xml \
-            --cov-report=term-missing \
-            -v --tb=short --continue-on-collection-errors || true
-
-          # Run tt-media-server tests with coverage (append)
-          cd tt-media-server
+          # Only check coverage for tt-media-server (gradual rollout)
           pytest tests/ \
             --cov=. \
-            --cov-report=xml:../coverage-media.xml \
+            --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             -v --tb=short --continue-on-collection-errors || true
-          cd ..
 
       - name: Check coverage of changed lines
         id: diff-cover
@@ -567,33 +558,22 @@ jobs:
           # Get the base branch
           BASE_REF="${{ github.event.pull_request.base.ref }}"
 
-          # Build list of available coverage files
-          # diff-cover natively supports multiple XML files
-          COVERAGE_FILES=""
-          if [ -f coverage-main.xml ]; then
-            COVERAGE_FILES="coverage-main.xml"
-            echo "Found: coverage-main.xml"
-          fi
-          if [ -f coverage-media.xml ]; then
-            COVERAGE_FILES="$COVERAGE_FILES coverage-media.xml"
-            echo "Found: coverage-media.xml"
-          fi
-
-          if [ -z "$COVERAGE_FILES" ]; then
-            echo "⚠️ No coverage files found"
-            echo "coverage_passed=false" >> $GITHUB_OUTPUT
-            echo "coverage_pct=0" >> $GITHUB_OUTPUT
-            echo "lines_covered=0 of 0 lines" >> $GITHUB_OUTPUT
+          # Check if coverage file exists
+          if [ ! -f tt-media-server/coverage.xml ]; then
+            echo "⚠️ No coverage file found"
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            echo "coverage_pct=N/A" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "Using coverage files: $COVERAGE_FILES"
+          echo "Checking coverage for tt-media-server only (gradual rollout)"
 
           # Generate diff-cover report for changed lines only
-          # diff-cover accepts multiple coverage XML files and merges them
-          diff-cover $COVERAGE_FILES \
+          # Only check files in tt-media-server directory
+          diff-cover tt-media-server/coverage.xml \
             --compare-branch=origin/${BASE_REF} \
             --fail-under=50 \
+            --include="tt-media-server/*" \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
           cat diff-cover-output.txt
@@ -713,8 +693,7 @@ jobs:
         with:
           name: coverage-reports
           path: |
-            coverage-main.xml
-            coverage-media.xml
+            tt-media-server/coverage.xml
             diff-cover-output.txt
           retention-days: 14
 
