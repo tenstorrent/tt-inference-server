@@ -7,6 +7,7 @@ import os
 from multiprocessing import Queue
 
 from config.settings import settings
+from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_queue import TTQueue
 from telemetry.telemetry_client import get_telemetry_client
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -62,12 +63,17 @@ def setup_worker_environment(worker_id: str):
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue: Queue,
+    result_queue_name: str,  # ✅ CHANGED: Pass queue name instead of queue object
     warmup_signals_queue: Queue,
     error_queue: Queue,
 ):
     setup_worker_environment(worker_id)
     logger = TTLogger()
+
+    result_queue = SharedMemoryChunkQueue(name=result_queue_name, create=False)
+    logger.info(
+        f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
+    )
 
     # Create a single event loop for this worker process
     # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
@@ -118,8 +124,8 @@ def device_worker(
 
             logger.info("Starting streaming")
 
-            async for chunk in result_generator:
-                result_queue.put((worker_id, base_key, chunk))
+            async for task_id, is_final, text in result_generator:
+                result_queue.put(task_id, is_final, text)
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"

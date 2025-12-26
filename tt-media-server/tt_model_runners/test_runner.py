@@ -2,17 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import os
 import time
 from typing import AsyncGenerator
 
 from domain.completion_request import CompletionRequest
-from domain.completion_response import (
-    CompletionStreamChunk,
-    FinalResultOutput,
-    StreamingChunkOutput,
-)
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
@@ -22,12 +16,13 @@ class TestRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
         self.num_torch_threads = num_torch_threads
-        # use float to allow fractional values
         self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.tokens_per_second = int(os.getenv("TOKENS_PER_SECOND", 0))
+        self.tokens_per_second = 12000
 
         self.logger.info(
             f"TestRunner initialized for device {self.device_id}: "
-            f"frequency={self.streaming_frequency_ms}ms, "
+            f"frequency={self.streaming_frequency_ms}ms, tokens={self.tokens_per_second}"
         )
 
     async def warmup(self) -> bool:
@@ -41,46 +36,28 @@ class TestRunner(BaseDeviceRunner):
 
     async def _generate_streaming(
         self, request: CompletionRequest
-    ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
-        frequency_seconds = (
-            self.streaming_frequency_ms / TestRunner.MILLISECONDS_PER_SECOND
-        )
+    ) -> AsyncGenerator[tuple[str, int, str], None]:
+        """Yields tuples of (task_id, is_final, text)"""
         task_id = request._task_id
 
-        # Precreate streaming chunks to reduce overhead
-        streaming_chunks = [
-            StreamingChunkOutput(
-                type="streaming_chunk",
-                chunk=CompletionStreamChunk(
-                    text=f"token_{i}",
-                    index=i,
-                    finish_reason=None,
-                ),
-                task_id=task_id,
-            )
-            for i in range(request.max_tokens)
-        ]
-
         start_time = time.perf_counter()
+        self.logger.info("Starting device streaming")
 
-        for i, chunk in enumerate(streaming_chunks):
-            # Calculate exact target time for this token
-            target_time = start_time + (i * frequency_seconds)
-            current_time = time.perf_counter()
+        # ✅ TIME THE ACTUAL GENERATION
+        gen_start = time.perf_counter()
+        for i in range(self.tokens_per_second):
+            yield (task_id, 0, f"token_{i}")
+        gen_time = time.perf_counter() - gen_start
 
-            # Only sleep if we're running ahead of schedule
-            sleep_time = target_time - current_time
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
-
-            yield chunk
-
-        yield FinalResultOutput(
-            type="final_result",
-            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
-            task_id=task_id,
-            return_result=True,
+        self.logger.info(
+            f"Generator yielded {self.tokens_per_second} items in {gen_time:.4f}s"
         )
+
+        # ✅ FINAL CHUNK
+        yield (task_id, 1, "[DONE]")
+
+        total_time = time.perf_counter() - start_time
+        self.logger.info(f"Total _generate_streaming time: {total_time:.4f}s")
 
     def run(self, requests: list[CompletionRequest]):
         return []

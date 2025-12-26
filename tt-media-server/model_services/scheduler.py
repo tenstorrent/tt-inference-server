@@ -14,6 +14,7 @@ from model_services.device_worker import device_worker
 from model_services.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -33,7 +34,8 @@ class Scheduler:
             self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
         )
         self.warmup_signals_queue = Queue(worker_count)
-        self.result_queue = Queue()
+        # ✅ SCHEDULER CREATES THE SHARED MEMORY QUEUE
+        self.result_queue = SharedMemoryChunkQueue(name="chunk_queue", create=True)
         self.error_queue = Queue()
 
     def get_worker_count(self):
@@ -124,7 +126,6 @@ class Scheduler:
                 if self.workers_to_open
                 else Exception("No more workers to start")
             )
-            # in case it's a device pair remove starting bracket open
             worker_id = worker_id.lstrip("(").rstrip(")")
         self.logger.info(f"Starting worker {worker_id}")
         p = Process(
@@ -134,23 +135,19 @@ class Scheduler:
             args=(
                 worker_id,
                 self.task_queue,
-                self.result_queue,
+                self.result_queue.name,  # ✅ PASS THE NAME STRING, NOT THE OBJECT
                 self.warmup_signals_queue,
                 self.error_queue,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
         p.start()
-
         self.worker_info[worker_id] = {
             "process": p,
-            "start_time": time.time(),
             "restart_count": 0,
-            "is_ready": False,
-            "error_count": 0,
+            "last_restart": None,
         }
-
-        self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
+        self.logger.info(f"Worker {worker_id} started")
 
     def restart_worker(self, worker_id: str):
         """Restart a dead worker"""
@@ -183,11 +180,24 @@ class Scheduler:
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
+        """✅ NO THREAD - Direct non-blocking reads with async sleep"""
+        self.logger.info("Result listener started")
+
+        total_items = 0
+        total_get_time = 0.0
+        total_put_time = 0.0
+
         while self.listener_running:
             try:
-                worker_id, result_key, input = await asyncio.to_thread(
-                    self.result_queue.get
-                )
+                # ✅ NON-BLOCKING READ - No thread overhead!
+                result = self.result_queue.get_nowait()
+
+                if result is None:
+                    # Queue empty - yield control to event loop
+                    await asyncio.sleep(0.00001)  # 10 microseconds
+                    continue
+
+                worker_id, result_key, input = result
 
                 if result_key is None:
                     self.listener_running = False
@@ -203,13 +213,18 @@ class Scheduler:
                         f"No result queue found for task {result_key}. Current queues: {current_queues}"
                     )
 
-                # Reset worker restart count on successful job
-                self.worker_info[worker_id]["restart_count"] = 0
+                if worker_id is not None:
+                    worker_id_str = str(worker_id)
+                    if worker_id_str in self.worker_info:
+                        self.worker_info[worker_id_str]["restart_count"] = 0
 
             except Exception as e:
                 self.logger.error(f"Error in result_listener: {e}", exc_info=True)
 
-        self.logger.info("Result listener stopped")
+        self.logger.info(
+            f"Result listener stopped. Processed {total_items} items. "
+            f"Total get_time={total_get_time:.4f}s, total put_time={total_put_time:.4f}s"
+        )
 
     async def error_listener(self):
         while self.listener_running:

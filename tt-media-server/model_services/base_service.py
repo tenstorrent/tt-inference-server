@@ -166,44 +166,70 @@ class BaseService(ABC):
 
         try:
             # Add extra time based on request duration if available (e.g., audio duration)
-            # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
             dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
 
-            while True:
-                chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
+            final_received = False
 
-                if isinstance(chunk, dict) and chunk.get("type") == "streaming_chunk":
-                    formatted_chunk = chunk.get("chunk")
-                    # Only yield non-empty chunks
-                    if (
-                        formatted_chunk
-                        and hasattr(formatted_chunk, "text")
-                        and formatted_chunk.text
-                    ):
-                        yield formatted_chunk
+            while not final_received:
+                batch = []
 
-                elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
-                    if chunk.get("return", False):
-                        final_result = chunk.get("result")
-                        if final_result is not None:
-                            yield final_result
-                    break
-
-                else:
+                # Get first item (blocking with timeout)
+                try:
+                    first_chunk = await asyncio.wait_for(
+                        queue.get(), timeout=dynamic_timeout
+                    )
+                    batch.append(first_chunk)
+                except asyncio.TimeoutError:
                     self.logger.error(
-                        f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
+                        f"Streaming timed out for task {request._task_id} after {dynamic_timeout}s"
                     )
-                    raise ValueError(
-                        f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
-                    )
+                    raise
+
+                # DRAIN QUEUE - get all available items without blocking
+                while not queue.empty():
+                    try:
+                        chunk = queue.get_nowait()
+                        batch.append(chunk)
+                        if len(batch) >= 100:  # Limit batch size
+                            break
+                    except asyncio.QueueEmpty:
+                        break
+
+                for chunk in batch:
+                    if (
+                        isinstance(chunk, dict)
+                        and chunk.get("type") == "streaming_chunk"
+                    ):
+                        formatted_chunk = chunk.get("chunk")
+                        if (
+                            formatted_chunk
+                            and hasattr(formatted_chunk, "text")
+                            and formatted_chunk.text
+                        ):
+                            yield formatted_chunk
+
+                    elif (
+                        isinstance(chunk, dict) and chunk.get("type") == "final_result"
+                    ):
+                        if chunk.get("return_result", False):
+                            final_result = chunk.get("result")
+                            if final_result is not None:
+                                yield final_result
+                        final_received = True
+                        break
+
+                    else:
+                        self.logger.error(
+                            f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
+                        )
+                        raise ValueError(
+                            f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
+                        )
 
         except asyncio.TimeoutError:
-            self.logger.error(
-                f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
-            )
             raise
         except Exception as e:
             self.logger.error(
