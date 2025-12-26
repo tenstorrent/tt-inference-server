@@ -20,9 +20,6 @@ class VLLMForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 
-    def set_device(self):
-        return {}
-
     @log_execution_time(
         "VLLM Forge model load",
         TelemetryEvent.DEVICE_WARMUP,

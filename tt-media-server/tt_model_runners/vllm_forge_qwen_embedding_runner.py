@@ -29,7 +29,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "The capital of France is Paris",
         ]
         llm_args = {
-            "model": self.settings.model_name,
+            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "task": "embed",
             "dtype": "bfloat16",
             "disable_sliding_window": True,
