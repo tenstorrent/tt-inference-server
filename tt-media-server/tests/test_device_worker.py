@@ -539,7 +539,9 @@ class TestGetGreedyBatch:
         """Test getting a single item batch"""
         mock_queue.get.return_value = MockImageGenerateRequest("task_1")
         mock_queue.peek_next.side_effect = Exception("Queue empty")
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -555,7 +557,9 @@ class TestGetGreedyBatch:
             mock_requests[2],
             Exception("Queue empty"),
         ]
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -568,7 +572,9 @@ class TestGetGreedyBatch:
         """Test that batch size is limited by max_batch_size"""
         mock_queue.get.return_value = mock_requests[0]
         mock_queue.peek_next.side_effect = [mock_requests[1], Exception("Queue empty")]
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 2, batching_predicate)  # Limit to 2 items
 
@@ -578,7 +584,9 @@ class TestGetGreedyBatch:
     def test_get_greedy_batch_shutdown_signal(self, mock_queue):
         """Test handling shutdown signal (None)"""
         mock_queue.get.return_value = None
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -591,7 +599,9 @@ class TestGetGreedyBatch:
         """Test handling shutdown signal in peek_next"""
         mock_queue.get.return_value = mock_requests[0]
         mock_queue.peek_next.side_effect = [None]  # Shutdown signal
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -602,7 +612,9 @@ class TestGetGreedyBatch:
     def test_get_greedy_batch_keyboard_interrupt(self, mock_queue):
         """Test handling KeyboardInterrupt"""
         mock_queue.get.side_effect = KeyboardInterrupt("Test interrupt")
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -614,7 +626,9 @@ class TestGetGreedyBatch:
     def test_get_greedy_batch_general_exception(self, mock_queue):
         """Test handling general exceptions"""
         mock_queue.get.side_effect = Exception("Connection lost")
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -627,7 +641,9 @@ class TestGetGreedyBatch:
         """Test behavior when queue becomes empty after first item"""
         mock_queue.get.return_value = MockImageGenerateRequest("task_1")
         mock_queue.peek_next.side_effect = Exception("Queue empty")
-        batching_predicate = lambda item, batch: True
+
+        def batching_predicate(item, batch):
+            return True
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
@@ -643,7 +659,8 @@ class TestGetGreedyBatch:
         mock_queue.peek_next.return_value = mock_requests[1]
 
         # Predicate that only allows first item
-        batching_predicate = lambda item, batch: len(batch) < 1
+        def batching_predicate(item, batch):
+            return len(batch) < 1
 
         result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
