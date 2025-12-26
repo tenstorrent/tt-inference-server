@@ -5,17 +5,18 @@ import asyncio
 import os
 import traceback
 
+from config.constants import SupportedModels
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind
 
 
-class VLLMForgeRunner(BaseMetalDeviceRunner):
+class VLLMForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 
@@ -31,13 +32,16 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
-            model="meta-llama/Llama-3.1-8B-Instruct",
-            max_model_len=65536,
-            max_num_seqs=32,
+            model=self.settings.model,
+            max_model_len=self.settings.max_model_length,
+            max_num_batched_tokens=self.settings.max_num_batched_tokens,
+            max_num_seqs=self.settings.max_num_seqs,
             enable_chunked_prefill=False,
-            block_size=64,
-            max_num_batched_tokens=65536,
-            seed=9472,
+            gpu_memory_utilization=self.settings.gpu_memory_utilization,
+            additional_config={
+                "enable_const_eval": False,
+                "min_context_len": self.settings.min_context_length,
+            },
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
@@ -163,13 +167,14 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     ):
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
-        generated_text = ""
+        generated_text = []
         async for request_output in self.llm_engine.generate(
             request.prompt, sampling_params, request._task_id
         ):
             if request_output.outputs:
-                generated_text = TextUtils.clean_text(request_output.outputs[0].text)
-                break
+                generated_text.append(request_output.outputs[0].text)
+
+        generated_text = "".join(generated_text)
 
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 

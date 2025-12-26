@@ -20,6 +20,7 @@ class SupportedModels(Enum):
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
 
 
 # MODEL environment variable
@@ -45,7 +46,7 @@ class ModelNames(Enum):
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
-
+    LLAMA_3_2_3B = "Llama-3.2-3B"
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
@@ -143,6 +144,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B},
 }
 
 

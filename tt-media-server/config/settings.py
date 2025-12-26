@@ -71,10 +71,12 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
 
     # Text processing settings
+    model: str = SupportedModels.LLAMA_3_2_3B.value
     min_context_length: int = 32
-    max_model_length: int = 128
-    max_num_batched_tokens: int = 128
+    max_model_length: int = 8192
+    max_num_batched_tokens: int = 8192
     max_num_seqs: int = 1
+    gpu_memory_utilization: float = 0.1
 
     # Image processing settings
     image_return_format: str = "JPEG"
