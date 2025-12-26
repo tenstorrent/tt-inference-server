@@ -77,13 +77,7 @@ async def create_chat_completion(
     """
     try:
         # Convert chat messages to a single prompt
-        # Concatenate all messages with role prefixes
-        prompt_parts = []
-        for message in chat_request.messages:
-            role_prefix = f"{message.role.capitalize()}: "
-            prompt_parts.append(f"{role_prefix}{message.content}")
-        
-        prompt = "\n".join(prompt_parts)
+        prompt = chat_request.to_prompt()
         
         # Create a CompletionRequest from the ChatCompletionRequest
         completion_request = CompletionRequest(

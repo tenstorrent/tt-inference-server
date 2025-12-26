@@ -6,7 +6,7 @@ from typing import Union
 
 from domain.base_request import BaseRequest
 from domain.completion_request import StreamOptions
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):
@@ -40,10 +40,23 @@ class ChatCompletionRequest(BaseRequest):
     presence_penalty: float | None = 0.0
 
     # Stopping criteria
-    stop: Union[str, list[str], None] = []
+    stop: Union[str, list[str], None] = Field(default_factory=list)
 
     # Reproducibility
     seed: int | None = None
 
     # User identifier (for monitoring/abuse prevention)
     user: str | None = None
+
+    def to_prompt(self) -> str:
+        """
+        Convert chat messages to a single prompt string.
+        
+        Returns:
+            A prompt string with messages concatenated using role prefixes.
+        """
+        prompt_parts = []
+        for message in self.messages:
+            role_prefix = f"{message.role.capitalize()}: "
+            prompt_parts.append(f"{role_prefix}{message.content}")
+        return "\n".join(prompt_parts)
