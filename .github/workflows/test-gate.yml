@@ -543,11 +543,11 @@ jobs:
           HF_TOKEN: ""
           MODEL: ""
           JWT_SECRET: ""
-        working-directory: tt-media-server
         run: |
-          # Only check coverage for tt-media-server (gradual rollout)
-          pytest tests/ \
-            --cov=. \
+          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
+          # This makes paths match git diff output
+          pytest tt-media-server/tests/ \
+            --cov=tt-media-server \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             -v --tb=short --continue-on-collection-errors || true
@@ -559,7 +559,7 @@ jobs:
           BASE_REF="${{ github.event.pull_request.base.ref }}"
 
           # Check if coverage file exists
-          if [ ! -f tt-media-server/coverage.xml ]; then
+          if [ ! -f coverage.xml ]; then
             echo "⚠️ No coverage file found"
             echo "coverage_passed=true" >> $GITHUB_OUTPUT
             echo "coverage_pct=N/A" >> $GITHUB_OUTPUT
@@ -569,11 +569,9 @@ jobs:
           echo "Checking coverage for tt-media-server only (gradual rollout)"
 
           # Generate diff-cover report for changed lines only
-          # Only check files in tt-media-server directory
-          diff-cover tt-media-server/coverage.xml \
+          diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
             --fail-under=50 \
-            --include="tt-media-server/*" \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
           cat diff-cover-output.txt
@@ -693,7 +691,7 @@ jobs:
         with:
           name: coverage-reports
           path: |
-            tt-media-server/coverage.xml
+            coverage.xml
             diff-cover-output.txt
           retention-days: 14
 
