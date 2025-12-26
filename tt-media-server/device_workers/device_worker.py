@@ -2,15 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import threading
 from multiprocessing import Queue
 
 from config.settings import settings
-from device_workers.worker_utils import setup_worker_environment
+from device_workers.worker_utils import (
+    initialize_device_worker,
+    setup_worker_environment,
+)
 from model_services.tt_queue import TTQueue
-from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 
@@ -24,32 +24,14 @@ def device_worker(
     setup_worker_environment(worker_id, "2")
     logger = TTLogger()
 
-    # Create a single event loop for this worker process
-    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
-    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    device_runner: BaseDeviceRunner = None
     try:
-        device_runner: BaseDeviceRunner = get_device_runner(worker_id)
-        device_runner.set_device()
-        # Use the same loop for model loading
-        try:
-            loop.run_until_complete(device_runner.warmup())
-        except KeyboardInterrupt:
-            logger.warning(
-                f"Worker {worker_id} interrupted during model loading - shutting down"
-            )
-            loop.close()
+        device_runner, loop = initialize_device_worker(worker_id, logger)
+        if not device_runner:
             return
     except Exception as e:
-        if device_runner is not None:
-            device_runner.close_device()
-        logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
-        loop.close()
         return
+
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
     try:

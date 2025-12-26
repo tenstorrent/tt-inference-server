@@ -2,10 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import asyncio
 import os
 
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
+from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.runner_fabric import get_device_runner
+from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
 
 
@@ -57,3 +61,38 @@ def _setup_galaxy_mesh_config(tt_metal_home: str):
         os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
             f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
         )
+
+
+def initialize_device_worker(
+    worker_id: str, logger: TTLogger, num_torch_threads: int = 1
+):
+    """Initialize device runner and event loop for worker"""
+    # Create a single event loop for this worker process
+    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
+    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    device_runner: BaseDeviceRunner = None
+    try:
+        device_runner: BaseDeviceRunner = get_device_runner(
+            worker_id, num_torch_threads
+        )
+        device_runner.set_device()
+        # Use the same loop for model loading
+        try:
+            loop.run_until_complete(device_runner.warmup())
+        except KeyboardInterrupt:
+            logger.warning(
+                f"Worker {worker_id} interrupted during model loading - shutting down"
+            )
+            loop.close()
+            return None, None
+
+        return device_runner, loop
+    except Exception as e:
+        if device_runner is not None:
+            device_runner.close_device()
+        logger.error(f"Failed to get device runner: {e}")
+        loop.close()
+        raise

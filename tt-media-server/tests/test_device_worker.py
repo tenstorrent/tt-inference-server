@@ -15,7 +15,7 @@ sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
 sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
 sys.modules["models.experimental.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
 
-# Mock config settings
+# Mock config settings - must be done before any imports that use settings
 mock_settings = Mock()
 mock_settings.max_batch_size = 4
 mock_settings.default_throttle_level = "5"  # Must be string for os.environ
@@ -23,8 +23,25 @@ mock_settings.enable_telemetry = False
 mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
 mock_settings.request_processing_timeout_seconds = 100
-sys.modules["config.settings"] = Mock()
-sys.modules["config.settings"].settings = mock_settings
+mock_settings.max_batch_delay_time_ms = 0.01  # Small timeout for tests
+
+# Mock the settings module completely
+mock_settings_module = Mock()
+mock_settings_module.settings = mock_settings
+mock_settings_module.Settings = Mock(return_value=mock_settings)
+mock_settings_module.get_settings = Mock(return_value=mock_settings)
+sys.modules["config.settings"] = mock_settings_module
+
+# Mock telemetry before it gets imported
+sys.modules["telemetry.telemetry_client"] = Mock()
+sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
+
+# Mock torch utils before it gets imported
+sys.modules["utils.torch_utils"] = Mock()
+sys.modules["utils.torch_utils"].set_torch_thread_limits = Mock()
+
+# Mock device manager to prevent actual device detection
+sys.modules["utils.device_manager"] = Mock()
 
 
 # Mock domain objects
@@ -97,7 +114,6 @@ class TestDeviceWorker:
             MockImageGenerateRequest("task_2", "prompt 2", 30),
         ]
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_device_worker_initialization_success(self, mock_queues):
         """Test successful worker initialization"""
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
@@ -106,47 +122,46 @@ class TestDeviceWorker:
         mock_device_runner = Mock()
         mock_device_runner.set_device.return_value = "mock_device"
 
-        # Mock asyncio.run to avoid actually running the coroutine
-        async def mock_coro(*args, **kwargs):
-            return None
-
-        mock_warmup_future = mock_coro()
-        mock_device_runner.warmup = Mock(return_value=mock_warmup_future)
-
         # Mock the device runner factory
         mock_get_device_runner = Mock(return_value=mock_device_runner)
 
         # Mock immediate shutdown to avoid full execution
         mock_get_batch = Mock(return_value=[None])
 
+        # Mock the event loop to avoid actually running async code
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+        mock_loop.close = Mock()
+
         # Apply patches
         with patch(
-            "device_workers.device_worker.get_device_runner", mock_get_device_runner
+            "device_workers.worker_utils.get_device_runner", mock_get_device_runner
         ):
             with patch("device_workers.device_worker.get_greedy_batch", mock_get_batch):
-                with patch("asyncio.run", Mock(return_value=None)) as mock_asyncio_run:
-                    with patch(
-                        "device_workers.device_worker.get_telemetry_client", Mock()
-                    ):
-                        device_worker(
-                            "worker_0",
-                            task_queue,
-                            result_queue,
-                            warmup_signals_queue,
-                            error_queue,
-                        )
+                with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
+                    with patch("asyncio.new_event_loop", return_value=mock_loop):
+                        with patch("asyncio.set_event_loop", Mock()):
+                            device_worker(
+                                "worker_0",
+                                task_queue,
+                                result_queue,
+                                warmup_signals_queue,
+                                error_queue,
+                            )
 
-                        # Verify initialization calls
-                        mock_get_device_runner.assert_called_once_with("worker_0")
-                        mock_device_runner.set_device.assert_called_once()
+                            # Verify initialization calls
+                            mock_get_device_runner.assert_called_once_with(
+                                "worker_0", 1
+                            )
+                            mock_device_runner.set_device.assert_called_once()
 
-                        # Check the asyncio.run was called (not warmup directly since it's passed to asyncio.run)
-                        mock_asyncio_run.assert_called_once()
+                            # Verify the event loop was used for warmup
+                            mock_loop.run_until_complete.assert_called_once()
 
-                        # Verify the warmup signal was sent
-                        warmup_signals_queue.put.assert_called_once_with(
-                            "worker_0", timeout=2.0
-                        )
+                            # Verify the warmup signal was sent
+                            warmup_signals_queue.put.assert_called_once_with(
+                                "worker_0", timeout=2.0
+                            )
 
     def test_device_worker_initialization_failure(self, mock_queues):
         """Test worker initialization failure"""
@@ -158,9 +173,9 @@ class TestDeviceWorker:
         )
 
         with patch(
-            "device_workers.device_worker.get_device_runner", mock_get_device_runner
+            "device_workers.worker_utils.get_device_runner", mock_get_device_runner
         ):
-            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
                 device_worker(
                     "worker_0",
                     task_queue,
@@ -205,10 +220,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "device_workers.device_worker.get_device_runner",
+            "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -270,10 +285,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "device_workers.device_worker.get_device_runner",
+            "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -318,10 +333,10 @@ class TestDeviceWorker:
         mock_loop.close = Mock()
 
         with patch(
-            "device_workers.device_worker.get_device_runner",
+            "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.device_worker.get_telemetry_client", Mock()):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
                 with patch("asyncio.new_event_loop", return_value=mock_loop):
                     with patch("asyncio.set_event_loop", Mock()):
                         device_worker(
@@ -340,6 +355,162 @@ class TestDeviceWorker:
         assert "task_1" in task_ids
         assert "task_2" in task_ids
 
+    @patch("device_workers.device_worker.get_greedy_batch")
+    @patch("device_workers.device_worker.threading.Timer")
+    def test_device_worker_streaming_request(
+        self, mock_timer, mock_get_batch, mock_queues
+    ):
+        """Test handling of streaming requests"""
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+
+        # Track results directly since Mock queue might not work with async
+        results_captured = []
+
+        def capture_put(item):
+            results_captured.append(item)
+
+        result_queue.put = capture_put
+
+        # Create a streaming request
+        streaming_request = MockImageGenerateRequest("stream_task_1")
+        streaming_request.stream = True
+
+        # Setup mocks
+        mock_timer_instance = Mock()
+        mock_timer.return_value = mock_timer_instance
+        mock_get_batch.side_effect = [[streaming_request], [None]]
+
+        # Create fresh device runner for this test
+        fresh_device_runner = Mock()
+        fresh_device_runner.set_device.return_value = Mock()
+        fresh_device_runner.close_device = Mock()
+
+        # Make warmup an async function that returns immediately
+        async def mock_warmup():
+            return None
+
+        fresh_device_runner.warmup = mock_warmup
+
+        # Create an async generator for streaming results
+        async def mock_async_generator():
+            yield "chunk_1"
+            yield "chunk_2"
+            yield "chunk_3"
+
+        # _run_async is a coroutine that returns an async generator when awaited
+        async def mock_run_async(requests):
+            # Return the generator directly
+            return mock_async_generator()
+
+        fresh_device_runner._run_async = mock_run_async
+
+        # Also add is_request_batchable for get_greedy_batch
+        fresh_device_runner.is_request_batchable = lambda req: True
+
+        with patch(
+            "device_workers.worker_utils.get_device_runner",
+            return_value=fresh_device_runner,
+        ):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
+                device_worker(
+                    "worker_0",
+                    task_queue,
+                    result_queue,
+                    warmup_signals_queue,
+                    error_queue,
+                )
+
+        # Verify streaming chunks were queued
+        assert len(results_captured) == 3  # 3 chunks
+
+        # Verify each chunk was sent with correct format
+        assert results_captured[0] == ("worker_0", "stream_task_1", "chunk_1")
+        assert results_captured[1] == ("worker_0", "stream_task_1", "chunk_2")
+        assert results_captured[2] == ("worker_0", "stream_task_1", "chunk_3")
+
+        # Verify timer was started and cancelled
+        mock_timer_instance.start.assert_called_once()
+        mock_timer_instance.cancel.assert_called_once()
+
+    @patch("device_workers.device_worker.get_greedy_batch")
+    @patch("device_workers.device_worker.threading.Timer")
+    def test_device_worker_mixed_streaming_and_regular_requests(
+        self, mock_timer, mock_get_batch, mock_queues
+    ):
+        """Test handling batch with both streaming and regular requests"""
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+
+        # Track results directly
+        results_captured = []
+
+        def capture_put(item):
+            results_captured.append(item)
+
+        result_queue.put = capture_put
+
+        # Create mixed requests
+        streaming_request = MockImageGenerateRequest("stream_task")
+        streaming_request.stream = True
+        regular_request = MockImageGenerateRequest("regular_task")
+
+        # Setup mocks
+        mock_timer_instance = Mock()
+        mock_timer.return_value = mock_timer_instance
+        mock_get_batch.side_effect = [[streaming_request, regular_request], [None]]
+
+        # Create fresh device runner for this test
+        fresh_device_runner = Mock()
+        fresh_device_runner.set_device.return_value = Mock()
+        fresh_device_runner.close_device = Mock()
+
+        # Make warmup an async function that returns immediately
+        async def mock_warmup():
+            return None
+
+        fresh_device_runner.warmup = mock_warmup
+
+        regular_response = Mock()
+        fresh_device_runner.run.return_value = [regular_response]  # For regular request
+
+        # Also add is_request_batchable
+        fresh_device_runner.is_request_batchable = lambda req: True
+
+        # Create an async generator for streaming results
+        async def mock_async_generator():
+            yield "stream_chunk"
+
+        # _run_async is a coroutine that returns an async generator when awaited
+        async def mock_run_async(requests):
+            # Return the generator directly
+            return mock_async_generator()
+
+        fresh_device_runner._run_async = mock_run_async
+
+        with patch(
+            "device_workers.worker_utils.get_device_runner",
+            return_value=fresh_device_runner,
+        ):
+            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
+                device_worker(
+                    "worker_0",
+                    task_queue,
+                    result_queue,
+                    warmup_signals_queue,
+                    error_queue,
+                )
+
+        # Verify both streaming and regular results were queued
+        assert len(results_captured) == 2
+
+        # Check that we got both types of results
+        # First should be streaming chunk, second should be regular response
+        assert results_captured[0] == ("worker_0", "stream_task", "stream_chunk")
+        assert results_captured[1] == ("worker_0", "regular_task", regular_response)
+
+        # Verify timer was started and cancelled
+        mock_timer_instance.start.assert_called_once()
+        mock_timer_instance.cancel.assert_called_once()
+
 
 class TestGetGreedyBatch:
     """Test cases for get_greedy_batch function"""
@@ -350,7 +521,8 @@ class TestGetGreedyBatch:
         # Create a mock with the required methods explicitly defined
         mock = Mock()
         mock.get = Mock()
-        mock.get_nowait = Mock()
+        mock.peek_next = Mock()
+        mock.return_item = Mock()
         mock.put = Mock()
         return mock
 
@@ -363,110 +535,127 @@ class TestGetGreedyBatch:
             MockImageGenerateRequest("task_3"),
         ]
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_single_item(self, mock_queue):
         """Test getting a single item batch"""
         mock_queue.get.return_value = MockImageGenerateRequest("task_1")
-        mock_queue.get_nowait.side_effect = Exception("Queue empty")
+        mock_queue.peek_next.side_effect = Exception("Queue empty")
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert len(result) == 1
         assert result[0]._task_id == "task_1"
         mock_queue.get.assert_called_once()
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_multiple_items(self, mock_queue, mock_requests):
         """Test getting multiple items in batch"""
         mock_queue.get.return_value = mock_requests[0]
-        mock_queue.get_nowait.side_effect = [
+        mock_queue.peek_next.side_effect = [
             mock_requests[1],
             mock_requests[2],
             Exception("Queue empty"),
         ]
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert len(result) == 3
         assert result[0]._task_id == "task_1"
         assert result[1]._task_id == "task_2"
         assert result[2]._task_id == "task_3"
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_max_batch_size_limit(self, mock_queue, mock_requests):
         """Test that batch size is limited by max_batch_size"""
         mock_queue.get.return_value = mock_requests[0]
-        mock_queue.get_nowait.side_effect = [mock_requests[1], Exception("Queue empty")]
+        mock_queue.peek_next.side_effect = [mock_requests[1], Exception("Queue empty")]
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 2)  # Limit to 2 items
+        result = get_greedy_batch(mock_queue, 2, batching_predicate)  # Limit to 2 items
 
         assert len(result) == 2
-        assert mock_queue.get_nowait.call_count == 1  # Only called once due to limit
+        assert mock_queue.peek_next.call_count == 1  # Only called once due to limit
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_shutdown_signal(self, mock_queue):
         """Test handling shutdown signal (None)"""
         mock_queue.get.return_value = None
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert result == [None]
         mock_queue.get.assert_called_once()
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
-    def test_get_greedy_batch_shutdown_signal_in_nowait(
+    def test_get_greedy_batch_shutdown_signal_in_peek_next(
         self, mock_queue, mock_requests
     ):
-        """Test handling shutdown signal in get_nowait"""
+        """Test handling shutdown signal in peek_next"""
         mock_queue.get.return_value = mock_requests[0]
-        mock_queue.get_nowait.side_effect = [None]  # Shutdown signal
+        mock_queue.peek_next.side_effect = [None]  # Shutdown signal
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert len(result) == 2
         assert result[0]._task_id == "task_1"
         assert result[1] is None
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_keyboard_interrupt(self, mock_queue):
         """Test handling KeyboardInterrupt"""
         mock_queue.get.side_effect = KeyboardInterrupt("Test interrupt")
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert result == [None]
         mock_logger.warning.assert_called_with(
             "KeyboardInterrupt received - shutting down gracefully"
         )
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_general_exception(self, mock_queue):
         """Test handling general exceptions"""
         mock_queue.get.side_effect = Exception("Connection lost")
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert result == [None]
         mock_logger.error.assert_called_with(
             "Error getting first item from queue: Connection lost"
         )
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_get_greedy_batch_empty_queue_after_first_item(self, mock_queue):
         """Test behavior when queue becomes empty after first item"""
         mock_queue.get.return_value = MockImageGenerateRequest("task_1")
-        mock_queue.get_nowait.side_effect = Exception("Queue empty")
+        mock_queue.peek_next.side_effect = Exception("Queue empty")
+        batching_predicate = lambda item, batch: True
 
-        result = get_greedy_batch(mock_queue, 4)
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
 
         assert len(result) == 1
         assert result[0]._task_id == "task_1"
+
+    def test_get_greedy_batch_batching_predicate_rejects(
+        self, mock_queue, mock_requests
+    ):
+        """Test that batching_predicate can reject items and they get returned"""
+        mock_queue.get.return_value = mock_requests[0]
+        # Second item will be rejected by predicate
+        mock_queue.peek_next.return_value = mock_requests[1]
+
+        # Predicate that only allows first item
+        batching_predicate = lambda item, batch: len(batch) < 1
+
+        result = get_greedy_batch(mock_queue, 4, batching_predicate)
+
+        assert len(result) == 1
+        assert result[0]._task_id == "task_1"
+        # Verify the rejected item was returned to the queue
+        mock_queue.return_item.assert_called_once_with(mock_requests[1])
 
 
 class TestDeviceWorkerIntegration:
     """Integration tests for device worker components"""
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_timeout_handler_creation(self, mock_queues):
         """Test that timeout handler is created correctly"""
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
@@ -490,22 +679,28 @@ class TestDeviceWorkerIntegration:
                 fresh_device_runner.close_device = Mock()
                 fresh_device_runner.run.return_value = [Mock()]
 
+                # Mock the event loop to avoid actually running async code
+                mock_loop = Mock()
+                mock_loop.run_until_complete = Mock(return_value=None)
+                mock_loop.close = Mock()
+
                 with patch(
-                    "device_workers.device_worker.get_device_runner",
+                    "device_workers.worker_utils.get_device_runner",
                     return_value=fresh_device_runner,
                 ):
                     with patch(
-                        "device_workers.device_worker.get_telemetry_client", Mock()
+                        "device_workers.worker_utils.get_telemetry_client", Mock()
                     ):
-                        with patch("asyncio.run", Mock(return_value=None)):
-                            # Run the worker
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+                        with patch("asyncio.new_event_loop", return_value=mock_loop):
+                            with patch("asyncio.set_event_loop", Mock()):
+                                # Run the worker
+                                device_worker(
+                                    "worker_0",
+                                    task_queue,
+                                    result_queue,
+                                    warmup_signals_queue,
+                                    error_queue,
+                                )
 
                 # Verify timer was created
                 mock_timer.assert_called_once()
@@ -517,7 +712,6 @@ class TestDeviceWorkerIntegration:
                 # Verify the timer was cancelled (successful inference cancels the timer)
                 mock_timer_instance.cancel.assert_called_once()
 
-    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
     def test_timeout_triggered(self, mock_queues):
         """Test timeout behavior when inference takes too long"""
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
@@ -557,22 +751,28 @@ class TestDeviceWorkerIntegration:
 
                 fresh_device_runner.run.side_effect = slow_inference
 
+                # Mock the event loop to avoid actually running async code
+                mock_loop = Mock()
+                mock_loop.run_until_complete = Mock(return_value=None)
+                mock_loop.close = Mock()
+
                 with patch(
-                    "device_workers.device_worker.get_device_runner",
+                    "device_workers.worker_utils.get_device_runner",
                     return_value=fresh_device_runner,
                 ):
                     with patch(
-                        "device_workers.device_worker.get_telemetry_client", Mock()
+                        "device_workers.worker_utils.get_telemetry_client", Mock()
                     ):
-                        with patch("asyncio.run", Mock(return_value=None)):
-                            # Run the worker
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+                        with patch("asyncio.new_event_loop", return_value=mock_loop):
+                            with patch("asyncio.set_event_loop", Mock()):
+                                # Run the worker
+                                device_worker(
+                                    "worker_0",
+                                    task_queue,
+                                    result_queue,
+                                    warmup_signals_queue,
+                                    error_queue,
+                                )
 
                 # Verify error was reported for timeout
                 assert error_queue.put.call_count >= 1
