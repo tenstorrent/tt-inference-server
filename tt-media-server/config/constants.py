@@ -131,8 +131,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
-        ModelNames.DISTIL_WHISPER_LARGE_V3,
         ModelNames.OPENAI_WHISPER_LARGE_V3,
+        ModelNames.DISTIL_WHISPER_LARGE_V3,
     },
     ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
