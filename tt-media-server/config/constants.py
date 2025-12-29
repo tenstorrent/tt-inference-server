@@ -21,6 +21,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    QWEN_3_4B = "Qwen/Qwen3-4B"
 
 
 # MODEL environment variable
@@ -47,6 +48,8 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
+    QWEN_3_4B = "Qwen3-4B"
+
 
 class ModelRunners(Enum):
     TT_SDXL_TRACE = "tt-sdxl-trace"
@@ -144,7 +147,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B},
+    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
 }
 
 

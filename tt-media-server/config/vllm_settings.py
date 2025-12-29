@@ -7,9 +7,9 @@ from pydantic import BaseModel
 
 
 class VLLMSettings(BaseModel):
-    model: str = SupportedModels.LLAMA_3_2_3B.value
+    model: str = SupportedModels.QWEN_3_4B.value
     min_context_length: int = 32
-    max_model_length: int = 8192
-    max_num_batched_tokens: int = 8192
-    max_num_seqs: int = 1
+    max_model_length: int = 2048
+    max_num_batched_tokens: int = 2048
+    max_num_seqs: int = 1  # tt-xla only supports max_num_seqs=1 currently
     gpu_memory_utilization: float = 0.1
