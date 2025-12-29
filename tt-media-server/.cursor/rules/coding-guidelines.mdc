@@ -1,0 +1,56 @@
+---
+description: Coding guidelines for tt-media-server based on common PR review feedback
+globs:
+  - tt-media-server/**/*.py
+alwaysApply: true
+---
+
+# Method & Function Design
+
+- Methods that don't rely on internal state should be utility/static methods
+- Extract reusable logic into private methods to improve testability
+- Use enums instead of string literals for state machines and fixed value sets
+- Avoid unnecessary wrapper functions for trivial one-liner operations
+- Simplify code by removing unnecessary else clauses after return statements
+- Use list comprehensions where they improve readability
+  - Example: Prefer `[f(x) for x in items if x > 0]` over appending inside a for-loop when clearer
+
+# Naming Conventions
+
+- Method names must accurately reflect their behavior (e.g., don't name a method `cancel` if it also deletes)
+- Use descriptive names that indicate the domain context (e.g., `LlmTestRunner` over generic `TestRunner`)
+- Name test methods to clearly indicate expected behavior (e.g., `test_run_eval_exception_mkdir_works`)
+
+# Constants & Configuration
+
+- Use named constants instead of magic numbers
+- Define string markers (like parsing delimiters) as class-level constants
+
+# Documentation & Headers
+
+- Include SPDX license headers in all new Python files
+- Document API responses showing how to parse important values (e.g., job IDs)
+- Add comments only for workarounds or complex logic
+- Update README documentation when adding or modifying environment variables
+
+# Testing Guidelines
+
+- Focus tests on critical paths and business logic, not glue code or language features
+- Use real objects instead of mocks when practical
+- Hardcode expected values rather than computing them with logic that could have bugs
+- Avoid tests that simply mirror constructor behavior or test inheritance
+- Tests should have specific assertions about outcomes, not just coverage
+- Don't mock too many dependencies - if test setup is complex, consider refactoring the code
+
+# Code Organization
+
+- Extract common behavior from similar modules to reduce duplication
+- Create follow-up tasks for larger refactoring work discovered during PR reviews
+- Remove unused imports, dead code, and unnecessary comments
+- Run `ruff format` before committing to ensure consistent formatting
+
+# Error Handling
+
+- Add try/except blocks around database operations and external service calls
+- Provide informative error messages that help with debugging
+- Clean up resources properly in error paths
