@@ -130,6 +130,8 @@ def get_embedding_docker_env_vars(model_spec, args):
         "MIN_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
             "MIN_MODEL_LENGTH", 32
         ),
+        "MAX_BATCH_SIZE": model_spec.device_model_spec.max_concurrency,
+        "TT_MM_THROTTLE_PERF": 0,
     }
 
     logger.info(
