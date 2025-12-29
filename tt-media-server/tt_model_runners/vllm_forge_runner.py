@@ -5,7 +5,6 @@ import asyncio
 import os
 import traceback
 
-from config.constants import SupportedModels
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
