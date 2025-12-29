@@ -30,7 +30,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
             "The capital of France is Paris",
         ]
         max_model_len = 384
-        max_num_seqs = 8
+        max_num_seqs = 8 * self.settings.device_mesh_shape[1]
         self.llm = LLM(
             model=SupportedModels.BGE_LARGE_EN_V1_5.value,
             max_model_len=max_model_len,
