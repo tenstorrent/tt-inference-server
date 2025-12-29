@@ -190,6 +190,44 @@ for module in mock_modules:
         sys.modules[module] = mock
 
 # Ensure submodules are also mocked - use existing parent mocks where possible
+
+
+def _create_vllm_outputs_mock():
+    """Create a mock for vllm.outputs with real-looking dataclasses."""
+    from dataclasses import dataclass
+    from typing import Optional, Sequence, Union
+
+    @dataclass
+    class CompletionOutput:
+        index: int
+        text: str
+        token_ids: Sequence[int]
+        cumulative_logprob: Optional[float]
+        logprobs: Optional[list]
+        finish_reason: Optional[str] = None
+        stop_reason: Union[int, str, None] = None
+        lora_request: Optional[object] = None
+
+    @dataclass
+    class RequestOutput:
+        request_id: str
+        prompt: Optional[str]
+        prompt_token_ids: Optional[list[int]]
+        prompt_logprobs: Optional[list]
+        outputs: list[CompletionOutput]
+        finished: bool
+        metrics: Optional[object] = None
+        lora_request: Optional[object] = None
+        encoder_prompt: Optional[str] = None
+        encoder_prompt_token_ids: Optional[list[int]] = None
+        num_cached_tokens: Optional[int] = None
+
+    mock_module = types.ModuleType("vllm.outputs")
+    mock_module.CompletionOutput = CompletionOutput
+    mock_module.RequestOutput = RequestOutput
+    return mock_module
+
+
 submodules = {
     "torch.nn": sys.modules["torch"].nn if "torch" in sys.modules else MagicMock(),
     "torch.nn.functional": sys.modules["torch"].nn.functional
@@ -308,6 +346,7 @@ submodules = {
     "vllm.sampling_params": sys.modules["vllm"].sampling_params
     if "vllm" in sys.modules
     else MagicMock(),
+    "vllm.outputs": _create_vllm_outputs_mock(),
 }
 
 for submodule, mock in submodules.items():
@@ -493,9 +532,6 @@ def create_mock_runner_class(class_name: str):
 # Create mock runner modules directly in sys.modules with our custom classes
 # This prevents Python from trying to import and execute the actual runner files
 runner_mocks = {
-    "tt_model_runners.base_device_runner": {
-        "BaseDeviceRunner": type("BaseDeviceRunner", (), {})
-    },  # Base class mock
     "tt_model_runners.sdxl_generate_runner_trace": {
         "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
             "TTSDXLGenerateRunnerTrace"
@@ -519,9 +555,6 @@ runner_mocks = {
     },
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
-    },
-    "tt_model_runners.vllm_forge_runner": {
-        "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
     },
     "tt_model_runners.vllm_bge_large_en_runner": {
         "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
