@@ -19,66 +19,6 @@ from security.api_key_cheker import get_api_key
 completions_router = APIRouter()
 
 
-def create_completion_id() -> str:
-    return f"cmpl-{uuid.uuid4().hex[:24]}"
-
-
-def create_completion_response(
-    completion_id: str,
-    model: str,
-    text: str,
-    created: int,
-    finish_reason: str = "stop",
-    prompt_tokens: int = 0,
-    completion_tokens: int = 0,
-) -> dict:
-    """Create OpenAI-compatible completion response."""
-    return {
-        "id": completion_id,
-        "object": "text_completion",
-        "created": created,
-        "model": model,
-        "choices": [
-            {
-                "text": text,
-                "index": 0,
-                "logprobs": None,
-                "finish_reason": finish_reason,
-            }
-        ],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-    }
-
-
-def create_stream_chunk(
-    completion_id: str,
-    model: str,
-    text: str,
-    created: int,
-    index: int = 0,
-    finish_reason: str | None = None,
-) -> dict:
-    """Create OpenAI-compatible streaming chunk."""
-    return {
-        "id": completion_id,
-        "object": "text_completion",
-        "created": created,
-        "model": model,
-        "choices": [
-            {
-                "text": text,
-                "index": index,
-                "logprobs": None,
-                "finish_reason": finish_reason,
-            }
-        ],
-    }
-
-
 @completions_router.post("/completions")
 async def complete_text(
     completion_request: CompletionRequest,
@@ -94,20 +34,32 @@ async def complete_text(
     Most developers should use the Chat Completions API to leverage the best and newest models.
     See: https://platform.openai.com/docs/api-reference/completions
     """
-    completion_id = create_completion_id()
+    completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
     model = completion_request.model or "default"
 
     try:
         if not completion_request.stream:
             result = await service.process_request(completion_request)
-            response = create_completion_response(
-                completion_id=completion_id,
-                model=model,
-                text=result.text,
-                created=created,
-                finish_reason=result.finish_reason or "stop",
-            )
+            response = {
+                "id": completion_id,
+                "object": "text_completion",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "text": result.text,
+                        "index": 0,
+                        "logprobs": None,
+                        "finish_reason": result.finish_reason or "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+            }
             return JSONResponse(content=response)
 
         try:
@@ -117,14 +69,20 @@ async def complete_text(
 
         async def result_stream():
             async for partial in service.process_streaming_request(completion_request):
-                chunk = create_stream_chunk(
-                    completion_id=completion_id,
-                    model=model,
-                    text=partial.text,
-                    created=created,
-                    index=partial.index or 0,
-                    finish_reason=partial.finish_reason,
-                )
+                chunk = {
+                    "id": completion_id,
+                    "object": "text_completion",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "text": partial.text,
+                            "index": partial.index or 0,
+                            "logprobs": None,
+                            "finish_reason": partial.finish_reason,
+                        }
+                    ],
+                }
                 yield f"data: {json.dumps(chunk)}\n\n"
             yield "data: [DONE]\n\n"
 
