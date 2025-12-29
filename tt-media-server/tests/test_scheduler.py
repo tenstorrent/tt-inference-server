@@ -23,7 +23,7 @@ sys.modules["config.settings"].Settings = Mock()
 
 # Mock decorators and logger
 sys.modules["utils.decorators"] = Mock()
-sys.modules["utils.decorators"].log_execution_time = lambda x: lambda func: func
+sys.modules["utils.decorators"].log_execution_time = lambda *args, **kwargs: lambda func: func
 mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)

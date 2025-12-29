@@ -8,24 +8,6 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-# Mock settings BEFORE any other imports to prevent device detection during test collection
-# This is needed because utils.decorators imports telemetry which imports settings
-if "config.settings" not in sys.modules:
-    mock_settings = MagicMock()
-    mock_settings.max_batch_size = 4
-    mock_settings.default_throttle_level = "5"
-    mock_settings.enable_telemetry = False
-    mock_settings.is_galaxy = False
-    mock_settings.device_mesh_shape = (1, 1)
-    mock_settings.request_processing_timeout_seconds = 100
-    mock_settings.max_batch_delay_time_ms = 0.01
-
-    mock_settings_module = MagicMock()
-    mock_settings_module.settings = mock_settings
-    mock_settings_module.Settings = MagicMock(return_value=mock_settings)
-    mock_settings_module.get_settings = MagicMock(return_value=mock_settings)
-    sys.modules["config.settings"] = mock_settings_module
-
 # Import real settings early so runner_fabric gets the real object before test files mock it
 import pytest
 
@@ -208,44 +190,6 @@ for module in mock_modules:
         sys.modules[module] = mock
 
 # Ensure submodules are also mocked - use existing parent mocks where possible
-
-
-def _create_vllm_outputs_mock():
-    """Create a mock for vllm.outputs with real-looking dataclasses."""
-    from dataclasses import dataclass
-    from typing import Optional, Sequence, Union
-
-    @dataclass
-    class CompletionOutput:
-        index: int
-        text: str
-        token_ids: Sequence[int]
-        cumulative_logprob: Optional[float]
-        logprobs: Optional[list]
-        finish_reason: Optional[str] = None
-        stop_reason: Union[int, str, None] = None
-        lora_request: Optional[object] = None
-
-    @dataclass
-    class RequestOutput:
-        request_id: str
-        prompt: Optional[str]
-        prompt_token_ids: Optional[list[int]]
-        prompt_logprobs: Optional[list]
-        outputs: list[CompletionOutput]
-        finished: bool
-        metrics: Optional[object] = None
-        lora_request: Optional[object] = None
-        encoder_prompt: Optional[str] = None
-        encoder_prompt_token_ids: Optional[list[int]] = None
-        num_cached_tokens: Optional[int] = None
-
-    mock_module = types.ModuleType("vllm.outputs")
-    mock_module.CompletionOutput = CompletionOutput
-    mock_module.RequestOutput = RequestOutput
-    return mock_module
-
-
 submodules = {
     "torch.nn": sys.modules["torch"].nn if "torch" in sys.modules else MagicMock(),
     "torch.nn.functional": sys.modules["torch"].nn.functional
@@ -364,7 +308,6 @@ submodules = {
     "vllm.sampling_params": sys.modules["vllm"].sampling_params
     if "vllm" in sys.modules
     else MagicMock(),
-    "vllm.outputs": _create_vllm_outputs_mock(),
 }
 
 for submodule, mock in submodules.items():
