@@ -79,7 +79,7 @@ class Scheduler:
         except HTTPException:
             raise
         except Exception as e:
-            self.logger.error(f"Error processing request: {e}", exc_info=True)
+            self.logger.error(f"Error processing request: {e}")
             raise HTTPException(
                 status_code=500, detail="Internal error processing request"
             )
@@ -127,7 +127,9 @@ class Scheduler:
                 else Exception("No more workers to start")
             )
             worker_id = worker_id.lstrip("(").rstrip(")")
+
         self.logger.info(f"Starting worker {worker_id}")
+
         p = Process(
             target=device_worker_dynamic_batch
             if self.settings.use_dynamic_batcher
@@ -135,18 +137,25 @@ class Scheduler:
             args=(
                 worker_id,
                 self.task_queue,
-                self.result_queue.name,  # ✅ PASS THE NAME STRING, NOT THE OBJECT
+                self.result_queue.name,
                 self.warmup_signals_queue,
                 self.error_queue,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
         p.start()
+
+        # ✅ Initialize ALL required fields
         self.worker_info[worker_id] = {
             "process": p,
             "restart_count": 0,
             "last_restart": None,
+            "error_count": 0,  # ✅ ADD THIS
+            "is_ready": False,  # ✅ ADD THIS
+            "start_time": time.time(),  # ✅ ADD THIS (used in get_worker_info)
+            "ready_time": None,  # ✅ ADD THIS (used in get_worker_info)
         }
+
         self.logger.info(f"Worker {worker_id} started")
 
     def restart_worker(self, worker_id: str):
@@ -180,58 +189,94 @@ class Scheduler:
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
-        """✅ NO THREAD - Direct non-blocking reads with async sleep"""
+        """✅ Robust result listener that never stops on errors"""
         self.logger.info("Result listener started")
-
-        total_items = 0
-        total_get_time = 0.0
-        total_put_time = 0.0
+        consecutive_errors = 0
+        max_consecutive_errors = 100  # High threshold before giving up
 
         while self.listener_running:
             try:
-                # ✅ NON-BLOCKING READ - No thread overhead!
-                result = self.result_queue.get_nowait()
+                # ✅ Non-blocking get
+                result = await self.result_queue.get_nowait()
 
                 if result is None:
                     # Queue empty - yield control to event loop
-                    await asyncio.sleep(0.00001)  # 10 microseconds
+                    await asyncio.sleep(0.001)  # 1ms sleep
+                    consecutive_errors = 0  # Reset on successful operation
                     continue
 
-                worker_id, result_key, input = result
+                worker_id, result_key, input_data = result
 
                 if result_key is None:
+                    self.logger.info("Received shutdown signal in result_listener")
                     self.listener_running = False
                     break
 
-                queue = self.result_queues.get(result_key)
+                queue_obj = self.result_queues.get(result_key)
 
-                if queue:
-                    await queue.put(input)
+                if queue_obj:
+                    await queue_obj.put(input_data)
+                    consecutive_errors = 0  # Reset on success
                 else:
                     current_queues = list(self.result_queues.keys())
                     self.logger.warning(
-                        f"No result queue found for task {result_key}. Current queues: {current_queues}"
+                        f"No result queue found for task {result_key}. "
+                        f"Current queues: {current_queues}"
                     )
 
+                # Reset worker restart count
                 if worker_id is not None:
                     worker_id_str = str(worker_id)
                     if worker_id_str in self.worker_info:
                         self.worker_info[worker_id_str]["restart_count"] = 0
 
-            except Exception as e:
-                self.logger.error(f"Error in result_listener: {e}", exc_info=True)
+            except KeyError as e:
+                # ✅ Handle specific error without exc_info
+                consecutive_errors += 1
+                self.logger.error(
+                    f"KeyError in result_listener (#{consecutive_errors}): {e}\n"
+                )
+                await asyncio.sleep(0.1)
 
-        self.logger.info(
-            f"Result listener stopped. Processed {total_items} items. "
-            f"Total get_time={total_get_time:.4f}s, total put_time={total_put_time:.4f}s"
-        )
+            except Exception as e:
+                # ✅ Catch all other exceptions without stopping
+                consecutive_errors += 1
+                self.logger.error(
+                    f"Error in result_listener (#{consecutive_errors}): {e}\n"
+                )
+
+                # Only stop if we have too many consecutive errors
+                if consecutive_errors >= max_consecutive_errors:
+                    self.logger.error(
+                        f"Result listener has {consecutive_errors} consecutive errors, stopping"
+                    )
+                    break
+
+                await asyncio.sleep(0.1)
+
+        self.logger.info("Result listener stopped")
 
     async def error_listener(self):
+        """✅ Robust error listener"""
+        consecutive_errors = 0
+        max_consecutive_errors = 100
+
         while self.listener_running:
             try:
                 worker_id, result_key, error = await asyncio.to_thread(
                     self.error_queue.get
                 )
+
+                # ✅ Defensive: Check if worker exists
+                if worker_id not in self.worker_info:
+                    self.logger.warning(
+                        f"Unknown worker_id {worker_id} in error_listener, skipping"
+                    )
+                    continue
+
+                # ✅ Defensive: Initialize error_count if missing
+                if "error_count" not in self.worker_info[worker_id]:
+                    self.worker_info[worker_id]["error_count"] = 0
 
                 self.worker_info[worker_id]["error_count"] += 1
 
@@ -256,12 +301,36 @@ class Scheduler:
                 if queue:
                     await queue.put(Exception(error))
 
+                consecutive_errors = 0  # Reset on success
+
+            except KeyError as e:
+                consecutive_errors += 1
+                self.logger.error(
+                    f"KeyError in error_listener (#{consecutive_errors}): {e}\n"
+                )
+                await asyncio.sleep(0.1)
+
             except Exception as e:
-                self.logger.error(f"Error in error_listener: {e}", exc_info=True)
+                consecutive_errors += 1
+                self.logger.error(
+                    f"Error in error_listener (#{consecutive_errors}): {e}\n"
+                )
+
+                if consecutive_errors >= max_consecutive_errors:
+                    self.logger.error(
+                        f"Error listener has {consecutive_errors} consecutive errors, stopping"
+                    )
+                    break
+
+                await asyncio.sleep(0.1)
 
         self.logger.info("Error listener stopped")
 
     async def device_warmup_listener(self):
+        """✅ Robust warmup listener"""
+        consecutive_errors = 0
+        max_consecutive_errors = 100
+
         while self.device_warmup_listener_running:
             try:
                 device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
@@ -270,13 +339,20 @@ class Scheduler:
 
                 self.logger.info(f"Device {device_id} is warmed up")
 
+                # ✅ Defensive: Check if worker exists
+                if device_id not in self.worker_info:
+                    self.logger.warning(
+                        f"Unknown device_id {device_id} in warmup_listener, skipping"
+                    )
+                    continue
+
                 # Thread-safe device tracking
                 self.worker_info[device_id]["is_ready"] = True
                 self.worker_info[device_id]["ready_time"] = time.time()
+
                 # Set ready as soon as first device is available
                 if not self.is_ready:
                     self.is_ready = True
-
                     self.logger.info(
                         "First device warmed up, starting worker health monitor"
                     )
@@ -290,10 +366,28 @@ class Scheduler:
                 if all_devices_ready:
                     self.logger.info("All devices are warmed up and ready")
 
-            except Exception as e:
+                consecutive_errors = 0  # Reset on success
+
+            except KeyError as e:
+                consecutive_errors += 1
                 self.logger.error(
-                    f"Error in device_warmup_listener: {e}", exc_info=True
+                    f"KeyError in device_warmup_listener (#{consecutive_errors}): {e}\n"
                 )
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                consecutive_errors += 1
+                self.logger.error(
+                    f"Error in device_warmup_listener (#{consecutive_errors}): {e}\n"
+                )
+
+                if consecutive_errors >= max_consecutive_errors:
+                    self.logger.error(
+                        f"Warmup listener has {consecutive_errors} consecutive errors, stopping"
+                    )
+                    break
+
+                await asyncio.sleep(0.1)
 
         self.logger.info("Device warmup listener is done")
 
@@ -403,7 +497,7 @@ class Scheduler:
             )
 
     async def worker_health_monitor(self):
-        """Monitor worker health and restart dead workers"""
+        """✅ Robust health monitor"""
         while self.monitor_running and self.is_ready:
             try:
                 dead_workers = []
@@ -421,7 +515,10 @@ class Scheduler:
 
                 # check for any workers that have too many errors
                 for worker_id, info in self.worker_info.items():
-                    if info["error_count"] > self.settings.max_worker_restart_count:
+                    if (
+                        info.get("error_count", 0)
+                        > self.settings.max_worker_restart_count
+                    ):
                         dead_workers.append(worker_id)
                         self.logger.error(
                             f"Worker {worker_id} has too many errors ({info['error_count']}), restarting"
@@ -430,14 +527,12 @@ class Scheduler:
                 self.logger.info(
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
+
                 # Restart dead workers
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get("restart_count", 0)
 
-                    # Optional: Limit restart attempts
-                    if (
-                        restart_count < self.settings.max_worker_restart_count
-                    ):  # Max 5 restarts per worker
+                    if restart_count < self.settings.max_worker_restart_count:
                         self.restart_worker(worker_id)
                     else:
                         self.logger.error(
@@ -445,12 +540,12 @@ class Scheduler:
                         )
                         if self.settings.allow_deep_reset:
                             self.logger.info("Trying deep restart of all workers")
-                            self.deep_restart_workers()
+                            await self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
 
             except Exception as e:
-                self.logger.error(f"Error in worker_health_monitor: {e}", exc_info=True)
+                self.logger.error(f"Error in worker_health_monitor: {e}\n")
                 await asyncio.sleep(1.0)
 
         self.logger.info("Worker health monitor stopped")
