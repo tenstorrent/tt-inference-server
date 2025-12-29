@@ -70,7 +70,8 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         # All requests must have the same dimensions to be batched and number of tokens must be within limits
         if (
-            self.num_tokens_in_batch + num_tokens > self.settings.vllm.max_num_batched_tokens
+            self.num_tokens_in_batch + num_tokens
+            > self.settings.vllm.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
             or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
             or (batch is not None and request.model != batch[0].model)
