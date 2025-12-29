@@ -1904,6 +1904,7 @@ spec_templates = [
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
+                    "TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE": "7,7",
                 },
             ),
             DeviceModelSpec(
