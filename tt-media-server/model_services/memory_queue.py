@@ -1,6 +1,6 @@
 import struct
 import time
-from multiprocessing import Lock, shared_memory
+from multiprocessing import RLock, shared_memory
 
 import numpy as np
 from domain.completion_response import CompletionStreamChunk
@@ -25,16 +25,23 @@ class SharedMemoryChunkQueue:
         self.chunk_size = chunk_dtype.itemsize
         self.name = name
         self.logger = TTLogger()
+        
+        # Monitoring counters (not shared, per-process)
+        self._local_get_attempts = 0
+        self._local_get_success = 0
+        self._local_put_attempts = 0
+        self._local_put_success = 0
 
-        self.write_lock = Lock()
-        self.read_lock = Lock()
+        self.write_lock = RLock()
+        self.read_lock = RLock()
 
-        # ✅ ROBUST: Add guards around header
-        # Header layout: [GUARD(8)] [write_idx(8)] [read_idx(8)] [GUARD(8)] = 32 bytes
+        # ✅ ROBUST: Add guards around header with cache line padding
+        # Header layout: [GUARD(8)] [write_idx(8)] [pad(48)] [read_idx(8)] [pad(48)] [GUARD(8)] = 128 bytes
+        # Padding prevents false sharing between read/write indices on different cache lines
         self.guard_value = 0xDEADBEEFDEADBEEF
         self.header_offset_write = 8  # After first guard
-        self.header_offset_read = 16  # After write_idx
-        self.header_size = 32  # With guards
+        self.header_offset_read = 64  # On separate cache line (64 bytes apart)
+        self.header_size = 128  # With guards and padding
 
         total_size = self.header_size + (self.chunk_size * capacity)
 
@@ -64,7 +71,7 @@ class SharedMemoryChunkQueue:
                 offset=self.header_size,
             )
 
-            self.logger.error(
+            self.logger.info(
                 f"[MemoryQueue] Created: {name}, capacity={capacity}, "
                 f"size={total_size / 1024 / 1024:.2f} MB, header_size={self.header_size}"
             )
@@ -88,12 +95,12 @@ class SharedMemoryChunkQueue:
         struct.pack_into("Q", self.shm.buf, 0, self.guard_value)  # First guard
         struct.pack_into("Q", self.shm.buf, self.header_offset_write, 0)  # write_idx
         struct.pack_into("Q", self.shm.buf, self.header_offset_read, 0)  # read_idx
-        struct.pack_into("Q", self.shm.buf, 24, self.guard_value)  # Second guard
+        struct.pack_into("Q", self.shm.buf, 120, self.guard_value)  # Second guard
 
     def _verify_guards(self):
         """✅ Verify guards haven't been corrupted"""
         guard1 = struct.unpack_from("Q", self.shm.buf, 0)[0]
-        guard2 = struct.unpack_from("Q", self.shm.buf, 24)[0]
+        guard2 = struct.unpack_from("Q", self.shm.buf, 120)[0]
 
         if guard1 != self.guard_value or guard2 != self.guard_value:
             self.logger.error(
@@ -103,26 +110,18 @@ class SharedMemoryChunkQueue:
             raise RuntimeError("Header guards corrupted - buffer overflow detected!")
 
     def _get_write_idx(self) -> int:
-        """✅ Get write index with guard verification"""
-        self._verify_guards()
+        """✅ Get write index"""
         return struct.unpack_from("Q", self.shm.buf, self.header_offset_write)[0]
 
     def _get_read_idx(self) -> int:
-        """✅ Get read index with guard verification"""
-        self._verify_guards()
-        read_idx = struct.unpack_from("Q", self.shm.buf, self.header_offset_read)[0]
-        if read_idx > 0:
-            self.logger.error(f"Read read_idx: {read_idx}")
-        return read_idx
+        """✅ Get read index"""
+        return struct.unpack_from("Q", self.shm.buf, self.header_offset_read)[0]
 
     def _set_write_idx(self, val: int):
-        """✅ Set bounded write index with wraparound and guard check"""
+        """✅ Set bounded write index with wraparound"""
         # ✅ Validate input BEFORE modulo
         if val < 0:
             raise ValueError(f"write_idx cannot be negative: {val}")
-
-        # ✅ Verify guards BEFORE writing
-        self._verify_guards()
 
         next_write_idx = val % self.capacity
 
@@ -136,34 +135,23 @@ class SharedMemoryChunkQueue:
 
         struct.pack_into("Q", self.shm.buf, self.header_offset_write, next_write_idx)
 
-        # ✅ Verify guards AFTER writing
-        self._verify_guards()
-        self.logger.error(f"Set write_idx to {next_write_idx}")
-
     def _set_read_idx(self, val: int):
-        """✅ Set bounded read index with wraparound and guard check"""
+        """✅ Set bounded read index with wraparound"""
         # ✅ Validate input BEFORE modulo
         if val < 0:
             raise ValueError(f"read_idx cannot be negative: {val}")
-
-        # ✅ Verify guards BEFORE writing
-        self._verify_guards()
 
         next_read_idx = val % self.capacity
 
         # ✅ Debug: log suspicious jumps
         current = struct.unpack_from("Q", self.shm.buf, self.header_offset_read)[0]
         if abs(next_read_idx - current) > 1000:
-            self.logger.error(
+            self.logger.warning(
                 f"Large jump in read_idx: {current} → {next_read_idx} "
                 f"(from unbounded val={val})"
             )
 
         struct.pack_into("Q", self.shm.buf, self.header_offset_read, next_read_idx)
-
-        # ✅ Verify guards AFTER writing
-        self._verify_guards()
-        self.logger.error(f"Set read_idx to {next_read_idx}")
 
     def _get_size(self) -> int:
         """✅ Calculate size for bounded circular buffer"""
@@ -200,26 +188,26 @@ class SharedMemoryChunkQueue:
             # ✅ Reserve this slot and increment write_idx atomically
             slot_idx = write_idx
             next_write_idx = (write_idx + 1) % self.capacity
-            if (write_idx + 1) % self.capacity == 0:
-                self.logger.error("Write index wrapped around to 0")
-            if abs(next_write_idx - slot_idx) > 500:
-                self.logger.error(
-                    f"CORRUPTION: next_write_idx {next_write_idx} equals read_idx {read_idx}!"
-                )
-            if next_write_idx == 1:
-                self.logger.error("Next write_idx is 1")
             self._set_write_idx(next_write_idx)
 
             return slot_idx
 
     def put(self, task_id: str, is_final: int, text: str) -> bool:
         """✅ Thread-safe put with locked write_idx increment"""
+        self._local_put_attempts += 1
 
         # ✅ Use lock for slots to make sure it's a unique slot
         slot_idx = self._get_next_write_slot()
 
         if slot_idx == -1:
-            self.logger.warning("Queue is full, dropping item")
+            # Log queue stats when full
+            size = self._get_size()
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
+            self.logger.error(
+                f"Queue FULL - dropping item! size={size}, "
+                f"capacity={self.capacity}, read_idx={read_idx}, write_idx={write_idx}"
+            )
             return False
 
         # ✅ Truncate strings to max length STRICTLY
@@ -239,9 +227,7 @@ class SharedMemoryChunkQueue:
             self.buffer[slot_idx]["text"] = text
             self.buffer[slot_idx]["is_final"] = is_final
             self.buffer[slot_idx]["item_available"] = 1
-
-            # ✅ Verify guards after writing
-            self._verify_guards()
+            self._local_put_success += 1
         except Exception as e:
             self.logger.error(f"Error writing to slot {slot_idx}: {e}")
             raise
@@ -250,40 +236,42 @@ class SharedMemoryChunkQueue:
 
     async def get_nowait(self):
         """NON-BLOCKING GET - Returns None if queue is empty"""
+        self._local_get_attempts += 1
         try:
-            read_idx = self._get_read_idx()
-            write_idx = self._get_write_idx()
+            # ✅ Atomically claim the next read slot under lock
+            with self.read_lock:
+                read_idx = self._get_read_idx()
+                write_idx = self._get_write_idx()
 
-            # ✅ Check if empty - for bounded indices, compare directly
-            if read_idx == write_idx:
-                return None
+                # ✅ Check if empty - for bounded indices, compare directly
+                if read_idx == write_idx:
+                    return None
 
-            # ✅ Slot index is already the bounded index
-            slot_idx = read_idx
+                # ✅ Verify slot_idx is within bounds
+                if read_idx < 0 or read_idx >= self.capacity:
+                    self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+                    return None
 
-            # ✅ Verify slot_idx is within bounds
-            if slot_idx < 0 or slot_idx >= self.capacity:
-                self.logger.error(f"CORRUPTION: slot_idx {slot_idx} out of bounds!")
-                return None
+                slot_idx = read_idx
 
-            # Copy data before updating index
-            data = self.buffer[slot_idx].copy()
+                # ✅ Check if item is available (inside lock to prevent race)
+                current_state = int(self.buffer[slot_idx]["item_available"])
+                
+                if current_state != 1:
+                    # Item not ready or already consumed
+                    return None
 
-            if not data:
-                return None
-
-            if int(data["item_available"]) == 0:
-                return None
-
-            if int(data["item_available"]) == 2:
+                # ✅ Mark as being read to prevent double-read
+                self.buffer[slot_idx]["item_available"] = 2
+                
+                # ✅ Atomically increment read index
                 self._set_read_idx(read_idx + 1)
-                return None
 
-            # Mark read so others do not read it again
-            self.buffer[slot_idx]["item_available"] = 2
-
-            # ✅ Update read index with wraparound
-            self._set_read_idx(read_idx + 1)
+            # Copy data outside lock (we own this slot now)
+            data = self.buffer[slot_idx].copy()
+            
+            # ✅ Clear slot after reading (optional, helps with debugging)
+            self.buffer[slot_idx]["item_available"] = 0
 
             # Convert to strings
             task_id = str(data["task_id"]).rstrip("\x00")
@@ -316,6 +304,7 @@ class SharedMemoryChunkQueue:
                     "task_id": task_id,
                 }
 
+            self._local_get_success += 1
             return ("1", task_id, chunk_dict)
         except Exception as e:
             self.logger.error(f"Error in get_nowait: {e}")
@@ -393,3 +382,17 @@ class SharedMemoryChunkQueue:
             print(f"[MemoryQueue] Unlinked: {self.name}")
         except Exception as e:
             self.logger.error(f"[MemoryQueue] Error unlinking: {e}")
+    
+    def get_stats(self) -> dict:
+        """Get queue statistics for monitoring"""
+        return {
+            "name": self.name,
+            "size": self._get_size(),
+            "capacity": self.capacity,
+            "read_idx": self._get_read_idx(),
+            "write_idx": self._get_write_idx(),
+            "local_get_attempts": self._local_get_attempts,
+            "local_get_success": self._local_get_success,
+            "local_put_attempts": self._local_put_attempts,
+            "local_put_success": self._local_put_success,
+        }

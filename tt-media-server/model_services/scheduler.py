@@ -34,8 +34,14 @@ class Scheduler:
             self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
         )
         self.warmup_signals_queue = Queue(worker_count)
-        # ✅ SCHEDULER CREATES THE SHARED MEMORY QUEUE
-        self.result_queue = SharedMemoryChunkQueue(name="chunk_queue", create=True)
+        
+        # ✅ Only create result_queue once - reuse if it exists
+        if not hasattr(self, "result_queue") or self.result_queue is None:
+            self.result_queue = SharedMemoryChunkQueue(name="chunk_queue", create=True)
+            self.logger.info("Created new SharedMemoryChunkQueue")
+        else:
+            self.logger.info("Reusing existing SharedMemoryChunkQueue")
+            
         self.error_queue = Queue()
 
     def get_worker_count(self):
@@ -200,9 +206,11 @@ class Scheduler:
                 result = await self.result_queue.get_nowait()
 
                 if result is None:
-                    # Queue empty - yield control to event loop
-                    await asyncio.sleep(0.001)  # 1ms sleep
-                    consecutive_errors = 0  # Reset on successful operation
+                    # Queue empty - yield control with exponential backoff to reduce contention
+                    # Start with 0.1ms, increase up to 5ms
+                    sleep_time = min(0.0001 * (2 ** min(consecutive_errors, 5)), 0.005)
+                    await asyncio.sleep(sleep_time)
+                    consecutive_errors = min(consecutive_errors + 1, 10)  # Cap at 10
                     continue
 
                 worker_id, result_key, input_data = result
