@@ -2474,20 +2474,20 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
-                max_concurrency=32,
-                max_context=128 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
-                max_context=64 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=64 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
         ],
@@ -2505,20 +2505,20 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X4,
-                max_concurrency=32,
-                max_context=128 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
-                max_context=64 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=64 * 1024,
+                max_concurrency=1,
+                max_context=-1,
                 default_impl=True,
             ),
         ],
