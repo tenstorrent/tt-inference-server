@@ -10,13 +10,13 @@ import numpy as np
 import torch
 import ttnn
 from config.constants import AudioResponseFormat, SupportedModels
+from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.audio_processing_request import AudioProcessingRequest
 from domain.audio_text_response import (
     AudioStreamChunk,
     AudioTextResponse,
     AudioTextSegment,
 )
-from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,

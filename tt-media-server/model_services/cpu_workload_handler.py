@@ -9,7 +9,7 @@ from multiprocessing import Process, Queue
 from threading import Lock
 
 from config.settings import settings
-from model_services.device_worker import setup_cpu_threading_limits
+from device_workers.worker_utils import setup_cpu_threading_limits
 from model_services.tt_queue import TTQueue
 from utils.logger import TTLogger
 

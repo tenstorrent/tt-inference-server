@@ -2,62 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
-import os
 import threading
 from multiprocessing import Queue
 
 from config.settings import settings
+from device_workers.worker_utils import (
+    initialize_device_worker,
+    setup_worker_environment,
+)
 from model_services.tt_queue import TTQueue
-from telemetry.telemetry_client import get_telemetry_client
-from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
-from utils.torch_utils import set_torch_thread_limits
-
-
-def setup_cpu_threading_limits(cpu_threads: str):
-    """Set up CPU threading limits for PyTorch to prevent CPU oversubscription"""
-    # limit PyTorch to use only a fraction of CPU cores per process, otherwise it will cloag the CPU
-    os.environ["OMP_NUM_THREADS"] = cpu_threads
-    os.environ["MKL_NUM_THREADS"] = cpu_threads
-    os.environ["TORCH_NUM_THREADS"] = cpu_threads
-    set_torch_thread_limits()
-    if settings.default_throttle_level:
-        os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
-
-
-def setup_worker_environment(worker_id: str):
-    setup_cpu_threading_limits("2")
-
-    # Set device visibility
-    os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
-    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
-
-    if settings.enable_telemetry:
-        get_telemetry_client()  # initialize telemetry client for the worker
-
-    tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-    # use cache per device to reduce number of "binary not found" errors
-    os.environ["TT_METAL_CACHE"] = (
-        f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
-    )
-
-    if settings.is_galaxy:
-        os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
-        # make sure to not override except 1,1 and 2,1 mesh sizes
-        if settings.device_mesh_shape == (1, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
-                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto"
-            )
-        elif settings.device_mesh_shape == (2, 1):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
-                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/n300_mesh_graph_descriptor.textproto"
-            )
-        elif settings.device_mesh_shape == (2, 4):
-            os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
-                f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            )
 
 
 def device_worker(
@@ -67,35 +21,17 @@ def device_worker(
     warmup_signals_queue: Queue,
     error_queue: Queue,
 ):
-    setup_worker_environment(worker_id)
+    setup_worker_environment(worker_id, "2")
     logger = TTLogger()
 
-    # Create a single event loop for this worker process
-    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
-    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    device_runner: BaseDeviceRunner = None
     try:
-        device_runner: BaseDeviceRunner = get_device_runner(worker_id)
-        device_runner.set_device()
-        # Use the same loop for model loading
-        try:
-            loop.run_until_complete(device_runner.warmup())
-        except KeyboardInterrupt:
-            logger.warning(
-                f"Worker {worker_id} interrupted during model loading - shutting down"
-            )
-            loop.close()
+        device_runner, loop = initialize_device_worker(worker_id, logger)
+        if not device_runner:
             return
     except Exception as e:
-        if device_runner is not None:
-            device_runner.close_device()
-        logger.error(f"Failed to get device runner: {e}")
         error_queue.put((worker_id, -1, str(e)))
-        loop.close()
         return
+
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
     try:
