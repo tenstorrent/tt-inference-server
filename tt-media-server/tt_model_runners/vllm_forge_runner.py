@@ -29,15 +29,15 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
-            model=self.settings.model,
-            max_model_len=self.settings.max_model_length,
-            max_num_batched_tokens=self.settings.max_num_batched_tokens,
-            max_num_seqs=self.settings.max_num_seqs,
+            model=self.settings.vllm.model,
+            max_model_len=self.settings.vllm.max_model_length,
+            max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
+            max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
-            gpu_memory_utilization=self.settings.gpu_memory_utilization,
+            gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
                 "enable_const_eval": False,
-                "min_context_len": self.settings.min_context_length,
+                "min_context_len": self.settings.vllm.min_context_length,
             },
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
