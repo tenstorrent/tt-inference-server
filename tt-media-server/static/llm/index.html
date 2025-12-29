@@ -70,21 +70,13 @@
         input[type="number"] {
             width: 80px;
         }
-        #model {
-            width: 300px;
-        }
     </style>
 </head>
 <body>
     <h1>LLM Completions</h1>
 
-    <div>
-        <label>Model: <input type="text" id="model" value="default" placeholder="Model name"></label>
-    </div>
-
     <div id="controls">
         <label>Max Tokens: <input type="number" id="maxTokens" value="256" min="1" max="4096"></label>
-        <label>Temperature: <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1"></label>
         <label><input type="checkbox" id="stream" checked> Stream</label>
     </div>
 
@@ -109,9 +101,7 @@
         const responseEl = document.getElementById('response');
         const submitBtn = document.getElementById('submit');
         const spinner = document.getElementById('spinner');
-        const modelEl = document.getElementById('model');
         const maxTokensEl = document.getElementById('maxTokens');
-        const temperatureEl = document.getElementById('temperature');
         const streamEl = document.getElementById('stream');
         const showTimestampsEl = document.getElementById('showTimestamps');
         const statusEl = document.getElementById('status');
@@ -153,10 +143,8 @@
             chunkCount = 0;
 
             const requestBody = {
-                model: modelEl.value || 'default',
                 prompt: prompt,
                 max_tokens: parseInt(maxTokensEl.value) || 256,
-                temperature: parseFloat(temperatureEl.value) || 0.7,
                 stream: useStream
             };
 
@@ -198,22 +186,21 @@
         }
 
         async function handleNonStreamResponse(response) {
-            const contentType = response.headers.get('content-type') || '';
-
-            // Server returns plain text for non-streaming completions
-            if (contentType.includes('text/plain')) {
-                const text = await response.text();
-                responseEl.textContent = text;
-                return;
-            }
-
-            // Handle JSON response (OpenAI-compatible format)
             const data = await response.json();
             if (data.error) {
                 throw new Error(data.error.message || JSON.stringify(data.error));
             }
             if (data.choices && data.choices.length > 0) {
                 responseEl.textContent = data.choices[0].text || '';
+
+                // Show completion metadata
+                const totalTime = ((performance.now() - requestStartTime) / 1000).toFixed(2);
+                const usage = data.usage || {};
+                const finishReason = data.choices[0].finish_reason || 'unknown';
+                statusEl.textContent = `Done in ${totalTime}s | Finish: ${finishReason} | ID: ${data.id || 'N/A'}`;
+                if (usage.total_tokens) {
+                    statusEl.textContent += ` | Tokens: ${usage.total_tokens}`;
+                }
             } else {
                 responseEl.textContent = JSON.stringify(data, null, 2);
             }
@@ -224,6 +211,8 @@
             const decoder = new TextDecoder();
             let buffer = '';
             const showTs = showTimestampsEl.checked;
+            let completionId = null;
+            let finishReason = null;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -232,13 +221,13 @@
                 const now = performance.now();
                 if (!firstChunkTime) {
                     firstChunkTime = now;
-                    const ttfb = ((firstChunkTime - requestStartTime) / 1000).toFixed(2);
-                    statusEl.textContent = `Time to first chunk: ${ttfb}s`;
+                    const ttft = ((firstChunkTime - requestStartTime) / 1000).toFixed(2);
+                    statusEl.textContent = `TTFT: ${ttft}s`;
                 }
 
                 buffer += decoder.decode(value, { stream: true });
 
-                // Split by double newline (SSE format) or single newline
+                // Split by newline (SSE format uses double newline but we handle line by line)
                 const lines = buffer.split('\n');
                 buffer = lines.pop(); // Keep incomplete line in buffer
 
@@ -256,8 +245,21 @@
                             if (parsed.error) {
                                 throw new Error(parsed.error.message || JSON.stringify(parsed.error));
                             }
+
+                            // Capture completion ID from first chunk
+                            if (!completionId && parsed.id) {
+                                completionId = parsed.id;
+                            }
+
                             if (parsed.choices && parsed.choices.length > 0) {
-                                const text = parsed.choices[0].text || '';
+                                const choice = parsed.choices[0];
+                                const text = choice.text || '';
+
+                                // Capture finish reason when present
+                                if (choice.finish_reason) {
+                                    finishReason = choice.finish_reason;
+                                }
+
                                 if (text) {
                                     chunkCount++;
                                     if (showTs) {
@@ -279,13 +281,25 @@
 
                 // Update status
                 const elapsed = ((now - requestStartTime) / 1000).toFixed(2);
-                statusEl.textContent = `TTFB: ${((firstChunkTime - requestStartTime) / 1000).toFixed(2)}s | Chunks: ${chunkCount} | Elapsed: ${elapsed}s`;
+                const ttft = ((firstChunkTime - requestStartTime) / 1000).toFixed(2);
+                let itl = 'N/A';
+                if (chunkCount > 1) {
+                    itl = (((now - firstChunkTime) / (chunkCount - 1)) ).toFixed(0) + 'ms';
+                }
+                statusEl.textContent = `TTFT: ${ttft}s | ITL: ${itl} | Tokens: ${chunkCount} | Elapsed: ${elapsed}s`;
             }
 
-            // Final status
+            // Final status with completion metadata
             const totalTime = ((performance.now() - requestStartTime) / 1000).toFixed(2);
-            const ttfb = firstChunkTime ? ((firstChunkTime - requestStartTime) / 1000).toFixed(2) : 'N/A';
-            statusEl.textContent = `Done. TTFB: ${ttfb}s | Total chunks: ${chunkCount} | Total time: ${totalTime}s`;
+            const ttft = firstChunkTime ? ((firstChunkTime - requestStartTime) / 1000).toFixed(2) : 'N/A';
+            let itl = 'N/A';
+            if (chunkCount > 1 && firstChunkTime) {
+                itl = (((performance.now() - firstChunkTime) / (chunkCount - 1))).toFixed(0) + 'ms';
+            }
+            let status = `Done in ${totalTime}s | TTFT: ${ttft}s | ITL: ${itl} | Tokens: ${chunkCount}`;
+            if (finishReason) status += ` | Finish: ${finishReason}`;
+            if (completionId) status += ` | ID: ${completionId}`;
+            statusEl.textContent = status;
         }
 
         submitBtn.addEventListener('click', submitPrompt);
