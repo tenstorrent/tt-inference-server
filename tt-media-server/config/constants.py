@@ -177,6 +177,11 @@ class AudioResponseFormat(Enum):
     TEXT = "text"
 
 
+class ImageSearchResponseFormat(Enum):
+    JSON = "json"
+    VERBOSE_JSON = "VERBOSE_JSON"
+
+
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
