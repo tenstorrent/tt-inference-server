@@ -12,6 +12,7 @@ fields in model_spec.py for each ModelSpecTemplate based on CI results.
 Usage:
     python3 update_model_spec_commits.py <last_good_json_path>
     python3 update_model_spec_commits.py --dry-run <last_good_json_path>
+    python3 update_model_spec_commits.py --ignore-perf-status <last_good_json_path>
     python3 update_model_spec_commits.py --help
 
 Example:
@@ -22,6 +23,7 @@ The script:
 - For each template, checks all weights to find matching model_ids in the JSON
 - Validates that all devices in a template have consistent commits
 - Updates commits in-place (7-character hash format)
+- Updates status field based on perf_status (unless --ignore-perf-status is used)
 - Skips templates with no CI data
 - Errors if different devices have conflicting commits
 """
@@ -689,6 +691,11 @@ def main():
         default="README.md",
         help="Path to README.md file (default: README.md)",
     )
+    parser.add_argument(
+        "--ignore-perf-status",
+        action="store_true",
+        help="Only update tt_metal_commit and vllm_commit, do not update status/perf_status",
+    )
 
     args = parser.parse_args()
 
@@ -791,8 +798,9 @@ def main():
             continue
 
         # Update the template fields
+        status_to_update = None if args.ignore_perf_status else status
         updated_template = update_template_fields(
-            template_text, tt_metal_commit, vllm_commit, status
+            template_text, tt_metal_commit, vllm_commit, status_to_update
         )
 
         if updated_template != template_text:
@@ -807,8 +815,10 @@ def main():
                 print(f"  tt_metal_commit: {tt_metal_commit}")
             if vllm_commit:
                 print(f"  vllm_commit: {vllm_commit}")
-            if status:
-                print(f"  status: {status}")
+            if status_to_update:
+                print(f"  status: {status_to_update}")
+            elif args.ignore_perf_status and status:
+                print(f"  status: {status} (ignored, not updating)")
 
             # Track update for markdown generation
             status_before = extract_status(template_text)
@@ -819,6 +829,7 @@ def main():
                 template, last_good_data
             )
             model_arch = model_name_from_weight(weights[0]) if weights else "unknown"
+            status_after = status_before if args.ignore_perf_status else status
 
             update_records.append(
                 {
@@ -828,7 +839,7 @@ def main():
                     "weights": weights,
                     "devices": devices,
                     "status_before": status_before,
-                    "status_after": status,
+                    "status_after": status_after,
                     "tt_metal_commit_before": tt_metal_commit_before,
                     "tt_metal_commit_after": tt_metal_commit,
                     "vllm_commit_before": vllm_commit_before,
