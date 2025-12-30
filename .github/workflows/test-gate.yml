@@ -603,10 +603,10 @@ jobs:
           echo "Checking coverage for tt-media-server only (gradual rollout)"
 
           # Generate diff-cover report for changed lines only
+          # --exclude uses fnmatch patterns (shell-style wildcards)
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude='tt-media-server/tests/*' \
-            --exclude='tt-media-server/performance_tests/*' \
+            --exclude '*/tests/*' '*/performance_tests/*' \
             --fail-under=50 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
