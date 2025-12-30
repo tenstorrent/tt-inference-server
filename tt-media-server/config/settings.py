@@ -18,6 +18,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
 )
+from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 
@@ -70,11 +71,7 @@ class Settings(BaseSettings):
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
 
-    # Text processing settings
-    min_context_length: int = 32
-    max_model_length: int = 128
-    max_num_batched_tokens: int = 128
-    max_num_seqs: int = 1
+    vllm: VLLMSettings = VLLMSettings()
 
     # Image processing settings
     image_return_format: str = "JPEG"
