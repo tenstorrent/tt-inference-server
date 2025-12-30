@@ -580,7 +580,6 @@ jobs:
           # Run from repo root so coverage.xml has paths like "tt-media-server/..."
           # This makes paths match git diff output
           pytest tt-media-server/tests/ \
-            --ignore=tt-media-server/tests/ \
             --ignore=tt-media-server/performance_tests/ \
             --cov=tt-media-server \
             --cov-report=xml:coverage.xml \
@@ -606,6 +605,8 @@ jobs:
           # Generate diff-cover report for changed lines only
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
+            --exclude='tt-media-server/tests/*' \
+            --exclude='tt-media-server/performance_tests/*' \
             --fail-under=50 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
