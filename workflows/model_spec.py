@@ -2003,11 +2003,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="d9c663b",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2065,11 +2064,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="d9c663b",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2091,11 +2089,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="d9c663b",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2117,11 +2114,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Motif-Technologies/Motif-Image-6B-Preview"],
-        tt_metal_commit="32812e9",
+        tt_metal_commit="d9c663b",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         display_name="motif-image-6b-preview",
         inference_engine=InferenceEngine.MEDIA.value,
