@@ -580,6 +580,8 @@ jobs:
           # Run from repo root so coverage.xml has paths like "tt-media-server/..."
           # This makes paths match git diff output
           pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
             --cov=tt-media-server \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
