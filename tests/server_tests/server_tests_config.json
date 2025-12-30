@@ -17,6 +17,9 @@
             "vovnet",
             "mobilenetv2",
             "Qwen3-Embedding-4B"
+        ],
+        "MOCK": [
+            "mock-model"
         ]
     },
     "available_markers": {
@@ -164,6 +167,48 @@
                 "retry_delay": 60,
                 "break_on_failure": false,
                 "mock_mode": false
+            }
+        },
+        "MockPassingTest": {
+            "module": "tests.server_tests.test_cases.mock_test",
+            "markers": [
+                "mock",
+                "fast"
+            ],
+            "test_config": {
+                "test_timeout": 10,
+                "retry_attempts": 0,
+                "retry_delay": 1,
+                "break_on_failure": false,
+                "mock_mode": true
+            }
+        },
+        "MockFailingTest": {
+            "module": "tests.server_tests.test_cases.mock_test",
+            "markers": [
+                "mock",
+                "fast"
+            ],
+            "test_config": {
+                "test_timeout": 10,
+                "retry_attempts": 0,
+                "retry_delay": 1,
+                "break_on_failure": false,
+                "mock_mode": true
+            }
+        },
+        "MockConditionalTest": {
+            "module": "tests.server_tests.test_cases.mock_test",
+            "markers": [
+                "mock",
+                "fast"
+            ],
+            "test_config": {
+                "test_timeout": 10,
+                "retry_attempts": 0,
+                "retry_delay": 1,
+                "break_on_failure": false,
+                "mock_mode": true
             }
         }
     },
