@@ -45,7 +45,6 @@ alwaysApply: true
 # Code Organization
 
 - Extract common behavior from similar modules to reduce duplication
-- Create follow-up tasks for larger refactoring work discovered during PR reviews
 - Remove unused imports, dead code, and unnecessary comments
 - Run `ruff format` before committing to ensure consistent formatting
 
