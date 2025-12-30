@@ -5,7 +5,7 @@
 import asyncio
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
@@ -27,8 +27,9 @@ class JobStatus(str, Enum):
 @dataclass
 class Job:
     id: str
-    object: str
+    job_type: str
     model: str
+    parameters: dict = field(default_factory=dict)
     status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
@@ -65,10 +66,11 @@ class Job:
     def to_public_dict(self) -> dict:
         data = {
             "id": self.id,
-            "object": self.object,
+            "job_type": self.job_type,
             "status": self.status.value,
             "created_at": self.created_at,
             "model": self.model,
+            "parameters": self.parameters,
         }
         if self.completed_at:
             data["completed_at"] = self.completed_at
@@ -112,8 +114,9 @@ class JobManager:
                 raise Exception("Maximum job limit reached")
             job = Job(
                 id=job_id,
-                object=job_type.value,
+                job_type=job_type.value,
                 model=model,
+                parameters=request.model_dump(mode="json"),
             )
             self._jobs[job_id] = job
             self._logger.info(f"Job {job_id} created.")
@@ -121,10 +124,10 @@ class JobManager:
             if self.db:
                 self.db.insert_job(
                     job_id=job.id,
-                    object=job.object,
-                    model=job.model,
+                    job_type=job.job_type,
                     status=job.status.value,
                     created_at=job.created_at,
+                    parameters=job.parameters,
                 )
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
@@ -137,7 +140,7 @@ class JobManager:
             return [
                 job.to_public_dict()
                 for job in self._jobs.values()
-                if job_type is None or job.object == job_type.value
+                if job_type is None or job.job_type == job_type.value
             ]
 
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
@@ -304,16 +307,13 @@ class JobManager:
             for db_job in db_jobs:
                 job = Job(
                     id=db_job["id"],
-                    object=db_job["object"],
-                    model=db_job["model"],
+                    job_type=db_job["job_type"],
+                    parameters=db_job["parameters"],
                     status=JobStatus(db_job["status"]),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),
                     error=db_job.get("error"),
                 )
-
-                if db_job.get("result"):
-                    job.result = db_job["result"]
 
                 with self._jobs_lock:
                     self._jobs[job.id] = job
