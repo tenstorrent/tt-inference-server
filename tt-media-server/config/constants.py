@@ -179,7 +179,7 @@ class AudioResponseFormat(Enum):
 
 class ImageSearchResponseFormat(Enum):
     JSON = "json"
-    VERBOSE_JSON = "VERBOSE_JSON"
+    VERBOSE_JSON = "verbose_json"
 
 
 class JobTypes(Enum):

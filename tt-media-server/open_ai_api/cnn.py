@@ -46,8 +46,7 @@ async def _parse_image_search_request(
 
         return ImageSearchRequest(
             prompt=file_content,
-            response_format=response_format
-            or ImageSearchResponseFormat.VERBOSE_JSON.value,
+            response_format=response_format or ImageSearchResponseFormat.JSON.value,
             top_k=top_k,
             min_confidence=min_confidence,
         )

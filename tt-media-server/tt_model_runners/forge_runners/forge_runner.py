@@ -12,14 +12,14 @@ os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = (
 
 import base64
 from io import BytesIO
-from typing import List
+from typing import List, Union
 
 import torch
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+from config.constants import ImageSearchResponseFormat
 from domain.image_search_request import ImageSearchRequest
-from fastapi import Union
 from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -221,7 +221,7 @@ class ForgeRunner(BaseDeviceRunner):
             predictions: List of {"label": str, "probability": float}
             response_format: "json" or "verbose"
         """
-        if response_format == "verbose":
+        if response_format == ImageSearchResponseFormat.VERBOSE_JSON.value.lower():
             self.logger.info("Formatting response in verbose format")
             parts = []
             for p in predictions:

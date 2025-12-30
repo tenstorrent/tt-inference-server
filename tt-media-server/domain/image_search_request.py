@@ -46,8 +46,8 @@ class ImageSearchRequest(BaseRequest):
     @field_validator("response_format")
     @classmethod
     def validate_response_format(cls, v):
-        if v not in ["json", "verbose"]:
-            raise ValueError("response_format must be 'json' or 'verbose'")
+        if v not in ["json", "verbose_json"]:
+            raise ValueError("response_format must be 'json' or 'verbose_json'")
         return v
 
     @field_validator("min_confidence")
