@@ -19,6 +19,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 from domain.image_search_request import ImageSearchRequest
+from fastapi import Union
 from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -101,7 +102,7 @@ class ForgeRunner(BaseDeviceRunner):
         request = image_search_requests[0]
 
         # Get PIL image from the request (which contains base64 image data in prompt field)
-        pil_image = self.base64_to_pil_image(request.prompt, target_mode="RGB")
+        pil_image = self._get_pil_image(request.prompt, image_mode="RGB")
 
         # Run inference on Tenstorrent device
         inputs = self.loader.input_preprocess(
@@ -113,17 +114,45 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            predictions = self.loader.output_postprocess(output)
-            return [
-                {
-                    "top1_class_label": predictions.get("label"),
-                    "top1_class_probability": predictions.get("probability"),
-                    "output": predictions,
-                }
-            ]
+            predictions = self._postprocess_with_filters(
+                output,
+                top_k=request.top_k,
+                min_confidence=request.min_confidence,
+            )
+
+            # Format response based on response_format
+            formatted_result = self._format_response(
+                predictions, request.response_format
+            )
+
+            return [formatted_result]
+
+    def _get_pil_image(
+        self, prompt: Union[str, bytes], image_mode: str = "RGB"
+    ) -> Image.Image:
+        """
+        Get PIL image from either base64 string or raw bytes.
+
+        Args:
+            prompt: Base64 encoded image string OR raw image bytes
+            target_mode: PIL Image mode (e.g., "RGB", "RGBA", "L")
+
+        Returns:
+            PIL Image object
+        """
+        if isinstance(prompt, bytes):
+            self.logger.info("Processing image from raw bytes (file upload)")
+            image = Image.open(BytesIO(prompt))
+            if image.mode != image_mode:
+                image = image.convert(image_mode)
+
+            return image
+
+        self.logger.info("Processing image from base64 string")
+        return self._base64_to_pil_image(prompt, target_mode=image_mode)
 
     @log_execution_time("PIL image creation from base64")
-    def base64_to_pil_image(self, base64_string, target_mode="RGB"):
+    def _base64_to_pil_image(self, base64_string, target_mode="RGB"):
         """
         Convert base64 encoded image to PIL Image with specified format
 
@@ -150,3 +179,57 @@ class ForgeRunner(BaseDeviceRunner):
             image = image.convert(target_mode)
 
         return image
+
+    def _postprocess_with_filters(
+        self, output, top_k: int, min_confidence: float
+    ) -> list:
+        """
+        Post-process model output with top_k and min_confidence filtering.
+
+        Args:
+            output: Raw model output tensor
+            top_k: Number of top predictions to return
+            min_confidence: Minimum confidence threshold (0-100 percentage)
+
+        Returns:
+            List of prediction dicts with 'label' and 'probability' keys
+        """
+        self.logger.info(
+            f"Post-processing output with top_k: {top_k} and min_confidence: {min_confidence}"
+        )
+        self.logger.info("Getting base predictions from loader")
+        raw_predictions = self.loader.output_postprocess(
+            output, top_k=top_k, min_confidence=min_confidence
+        )
+
+        labels = raw_predictions.get("output", {}).get("labels", [])
+        probabilities = raw_predictions.get("output", {}).get("probabilities", [])
+
+        self.logger.info("Convert list of dicts and parse probability strings")
+        predictions = []
+        for label, probability in zip(labels, probabilities):
+            prob = float(probability.rstrip("%"))
+            predictions.append({"label": label, "probability": prob})
+
+        return predictions
+
+    def _format_response(self, predictions: list, response_format: str):
+        """
+        Format predictions based on response_format.
+
+        Args:
+            predictions: List of {"label": str, "probability": float}
+            response_format: "json" or "verbose"
+        """
+        if response_format == "verbose":
+            self.logger.info("Formatting response in verbose format")
+            parts = []
+            for p in predictions:
+                parts.extend([str(p["label"]), f"{p['probability']:.1f}"])
+            return ",".join(parts)
+
+        self.logger.info("Formatting response in JSON format")
+        return [
+            {"object": p["label"], "confidence_level": p["probability"]}
+            for p in predictions
+        ]
