@@ -6,6 +6,7 @@ import base64
 from io import BytesIO
 from typing import Union
 
+from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from PIL import Image
 from pydantic import field_validator
@@ -19,7 +20,7 @@ class ImageSearchRequest(BaseRequest):
     top_k: int = 3
 
     # Response format: "json" or "verbose"
-    response_format: str = "json"
+    response_format: str = ResponseFormat.JSON.value
 
     # Minimum confidence threshold
     min_confidence: float = 70.0

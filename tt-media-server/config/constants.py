@@ -172,12 +172,7 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
-class AudioResponseFormat(Enum):
-    VERBOSE_JSON = "verbose_json"
-    TEXT = "text"
-
-
-class ImageSearchResponseFormat(Enum):
+class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
 

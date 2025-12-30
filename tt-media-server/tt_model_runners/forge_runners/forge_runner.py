@@ -18,7 +18,7 @@ import torch
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
-from config.constants import ImageSearchResponseFormat
+from config.constants import ResponseFormat
 from domain.image_search_request import ImageSearchRequest
 from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -114,7 +114,7 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            predictions = self._postprocess_with_filters(
+            predictions = self._postprocess_model_output(
                 output,
                 top_k=request.top_k,
                 min_confidence=request.min_confidence,
@@ -180,7 +180,7 @@ class ForgeRunner(BaseDeviceRunner):
 
         return image
 
-    def _postprocess_with_filters(
+    def _postprocess_model_output(
         self, output, top_k: int, min_confidence: float
     ) -> list:
         """
@@ -221,7 +221,7 @@ class ForgeRunner(BaseDeviceRunner):
             predictions: List of {"label": str, "probability": float}
             response_format: "json" or "verbose"
         """
-        if response_format == ImageSearchResponseFormat.VERBOSE_JSON.value.lower():
+        if response_format == ResponseFormat.VERBOSE_JSON.value.lower():
             self.logger.info("Formatting response in verbose format")
             parts = []
             for p in predictions:

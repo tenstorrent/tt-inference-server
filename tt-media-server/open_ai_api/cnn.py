@@ -5,7 +5,7 @@
 
 from typing import Optional
 
-from config.constants import ImageSearchResponseFormat
+from config.constants import ResponseFormat
 from domain.image_search_request import ImageSearchRequest
 from fastapi import (
     APIRouter,
@@ -30,7 +30,7 @@ CONTENT_TYPE_JSON = "application/json"
 async def _parse_image_search_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
-    response_format: Optional[str] = Form(ImageSearchResponseFormat.JSON.value),
+    response_format: Optional[str] = Form(ResponseFormat.JSON.value),
     top_k: Optional[int] = Form(3),
     min_confidence: Optional[float] = Form(70.0),
 ) -> ImageSearchRequest:
@@ -46,7 +46,7 @@ async def _parse_image_search_request(
 
         return ImageSearchRequest(
             prompt=file_content,
-            response_format=response_format or ImageSearchResponseFormat.JSON.value,
+            response_format=response_format,
             top_k=top_k,
             min_confidence=min_confidence,
         )
