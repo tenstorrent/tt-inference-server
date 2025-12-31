@@ -4,12 +4,9 @@
 
 import pytest
 import torch
-import numpy as np
-import base64
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 import tempfile
-import os
 
 # Self-contained mock classes for testing speaker embeddings functionality
 class MockSpeakerEmbeddingsManager:
@@ -239,13 +236,13 @@ class TestSpeakerEmbeddingsManager:
     def test_get_speaker_embedding_load_default(self, manager):
         """Test getting speaker embedding that triggers default loading"""
         with patch.object(manager, 'load_default_embeddings') as mock_load:
-            with patch.object(manager, 'load_custom_embeddings') as mock_custom:
+            with patch.object(manager, 'load_custom_embeddings'):
                 # Set up mock to add embedding when called
                 def add_embedding():
                     manager._embeddings_cache["new_speaker"] = torch.randn(1, 512)
                 mock_load.side_effect = add_embedding
 
-                result = manager.get_speaker_embedding("new_speaker")
+                manager.get_speaker_embedding("new_speaker")
 
                 mock_load.assert_called_once()
                 assert "new_speaker" in manager._embeddings_cache

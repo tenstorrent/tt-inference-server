@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from model_services.base_service import BaseService
 from telemetry.telemetry_client import TelemetryEvent

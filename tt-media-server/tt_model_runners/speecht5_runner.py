@@ -6,23 +6,17 @@ import asyncio
 import sys
 from config.constants import SupportedModels
 from config.settings import settings
-import time
 import torch
-from tqdm import tqdm
 import os
 import io
 import base64
-import numpy as np
-from typing import Optional, Dict, Any, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator
 import soundfile as sf
 
 from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
 
 # Import TTNN SpeechT5 components
-# Use TT_METAL_HOME environment variable (set in Docker and manual setups)
-tt_metal_home = os.environ.get("TT_METAL_HOME", "/home/container_app_user/tt-metal")
-if tt_metal_home not in sys.path:
-    sys.path.append(tt_metal_home)
+sys.path.append("/home/ttuser/ssinghal/PR-fix/speecht5_tts_final/tt-metal")
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_encoder import (
     TTNNSpeechT5Encoder,
     TTNNEncoderConfig,
@@ -39,7 +33,6 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     preprocess_postnet_parameters,
 )
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import SpeechT5Generator
-from models.experimental.speecht5_tts.demo_ttnn import get_high_perf_compute_config, generate_speech_ttnn
 
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse, PartialStreamingAudioResponse
@@ -48,10 +41,9 @@ from utils.speaker_embeddings import SpeakerEmbeddingsManager
 import ttnn
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
-from utils.logger import TTLogger
 
 class SpeechT5Constants:
-    MAX_STEPS = 360  # Sufficient for longer text (generates ~30 seconds of audio)
+    MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
     STREAMING_CHUNK_SIZE = 20  # Generate audio chunks every 20 mel frames
@@ -344,10 +336,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 self._handle_load_failure_cleanup(self.ttnn_device)
                 raise
 
-            # Run warmup to compile TTNN kernels during startup
-            self.logger.info(f"Device {device_id_int}: Starting warmup to compile TTNN kernels...")
-            await asyncio.to_thread(self._warmup)
-            self.logger.info(f"Device {device_id_int}: Warmup completed - server ready for requests")
+            # Skip warmup for now to avoid kernel compilation issues
+            # Kernels will be compiled on first inference request
+            self.logger.info(f"Device {device_id_int}: Skipping warmup - kernels will compile on first request")
 
             return True
 
@@ -357,46 +348,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             device_id_int = int(self.device_id) if self.device_id else 0
             self.logger.error(f"Device {device_id_int}: Model loading failed: {e}")
             raise SpeechT5ModelError(f"Device {device_id_int}: Model loading failed: {str(e)}") from e
-
-    def _warmup(self):
-        """Run warmup inference to compile TTNN kernels during startup"""
-        device_id_int = int(self.device_id) if self.device_id else 0
-        self.logger.info(f"Device {device_id_int}: Running warmup inference to compile TTNN kernels...")
-
-        try:
-            # Use a simple warmup text
-            warmup_text = "Hello, this is a warmup test. The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet. Text to speech synthesis is running on Tenstorrent hardware. Machine learning models can generate natural sounding speech from text input. Neural networks process the input tokens and produce mel spectrograms which are then converted to audio waveforms using a vocoder."
-
-            # Get a default speaker embedding for warmup
-            available_speakers = self.speaker_manager.list_available_speakers()
-            if available_speakers:
-                speaker_embedding = self.speaker_manager.get_speaker_embedding(available_speakers[0])
-            else:
-                speaker_embedding = torch.zeros(self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32).unsqueeze(0)
-
-            # Run warmup inference with warmup_mode=True (skips vocoder, faster)
-            self.logger.info(f"Device {device_id_int}: Compiling TTNN kernels (this may take 10-15 minutes on first run)...")
-            _ = generate_speech_ttnn(
-                warmup_text,
-                speaker_embedding,
-                self.processor,
-                self.vocoder,
-                self.ttnn_encoder,
-                self.ttnn_decoder,
-                self.ttnn_postnet,
-                self.ttnn_device,
-                max_steps=SpeechT5Constants.MAX_STEPS,
-                warmup_mode=True,  # Skip vocoder for faster warmup
-                enable_trace=False,
-                generator=self.generator,
-            )
-            self.logger.info(f"Device {device_id_int}: TTNN kernels compiled successfully")
-
-        except Exception as e:
-            self.logger.error(f"Device {device_id_int}: Warmup failed: {e}")
-            # Don't raise - warmup failure shouldn't prevent server from starting
-            # Kernels will compile on first real request instead
-            self.logger.warning(f"Device {device_id_int}: Server will continue, kernels will compile on first request")
 
     def _prepare_speaker_embedding(self, request: TextToSpeechRequest) -> torch.Tensor:
         """Prepare speaker embedding for the request"""
@@ -593,37 +544,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 # For streaming, return the async generator
                 return self._generate_audio_with_task_id(request.text, speaker_embedding, request._task_id)
             else:
-                # Use generate_speech_ttnn from demo for proven inference
-                audio_output = await asyncio.to_thread(
-                    generate_speech_ttnn,
-                    request.text,
-                    speaker_embedding,
-                    self.processor,
-                    self.vocoder,
-                    self.ttnn_encoder,
-                    self.ttnn_decoder,
-                    self.ttnn_postnet,
-                    self.ttnn_device,
-                    max_steps=SpeechT5Constants.MAX_STEPS,
-                    warmup_mode=False,  # Include vocoder for actual audio
-                    enable_trace=False,
-                    generator=self.generator,
-                )
-
-                # Convert audio to base64 WAV
-                audio_buffer = io.BytesIO()
-                sf.write(audio_buffer, audio_output.squeeze().detach().numpy(), SpeechT5Constants.SAMPLE_RATE, format='WAV')
-                audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode('utf-8')
-
-                # Calculate duration
-                duration = len(audio_output.squeeze()) / SpeechT5Constants.SAMPLE_RATE
-
-                return TextToSpeechResponse(
-                    audio=audio_base64,
-                    duration=duration,
-                    sample_rate=SpeechT5Constants.SAMPLE_RATE,
-                    format="wav"
-                )
+                # For non-streaming, collect and return final result
+                final_result = None
+                async for result in self._generate_audio_sync(request.text, speaker_embedding, False):
+                    result['task_id'] = request._task_id
+                    final_result = result
+                # Extract the actual TextToSpeechResponse from the dictionary
+                if final_result and 'result' in final_result:
+                    return final_result['result']
+                return final_result
 
         except (ModelNotLoadedError, DeviceInitializationError, TextProcessingError, AudioGenerationError):
             raise
