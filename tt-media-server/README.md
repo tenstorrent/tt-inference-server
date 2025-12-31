@@ -328,6 +328,78 @@ curl -X 'DELETE' \
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
+# Fine-tuning API
+
+## Create fine-tuning job
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "training_file": "file-abc123",
+  "hyperparameters": {
+    "n_epochs": 3,
+    "batch_size": 4,
+    "learning_rate_multiplier": 1.0
+  }
+}'
+```
+
+**Response example:**
+```json
+{
+  "id": "ftjob-abc123",
+  "object": "training",
+  "status": "queued",
+  "created_at": 1702860000,
+  "model": "meta-llama/Llama-3.1-8B-Instruct"
+}
+```
+
+Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}` in subsequent requests.
+
+## List fine-tuning jobs
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Get fine-tuning job details
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## Cancel fine-tuning job
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## List fine-tuning job checkpoints
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 ## Unit Testing Setup in VS Code
 
 To set up and run unit tests in VS Code with pytest support, follow these steps:
@@ -404,6 +476,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
 | `RESET_DEVICE_SLEEP_TIME` | `5.0` | Time in seconds to wait after device reset before attempting reconnection |
 | `ALLOW_DEEP_RESET` | `False` | Boolean flag to enable deep device reset functionality. When enabled, allows more aggressive device reset operations beyond standard reset procedures |
+| `USE_GREEDY_BASED_ALLOCATION` | `True` | Boolean flag to enable greedy-based device allocation strategy. When enabled with single device mesh shape (1,1), automatically allocates all available devices from the system |
 
 ## Model Configuration
 
@@ -414,6 +487,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
+| `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
 ## Queue and Batch Configuration
 
@@ -445,8 +519,8 @@ export MAX_BATCH_DELAY_TIME_MS=50
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `NEW_DEVICE_DELAY_SECONDS` | `15` | Delay in seconds before initializing a new device worker |
-| `NEW_RUNNER_DELAY_SECONDS` | `5` | Delay in seconds before initializing a new CPU worker |
+| `NEW_DEVICE_DELAY_SECONDS` | `0` | Delay in seconds before initializing a new device worker, 0 by default |
+| `NEW_RUNNER_DELAY_SECONDS` | `2` | Delay in seconds before initializing a new CPU worker |
 | `MOCK_DEVICES_COUNT` | `5` | Number of mock devices to create when running in mock/test mode |
 | `MAX_WORKER_RESTART_COUNT` | `5` | Maximum number of times a worker can be restarted before being marked as failed |
 | `WORKER_CHECK_SLEEP_TIMEOUT` | `30.0` | Time in seconds between worker health checks |
@@ -456,7 +530,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `INFERENCE_TIMEOUT_SECONDS` | `1000` | Default timeout for inference requests in seconds |
+| `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
 
 ## Job Management Settings
 
@@ -464,17 +538,22 @@ export MAX_BATCH_DELAY_TIME_MS=50
 |---------------------|---------------|-------------|
 | `MAX_JOBS` | `10000` | Maximum number of jobs allowed in the job manager. |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | `300` | Interval in seconds between automatic job cleanup checks. The background cleanup task runs at this frequency to remove old jobs and cancel stuck jobs |
-| `JOB_RETENTION_SECONDS` | `3600` | Duration in seconds to keep completed, failed, or cancelled jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 hour |
-| `JOB_MAX_STUCK_TIME_SECONDS` | `7200` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 2 hours |
+| `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
+| `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
+| `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
 
-## Text Processing Settings
+## VLLM Settings
+
+These settings configure VLLM-based model runners and are grouped under `settings.vllm` in the configuration.
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `32` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Must be a power of two. Must be less than max_model_length. Min value is 32. |
-| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
+| `VLLM__MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Hugging Face model identifier for VLLM inference. |
+| `VLLM__MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `VLLM__MAX_MODEL_LENGTH` | `2048` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. |
+| `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
+| `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
+| `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 
 ## Image Processing Settings
 
@@ -496,7 +575,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
 | `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
 
-### Telemetry settings
+### Telemetry Settings
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
@@ -642,7 +721,7 @@ export DEVICE_IDS="(0,1),(2,3)"
 export MAX_QUEUE_SIZE=128
 
 # Set custom timeout for long-running inferences
-export INFERENCE_TIMEOUT_SECONDS=300
+export REQUEST_PROCESSING_TIMEOUT_SECONDS=300
 ```
 
 ### Production Configuration

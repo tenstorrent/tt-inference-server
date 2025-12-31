@@ -5480,15 +5480,16 @@
             }
         ]
     },
-    "Qwen3-Embedding-4B": {
-         "n150": [
+    "bge-large-en-v1.5": {
+        "n150": [
             {
                 "max_concurrency": 1,
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
                     }
                 }
             }
@@ -5499,8 +5500,63 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32000,
+                        "tput_prefill": 32000,
+                        "e2el_ms": 7000
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3-Embedding-4B": {
+         "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
                     }
                 }
             }
@@ -5511,8 +5567,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
                     }
                 }
             }
@@ -5523,8 +5580,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
                     }
                 }
             }

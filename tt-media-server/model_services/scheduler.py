@@ -9,11 +9,11 @@ from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
 from config.settings import get_settings
-from fastapi import HTTPException
-from model_services.device_worker import device_worker
-from model_services.device_worker_dynamic_batch import (
+from device_workers.device_worker import device_worker
+from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from fastapi import HTTPException
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -193,20 +193,14 @@ class Scheduler:
                     self.listener_running = False
                     break
 
-                task_id = (
-                    result_key.split("_chunk_")[0]
-                    if "_chunk_" in result_key
-                    else result_key
-                )
-
-                queue = self.result_queues.get(task_id)
+                queue = self.result_queues.get(result_key)
 
                 if queue:
                     await queue.put(input)
                 else:
                     current_queues = list(self.result_queues.keys())
                     self.logger.warning(
-                        f"No result queue found for task {task_id}. Current queues: {current_queues}"
+                        f"No result queue found for task {result_key}. Current queues: {current_queues}"
                     )
 
                 # Reset worker restart count on successful job

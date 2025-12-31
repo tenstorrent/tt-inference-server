@@ -10,6 +10,7 @@ from enum import Enum
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
+from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 
@@ -83,6 +84,16 @@ class JobManager:
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
         self._jobs_lock = Lock()
+
+        self.db = None
+
+        if self._settings.enable_job_persistence:
+            from utils.job_database import JobDatabase
+
+            self.db = JobDatabase()
+            self._logger.info("Job persistence enabled with database")
+            self._restore_jobs_from_db()
+
         # Background cleanup task
         self._cleanup_task: Callable = None
         self._start_cleanup_task()
@@ -90,7 +101,7 @@ class JobManager:
     async def create_job(
         self,
         job_id: str,
-        job_type: str,
+        job_type: JobTypes,
         model: str,
         request: BaseRequest,
         task_function: Callable,
@@ -101,15 +112,33 @@ class JobManager:
                 raise Exception("Maximum job limit reached")
             job = Job(
                 id=job_id,
-                object=job_type,
+                object=job_type.value,
                 model=model,
             )
             self._jobs[job_id] = job
             self._logger.info(f"Job {job_id} created.")
 
+            if self.db:
+                self.db.insert_job(
+                    job_id=job.id,
+                    object=job.object,
+                    model=job.model,
+                    status=job.status.value,
+                    created_at=job.created_at,
+                )
+
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
         return job.to_public_dict()
+
+    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
+        """Get metadata for all jobs, optionally filtered by job type."""
+        with self._jobs_lock:
+            return [
+                job.to_public_dict()
+                for job in self._jobs.values()
+                if job_type is None or job.object == job_type.value
+            ]
 
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
         """Get job metadata (public fields only)."""
@@ -138,6 +167,10 @@ class JobManager:
 
             self._jobs.pop(job_id)
             self._logger.info(f"Job {job_id} cancelled.")
+
+            if self.db:
+                self.db.delete_job(job_id)
+
             return True
 
     async def shutdown(self):
@@ -166,14 +199,33 @@ class JobManager:
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
             job.mark_in_progress()
+            if self.db:
+                self.db.update_job_status(job.id, job.status.value)
+
             result = await task_function(request)
+
             job.mark_completed(result=result)
+            if self.db:
+                self.db.update_job_status(
+                    job.id,
+                    job.status.value,
+                    completed_at=job.completed_at,
+                    result=result,
+                )
+
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
             job.mark_failed(error_code="processing_error", error_message=str(e))
+            if self.db:
+                self.db.update_job_status(
+                    job.id,
+                    job.status.value,
+                    completed_at=job.completed_at,
+                    error={"code": "processing_error", "message": str(e)},
+                )
         finally:
             job._task = None
 
@@ -216,6 +268,8 @@ class JobManager:
             with self._jobs_lock:
                 for job_id in jobs_to_remove:
                     self._jobs.pop(job_id, None)
+                    if self.db:
+                        self.db.delete_job(job_id)
 
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
@@ -238,6 +292,41 @@ class JobManager:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
         return running_task
+
+    def _restore_jobs_from_db(self):
+        """Restore all jobs from database on server restart."""
+        if not self.db:
+            return
+
+        try:
+            db_jobs = self.db.get_all_jobs()
+
+            for db_job in db_jobs:
+                job = Job(
+                    id=db_job["id"],
+                    object=db_job["object"],
+                    model=db_job["model"],
+                    status=JobStatus(db_job["status"]),
+                    created_at=db_job["created_at"],
+                    completed_at=db_job.get("completed_at"),
+                    error=db_job.get("error"),
+                )
+
+                if db_job.get("result"):
+                    job.result = db_job["result"]
+
+                with self._jobs_lock:
+                    self._jobs[job.id] = job
+
+                self._logger.debug(
+                    f"Restored job {job.id} from database (status: {job.status.value})"
+                )
+
+            restored_count = len(db_jobs)
+            if restored_count > 0:
+                self._logger.info(f"Restored {restored_count} job(s) from database")
+        except Exception as e:
+            self._logger.error(f"Failed to restore jobs from database: {e}")
 
 
 _job_manager_instance: Optional[JobManager] = None
