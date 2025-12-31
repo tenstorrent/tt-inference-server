@@ -9,7 +9,7 @@ from typing import Union
 from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from PIL import Image
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 
 class ImageSearchRequest(BaseRequest):
@@ -17,13 +17,13 @@ class ImageSearchRequest(BaseRequest):
     prompt: Union[str, bytes]
 
     # Number of top predictions to return
-    top_k: int = 3
+    top_k: int = Field(default=3, ge=1)
 
     # Response format: "json" or "verbose"
     response_format: str = ResponseFormat.JSON.value
 
     # Minimum confidence threshold
-    min_confidence: float = 70.0
+    min_confidence: float = Field(default=70.0, ge=0.0, le=100.0)
 
     @field_validator("prompt")
     @classmethod
@@ -37,25 +37,11 @@ class ImageSearchRequest(BaseRequest):
         except Exception as e:
             raise ValueError(f"Invalid base64 image: {e}")
 
-    @field_validator("top_k")
-    @classmethod
-    def validate_top_k(cls, v):
-        if v < 1:
-            raise ValueError("top_k must be at least 1")
-        return v
-
     @field_validator("response_format")
     @classmethod
     def validate_response_format(cls, v):
         if v not in ["json", "verbose_json"]:
             raise ValueError("response_format must be 'json' or 'verbose_json'")
-        return v
-
-    @field_validator("min_confidence")
-    @classmethod
-    def validate_min_confidence(cls, v):
-        if v < 0.0 or v > 100.0:
-            raise ValueError("min_confidence must be between 0.0 and 100.0")
         return v
 
     def get_pil_image(self) -> Image.Image:
