@@ -17,22 +17,25 @@ sys.modules["PIL"] = MagicMock()
 sys.modules["PIL.Image"] = MagicMock()
 
 
-def _import_cnn_module():
+def _load_cnn_module_directly():
     """
-    Import cnn.py directly without going through open_ai_api/__init__.py.
+    Load cnn.py directly without triggering open_ai_api/__init__.py.
 
     This avoids import conflicts where __init__.py imports all routers
-    (image, audio, etc.) which have dependencies that conflict with test mocks.
+    (image, audio, etc.) which depend on domain objects that may be mocked
+    by other test files (e.g., test_device_worker.py mocks ImageGenerateRequest).
     """
     cnn_path = Path(__file__).parent.parent / "open_ai_api" / "cnn.py"
-    spec = importlib.util.spec_from_file_location("cnn", cnn_path)
-    cnn_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(cnn_module)
-    return cnn_module
+    spec = importlib.util.spec_from_file_location("open_ai_api.cnn", cnn_path)
+    module = importlib.util.module_from_spec(spec)
+    # Add to sys.modules so relative imports work
+    sys.modules["open_ai_api.cnn"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-# Import cnn module directly
-_cnn = _import_cnn_module()
+# Load cnn module directly to avoid import conflicts
+cnn_module = _load_cnn_module_directly()
 
 
 class TestParseCNNRequest:
@@ -78,7 +81,7 @@ class TestParseCNNRequest:
             }
         )
 
-        result = await _cnn._parse_image_search_request(
+        result = await cnn_module._parse_image_search_request(
             request=mock_request_json, file=None
         )
 
@@ -97,7 +100,7 @@ class TestParseCNNRequest:
         mock_file = AsyncMock()
         mock_file.read = AsyncMock(return_value=file_content)
 
-        result = await _cnn._parse_image_search_request(
+        result = await cnn_module._parse_image_search_request(
             request=mock_request_multipart,
             file=mock_file,
             response_format="json",
@@ -119,7 +122,7 @@ class TestParseCNNRequest:
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            await _cnn._parse_image_search_request(
+            await cnn_module._parse_image_search_request(
                 request=mock_request_multipart, file=None
             )
 
@@ -133,7 +136,7 @@ class TestParseCNNRequest:
         mock_file = AsyncMock()
         mock_file.read = AsyncMock(return_value=file_content)
 
-        result = await _cnn._parse_image_search_request(
+        result = await cnn_module._parse_image_search_request(
             request=mock_request_multipart,
             file=mock_file,
             response_format="verbose_json",
@@ -173,7 +176,7 @@ class TestSearchImageEndpoint:
         expected_result = [{"object": "cat", "confidence_level": 95.5}]
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
-        result = await _cnn.searchImage(
+        result = await cnn_module.searchImage(
             image_search_request=mock_image_search_request,
             service=mock_service,
             api_key="test-api-key",
@@ -195,7 +198,7 @@ class TestSearchImageEndpoint:
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await _cnn.searchImage(
+            await cnn_module.searchImage(
                 image_search_request=mock_image_search_request,
                 service=mock_service,
                 api_key="test-api-key",
@@ -213,7 +216,7 @@ class TestSearchImageEndpoint:
         expected_result = "cat,95.5,dog,80.2"
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
-        result = await _cnn.searchImage(
+        result = await cnn_module.searchImage(
             image_search_request=mock_image_search_request,
             service=mock_service,
             api_key="test-api-key",
