@@ -113,11 +113,11 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            predictions = self.loader.output_postprocess(output)
+            predictions = self.loader.output_postprocess(output, top_k=5)
             return [
                 {
-                    "top1_class_label": predictions.get("label"),
-                    "top1_class_probability": predictions.get("probability"),
+                    "top1_class_label": predictions.get("labels")[0],
+                    "top1_class_probability": predictions.get("probabilities")[0],
                     "output": predictions,
                 }
             ]
