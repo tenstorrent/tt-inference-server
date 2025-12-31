@@ -5,7 +5,9 @@
 """Tests for CNN API endpoints."""
 
 import base64
+import importlib.util
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,6 +15,24 @@ import pytest
 # Mock modules before importing the module under test
 sys.modules["PIL"] = MagicMock()
 sys.modules["PIL.Image"] = MagicMock()
+
+
+def _import_cnn_module():
+    """
+    Import cnn.py directly without going through open_ai_api/__init__.py.
+
+    This avoids import conflicts where __init__.py imports all routers
+    (image, audio, etc.) which have dependencies that conflict with test mocks.
+    """
+    cnn_path = Path(__file__).parent.parent / "open_ai_api" / "cnn.py"
+    spec = importlib.util.spec_from_file_location("cnn", cnn_path)
+    cnn_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cnn_module)
+    return cnn_module
+
+
+# Import cnn module directly
+_cnn = _import_cnn_module()
 
 
 class TestParseCNNRequest:
@@ -49,8 +69,6 @@ class TestParseCNNRequest:
         self, mock_request_json, valid_base64_image
     ):
         """Test that JSON request body is correctly parsed into ImageSearchRequest."""
-        from open_ai_api.cnn import _parse_image_search_request
-
         mock_request_json.json = AsyncMock(
             return_value={
                 "prompt": valid_base64_image,
@@ -60,7 +78,9 @@ class TestParseCNNRequest:
             }
         )
 
-        result = await _parse_image_search_request(request=mock_request_json, file=None)
+        result = await _cnn._parse_image_search_request(
+            request=mock_request_json, file=None
+        )
 
         assert result.prompt == valid_base64_image
         assert result.top_k == 5
@@ -72,14 +92,12 @@ class TestParseCNNRequest:
         self, mock_request_multipart
     ):
         """Test that file upload is correctly parsed into ImageSearchRequest."""
-        from open_ai_api.cnn import _parse_image_search_request
-
         # Create mock file
         file_content = b"fake image content for testing"
         mock_file = AsyncMock()
         mock_file.read = AsyncMock(return_value=file_content)
 
-        result = await _parse_image_search_request(
+        result = await _cnn._parse_image_search_request(
             request=mock_request_multipart,
             file=mock_file,
             response_format="json",
@@ -99,10 +117,11 @@ class TestParseCNNRequest:
     ):
         """Test that HTTPException is raised when neither file nor JSON is provided."""
         from fastapi import HTTPException
-        from open_ai_api.cnn import _parse_image_search_request
 
         with pytest.raises(HTTPException) as exc_info:
-            await _parse_image_search_request(request=mock_request_multipart, file=None)
+            await _cnn._parse_image_search_request(
+                request=mock_request_multipart, file=None
+            )
 
         assert exc_info.value.status_code == 400
         assert "multipart/form-data" in exc_info.value.detail
@@ -110,13 +129,11 @@ class TestParseCNNRequest:
     @pytest.mark.asyncio
     async def test_parse_file_upload_with_custom_params(self, mock_request_multipart):
         """Test file upload with custom top_k and min_confidence."""
-        from open_ai_api.cnn import _parse_image_search_request
-
         file_content = b"test image bytes"
         mock_file = AsyncMock()
         mock_file.read = AsyncMock(return_value=file_content)
 
-        result = await _parse_image_search_request(
+        result = await _cnn._parse_image_search_request(
             request=mock_request_multipart,
             file=mock_file,
             response_format="verbose_json",
@@ -153,12 +170,10 @@ class TestSearchImageEndpoint:
         self, mock_image_search_request, mock_service
     ):
         """Test that searchImage returns correct success response."""
-        from open_ai_api.cnn import searchImage
-
         expected_result = [{"object": "cat", "confidence_level": 95.5}]
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
-        result = await searchImage(
+        result = await _cnn.searchImage(
             image_search_request=mock_image_search_request,
             service=mock_service,
             api_key="test-api-key",
@@ -174,14 +189,13 @@ class TestSearchImageEndpoint:
     ):
         """Test that searchImage raises HTTPException when service fails."""
         from fastapi import HTTPException
-        from open_ai_api.cnn import searchImage
 
         mock_service.process_request = AsyncMock(
             side_effect=Exception("Model inference failed")
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await searchImage(
+            await _cnn.searchImage(
                 image_search_request=mock_image_search_request,
                 service=mock_service,
                 api_key="test-api-key",
@@ -195,13 +209,11 @@ class TestSearchImageEndpoint:
         self, mock_image_search_request, mock_service
     ):
         """Test searchImage with verbose_json response format."""
-        from open_ai_api.cnn import searchImage
-
         mock_image_search_request.response_format = "verbose_json"
         expected_result = "cat,95.5,dog,80.2"
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
-        result = await searchImage(
+        result = await _cnn.searchImage(
             image_search_request=mock_image_search_request,
             service=mock_service,
             api_key="test-api-key",
