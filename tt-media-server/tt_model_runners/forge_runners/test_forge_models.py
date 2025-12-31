@@ -23,12 +23,12 @@ import pytest
 from domain.image_search_request import ImageSearchRequest
 
 from .runners import (
+    ForgeEfficientnetRunner,
     ForgeMobilenetv2Runner,
     ForgeResnetRunner,
-    ForgeVovnetRunner,
-    ForgeEfficientnetRunner,
     ForgeSegformerRunner,
     ForgeVitRunner,
+    ForgeVovnetRunner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -148,14 +148,25 @@ def verify_inference_output(
     """Verify that the inference output has the expected structure and content."""
 
     result = result[0]  # Get the first result for verification
-    label = result["top1_class_label"]
-    prob_raw = result["top1_class_probability"]
+
+    # Handle new JSON format: [{"object": "...", "confidence_level": ...}]
+    if isinstance(result, list) and len(result) > 0:
+        first_prediction = result[0]
+        label = first_prediction.get("object", "")
+        prob_raw = first_prediction.get("confidence_level", 0)
+    # Handle legacy format: {"top1_class_label": "...", "top1_class_probability": ...}
+    elif isinstance(result, dict) and "top1_class_label" in result:
+        label = result["top1_class_label"]
+        prob_raw = result["top1_class_probability"]
+    else:
+        return False
 
     # Normalize probability to float (0.0 to 1.0)
     if isinstance(prob_raw, str):
         prob = float(prob_raw.rstrip("%")) / 100.0
     else:
-        prob = float(prob_raw)
+        # New format returns 0-100, convert to 0-1
+        prob = float(prob_raw) / 100.0 if prob_raw > 1 else float(prob_raw)
 
     # Check if probability meets minimum accuracy requirement
     if prob < min_accuracy:
