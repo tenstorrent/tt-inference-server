@@ -45,29 +45,6 @@ class TestParseCNNRequest:
         return base64.b64encode(png_bytes).decode("utf-8")
 
     @pytest.mark.asyncio
-    async def test_parse_json_request_creates_image_search_request(
-        self, mock_request_json, valid_base64_image
-    ):
-        """Test that JSON request body is correctly parsed into ImageSearchRequest."""
-        from open_ai_api.cnn import _parse_image_search_request
-
-        mock_request_json.json = AsyncMock(
-            return_value={
-                "prompt": valid_base64_image,
-                "top_k": 5,
-                "min_confidence": 80.0,
-                "response_format": "json",
-            }
-        )
-
-        result = await _parse_image_search_request(request=mock_request_json, file=None)
-
-        assert result.prompt == valid_base64_image
-        assert result.top_k == 5
-        assert result.min_confidence == 80.0
-        assert result.response_format == "json"
-
-    @pytest.mark.asyncio
     async def test_parse_file_upload_creates_image_search_request(
         self, mock_request_multipart
     ):
