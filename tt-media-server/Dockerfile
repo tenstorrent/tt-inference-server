@@ -146,6 +146,42 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && pip install ."
 
+# Install Python 3.11 for tt-xla (wheels are built for cp311)
+USER root
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y python3.11 python3.11-venv python3.11-dev \
+    && rm -rf /var/lib/apt/lists/*
+USER ${CONTAINER_APP_USERNAME}
+
+# Create xla_venv for tt-xla vLLM plugin
+# Version can be "latest" for latest stable, or a specific version like "0.7.0" or "0.8.0.dev20251229"
+ARG TT_XLA_VERSION="latest"
+ENV XLA_PYTHON_ENV_DIR=${TT_METAL_HOME}/xla_venv
+RUN python3.11 -m venv ${XLA_PYTHON_ENV_DIR}
+
+# Install media server requirements into xla_venv
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install --default-timeout=240 --no-cache-dir -r ${TT_METAL_HOME}/server/requirements.txt"
+
+# Install tt-xla vLLM plugin (pjrt-plugin-tt and vllm-tt) from Tenstorrent PyPI
+# https://github.com/tenstorrent/tt-xla
+# VLLM_TARGET_DEVICE=empty skips CUDA requirements for Tenstorrent hardware
+# --no-build-isolation ensures env vars are passed to the build process
+ENV VLLM_TARGET_DEVICE=empty
+# Install build dependencies required for vllm when using --no-build-isolation
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && pip install setuptools_scm cmake ninja packaging"
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && if [ \"${TT_XLA_VERSION}\" = \"latest\" ]; then \
+        pip install pjrt-plugin-tt vllm-tt --no-build-isolation --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
+    else \
+        pip install pjrt-plugin-tt==${TT_XLA_VERSION} vllm-tt==${TT_XLA_VERSION} --no-build-isolation --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
+    fi"
+
 # Cleanup build-only directories
 USER root
 RUN rm -rf ${HOME_DIR}/.rustup \
@@ -197,13 +233,20 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    XLA_PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/xla_venv \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
-    VLLM_USE_V1=1
+    VLLM_USE_V1=1 \
+    USE_XLA_ENV=false
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
+# Python 3.11 + libpython3.11 is required for xla_venv (tt-xla wheels are built for cp311)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y python3.11 libpython3.11 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -224,4 +267,6 @@ WORKDIR ${HOME_DIR}/tt-metal
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+
+# Runtime environment selection: set USE_XLA_ENV=true to use xla_venv, default is metal python_env
+CMD /bin/bash ${TT_METAL_HOME}/server/docker-entrypoint.sh
