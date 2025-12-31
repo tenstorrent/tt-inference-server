@@ -17,7 +17,6 @@ from fastapi import (
     Security,
 )
 from fastapi.responses import StreamingResponse
-from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 

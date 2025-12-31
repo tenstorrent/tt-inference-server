@@ -26,6 +26,7 @@ mock_modules = [
     "torch_xla",
     "datasets",
     "pytorchcv",
+    "pydantic_settings",
 ]
 
 # Add mocks to sys.modules before any imports
