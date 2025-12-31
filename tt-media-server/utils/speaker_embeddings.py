@@ -10,6 +10,7 @@ from typing import Dict, Optional, Union
 from pathlib import Path
 import pickle
 from datasets import load_dataset
+from utils.logger import TTLogger
 
 class SpeakerEmbeddingsError(Exception):
     """Base exception for speaker embedding errors"""
@@ -43,6 +44,7 @@ class SpeakerEmbeddingsManager:
             cache_dir: Directory to cache downloaded embeddings (default: ~/.cache/speecht5)
             custom_embeddings_dir: Directory containing custom speaker embeddings
         """
+        self.logger = TTLogger()
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "speecht5"
         self.custom_embeddings_dir = Path(custom_embeddings_dir) if custom_embeddings_dir else None
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -60,9 +62,9 @@ class SpeakerEmbeddingsManager:
             try:
                 with open(cache_file, 'rb') as f:
                     self._embeddings_cache = pickle.load(f)
-                print(f"Loaded {len(self._embeddings_cache)} cached speaker embeddings")
+                self.logger.info(f"Loaded {len(self._embeddings_cache)} cached speaker embeddings")
             except Exception as e:
-                print(f"Warning: Failed to load embeddings cache: {e}")
+                self.logger.warning(f"Failed to load embeddings cache: {e}")
 
     def _save_cache(self):
         """Save cached embeddings to disk"""
@@ -71,7 +73,7 @@ class SpeakerEmbeddingsManager:
             with open(cache_file, 'wb') as f:
                 pickle.dump(self._embeddings_cache, f)
         except Exception as e:
-            print(f"Warning: Failed to save embeddings cache: {e}")
+            self.logger.warning(f"Failed to save embeddings cache: {e}")
 
     def _validate_embedding(self, embedding: torch.Tensor) -> bool:
         """
@@ -103,7 +105,7 @@ class SpeakerEmbeddingsManager:
         Downloads and caches embeddings from Matthijs/cmu-arctic-xvectors dataset.
         """
         try:
-            print(f"Loading default speaker embeddings from {self.DEFAULT_DATASET}...")
+            self.logger.info(f"Loading default speaker embeddings from {self.DEFAULT_DATASET}...")
             dataset = load_dataset(self.DEFAULT_DATASET, split="validation")
 
             for i, example in enumerate(dataset):
@@ -116,10 +118,10 @@ class SpeakerEmbeddingsManager:
                     self._validate_embedding(embedding.squeeze(0))
                     self._embeddings_cache[speaker_id] = embedding
                 except EmbeddingDimensionError as e:
-                    print(f"Warning: Skipping invalid embedding for speaker {speaker_id}: {e}")
+                    self.logger.warning(f"Skipping invalid embedding for speaker {speaker_id}: {e}")
 
             self._save_cache()
-            print(f"Loaded {len(self._embeddings_cache)} default speaker embeddings")
+            self.logger.info(f"Loaded {len(self._embeddings_cache)} default speaker embeddings")
 
         except Exception as e:
             raise EmbeddingLoadError(f"Failed to load default embeddings: {e}")
@@ -133,7 +135,7 @@ class SpeakerEmbeddingsManager:
         if not self.custom_embeddings_dir or not self.custom_embeddings_dir.exists():
             return
 
-        print(f"Loading custom embeddings from {self.custom_embeddings_dir}")
+        self.logger.info(f"Loading custom embeddings from {self.custom_embeddings_dir}")
 
         for file_path in self.custom_embeddings_dir.glob("*.pt"):
             try:
@@ -142,10 +144,10 @@ class SpeakerEmbeddingsManager:
 
                 self._validate_embedding(embedding)
                 self._embeddings_cache[speaker_id] = embedding
-                print(f"Loaded custom embedding for speaker: {speaker_id}")
+                self.logger.info(f"Loaded custom embedding for speaker: {speaker_id}")
 
             except Exception as e:
-                print(f"Warning: Failed to load custom embedding {file_path}: {e}")
+                self.logger.warning(f"Failed to load custom embedding {file_path}: {e}")
 
         for file_path in self.custom_embeddings_dir.glob("*.pth"):
             try:
@@ -154,10 +156,10 @@ class SpeakerEmbeddingsManager:
 
                 self._validate_embedding(embedding)
                 self._embeddings_cache[speaker_id] = embedding
-                print(f"Loaded custom embedding for speaker: {speaker_id}")
+                self.logger.info(f"Loaded custom embedding for speaker: {speaker_id}")
 
             except Exception as e:
-                print(f"Warning: Failed to load custom embedding {file_path}: {e}")
+                self.logger.warning(f"Failed to load custom embedding {file_path}: {e}")
 
     def get_speaker_embedding(self, speaker_id: str) -> torch.Tensor:
         """
@@ -250,4 +252,4 @@ class SpeakerEmbeddingsManager:
             if self.custom_embeddings_dir:
                 self.load_custom_embeddings()
         except Exception as e:
-            print(f"Warning: Failed to preload embeddings: {e}")
+            self.logger.warning(f"Failed to preload embeddings: {e}")
