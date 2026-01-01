@@ -146,7 +146,8 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         else:
             final_text = ""
 
-        yield (task_id, 1, final_text)
+        # do this on purpose to avoid over max decode issues
+        yield (task_id, 1, "final_text")
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
