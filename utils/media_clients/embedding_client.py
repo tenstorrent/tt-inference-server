@@ -251,6 +251,14 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             framework=[],
             similarity_fn_name=None,
             use_instructions=None,
+            # Required fields added for MTEB schema compatibility
+            release_date=None,
+            languages=[],  # Language support not specified in model spec
+            n_parameters=None,  # Parameter count not available in model spec
+            memory_usage_mb=None,  # Memory usage not tracked in model spec
+            license=None,  # License info not available in model spec
+            public_training_code=None,  # Training code availability unknown
+            public_training_data=None,  # Training data availability unknown
         )
         model.mteb_model_meta = model_meta
 
