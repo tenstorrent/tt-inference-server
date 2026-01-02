@@ -37,7 +37,6 @@ import wave
 import time
 import pytest
 import requests
-from typing import Optional
 
 
 # Test configuration

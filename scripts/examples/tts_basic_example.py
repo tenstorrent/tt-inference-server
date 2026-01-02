@@ -20,7 +20,6 @@ Usage:
 import argparse
 import requests
 import sys
-from pathlib import Path
 
 
 # API Configuration

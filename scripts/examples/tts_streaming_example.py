@@ -21,7 +21,6 @@ import argparse
 import requests
 import sys
 import time
-from pathlib import Path
 
 
 # API Configuration
@@ -90,7 +89,7 @@ def generate_speech_streaming(text: str, speaker_id: int = 0, output_file: str =
             f.write(audio_data)
         
         file_size = len(audio_data)
-        print(f"\n✓ Streaming complete!")
+        print("\n✓ Streaming complete!")
         print(f"  Total chunks: {chunk_count}")
         print(f"  Total size: {file_size} bytes")
         print(f"  First chunk latency: {latency:.3f}s")
@@ -146,7 +145,7 @@ def generate_speech_non_streaming(text: str, speaker_id: int = 0, output_file: s
             f.write(response.content)
         
         file_size = len(response.content)
-        print(f"✓ Non-streaming complete!")
+        print("✓ Non-streaming complete!")
         print(f"  Total size: {file_size} bytes")
         print(f"  Total time: {total_duration:.3f}s")
         print(f"  Saved to: {output_file}")
