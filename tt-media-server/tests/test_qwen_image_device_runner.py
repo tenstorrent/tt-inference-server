@@ -36,4 +36,3 @@ def test_qwen_image_runner(monkeypatch) -> None:
     )
 
     tt_out[0].save("test_qwen_image_runner.png")
-
