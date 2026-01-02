@@ -58,7 +58,7 @@ tts_router = APIRouter()
 @tts_router.post("/tts")
 async def text_to_speech(
     tts_request: TextToSpeechRequest = Depends(parse_tts_request),
-    service=Depends(service_resolver),
+    service = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
