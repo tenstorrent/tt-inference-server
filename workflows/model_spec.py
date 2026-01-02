@@ -2167,7 +2167,7 @@ spec_templates = [
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
-        ModelSpecTemplate(
+    ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
         tt_metal_commit="5491d3c",
         impl=tt_transformers_impl,
