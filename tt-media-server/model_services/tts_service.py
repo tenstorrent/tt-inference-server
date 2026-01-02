@@ -20,26 +20,13 @@ class TTSService(BaseService):
                 raise ValueError("No text provided for TTS")
 
             # Basic validation and setup
-            request._task_id = getattr(request, '_task_id', None)
-            request._estimated_duration = len(request.text.split()) * 0.5  # Rough estimate
+            request._task_id = getattr(request, "_task_id", None)
+            request._estimated_duration = (
+                len(request.text.split()) * 0.5
+            )  # Rough estimate
 
             return request
 
         except Exception as e:
             self.logger.error(f"TTS preprocessing failed: {e}")
             raise
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

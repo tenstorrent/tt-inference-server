@@ -11,17 +11,24 @@ import pickle
 from datasets import load_dataset
 from utils.logger import TTLogger
 
+
 class SpeakerEmbeddingsError(Exception):
     """Base exception for speaker embedding errors"""
+
     pass
+
 
 class EmbeddingDimensionError(SpeakerEmbeddingsError):
     """Raised when embedding has wrong dimensions"""
+
     pass
+
 
 class EmbeddingLoadError(SpeakerEmbeddingsError):
     """Raised when embedding cannot be loaded"""
+
     pass
+
 
 class SpeakerEmbeddingsManager:
     """
@@ -35,7 +42,11 @@ class SpeakerEmbeddingsManager:
     DEFAULT_DATASET = "Matthijs/cmu-arctic-xvectors"
     CACHE_FILE = "speaker_embeddings_cache.pkl"
 
-    def __init__(self, cache_dir: Optional[str] = None, custom_embeddings_dir: Optional[str] = None):
+    def __init__(
+        self,
+        cache_dir: Optional[str] = None,
+        custom_embeddings_dir: Optional[str] = None,
+    ):
         """
         Initialize the speaker embeddings manager.
 
@@ -44,8 +55,12 @@ class SpeakerEmbeddingsManager:
             custom_embeddings_dir: Directory containing custom speaker embeddings
         """
         self.logger = TTLogger()
-        self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "speecht5"
-        self.custom_embeddings_dir = Path(custom_embeddings_dir) if custom_embeddings_dir else None
+        self.cache_dir = (
+            Path(cache_dir) if cache_dir else Path.home() / ".cache" / "speecht5"
+        )
+        self.custom_embeddings_dir = (
+            Path(custom_embeddings_dir) if custom_embeddings_dir else None
+        )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Cache for loaded embeddings: speaker_id -> torch.Tensor
@@ -59,9 +74,11 @@ class SpeakerEmbeddingsManager:
         cache_file = self.cache_dir / self.CACHE_FILE
         if cache_file.exists():
             try:
-                with open(cache_file, 'rb') as f:
+                with open(cache_file, "rb") as f:
                     self._embeddings_cache = pickle.load(f)
-                self.logger.info(f"Loaded {len(self._embeddings_cache)} cached speaker embeddings")
+                self.logger.info(
+                    f"Loaded {len(self._embeddings_cache)} cached speaker embeddings"
+                )
             except Exception as e:
                 self.logger.warning(f"Failed to load embeddings cache: {e}")
 
@@ -69,7 +86,7 @@ class SpeakerEmbeddingsManager:
         """Save cached embeddings to disk"""
         cache_file = self.cache_dir / self.CACHE_FILE
         try:
-            with open(cache_file, 'wb') as f:
+            with open(cache_file, "wb") as f:
                 pickle.dump(self._embeddings_cache, f)
         except Exception as e:
             self.logger.warning(f"Failed to save embeddings cache: {e}")
@@ -88,7 +105,9 @@ class SpeakerEmbeddingsManager:
             EmbeddingDimensionError: If dimensions are incorrect
         """
         if embedding.dim() != 1:
-            raise EmbeddingDimensionError(f"Embedding must be 1D tensor, got {embedding.dim()}D")
+            raise EmbeddingDimensionError(
+                f"Embedding must be 1D tensor, got {embedding.dim()}D"
+            )
 
         if embedding.shape[0] != self.SPEECHT5_EMBEDDING_DIM:
             raise EmbeddingDimensionError(
@@ -104,23 +123,31 @@ class SpeakerEmbeddingsManager:
         Downloads and caches embeddings from Matthijs/cmu-arctic-xvectors dataset.
         """
         try:
-            self.logger.info(f"Loading default speaker embeddings from {self.DEFAULT_DATASET}...")
+            self.logger.info(
+                f"Loading default speaker embeddings from {self.DEFAULT_DATASET}..."
+            )
             dataset = load_dataset(self.DEFAULT_DATASET, split="validation")
 
             for i, example in enumerate(dataset):
                 # Use filename as speaker ID, or create a numeric ID
                 speaker_id = example.get("speaker_id", f"speaker_{i:04d}")
-                embedding = torch.tensor(example["xvector"], dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+                embedding = torch.tensor(
+                    example["xvector"], dtype=torch.float32
+                ).unsqueeze(0)  # Add batch dimension
 
                 try:
                     # Validate the original embedding shape (without batch dim for validation)
                     self._validate_embedding(embedding.squeeze(0))
                     self._embeddings_cache[speaker_id] = embedding
                 except EmbeddingDimensionError as e:
-                    self.logger.warning(f"Skipping invalid embedding for speaker {speaker_id}: {e}")
+                    self.logger.warning(
+                        f"Skipping invalid embedding for speaker {speaker_id}: {e}"
+                    )
 
             self._save_cache()
-            self.logger.info(f"Loaded {len(self._embeddings_cache)} default speaker embeddings")
+            self.logger.info(
+                f"Loaded {len(self._embeddings_cache)} default speaker embeddings"
+            )
 
         except Exception as e:
             raise EmbeddingLoadError(f"Failed to load default embeddings: {e}")
@@ -139,7 +166,7 @@ class SpeakerEmbeddingsManager:
         for file_path in self.custom_embeddings_dir.glob("*.pt"):
             try:
                 speaker_id = file_path.stem  # filename without extension
-                embedding = torch.load(file_path, map_location='cpu')
+                embedding = torch.load(file_path, map_location="cpu")
 
                 self._validate_embedding(embedding)
                 self._embeddings_cache[speaker_id] = embedding
@@ -151,7 +178,7 @@ class SpeakerEmbeddingsManager:
         for file_path in self.custom_embeddings_dir.glob("*.pth"):
             try:
                 speaker_id = file_path.stem  # filename without extension
-                embedding = torch.load(file_path, map_location='cpu')
+                embedding = torch.load(file_path, map_location="cpu")
 
                 self._validate_embedding(embedding)
                 self._embeddings_cache[speaker_id] = embedding
@@ -191,7 +218,9 @@ class SpeakerEmbeddingsManager:
 
         return self._embeddings_cache[speaker_id]
 
-    def process_user_embedding(self, embedding_data: Union[str, bytes, np.ndarray]) -> torch.Tensor:
+    def process_user_embedding(
+        self, embedding_data: Union[str, bytes, np.ndarray]
+    ) -> torch.Tensor:
         """
         Process user-provided speaker embedding.
 
@@ -217,7 +246,9 @@ class SpeakerEmbeddingsManager:
                 # Already numpy array
                 embedding_array = embedding_data
             else:
-                raise EmbeddingLoadError(f"Unsupported embedding data type: {type(embedding_data)}")
+                raise EmbeddingLoadError(
+                    f"Unsupported embedding data type: {type(embedding_data)}"
+                )
 
             # Convert to torch tensor
             embedding = torch.tensor(embedding_array, dtype=torch.float32)
