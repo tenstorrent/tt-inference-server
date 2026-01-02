@@ -23,6 +23,9 @@ from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_sta
     StableDiffusion3Pipeline,
 )
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+from models.experimental.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+    QwenImagePipeline,
+)
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
@@ -34,6 +37,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_QWEN_IMAGE.value: "QwenImage",
 }
 
 
@@ -349,3 +353,42 @@ class TTWan22Runner(TTDiTRunner):
         elif tuple(self.settings.device_mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params
+
+
+class TTQwenImageRunner(TTDiTRunner):
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
+
+    def create_pipeline(self):
+        device_configs = {
+            (2, 4): {
+                "cfg": (1, 0),
+                "sp": (2, 0),
+                "tp": (4, 1),
+                "encoder_tp": (4, 1),
+                "vae_tp": (4, 1),
+                "num_links": 1,
+            },
+            (4, 8): {
+                "cfg": (2, 1),
+                "sp": (4, 0),
+                "tp": (4, 1),
+                "encoder_tp": (4, 1),
+                "vae_tp": (4, 1),
+                "num_links": 4,
+            },
+        }
+        config = device_configs[tuple(self.ttnn_device.shape)]
+        return QwenImagePipeline.create_pipeline(
+            mesh_device=self.ttnn_device,
+            dit_cfg=config["cfg"],
+            dit_sp=config["sp"],
+            dit_tp=config["tp"],
+            encoder_tp=config["encoder_tp"],
+            vae_tp=config["vae_tp"],
+            num_links=config["num_links"],
+            is_fsdp=True,
+        )
+
+    def get_pipeline_device_params(self):
+        return {"l1_small_size": 32768, "trace_region_size": 47000000}

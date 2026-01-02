@@ -108,6 +108,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | motif-image-6b-preview | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
+| qwen-image | galaxy, t3k |
 
 For example, to run flux.1-dev on t3k
 1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
