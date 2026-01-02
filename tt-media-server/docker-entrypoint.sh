@@ -3,21 +3,35 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-# Select Python environment based on USE_XLA_ENV
-# Default: metal python_env, set USE_XLA_ENV=true for xla_venv
-if [ "$USE_XLA_ENV" = "true" ]; then
-    echo "Activating XLA Python environment: ${XLA_PYTHON_ENV_DIR}"
+# =============================================================================
+# Inference Backend Selection
+# =============================================================================
+# INFERENCE_BACKEND environment variable controls which Python environment and
+# library configuration is used:
+#
+#   metal (default): Uses tt-metal python_env with handcrafted model implementations
+#                    Requires LD_LIBRARY_PATH pointing to tt-metal build libraries
+#
+#   xla:             Uses xla_venv with tt-xla compiled models (pjrt-plugin-tt)
+#                    The pjrt-plugin-tt package bundles its own compatible tt-metal
+#                    runtime, so LD_LIBRARY_PATH must not point to the local tt-metal
+#                    build to avoid library version conflicts
+# =============================================================================
+
+if [ "$INFERENCE_BACKEND" = "xla" ]; then
+    echo "Activating XLA inference backend: ${XLA_PYTHON_ENV_DIR}"
     source "${XLA_PYTHON_ENV_DIR}/bin/activate"
 
-    # Clear LD_LIBRARY_PATH to avoid conflicts with tt-metal build
-    # tt-xla bundles its own compatible tt-metal runtime libraries
-    echo "Clearing LD_LIBRARY_PATH to use tt-xla bundled libraries"
-    unset LD_LIBRARY_PATH
+    # XLA backend uses bundled tt-metal runtime from pjrt-plugin-tt
+    # Clear LD_LIBRARY_PATH to avoid conflicts with the local tt-metal build
+    export LD_LIBRARY_PATH=""
 else
-    echo "Activating Metal Python environment: ${PYTHON_ENV_DIR}"
+    echo "Activating Metal inference backend: ${PYTHON_ENV_DIR}"
     source "${PYTHON_ENV_DIR}/bin/activate"
+
+    # Metal backend requires tt-metal build libraries
+    export LD_LIBRARY_PATH="${TT_METAL_HOME}/build/lib"
 fi
 
 cd "${TT_METAL_HOME}/server/"
 source ./run_uvicorn.sh
-
