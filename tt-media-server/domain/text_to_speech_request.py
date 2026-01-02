@@ -18,7 +18,7 @@ class TextToSpeechRequest(BaseRequest):
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
     # Custom fields for our implementation
-    response_format: str = "verbose_json"  # Response format: "verbose_json" or "text"
+    response_format: str = "verbose_json"  # API response format: "verbose_json" (full response) or "text" (audio only)
     stream: bool = False  # Whether to stream audio generation
 
     # Private fields for internal processing
@@ -28,4 +28,5 @@ class TextToSpeechRequest(BaseRequest):
     _estimated_duration: Optional[float] = None  # Estimated audio duration in seconds
 
     class Config:
+        # Required for np.ndarray type in _speaker_embedding_array field
         arbitrary_types_allowed = True

@@ -20,6 +20,10 @@ from fastapi.responses import StreamingResponse
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
+# Content type constants
+CONTENT_TYPE_MULTIPART = "multipart/form-data"
+CONTENT_TYPE_JSON = "application/json"
+
 
 async def parse_tts_request(
     request: Request,
@@ -32,7 +36,7 @@ async def parse_tts_request(
     """Parse TTS request from form data or JSON"""
     content_type = request.headers.get("content-type", "").lower()
 
-    if text is not None or content_type == "multipart/form-data":
+    if text is not None or content_type == CONTENT_TYPE_MULTIPART:
         # Form data request
         return TextToSpeechRequest(
             text=text,
@@ -41,14 +45,14 @@ async def parse_tts_request(
             speaker_embedding=speaker_embedding,
         )
 
-    if "application/json" in content_type:
+    if CONTENT_TYPE_JSON in content_type:
         # JSON request
         json_body = await request.json()
         return TextToSpeechRequest(**json_body)
 
     raise HTTPException(
         status_code=400,
-        detail="Use either multipart/form-data with text parameter or application/json",
+        detail=f"Use either {CONTENT_TYPE_MULTIPART} with text parameter or {CONTENT_TYPE_JSON}",
     )
 
 
@@ -58,7 +62,7 @@ tts_router = APIRouter()
 @tts_router.post("/tts")
 async def text_to_speech(
     tts_request: TextToSpeechRequest = Depends(parse_tts_request),
-    service=Depends(service_resolver),
+    service = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -81,11 +85,12 @@ async def handle_tts_request(tts_request, service):
             if tts_request.response_format.lower() == AudioResponseFormat.TEXT.value:
                 return Response(content=result.audio, media_type="audio/wav")
             return get_dict_response(result)
-        else:
-            try:
-                service.scheduler.check_is_model_ready()
-            except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
+
+        # Streaming path
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
 
             async def result_stream():
                 async for partial in service.process_streaming_request(tts_request):
