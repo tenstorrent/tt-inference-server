@@ -5,8 +5,10 @@
 from typing import Optional
 from pydantic import BaseModel
 
+
 class PartialStreamingAudioResponse(BaseModel):
     """Response for streaming audio chunks"""
+
     audio_chunk: str  # Base64-encoded audio chunk
     chunk_id: int  # Sequential chunk identifier
     format: str = "wav"  # Audio format (wav, mp3, etc.)
@@ -17,11 +19,13 @@ class PartialStreamingAudioResponse(BaseModel):
             "audio_chunk": self.audio_chunk,
             "chunk_id": self.chunk_id,
             "format": self.format,
-            "sample_rate": self.sample_rate
+            "sample_rate": self.sample_rate,
         }
+
 
 class TextToSpeechResponse(BaseModel):
     """Complete response for text-to-speech generation"""
+
     audio: str  # Base64-encoded complete audio
     duration: float  # Audio duration in seconds
     sample_rate: int = 16000  # Sample rate in Hz
@@ -34,6 +38,5 @@ class TextToSpeechResponse(BaseModel):
             "duration": self.duration,
             "sample_rate": self.sample_rate,
             "format": self.format,
-            "speaker_id": self.speaker_id
+            "speaker_id": self.speaker_id,
         }
-

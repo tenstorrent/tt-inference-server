@@ -32,15 +32,21 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     TTNNPostNetConfig,
     preprocess_postnet_parameters,
 )
-from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import SpeechT5Generator
+from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import (
+    SpeechT5Generator,
+)
 
 from domain.text_to_speech_request import TextToSpeechRequest
-from domain.text_to_speech_response import TextToSpeechResponse, PartialStreamingAudioResponse
+from domain.text_to_speech_response import (
+    TextToSpeechResponse,
+    PartialStreamingAudioResponse,
+)
 from telemetry.telemetry_client import TelemetryEvent
 from utils.speaker_embeddings import SpeakerEmbeddingsManager
 import ttnn
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+
 
 class SpeechT5Constants:
     MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
@@ -50,37 +56,54 @@ class SpeechT5Constants:
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
 
+
 class SpeechT5ModelError(Exception):
     """Base exception for SpeechT5 model errors"""
+
     pass
+
 
 class ModelNotLoadedError(SpeechT5ModelError):
     """Raised when attempting inference without loaded model"""
+
     pass
+
 
 class TextProcessingError(SpeechT5ModelError):
     """Raised when text processing fails"""
+
     pass
+
 
 class AudioGenerationError(SpeechT5ModelError):
     """Raised when audio generation fails"""
+
     pass
+
 
 class DeviceInitializationError(SpeechT5ModelError):
     """Raised when device initialization fails"""
+
     pass
+
 
 class InferenceError(SpeechT5ModelError):
     """Error occurred during model inference"""
+
     pass
+
 
 class InferenceTimeoutError(InferenceError):
     """Raised when inference exceeds timeout limit"""
+
     pass
+
 
 class DeviceCleanupError(SpeechT5ModelError):
     """Error occurred during device cleanup"""
+
     pass
+
 
 class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
@@ -95,12 +118,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.speaker_manager = None
 
         # Limit threading for stability during inference
-        os.environ['OMP_NUM_THREADS'] = '1'
-        os.environ['MKL_NUM_THREADS'] = '1'
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
 
         # Explicitly disable fabric for non-galaxy devices
         if not settings.is_galaxy:
-            os.environ['TT_METAL_FABRIC_DISABLE'] = '1'
+            os.environ["TT_METAL_FABRIC_DISABLE"] = "1"
 
     def _set_fabric(self, fabric_config):
         if fabric_config:
@@ -116,11 +139,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
     def _prepare_device_params(self):
         try:
-            device_params = {'l1_small_size': 150000, 'trace_region_size': 10000000}
+            device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
             return self.get_updated_device_params(device_params)
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Device parameter preparation failed: {e}")
-            raise DeviceInitializationError(f"Device parameter preparation failed: {str(e)}") from e
+            self.logger.error(
+                f"Device {self.device_id}: Device parameter preparation failed: {e}"
+            )
+            raise DeviceInitializationError(
+                f"Device parameter preparation failed: {str(e)}"
+            ) from e
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -128,15 +155,21 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             # For non-galaxy devices, ensure fabric is disabled
             if not settings.is_galaxy:
-                self.logger.info(f"Device {self.device_id}: Disabling fabric for non-galaxy device")
+                self.logger.info(
+                    f"Device {self.device_id}: Disabling fabric for non-galaxy device"
+                )
                 ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
                 return None
 
             self._set_fabric(fabric_config)
             return fabric_config
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Fabric configuration failed: {e}")
-            raise DeviceInitializationError(f"Fabric configuration failed: {str(e)}") from e
+            self.logger.error(
+                f"Device {self.device_id}: Fabric configuration failed: {e}"
+            )
+            raise DeviceInitializationError(
+                f"Fabric configuration failed: {str(e)}"
+            ) from e
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
@@ -145,9 +178,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             try:
                 self._reset_fabric(fabric_config)
             except Exception as reset_error:
-                self.logger.warning(f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}")
-            self.logger.error(f"Device {self.device_id}: Mesh device initialization failed: {e}")
-            raise DeviceInitializationError(f"Mesh device initialization failed: {str(e)}") from e
+                self.logger.warning(
+                    f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}"
+                )
+            self.logger.error(
+                f"Device {self.device_id}: Mesh device initialization failed: {e}"
+            )
+            raise DeviceInitializationError(
+                f"Mesh device initialization failed: {str(e)}"
+            ) from e
         return mesh_device
 
     def _mesh_device(self):
@@ -156,37 +195,55 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise DeviceInitializationError("No TTNN devices available")
-            self.logger.info(f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}")
+            self.logger.info(
+                f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}"
+            )
 
             mesh_shape = ttnn.MeshShape(settings.device_mesh_shape)
             updated_device_params = self._prepare_device_params()
             fabric_config = self._configure_fabric(updated_device_params)
-            mesh_device = self._initialize_mesh_device(mesh_shape, updated_device_params, fabric_config)
+            mesh_device = self._initialize_mesh_device(
+                mesh_shape, updated_device_params, fabric_config
+            )
 
-            self.logger.info(f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices")
+            self.logger.info(
+                f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
+            )
             return mesh_device
 
         except DeviceInitializationError:
             raise
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Unexpected error during device initialization: {e}")
-            raise DeviceInitializationError(f"Unexpected device initialization error: {str(e)}") from e
+            self.logger.error(
+                f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+            )
+            raise DeviceInitializationError(
+                f"Unexpected device initialization error: {str(e)}"
+            ) from e
 
     def set_device(self):
         """Override to use simple device initialization like the demo"""
         if self.ttnn_device is None:
             # Handle empty device_id by defaulting to 0
             device_id_int = int(self.device_id) if self.device_id else 0
-            
+
             # N150 device validation: ensure we're using device 0
             if device_id_int != 0:
-                self.logger.warning(f"Device {device_id_int}: TTS on N150 is designed for device 0, but got device {device_id_int}")
-            
-            self.logger.info(f"Device {device_id_int}: Initializing simple TTNN device for N150 (like demo_ttnn.py)")
+                self.logger.warning(
+                    f"Device {device_id_int}: TTS on N150 is designed for device 0, but got device {device_id_int}"
+                )
+
+            self.logger.info(
+                f"Device {device_id_int}: Initializing simple TTNN device for N150 (like demo_ttnn.py)"
+            )
             # Use same device initialization as demo_ttnn.py
-            self.ttnn_device = ttnn.open_device(device_id=device_id_int, l1_small_size=24576)
+            self.ttnn_device = ttnn.open_device(
+                device_id=device_id_int, l1_small_size=24576
+            )
             self.ttnn_device.enable_program_cache()
-            self.logger.info(f"Device {device_id_int}: Simple device initialized successfully for N150")
+            self.logger.info(
+                f"Device {device_id_int}: Simple device initialized successfully for N150"
+            )
         self.max_batch_size = self.settings.max_batch_size
         return self.ttnn_device
 
@@ -197,27 +254,37 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             self.logger.info(f"Device {device_id_int}: Closing simple device...")
             if self.ttnn_device is not None:
                 ttnn.close_device(self.ttnn_device)
-                self.logger.info(f"Device {device_id_int}: Successfully closed simple device")
+                self.logger.info(
+                    f"Device {device_id_int}: Successfully closed simple device"
+                )
             else:
-                self.logger.info(f"Device {device_id_int}: Device is None, no need to close")
+                self.logger.info(
+                    f"Device {device_id_int}: Device is None, no need to close"
+                )
         except Exception as e:
             device_id_int = int(self.device_id) if self.device_id else 0
             self.logger.error(f"Device {device_id_int}: Failed to close device: {e}")
-            raise RuntimeError(f"Device {device_id_int}: Device cleanup failed: {str(e)}") from e
+            raise RuntimeError(
+                f"Device {device_id_int}: Device cleanup failed: {str(e)}"
+            ) from e
 
     def _handle_load_failure_cleanup(self, device):
         if device is None:
             try:
                 self.close_device(None)
             except Exception as cleanup_error:
-                self.logger.warning(f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}")
+                self.logger.warning(
+                    f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}"
+                )
 
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:
             # Load HuggingFace models
             model_name = SupportedModels.SPEECHT5_TTS.value
-            self.logger.info(f"Device {self.device_id}: Loading SpeechT5 models from {model_name}")
+            self.logger.info(
+                f"Device {self.device_id}: Loading SpeechT5 models from {model_name}"
+            )
 
             self.processor = SpeechT5Processor.from_pretrained(model_name)
             model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
@@ -266,23 +333,36 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             available_speakers = self.speaker_manager.list_available_speakers()
             if not available_speakers:
                 # Create a zero embedding if no speakers are available
-                self.logger.warning("No speaker embeddings available, using zero embedding for initialization")
-                default_speaker_embedding = torch.zeros(self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32).unsqueeze(0)
+                self.logger.warning(
+                    "No speaker embeddings available, using zero embedding for initialization"
+                )
+                default_speaker_embedding = torch.zeros(
+                    self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
+                ).unsqueeze(0)
             else:
-                default_speaker_embedding = self.speaker_manager.get_speaker_embedding(available_speakers[0])
+                default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
+                    available_speakers[0]
+                )
 
             # Create TTNN models
             self.logger.info(f"Device {self.device_id}: Creating TTNN encoder")
             self.ttnn_encoder = TTNNSpeechT5Encoder(
                 self.ttnn_device,
-                preprocess_encoder_parameters(model.speecht5.encoder, encoder_config, self.ttnn_device),
+                preprocess_encoder_parameters(
+                    model.speecht5.encoder, encoder_config, self.ttnn_device
+                ),
                 encoder_config,
             )
 
             self.logger.info(f"Device {self.device_id}: Creating TTNN decoder")
             self.ttnn_decoder = TTNNSpeechT5Decoder(
                 self.ttnn_device,
-                preprocess_decoder_parameters(model.speecht5.decoder, decoder_config, self.ttnn_device, default_speaker_embedding),
+                preprocess_decoder_parameters(
+                    model.speecht5.decoder,
+                    decoder_config,
+                    self.ttnn_device,
+                    default_speaker_embedding,
+                ),
                 decoder_config,
                 max_sequence_length=SpeechT5Constants.MAX_STEPS,
             )
@@ -290,7 +370,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             self.logger.info(f"Device {self.device_id}: Creating TTNN postnet")
             self.ttnn_postnet = TTNNSpeechT5SpeechDecoderPostnet(
                 self.ttnn_device,
-                preprocess_postnet_parameters(model.speech_decoder_postnet, postnet_config, self.ttnn_device),
+                preprocess_postnet_parameters(
+                    model.speech_decoder_postnet, postnet_config, self.ttnn_device
+                ),
                 postnet_config,
             )
 
@@ -301,20 +383,32 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     self.ttnn_decoder,
                     self.ttnn_postnet,
                     self.ttnn_device,
-                    default_speaker_embedding
+                    default_speaker_embedding,
                 )
-                self.logger.info(f"Device {self.device_id}: Trace generator initialized")
+                self.logger.info(
+                    f"Device {self.device_id}: Trace generator initialized"
+                )
             except Exception as e:
-                self.logger.warning(f"Device {self.device_id}: Failed to initialize trace generator: {e}")
+                self.logger.warning(
+                    f"Device {self.device_id}: Failed to initialize trace generator: {e}"
+                )
                 self.generator = None
 
-            self.logger.info(f"Device {self.device_id}: All SpeechT5 models initialized successfully")
+            self.logger.info(
+                f"Device {self.device_id}: All SpeechT5 models initialized successfully"
+            )
 
         except Exception as e:
-            self.logger.error(f"Device {self.device_id}: Failed to initialize models: {e}")
+            self.logger.error(
+                f"Device {self.device_id}: Failed to initialize models: {e}"
+            )
             raise SpeechT5ModelError(f"Model initialization failed: {str(e)}") from e
 
-    @log_execution_time("SpeechT5 model load", TelemetryEvent.DEVICE_WARMUP, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time(
+        "SpeechT5 model load",
+        TelemetryEvent.DEVICE_WARMUP,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     async def load_model(self) -> bool:
         try:
             device_id_int = int(self.device_id) if self.device_id else 0
@@ -322,7 +416,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             # Device should already be initialized by set_device()
             if self.ttnn_device is None:
-                raise DeviceInitializationError("Device not initialized. Call set_device() first.")
+                raise DeviceInitializationError(
+                    "Device not initialized. Call set_device() first."
+                )
 
             # Enable program cache for faster inference (already done in set_device)
             # self.ttnn_device.enable_program_cache()
@@ -330,15 +426,21 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Initialize models
             try:
                 await asyncio.to_thread(self._initialize_models)
-                self.logger.info(f"Device {device_id_int}: Model initialization completed")
+                self.logger.info(
+                    f"Device {device_id_int}: Model initialization completed"
+                )
             except SpeechT5ModelError as e:
-                self.logger.error(f"Device {device_id_int}: Model initialization failed: {e}")
+                self.logger.error(
+                    f"Device {device_id_int}: Model initialization failed: {e}"
+                )
                 self._handle_load_failure_cleanup(self.ttnn_device)
                 raise
 
             # Skip warmup for now to avoid kernel compilation issues
             # Kernels will be compiled on first inference request
-            self.logger.info(f"Device {device_id_int}: Skipping warmup - kernels will compile on first request")
+            self.logger.info(
+                f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
+            )
 
             return True
 
@@ -347,13 +449,17 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         except Exception as e:
             device_id_int = int(self.device_id) if self.device_id else 0
             self.logger.error(f"Device {device_id_int}: Model loading failed: {e}")
-            raise SpeechT5ModelError(f"Device {device_id_int}: Model loading failed: {str(e)}") from e
+            raise SpeechT5ModelError(
+                f"Device {device_id_int}: Model loading failed: {str(e)}"
+            ) from e
 
     def _prepare_speaker_embedding(self, request: TextToSpeechRequest) -> torch.Tensor:
         """Prepare speaker embedding for the request"""
         if request.speaker_embedding:
             # User provided embedding
-            return self.speaker_manager.process_user_embedding(request.speaker_embedding)
+            return self.speaker_manager.process_user_embedding(
+                request.speaker_embedding
+            )
         elif request.speaker_id:
             # Use pre-configured speaker
             return self.speaker_manager.get_speaker_embedding(request.speaker_id)
@@ -364,16 +470,24 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 return self.speaker_manager.get_speaker_embedding(available_speakers[0])
             else:
                 # No speakers available, use zero embedding
-                self.logger.warning("No speaker embeddings available, using zero embedding")
-                return torch.zeros(self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32).unsqueeze(0)
+                self.logger.warning(
+                    "No speaker embeddings available, using zero embedding"
+                )
+                return torch.zeros(
+                    self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
+                ).unsqueeze(0)
 
-    async def _generate_audio_with_task_id(self, text: str, speaker_embedding: torch.Tensor, task_id: str):
+    async def _generate_audio_with_task_id(
+        self, text: str, speaker_embedding: torch.Tensor, task_id: str
+    ):
         """Streaming audio generation with task ID"""
         async for result in self._generate_audio_sync(text, speaker_embedding, True):
-            result['task_id'] = task_id
+            result["task_id"] = task_id
             yield result
 
-    async def _generate_audio_sync(self, text: str, speaker_embedding: torch.Tensor, stream: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _generate_audio_sync(
+        self, text: str, speaker_embedding: torch.Tensor, stream: bool = False
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Synchronous audio generation that can yield streaming chunks"""
         try:
             # Process input text
@@ -382,8 +496,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             # Convert inputs to TTNN with L1 memory
             ttnn_input_ids = ttnn.from_torch(
-                token_ids, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=self.ttnn_device, memory_config=ttnn.L1_MEMORY_CONFIG
+                token_ids,
+                dtype=ttnn.uint32,
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=self.ttnn_device,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
             )
             ttnn_speaker_embeddings = ttnn.from_torch(
                 speaker_embedding,
@@ -417,12 +534,20 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
 
                 # Postnet inference
-                mel_before, mel_after, stop_logits = self.ttnn_postnet(decoder_hidden_states)
+                mel_before, mel_after, stop_logits = self.ttnn_postnet(
+                    decoder_hidden_states
+                )
 
                 # Check stopping condition
-                sigmoid_logits = ttnn.sigmoid(stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG)
-                sum_prob = ttnn.sum(sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG)
-                should_stop = ttnn.ge(sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG)
+                sigmoid_logits = ttnn.sigmoid(
+                    stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
+                sum_prob = ttnn.sum(
+                    sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
+                should_stop = ttnn.ge(
+                    sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
                 any_stop_scalar = ttnn.sum(should_stop)
                 if ttnn.to_torch(any_stop_scalar).item() > 0:
                     break
@@ -445,7 +570,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     spectrogram_ttnn = new_frames_ttnn
                 else:
                     spectrogram_ttnn = ttnn.concat(
-                        [spectrogram_ttnn, new_frames_ttnn], dim=1, memory_config=ttnn.L1_MEMORY_CONFIG
+                        [spectrogram_ttnn, new_frames_ttnn],
+                        dim=1,
+                        memory_config=ttnn.L1_MEMORY_CONFIG,
                     )
 
                 # Extend sequence with last frame
@@ -457,30 +584,43 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     memory_config=ttnn.L1_MEMORY_CONFIG,
                 )
                 output_sequence_ttnn = ttnn.concat(
-                    [output_sequence_ttnn, last_frame_ttnn], dim=1, memory_config=ttnn.L1_MEMORY_CONFIG
+                    [output_sequence_ttnn, last_frame_ttnn],
+                    dim=1,
+                    memory_config=ttnn.L1_MEMORY_CONFIG,
                 )
 
                 steps_completed += 1
 
                 # Streaming: yield audio chunks periodically
-                if stream and steps_completed % SpeechT5Constants.STREAMING_CHUNK_SIZE == 0:
+                if (
+                    stream
+                    and steps_completed % SpeechT5Constants.STREAMING_CHUNK_SIZE == 0
+                ):
                     partial_spectrogram = ttnn.to_torch(spectrogram_ttnn)
                     partial_audio = self.vocoder(partial_spectrogram)
 
                     # Convert to base64
                     audio_buffer = io.BytesIO()
-                    sf.write(audio_buffer, partial_audio.squeeze().detach().numpy(), SpeechT5Constants.SAMPLE_RATE, format='WAV')
-                    audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode('utf-8')
+                    sf.write(
+                        audio_buffer,
+                        partial_audio.squeeze().detach().numpy(),
+                        SpeechT5Constants.SAMPLE_RATE,
+                        format="WAV",
+                    )
+                    audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode(
+                        "utf-8"
+                    )
 
                     yield {
-                        'type': 'streaming_chunk',
-                        'chunk': PartialStreamingAudioResponse(
+                        "type": "streaming_chunk",
+                        "chunk": PartialStreamingAudioResponse(
                             audio_chunk=audio_base64,
-                            chunk_id=steps_completed // SpeechT5Constants.STREAMING_CHUNK_SIZE,
+                            chunk_id=steps_completed
+                            // SpeechT5Constants.STREAMING_CHUNK_SIZE,
                             format="wav",
-                            sample_rate=SpeechT5Constants.SAMPLE_RATE
+                            sample_rate=SpeechT5Constants.SAMPLE_RATE,
                         ),
-                        'task_id': None  # Will be set by caller
+                        "task_id": None,  # Will be set by caller
                     }
 
             # Transfer final spectrogram from device to host
@@ -494,21 +634,26 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             # Convert to base64
             audio_buffer = io.BytesIO()
-            sf.write(audio_buffer, final_audio.squeeze().detach().numpy(), SpeechT5Constants.SAMPLE_RATE, format='WAV')
-            audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode('utf-8')
+            sf.write(
+                audio_buffer,
+                final_audio.squeeze().detach().numpy(),
+                SpeechT5Constants.SAMPLE_RATE,
+                format="WAV",
+            )
+            audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
 
             # Calculate duration
             duration = len(final_audio.squeeze()) / SpeechT5Constants.SAMPLE_RATE
 
             yield {
-                'type': 'final_result',
-                'result': TextToSpeechResponse(
+                "type": "final_result",
+                "result": TextToSpeechResponse(
                     audio=audio_base64,
                     duration=duration,
                     sample_rate=SpeechT5Constants.SAMPLE_RATE,
-                    format="wav"
+                    format="wav",
                 ),
-                'task_id': None  # Will be set by caller
+                "task_id": None,  # Will be set by caller
             }
 
         except Exception as e:
@@ -519,14 +664,22 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         """Main inference method"""
         try:
             # Validate prerequisites
-            if self.ttnn_encoder is None or self.ttnn_decoder is None or self.ttnn_postnet is None:
-                raise ModelNotLoadedError("Model components not loaded. Call load_model() first.")
+            if (
+                self.ttnn_encoder is None
+                or self.ttnn_decoder is None
+                or self.ttnn_postnet is None
+            ):
+                raise ModelNotLoadedError(
+                    "Model components not loaded. Call load_model() first."
+                )
             if self.ttnn_device is None:
                 raise DeviceInitializationError("TTNN device not initialized")
 
             # Process single request (batch processing not implemented yet)
             if len(requests) > 1:
-                self.logger.warning(f"Device {self.device_id}: Batch processing not implemented. Processing only first of {len(requests)} requests")
+                self.logger.warning(
+                    f"Device {self.device_id}: Batch processing not implemented. Processing only first of {len(requests)} requests"
+                )
 
             request = requests[0]
             if request is None:
@@ -542,25 +695,38 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Return appropriate result based on streaming
             if request.stream:
                 # For streaming, return the async generator
-                return self._generate_audio_with_task_id(request.text, speaker_embedding, request._task_id)
+                return self._generate_audio_with_task_id(
+                    request.text, speaker_embedding, request._task_id
+                )
             else:
                 # For non-streaming, collect and return final result
                 final_result = None
-                async for result in self._generate_audio_sync(request.text, speaker_embedding, False):
-                    result['task_id'] = request._task_id
+                async for result in self._generate_audio_sync(
+                    request.text, speaker_embedding, False
+                ):
+                    result["task_id"] = request._task_id
                     final_result = result
                 # Extract the actual TextToSpeechResponse from the dictionary
-                if final_result and 'result' in final_result:
-                    return final_result['result']
+                if final_result and "result" in final_result:
+                    return final_result["result"]
                 return final_result
 
-        except (ModelNotLoadedError, DeviceInitializationError, TextProcessingError, AudioGenerationError):
+        except (
+            ModelNotLoadedError,
+            DeviceInitializationError,
+            TextProcessingError,
+            AudioGenerationError,
+        ):
             raise
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Inference failed: {e}")
             raise InferenceError(f"Inference failed: {str(e)}") from e
 
-    @log_execution_time("Run SpeechT5 inference", TelemetryEvent.MODEL_INFERENCE, os.environ.get("TT_VISIBLE_DEVICES"))
+    @log_execution_time(
+        "Run SpeechT5 inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run_inference(self, requests: list[TextToSpeechRequest]):
         """Synchronous wrapper for async inference"""
         result = asyncio.run(self._run_inference_async(requests))

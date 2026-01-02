@@ -20,8 +20,10 @@ class TTSService(BaseService):
                 raise ValueError("No text provided for TTS")
 
             # Basic validation and setup
-            request._task_id = getattr(request, '_task_id', None)
-            request._estimated_duration = len(request.text.split()) * 0.5  # Rough estimate
+            request._task_id = getattr(request, "_task_id", None)
+            request._estimated_duration = (
+                len(request.text.split()) * 0.5
+            )  # Rough estimate
 
             return request
 
@@ -33,9 +35,7 @@ class TTSService(BaseService):
         self, original_request: TextToSpeechRequest, segment, segment_index: int
     ) -> TextToSpeechRequest:
         """Create a request for processing a single text segment"""
-        self.logger.debug(
-            f"TTS segment {segment_index}: text='{segment[:50]}...'"
-        )
+        self.logger.debug(f"TTS segment {segment_index}: text='{segment[:50]}...'")
 
         field_values = original_request.model_dump()
         new_request = type(original_request)(**field_values)
@@ -58,17 +58,3 @@ class TTSService(BaseService):
     async def post_process(self, result):
         """Post-processing for TTS results"""
         return result
-
-
-
-
-
-
-
-
-
-
-
-
-
-
