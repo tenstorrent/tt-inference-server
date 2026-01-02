@@ -2003,10 +2003,11 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="d9c663b",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.6.0-d9c663b",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2064,7 +2065,7 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev"],
-        tt_metal_commit="d9c663b",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2089,7 +2090,7 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="d9c663b",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2114,12 +2115,62 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Motif-Technologies/Motif-Image-6B-Preview"],
-        tt_metal_commit="d9c663b",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.CNN,
         display_name="motif-image-6b-preview",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["genmo/mochi-1-preview"],
+        tt_metal_commit="c180ef7",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.CNN,
+        display_name="mochi-1-preview",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+        ModelSpecTemplate(
+        weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
+        tt_metal_commit="c180ef7",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.CNN,
+        display_name="wan2.2-t2v-a14b-diffusers",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
