@@ -100,4 +100,3 @@ Developer documentation: [docs/README.md](docs/README.md)
 
 Release documentation: [scripts/release/README.md](scripts/release/README.md)
 
-If you encounter setup or stability problems with any model please [file an issue](https://github.com/tenstorrent/tt-inference-server/issues/new?template=Blank+issue) and our team will address it.

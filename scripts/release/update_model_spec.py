@@ -995,6 +995,7 @@ def main():
             continue
 
         # Update the template fields
+        # If --ignore-perf-status is set, don't update status
         status_to_update = None if args.ignore_perf_status else status
         updated_template = update_template_fields(
             template_text, tt_metal_commit, vllm_commit, status_to_update
@@ -1027,6 +1028,9 @@ def main():
             )
             model_arch = model_name_from_weight(weights[0]) if weights else "unknown"
             status_after = status_before if args.ignore_perf_status else status
+
+            # For status_after, use None if ignoring perf status, otherwise use the status
+            status_after = None if args.ignore_perf_status else status
 
             update_records.append(
                 {
