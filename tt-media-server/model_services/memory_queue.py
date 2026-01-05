@@ -20,14 +20,11 @@ chunk_dtype = np.dtype(
 
 
 class SharedMemoryChunkQueue:
-    def __init__(
-        self, capacity=200000, name="chunk_queue", create=True, use_read_lock=False
-    ):
+    def __init__(self, capacity=200000, name="chunk_queue", create=True):
         self.capacity = capacity
         self.chunk_size = chunk_dtype.itemsize
         self.name = name
         self.logger = TTLogger()
-        self.use_read_lock = use_read_lock
 
         # Header layout:
         # [write_idx(8)] [write_lock(4)] [pad(52)]
@@ -93,62 +90,6 @@ class SharedMemoryChunkQueue:
             "I", self.shm.buf, self.header_offset_read_lock, 0
         )  # read_lock
 
-    def _acquire_write_lock(self):
-        """Fast spin-lock with exponential backoff"""
-        backoff = 0.000001  # 1 microsecond
-        max_backoff = 0.000010  # 10 microseconds
-
-        while True:
-            current = struct.unpack_from(
-                "I", self.shm.buf, self.header_offset_write_lock
-            )[0]
-            if current == 0:
-                struct.pack_into("I", self.shm.buf, self.header_offset_write_lock, 1)
-                if (
-                    struct.unpack_from(
-                        "I", self.shm.buf, self.header_offset_write_lock
-                    )[0]
-                    == 1
-                ):
-                    return
-
-            time.sleep(backoff)
-            backoff = min(backoff * 1.5, max_backoff)
-
-    def _release_write_lock(self):
-        """Release write lock"""
-        struct.pack_into("I", self.shm.buf, self.header_offset_write_lock, 0)
-
-    def _acquire_read_lock(self):
-        if not self.use_read_lock:
-            return True
-        """Fast spin-lock with exponential backoff"""
-        backoff = 0.000001  # 1 microsecond
-        max_backoff = 0.000010  # 10 microseconds
-
-        while True:
-            current = struct.unpack_from(
-                "I", self.shm.buf, self.header_offset_read_lock
-            )[0]
-            if current == 0:
-                struct.pack_into("I", self.shm.buf, self.header_offset_read_lock, 1)
-                if (
-                    struct.unpack_from("I", self.shm.buf, self.header_offset_read_lock)[
-                        0
-                    ]
-                    == 1
-                ):
-                    return
-
-            time.sleep(backoff)
-            backoff = min(backoff * 1.5, max_backoff)
-
-    def _release_read_lock(self):
-        if not self.use_read_lock:
-            return True
-        """✅ Release read lock"""
-        struct.pack_into("I", self.shm.buf, self.header_offset_read_lock, 0)
-
     def _get_write_idx(self) -> int:
         """✅ Get write index"""
         return struct.unpack_from("Q", self.shm.buf, self.header_offset_write)[0]
@@ -213,15 +154,10 @@ class SharedMemoryChunkQueue:
         if size >= self.capacity - 10:  # ✅ Leave margin
             return -1
 
-        # Now acquire lock for actual increment
-        self._acquire_write_lock()
-        try:
-            write_idx = self._get_write_idx()
-            next_write_idx = (write_idx + 1) % self.capacity
-            self._set_write_idx(next_write_idx)
-            return write_idx
-        finally:
-            self._release_write_lock()
+        write_idx = self._get_write_idx()
+        next_write_idx = (write_idx + 1) % self.capacity
+        self._set_write_idx(next_write_idx)
+        return write_idx
 
     def put(self, task_id: str, is_final: int, text: str) -> bool:
         """✅ Faster - no lock during data write"""
@@ -247,26 +183,22 @@ class SharedMemoryChunkQueue:
 
         return True
 
-    async def get_nowait(self):
+    def get_nowait(self):
         """NON-BLOCKING GET - Returns None if queue is empty"""
         try:
-            self._acquire_read_lock()
-            try:
-                read_idx = self._get_read_idx()
-                write_idx = self._get_write_idx()
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
 
-                if read_idx == write_idx:
-                    return None
+            if read_idx == write_idx:
+                return None
 
-                current_state = int(self.buffer[read_idx]["item_available"])
+            current_state = int(self.buffer[read_idx]["item_available"])
 
-                if current_state == 0:
-                    return None
+            if current_state == 0:
+                return None
 
-                self.buffer[read_idx]["item_available"] = 0
-                self._set_read_idx(read_idx + 1)
-            finally:
-                self._release_read_lock()
+            self.buffer[read_idx]["item_available"] = 0
+            self._set_read_idx(read_idx + 1)
 
             data = self.buffer[read_idx].copy()
 
@@ -312,27 +244,22 @@ class SharedMemoryChunkQueue:
                 print(f"[MemoryQueue] GET TIMEOUT - size={size}")
                 raise TimeoutError(f"Queue get timed out after {timeout}s")
 
-            self._acquire_read_lock()
-            try:
-                read_idx = self._get_read_idx()
-                write_idx = self._get_write_idx()
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
 
-                if read_idx == write_idx:
-                    self._release_read_lock()
-                    time.sleep(0.0001)
-                    continue
+            if read_idx == write_idx:
+                time.sleep(0.0001)
+                continue
 
-                if read_idx < 0 or read_idx >= self.capacity:
-                    self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
-                    raise RuntimeError("read_idx corrupted")
+            if read_idx < 0 or read_idx >= self.capacity:
+                self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+                raise RuntimeError("read_idx corrupted")
 
-                slot_idx = read_idx
-                data = self.buffer[slot_idx].copy()
-                self.buffer[slot_idx]["item_available"] = 0
+            slot_idx = read_idx
+            data = self.buffer[slot_idx].copy()
+            self.buffer[slot_idx]["item_available"] = 0
 
-                self._set_read_idx(read_idx + 1)
-            finally:
-                self._release_read_lock()
+            self._set_read_idx(read_idx + 1)
             break
 
         task_id = str(data["task_id"]).rstrip("\x00")

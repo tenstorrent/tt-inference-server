@@ -35,11 +35,14 @@ class Scheduler:
         )
         self.warmup_signals_queue = Queue(worker_count)
 
-        self.result_queue = (
-            SharedMemoryChunkQueue(name="chunk_queue", create=True)
-            if self.settings.use_memory_queue
-            else Queue()
-        )
+        # Create one result queue per worker
+        self.result_queues_by_worker = {}
+        for i in range(worker_count):
+            self.result_queues_by_worker[i] = (
+                SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
+                if self.settings.use_memory_queue
+                else Queue()
+            )
 
         self.error_queue = Queue()
 
@@ -131,10 +134,13 @@ class Scheduler:
                 if self.workers_to_open
                 else Exception("No more workers to start")
             )
-            # in case it's a device pair remove starting bracket open
-            worker_id = worker_id.lstrip("(").rstrip(")")
+        worker_id = worker_id.lstrip("(").rstrip(")")
 
         self.logger.info(f"Starting worker {worker_id}")
+
+        # Get the queue index for this worker
+        worker_index = len(self.worker_info)
+        result_queue = self.result_queues_by_worker[worker_index]
 
         p = Process(
             target=device_worker_dynamic_batch
@@ -143,22 +149,22 @@ class Scheduler:
             args=(
                 worker_id,
                 self.task_queue,
-                self.result_queue,
+                result_queue,
                 self.warmup_signals_queue,
                 self.error_queue,
-                self.result_queue.name,
+                result_queue.name if self.settings.use_memory_queue else None,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
         p.start()
 
-        # ✅ Initialize ALL required fields
         self.worker_info[worker_id] = {
             "process": p,
             "start_time": time.time(),
             "restart_count": 0,
             "is_ready": False,
             "error_count": 0,
+            "queue_index": worker_index,  # ✅ Track which queue this worker uses
         }
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
@@ -194,36 +200,42 @@ class Scheduler:
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
+        """✅ Read from ALL worker queues in parallel"""
         while self.listener_running:
             try:
-                # ✅ Non-blocking get
-                result = await self.result_queue.get_nowait()
+                # Non-blocking reads from all queues
+                result_found = False
 
-                if result is None:
-                    # Queue empty - yield control with backoff
-                    sleep_time = 0.005
-                    await asyncio.sleep(sleep_time)
-                    continue
+                for worker_index, result_queue in self.result_queues_by_worker.items():
+                    try:
+                        result = result_queue.get_nowait()
 
-                worker_id, result_key, input_data = result
+                        if result is None:
+                            continue
 
-                if result_key is None:
-                    self.listener_running = False
-                    break
+                        result_found = True
+                        worker_id, result_key, input_data = result
 
-                queue_obj = self.result_queues.get(result_key)
+                        if result_key is None:
+                            self.listener_running = False
+                            break
 
-                if queue_obj:
-                    await queue_obj.put(input_data)
-                else:
-                    current_queues = list(self.result_queues.keys())
-                    self.logger.warning(
-                        f"No result queue found for task {result_key}. "
-                        f"Current queues: {current_queues}"
-                    )
+                        queue_obj = self.result_queues.get(result_key)
 
-                # # Reset worker restart count on successful job
-                # self.worker_info[worker_id]["restart_count"] = 0
+                        if queue_obj:
+                            await queue_obj.put(input_data)
+                        else:
+                            current_queues = list(self.result_queues.keys())
+                            self.logger.warning(
+                                f"No result queue found for task {result_key}. "
+                                f"Current queues: {current_queues}"
+                            )
+                    except:  # Queue empty for this worker
+                        pass
+
+                # Only sleep if no results found
+                if not result_found:
+                    await asyncio.sleep(0.001)
 
             except Exception as e:
                 self.logger.error(f"Error in result_listener: {e}")
@@ -305,66 +317,58 @@ class Scheduler:
 
     @log_execution_time("Scheduler - stopping workers")
     def stop_workers(self):
+        """Stop workers and close all queues"""
         self.logger.info("Stopping workers")
 
         try:
-            # Stop monitoring
             self.monitor_running = False
             if self.monitor_task_ref:
                 self.monitor_task_ref.cancel()
 
-            # Stop accepting new requests
             self.is_ready = False
 
-            # Send shutdown signals to all workers
             for _ in self.worker_info:
                 try:
                     self.task_queue.put(None, timeout=2.0)
                 except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 
-            # Wait for processes to finish gracefully
             for i, worker_element in self.worker_info.items():
                 worker = worker_element["process"]
                 if worker.is_alive():
-                    worker.join(timeout=10.0)  # Increased timeout
+                    worker.join(timeout=10.0)
                     if worker.is_alive():
                         self.logger.warning(f"Worker {i} did not shutdown gracefully")
-                        worker.terminate()  # Terminate process (not kill)
-                        worker.join(timeout=2.0)  # Wait for termination
+                        worker.terminate()
+                        worker.join(timeout=2.0)
                         if worker.is_alive():
-                            worker.kill()  # Force kill as last resort
+                            worker.kill()
 
-            self.worker_info = {}  # Clear worker info
+            self.worker_info = {}
 
             self.logger.info("All workers stopped successfully")
 
-            # Stop listeners
             self.listener_running = False
             self.device_warmup_listener_running = False
 
-            # Send shutdown signals to listeners
             try:
-                self.result_queue.put((None, None, None), timeout=1.0)
+                # Send shutdown signals to all worker queues
+                for result_queue in self.result_queues_by_worker.values():
+                    result_queue.put((None, None, None), timeout=1.0)
+
                 self.error_queue.put((None, None, None), timeout=1.0)
                 self.warmup_signals_queue.put(None, timeout=1.0)
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
-            # close queues
+            # Close all worker queues
             self._close_queues(
-                [
-                    self.task_queue,
-                    self.result_queue,
-                    self.warmup_signals_queue,
-                    self.error_queue,
-                ]
+                [self.task_queue, self.warmup_signals_queue, self.error_queue]
+                + list(self.result_queues_by_worker.values())
             )
 
             self.logger.info("Queues closed successfully")
-
             self.result_queues.clear()
-
             self.logger.info("Workers stopped")
 
         except Exception as e:

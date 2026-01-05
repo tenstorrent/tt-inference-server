@@ -63,7 +63,7 @@ def setup_worker_environment(worker_id: str):
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue: str,  # ✅ CHANGED: Pass queue name instead of queue object
+    result_queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
     result_queue_name: str = None,
