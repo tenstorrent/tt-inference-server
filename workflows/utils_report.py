@@ -27,6 +27,8 @@ class PerformanceTargets:
     ttft_ms: float = None
     ttft_streaming_ms: float = None
     tput_user: float = None
+    tput_prefill: float = None
+    e2el_ms: float = None
     tput: float = None
     rtr: float = None
     tolerance: float = 0.05
@@ -47,6 +49,8 @@ class PerformanceTargets:
             ttft_ms=theoretical.get("ttft_ms"),
             ttft_streaming_ms=theoretical.get("ttft_streaming_ms"),
             tput_user=theoretical.get("tput_user"),
+            tput_prefill=theoretical.get("tput_prefill"),
+            e2el_ms=theoretical.get("e2el_ms"),
             tput=theoretical.get("tput"),
             rtr=theoretical.get("rtr"),
             tolerance=theoretical.get("tolerance", 0.05),

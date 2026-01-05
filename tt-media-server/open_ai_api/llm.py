@@ -2,12 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
+import time
+import uuid
+
 from config.constants import ModelRunners
 from config.settings import settings
 from domain.completion_request import CompletionRequest
 from domain.text_embedding_request import TextEmbeddingRequest
-from fastapi import APIRouter, Depends, HTTPException, Response, Security
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -30,10 +34,33 @@ async def complete_text(
     Most developers should use the Chat Completions API to leverage the best and newest models.
     See: https://platform.openai.com/docs/api-reference/completions
     """
+    completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
+    created = int(time.time())
+    model = completion_request.model or "default"
+
     try:
         if not completion_request.stream:
             result = await service.process_request(completion_request)
-            return Response(content=result.text, media_type="text/plain")
+            response = {
+                "id": completion_id,
+                "object": "text_completion",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "text": result.text,
+                        "index": 0,
+                        "logprobs": None,
+                        "finish_reason": result.finish_reason or "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+            }
+            return JSONResponse(content=response)
 
         try:
             service.scheduler.check_is_model_ready()
@@ -41,20 +68,31 @@ async def complete_text(
             raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            import json
-
             async for partial in service.process_streaming_request(completion_request):
-                service.logger.info(f"Streaming chunk: {partial}")
-                chunk = {"choices": [partial.to_dict()]}
-                yield json.dumps(chunk) + "\n"
+                chunk = {
+                    "id": completion_id,
+                    "object": "text_completion",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "text": partial.text,
+                            "index": partial.index or 0,
+                            "logprobs": None,
+                            "finish_reason": partial.finish_reason,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+            yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             result_stream(),
-            media_type="application/x-ndjson",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",  # Disable nginx buffering
-                "Transfer-Encoding": "chunked",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
             },
         )
     except Exception as e:

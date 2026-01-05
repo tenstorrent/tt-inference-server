@@ -11,11 +11,6 @@ from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
-from models.experimental.tt_dit.parallel.config import (
-    DiTParallelConfig,
-    MochiVAEParallelConfig,
-    ParallelFactor,
-)
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
@@ -38,8 +33,8 @@ dit_runner_log_map = {
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.pipeline = None
 
     def _configure_fabric(self, updated_device_params):
@@ -76,7 +71,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         def distribute_block():
@@ -104,7 +99,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         # we use model construct to create the request without validation
         if self.settings.model_service == ModelServices.IMAGE.value:
-            self.run_inference(
+            self.run(
                 [
                     ImageGenerateRequest.model_construct(
                         prompt="Sunrise on a beach",
@@ -114,7 +109,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 ]
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run_inference(
+            self.run(
                 [
                     VideoGenerateRequest.model_construct(
                         prompt="Sunrise on a beach",
@@ -133,7 +128,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         image = self.pipeline.run_single_prompt(
@@ -147,13 +142,13 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
 
 class TTSD35Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return StableDiffusion3Pipeline.create_pipeline(
             mesh_device=self.ttnn_device,
-            model_checkpoint_path=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
+            checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
         )
 
     def get_pipeline_device_params(self):
@@ -162,8 +157,8 @@ class TTSD35Runner(TTDiTRunner):
 
 # TODO: Merge dev and schnell
 class TTFlux1DevRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -176,8 +171,8 @@ class TTFlux1DevRunner(TTDiTRunner):
 
 
 class TTFlux1SchnellRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -190,13 +185,13 @@ class TTFlux1SchnellRunner(TTDiTRunner):
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return MotifPipeline.create_pipeline(
             mesh_device=self.ttnn_device,
-            model_checkpoint_path=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
+            checkpoint_name=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
         )
 
     def get_pipeline_device_params(self):
@@ -204,88 +199,17 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
 
 class TTMochi1Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
-        # TODO: Set optimal configuration settings in tt-metal code.
-        device_configs = {
-            (2, 4): {
-                "sp_axis": 0,
-                "tp_axis": 1,
-                "vae_mesh_shape": (1, 8),
-                "vae_sp_axis": 0,
-                "vae_tp_axis": 1,
-                "num_links": 1,
-            },
-            (4, 8): {
-                "sp_axis": 1,
-                "tp_axis": 0,
-                "vae_mesh_shape": (4, 8),
-                "vae_sp_axis": 0,
-                "vae_tp_axis": 1,
-                "num_links": 4,
-            },
-        }
-
-        config = device_configs[tuple(self.ttnn_device.shape)]
-
-        sp_factor = tuple(self.ttnn_device.shape)[config["sp_axis"]]
-        tp_factor = tuple(self.ttnn_device.shape)[config["tp_axis"]]
-
-        # Create parallel config
-        parallel_config = DiTParallelConfig(
-            cfg_parallel=ParallelFactor(factor=1, mesh_axis=0),
-            tensor_parallel=ParallelFactor(
-                factor=tp_factor, mesh_axis=config["tp_axis"]
-            ),
-            sequence_parallel=ParallelFactor(
-                factor=sp_factor, mesh_axis=config["sp_axis"]
-            ),
-        )
-
-        if config["vae_mesh_shape"][config["vae_sp_axis"]] == 1:
-            w_parallel_factor = 1
-        else:
-            w_parallel_factor = 2
-
-        vae_parallel_config = MochiVAEParallelConfig(
-            time_parallel=ParallelFactor(
-                factor=config["vae_mesh_shape"][config["vae_tp_axis"]],
-                mesh_axis=config["vae_tp_axis"],
-            ),
-            w_parallel=ParallelFactor(
-                factor=w_parallel_factor, mesh_axis=config["vae_sp_axis"]
-            ),
-            h_parallel=ParallelFactor(
-                factor=config["vae_mesh_shape"][config["vae_sp_axis"]]
-                // w_parallel_factor,
-                mesh_axis=config["vae_sp_axis"],
-            ),
-        )
-        assert (
-            vae_parallel_config.h_parallel.factor
-            * vae_parallel_config.w_parallel.factor
-            == config["vae_mesh_shape"][config["vae_sp_axis"]]
-        )
-        assert (
-            vae_parallel_config.h_parallel.mesh_axis
-            == vae_parallel_config.w_parallel.mesh_axis
-        )
-
-        return MochiPipeline(
+        return MochiPipeline.create_pipeline(
             mesh_device=self.ttnn_device,
-            vae_mesh_shape=config["vae_mesh_shape"],
-            parallel_config=parallel_config,
-            vae_parallel_config=vae_parallel_config,
-            num_links=config["num_links"],
-            use_cache=True,
-            use_reference_vae=False,
-            model_name=SupportedModels.MOCHI_1.value,
+            checkpoint_name=SupportedModels.MOCHI_1.value,
         )
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
-    def run_inference(self, requests: list[VideoGenerateRequest]):
+    def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         frames = self.pipeline(
@@ -307,14 +231,14 @@ class TTMochi1Runner(TTDiTRunner):
 
 
 class TTWan22Runner(TTDiTRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
-    def run_inference(self, requests: list[VideoGenerateRequest]):
+    def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         # TODO: Move parameterization outside of runner class.
@@ -341,8 +265,6 @@ class TTWan22Runner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         device_params = {
-            "l1_small_size": 32768,
-            "trace_region_size": 34000000,
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
         if ttnn.device.is_blackhole():

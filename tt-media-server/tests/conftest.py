@@ -476,10 +476,16 @@ if "models" not in sys.modules:
 # Create mock runner classes with proper names BEFORE any imports
 def create_mock_runner_class(class_name: str):
     """Create a mock runner class with the specified name."""
+
+    def mock_init(self, worker_id, num_torch_threads=1):
+        """Mock __init__ that accepts both worker_id and num_torch_threads"""
+        self.worker_id = worker_id
+        self.num_torch_threads = num_torch_threads
+
     mock_class = type(
         class_name,
         (),
-        {"__init__": lambda self, worker_id: setattr(self, "worker_id", worker_id)},
+        {"__init__": mock_init},
     )
     return mock_class
 
@@ -487,9 +493,6 @@ def create_mock_runner_class(class_name: str):
 # Create mock runner modules directly in sys.modules with our custom classes
 # This prevents Python from trying to import and execute the actual runner files
 runner_mocks = {
-    "tt_model_runners.base_device_runner": {
-        "BaseDeviceRunner": type("BaseDeviceRunner", (), {})
-    },  # Base class mock
     "tt_model_runners.sdxl_generate_runner_trace": {
         "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
             "TTSDXLGenerateRunnerTrace"
@@ -514,9 +517,6 @@ runner_mocks = {
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
     },
-    "tt_model_runners.vllm_forge_runner": {
-        "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
-    },
     "tt_model_runners.vllm_bge_large_en_runner": {
         "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
     },
@@ -531,7 +531,10 @@ runner_mocks = {
     "tt_model_runners.mock_runner": {
         "MockRunner": create_mock_runner_class("MockRunner")
     },
-    "tt_model_runners.forge_runners": {},  # Parent package module
+    "tt_model_runners.lora_trainer_runner": {
+        "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    },
+    "tt_model_runners.forge_runners": {},
     "tt_model_runners.forge_runners.runners": {
         "ForgeResnetRunner": create_mock_runner_class("ForgeResnetRunner"),
         "ForgeVovnetRunner": create_mock_runner_class("ForgeVovnetRunner"),

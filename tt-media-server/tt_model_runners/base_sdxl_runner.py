@@ -22,8 +22,8 @@ from utils.decorators import log_execution_time
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.tt_sdxl: TtSDXLPipeline = None
         self.batch_size = 0
         self.pipeline = None
@@ -49,7 +49,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
         self.batch_size = self.settings.max_batch_size
 
@@ -104,7 +104,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         return True
 
     @abstractmethod
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest]):
         pass
 
     @abstractmethod

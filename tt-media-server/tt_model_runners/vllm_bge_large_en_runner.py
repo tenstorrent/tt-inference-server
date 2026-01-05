@@ -5,19 +5,19 @@
 import os
 
 from config.constants import SupportedModels
+from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from tt_model_runners.embedding_response import EmbeddingResponse
 from utils.decorators import log_execution_time
 from vllm import LLM
 
 
 class VLLMBGELargeENRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     @log_execution_time("Model warmup")
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         # Disable vLLM multiprocessing to ensure full batch utilization.
         # When enabled, the engine core runs in a separate process (ZMQ IPC),
         # causing non-deterministic scheduling that splits batches inefficiently
@@ -30,7 +30,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
             "The capital of France is Paris",
         ]
         max_model_len = 384
-        max_num_seqs = 8
+        max_num_seqs = 8 * self.settings.device_mesh_shape[1]
         self.llm = LLM(
             model=SupportedModels.BGE_LARGE_EN_V1_5.value,
             max_model_len=max_model_len,
@@ -43,7 +43,7 @@ class VLLMBGELargeENRunner(BaseDeviceRunner):
 
         return True
 
-    def run_inference(self, requests: list[TextEmbeddingRequest]):
+    def run(self, requests: list[TextEmbeddingRequest]):
         self.logger.debug(
             f"VLLMBGELargeENRunner: Running inference for {len(requests)} requests"
         )

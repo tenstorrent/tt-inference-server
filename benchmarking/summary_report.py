@@ -184,6 +184,7 @@ def format_metrics(metrics):
         "tps_decode_throughput": 1,
         "tps_prefill_throughput": 1,
         "request_throughput": 3,
+        "total_token_throughput": 2,
     }
 
     for key, value in metrics.items():
@@ -345,6 +346,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "request_throughput": data.get("request_throughput"),
         "total_input_tokens": data.get("total_input_tokens"),
         "total_output_tokens": data.get("total_output_tokens"),
+        "total_token_throughput": data.get("total_token_throughput"),
         "num_prompts": data.get("num_prompts", ""),
         "num_requests": params["num_requests"],
         "filename": filename,
@@ -425,6 +427,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
+        ("total_token_throughput", "Total Token Throughput (tokens/duration)"),
     ]
 
     display_dict = {}

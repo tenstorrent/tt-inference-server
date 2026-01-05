@@ -19,8 +19,8 @@ from utils.image_manager import ImageManager
 
 
 class TTSDXLImageToImageRunner(BaseSDXLRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.image_manager = ImageManager("img")
         self.image_size = (1024, 1024)
         self.image_mode = "RGB"
@@ -47,7 +47,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         )
 
     def _warmup_inference_block(self):
-        self.run_inference(
+        self.run(
             [
                 ImageToImageRequest.model_construct(
                     prompt="Sunrise on a beach",
@@ -114,7 +114,7 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageToImageRequest]):
+    def run(self, requests: list[ImageToImageRequest]):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
