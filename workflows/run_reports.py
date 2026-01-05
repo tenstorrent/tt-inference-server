@@ -1072,7 +1072,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
         )
     # extract summary data (results are already sorted by config + source in generate_report)
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
+    release_str, release_raw, disp_md_path, stats_file_path = benchmark_generate_report_helper(
         files, output_dir, report_id, metadata, model_spec=model_spec
     )
     # release report for benchmarks
