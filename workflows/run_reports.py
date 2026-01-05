@@ -1056,7 +1056,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, {len(aiperf_files)} AIPerf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
-    
+
     if not vllm_files and not genai_files and not aiperf_files:
         logger.info("No benchmark files found. Skipping.")
         return (
@@ -1070,11 +1070,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
-    
+
     # Process each tool separately to generate individual tables
     # Order: vLLM -> AIPerf -> GenAI-Perf (for both text and image)
     all_tool_results = []
-    
+
     # Import display functions once
     from benchmarking.summary_report import (
         create_display_dict,
@@ -1083,103 +1083,106 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         save_to_csv,
         save_markdown_table,
     )
-    
+
     # Process all tools and collect results by type (text/image)
     text_sections = []
     image_sections = []
-    
+
     # Process vLLM benchmarks
     if vllm_files:
         _, vllm_release_raw, _, _ = benchmark_generate_report_helper(
             vllm_files, output_dir, report_id, metadata, model_spec=model_spec
         )
         all_tool_results.extend(vllm_release_raw)
-        
+
         # Separate text and image for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
-        
+
         if vllm_text:
             vllm_text_display = [create_display_dict(r) for r in vllm_text]
             vllm_text_md = get_markdown_table(vllm_text_display)
             text_sections.append(
                 f"#### vLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_text_md}"
             )
-        
+
         if vllm_image:
             vllm_image_display = [create_image_display_dict(r) for r in vllm_image]
             vllm_image_md = get_markdown_table(vllm_image_display)
             image_sections.append(
                 f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
-    
+
     # Process AIPerf benchmarks
     if aiperf_files:
         _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
             aiperf_files, output_dir, report_id, metadata, model_spec=model_spec
         )
         all_tool_results.extend(aiperf_release_raw)
-        
+
         # Separate text and image for AIPerf
         aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
         aiperf_image = [r for r in aiperf_release_raw if r.get("task_type") == "image"]
-        
+
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
             aiperf_text_md = get_markdown_table(aiperf_text_display)
             text_sections.append(
                 f"#### AIPerf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_text_md}"
             )
-        
+
         if aiperf_image:
             aiperf_image_display = [create_image_display_dict(r) for r in aiperf_image]
             aiperf_image_md = get_markdown_table(aiperf_image_display)
             image_sections.append(
                 f"#### AIPerf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
             )
-    
+
     # Process GenAI-Perf benchmarks
     if genai_files:
         _, genai_release_raw, _, _ = benchmark_generate_report_helper(
             genai_files, output_dir, report_id, metadata, model_spec=model_spec
         )
         all_tool_results.extend(genai_release_raw)
-        
+
         # Separate text and image for GenAI-Perf
         genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
         genai_image = [r for r in genai_release_raw if r.get("task_type") == "image"]
-        
+
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
             genai_text_md = get_markdown_table(genai_text_display)
             text_sections.append(
                 f"#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_text_md}"
             )
-        
+
         if genai_image:
             genai_image_display = [create_image_display_dict(r) for r in genai_image]
             genai_image_md = get_markdown_table(genai_image_display)
             image_sections.append(
                 f"#### GenAI-Perf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
             )
-    
+
     # Combine sections: all text first, then all image
     markdown_sections = text_sections + image_sections
-    
+
     # Combine all sections
     release_str = ""
     if markdown_sections:
-        release_str = f"### Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n" + "\n\n".join(markdown_sections)
-    
+        release_str = (
+            f"### Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n"
+            + "\n\n".join(markdown_sections)
+        )
+
     # Save combined CSV for all tools
     stats_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
     stats_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(all_tool_results, stats_file_path)
-    
+
     # Save display markdown
     disp_md_path = output_dir / f"benchmark_display_{report_id}.md"
     save_markdown_table(release_str, disp_md_path)
-    
+
     release_raw = all_tool_results
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -1201,10 +1204,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     ]
 
     # For performance targets, use only vLLM results (as per user requirement)
-    vllm_release_raw = [r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")]
-    
+    vllm_release_raw = [
+        r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
+    ]
+
     # Separate text and image benchmarks from vLLM results (for targets)
-    text_release_raw = [r for r in vllm_release_raw if r.get("task_type", "text") == "text"]
+    text_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "text"
+    ]
     image_release_raw = [
         r for r in vllm_release_raw if r.get("task_type", "text") == "image"
     ]
