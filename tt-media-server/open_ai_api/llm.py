@@ -136,7 +136,6 @@ router = APIRouter()
 if settings.model_runner in [
     ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
     ModelRunners.VLLMBGELargeEN_V1_5.value,
-    ModelRunners.TEST.value,
 ]:
     router.include_router(embedding_router)
 else:
