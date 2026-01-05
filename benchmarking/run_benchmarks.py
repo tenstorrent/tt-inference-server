@@ -184,10 +184,6 @@ def main():
         if model_spec.has_builtin_warmup:
             # Model has builtin warmup - disable client-side trace capture
             disable_trace_capture = True
-            logger.info(
-                "Model has builtin warmup (has_builtin_warmup=True), "
-                "automatically disabling trace capture for benchmarks workflow"
-            )
         else:
             # Model doesn't have builtin warmup - enable client-side trace capture
             disable_trace_capture = False
@@ -195,10 +191,6 @@ def main():
                 "Model does not have builtin warmup (has_builtin_warmup=False), "
                 "automatically enabling trace capture for benchmarks workflow"
             )
-    elif user_explicitly_set:
-        logger.info(
-            "User explicitly set --disable-trace-capture, respecting user preference"
-        )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
