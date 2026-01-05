@@ -17,23 +17,22 @@ READY_LOG_TEXT = "All devices are warmed up and ready"
 LOG_DIR = Path(__file__).resolve().parent / "server_logs"
 
 
-def launch_cpu_server(
+def _launch_server(
     model_runner: str,
-    port: int = 8000,
-    extra_env: Optional[Dict[str, str]] = None,
+    port: int,
+    runs_on_cpu: bool
 ) -> tuple[subprocess.Popen, Path]:
-    """Start the media server in CPU mode for the given model and capture logs."""
+    """Spawn the media server for a given runner and mode."""
 
     if not TT_MEDIA_SERVER_DIR.exists():
         raise FileNotFoundError(f"tt-media-server directory not found at {TT_MEDIA_SERVER_DIR}")
 
     env = os.environ.copy()
     env["MODEL_RUNNER"] = model_runner
-    env["RUNS_ON_CPU"] = "true"
-    env["DEVICE_IDS"] = "0"
-    env["IS_GALAXY"] = "false"
-    if extra_env:
-        env.update(extra_env)
+    env["RUNS_ON_CPU"] = "true" if runs_on_cpu else "false"
+    env.setdefault("DEVICE_IDS", "0")
+    env.setdefault("IS_GALAXY", "false")
+    env.setdefault("USE_OPTIMIZER", "true")
 
     command = [
         "uvicorn",
@@ -45,8 +44,9 @@ def launch_cpu_server(
     ]
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = "cpu" if runs_on_cpu else "device"
     safe_name = sanitize_model_name(model_runner)
-    log_path = LOG_DIR / f"{safe_name}.log"
+    log_path = LOG_DIR / f"{safe_name}_{suffix}.log"
     log_handle = open(log_path, "w", encoding="utf-8", buffering=1)
 
     process = subprocess.Popen(
@@ -59,6 +59,29 @@ def launch_cpu_server(
     process._log_handle = log_handle  # type: ignore[attr-defined]
     process._log_path = log_path  # type: ignore[attr-defined]
     return process, log_path
+
+
+def launch_cpu_server(
+    model_runner: str
+) -> tuple[subprocess.Popen, Path]:
+    """Start the media server in CPU mode for the given model and capture logs."""
+
+    return _launch_server(
+        model_runner=model_runner,
+        port=8000,
+        runs_on_cpu=True
+    )
+    
+def launch_device_server(
+    model_runner: str
+) -> tuple[subprocess.Popen, Path]:
+    """Start the media server in CPU mode for the given model and capture logs."""
+
+    return _launch_server(
+        model_runner=model_runner,
+        port=8000,
+        runs_on_cpu=False
+    )
 
 
 def wait_for_server_ready(

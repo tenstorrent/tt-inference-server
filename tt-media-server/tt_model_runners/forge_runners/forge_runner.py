@@ -49,7 +49,7 @@ class ForgeRunner(BaseDeviceRunner):
 
         if runs_on_cpu:
             # Use cpu
-            self.dtype = None
+            # self.dtype = None # Use same dtype on CPU and device
             self.device = torch.device("cpu")
             self.model = self.loader.load_model(self.dtype)
             self.compiled_model = self.model.to(self.device)

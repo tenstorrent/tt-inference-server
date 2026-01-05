@@ -2,47 +2,42 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import argparse
 import base64
 import itertools
 import json
+import shutil
+import time
 from pathlib import Path
+from typing import Literal
 
-import argparse
 from datasets import DownloadConfig, Image, load_dataset
 import requests
 
 from server_helper import (
     DEFAULT_AUTHORIZATION,
+    SERVER_DEFAULT_URL,
     launch_cpu_server,
-    sanitize_model_name,
+    launch_device_server,
     stop_server,
     wait_for_server_ready,
-    SERVER_DEFAULT_URL,
 )
 
 DATASET_DIR = "tests/server_tests/datasets/imagenet_subset"
 MODELS = [
-        'tt-xla-resnet', 
-        'tt-xla-vovnet', 
-        'tt-xla-mobilenetv2',
-        'tt-xla-efficientnet',
-        'tt-xla-segformer',
-        # 'tt-xla-unet',
-        'tt-xla-vit'
+    "tt-xla-resnet",
+    "tt-xla-vovnet",
+    "tt-xla-mobilenetv2",
+    "tt-xla-efficientnet",
+    "tt-xla-segformer",
+    # "tt-xla-unet",
+    "tt-xla-vit",
 ]
-_MIN_RELATIVE_REFERENCE = 1e-8
-
-
-def _coerce_probability(value: float | str) -> float:
-    if isinstance(value, str):
-        stripped = value.strip()
-        is_percent = stripped.endswith("%")
-        if is_percent:
-            stripped = stripped[:-1]
-        numeric = float(stripped)
-        return numeric / 100.0 if is_percent else numeric
-    return float(value)
-
+REQUEST_TIMEOUT_SECONDS = 60.0
+ACCURACY_FILE_BY_MODE = {
+    "cpu": "cpu_accuracy.json",
+    "device": "device_accuracy.json",
+}
 
 
 def _load_metadata(dataset_path: Path) -> list[dict]:
@@ -75,17 +70,16 @@ def _replay_samples(
     session = requests.Session()
     results: list[dict] = []
 
-    for entry in metadata:
-        image_file = dataset_path / entry["filename"]
-        if not image_file.exists():
-            raise FileNotFoundError(f"Missing image file: {image_file}")
+    try:
+        for entry in metadata:
+            image_file = dataset_path / entry["filename"]
+            if not image_file.exists():
+                raise FileNotFoundError(f"Missing image file: {image_file}")
 
-        with image_file.open("rb") as img_fp:
-            encoded = base64.b64encode(img_fp.read()).decode("ascii")
+            with image_file.open("rb") as img_fp:
+                encoded = base64.b64encode(img_fp.read()).decode("ascii")
 
-        payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
-
-        try:
+            payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
             response = session.post(
                 server_url,
                 headers=headers,
@@ -94,82 +88,105 @@ def _replay_samples(
             )
             response.raise_for_status()
             body = response.json()
-        except requests.RequestException as exc:
-            body = {
-                "error": str(exc),
-                "status_code": getattr(exc.response, "status_code", None),
-            }
-        except json.JSONDecodeError:
-            body = {"error": "Response is not valid JSON", "raw_text": response.text}
+            results.append({"sample": entry, "response": body})
+    finally:
+        session.close()
 
-        results.append({"sample": entry, "response": body})
-
-    session.close()
     return results
 
 
-def _numeric_close(cpu_value: float, device_value: float, tolerance: float) -> tuple[bool, dict | None]:
-    abs_diff = abs(cpu_value - device_value)
-    reference = max(abs(cpu_value), abs(device_value), _MIN_RELATIVE_REFERENCE)
-    rel_diff = abs_diff / reference
-    if rel_diff <= tolerance:
-        return True, None
-    return False, {
-        "cpu": cpu_value,
-        "device": device_value,
-        "abs_diff": abs_diff,
-        "rel_diff": rel_diff,
-    }
+def _normalize_label(raw: str | int | None) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, int):
+        return str(raw)
+
+    normalized = str(raw).strip().lower()
+    normalized = normalized.replace("-", "_")
+    normalized = normalized.replace(" ", "_")
+    cleaned = []
+    for char in normalized:
+        cleaned.append(char if char.isalnum() or char == "_" else "_")
+    collapsed = "".join(cleaned)
+    while "__" in collapsed:
+        collapsed = collapsed.replace("__", "_")
+    return collapsed.strip("_")
 
 
-def _compare_structures(
-    cpu_value,
-    device_value,
-    tolerance: float,
-    path: str = "",
-) -> list[dict]:
-    differences: list[dict] = []
+def _extract_prediction(payload: dict) -> tuple[str | None, str | None]:
+    image_data = payload.get("image_data") if isinstance(payload, dict) else None
+    if not isinstance(image_data, dict):
+        return None, None
 
-    cpu_label = cpu_value["image_data"]["top1_class_label"]
-    cpu_prob = _coerce_probability(cpu_value["image_data"]["top1_class_probability"])
-    device_label = device_value["image_data"]["top1_class_label"]
-    device_prob = _coerce_probability(device_value["image_data"]["top1_class_probability"])
+    label = image_data.get("top1_class_label")
+    probability = image_data.get("top1_class_probability")
 
-    if cpu_label != device_label:
-        differences.append(
-            {
-                "path": f"{path}.image_data.top1_class_label",
-                "cpu": cpu_label,
-                "device": device_label,
-            }
-        )
-        return differences
+    if label is None:
+        output = image_data.get("output")
+        if isinstance(output, dict):
+            labels = output.get("labels")
+            if isinstance(labels, list) and labels:
+                label = labels[0]
 
-    close, details = _numeric_close(cpu_prob, device_prob, tolerance)
-    if not close:
-        diff = {"path": f"{path}.image_data.top1_class_probability"}
-        if details:
-            diff.update(details)
-        differences.append(diff)
-
-    return differences
+    return label, probability
 
 
-def prepare_vision_eval_test(
-    count: int = 20,
-):
+def _analyze_results(entries: list[dict]) -> tuple[int, int, list[dict]]:
+    total = len(entries)
+    correct = 0
+    mismatches: list[dict] = []
+
+    for entry in entries:
+        sample = entry.get("sample", {})
+        response_payload = entry.get("response", {})
+        predicted_label, probability = _extract_prediction(response_payload)
+
+        expected_label = sample.get("label") or sample.get("label_id")
+        expected_key = _normalize_label(expected_label)
+        predicted_key = _normalize_label(predicted_label)
+
+        if expected_key and expected_key == predicted_key:
+            correct += 1
+        else:
+            mismatches.append(
+                {
+                    "sample": sample,
+                    "expected_label": expected_label,
+                    "predicted_label": predicted_label,
+                    "probability": probability,
+                    "normalized_expected": expected_key,
+                    "normalized_predicted": predicted_key,
+                    "response": response_payload.get("image_data"),
+                }
+            )
+
+    return correct, total, mismatches
+
+
+def _write_json(path: Path, payload: object) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+
+
+def download_samples(count: int = 20) -> None:
     """Stream a small ImageNet subset and materialize images plus metadata."""
 
-    dataset = load_dataset(
+    if count <= 0:
+        raise ValueError("Sample count must be positive.")
+
+    ds = load_dataset(
         "imagenet-1k",
         split="validation",
         streaming=True,
         download_config=DownloadConfig(num_proc=1),
     )
-    dataset = dataset.cast_column("image", Image(decode=True))
+    dataset = ds.cast_column("image", Image(decode=True))
     samples = itertools.islice(dataset, count)
     
     output_path = Path(DATASET_DIR)
+    if output_path.exists():
+        shutil.rmtree(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
     label_feature = dataset.features.get("label")
@@ -202,322 +219,128 @@ def prepare_vision_eval_test(
     with metadata_path.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"Saved {len(metadata)} ImageNet samples to {output_path} (metadata: {metadata_path})")
+    print(f"Saved {len(metadata)} ImageNet samples to {output_path} (metadata: {metadata_path})")    
+    time.sleep(5)  # Workaround for straming dataset cleanup issues
 
 
-def record_cpu_vision_eval_results(
-    server_url: str = SERVER_DEFAULT_URL,
-    output_filename: str = "responses_cpu.json",
-    authorization: str | None = None,
-    timeout: float = 60.0,
+def measure_accuracy(
     models: list[str] | None = None,
-):
-    """Replay image samples against a local CPU server and persist responses."""
-
+    server_url: str = None,
+    mode: Literal["cpu", "device"] = "cpu",
+    authorization: str | None = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
+) -> None:
+    
     dataset_path = Path(DATASET_DIR)
     metadata = _load_metadata(dataset_path)
-    base_path = Path(output_filename)
-    base_name = base_path.stem or "responses_cpu"
-    suffix = base_path.suffix or ".json"
-
-    models = models or list(MODELS)
-    aggregated_results = {}
+    summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
+    accuracy_summary: dict[str, float] = {}
 
     for model in models:
-        print(f"\n=== Recording CPU outputs for model: {model} ===")
-        process, log_path = launch_cpu_server(model)
+        process = None
+        log_path = None
+
         try:
-            wait_for_server_ready(process, log_path=log_path)
-            model_results = _replay_samples(
-                metadata,
-                dataset_path,
-                server_url,
-                authorization,
-                timeout,
-            )
-            aggregated_results[model] = model_results
+            if mode == "cpu":
+                print(f"Starting CPU server for model: {model}")
+                process, log_path = launch_cpu_server(model)
+                wait_for_server_ready(process, log_path=log_path)
+                print(f"CPU server is ready for model: {model}")
+                server_url = SERVER_DEFAULT_URL
+            elif mode == "device":
+                if server_url:
+                    print(f"Using existing server at {server_url} for model: {model}")
+                else:
+                    print(f"Starting device server for model: {model}")
+                    process, log_path = launch_device_server(model)
+                    wait_for_server_ready(process, log_path=log_path)
+                    print(f"Device server is ready for model: {model}")
+                    server_url = SERVER_DEFAULT_URL
 
-            safe_model = sanitize_model_name(model)
-            model_output = dataset_path / f"{base_name}_{safe_model}{suffix}"
-            with model_output.open("w", encoding="utf-8") as f:
-                json.dump(model_results, f, indent=2)
-            print(f"Recorded {len(model_results)} responses to {model_output}")
-        finally:
-            stop_server(process)
-            if log_path.exists():
-                try:
-                    log_content = log_path.read_text(encoding="utf-8", errors="replace")
-                    tail = log_content[-4000:]
-                    print(f"--- Server log for {model} ({log_path}) ---\n{tail}\n--- End log ---")
-                except OSError as exc:
-                    print(f"Could not read server log {log_path}: {exc}")
-
-    if aggregated_results:
-        aggregated_path = dataset_path / f"{base_name}_all{suffix}"
-        with aggregated_path.open("w", encoding="utf-8") as f:
-            json.dump(aggregated_results, f, indent=2)
-        print(f"Saved aggregated results to {aggregated_path}")
-
-    return aggregated_results
-    
-
-def _resolve_cpu_results(
-    dataset_path: Path,
-    cpu_filename: str,
-    model: str | None,
-) -> tuple[list[dict], Path]:
-    base_path = Path(cpu_filename)
-    suffix = base_path.suffix or ".json"
-    stem = base_path.stem or "responses_cpu"
-
-    candidates = []
-    if model:
-        safe_model = sanitize_model_name(model)
-        candidates.append(dataset_path / f"{stem}_{safe_model}{suffix}")
-    candidates.append(dataset_path / cpu_filename)
-
-    cpu_path = None
-    data = None
-    for candidate in candidates:
-        if candidate.exists():
-            cpu_path = candidate
-            with candidate.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            break
-
-    if cpu_path is None or data is None:
-        paths = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(
-            f"Missing CPU response file for model '{model}': checked {paths}. "
-            "Please run recording first with --record_cpu and server in CPU mode (RUNS_ON_CPU=true)."
-        )
-
-    if isinstance(data, dict):
-        if not model:
-            raise ValueError(
-                f"Aggregated CPU results in {cpu_path} require specifying a model for comparison."
-            )
-        if model not in data:
-            available = ", ".join(sorted(data.keys()))
-            raise KeyError(f"Model '{model}' not found in aggregated CPU results ({available}).")
-        cpu_results = data[model]
-        if not isinstance(cpu_results, list):
-            raise ValueError(f"CPU results for model '{model}' must be a list of samples.")
-        return cpu_results, cpu_path
-
-    if not isinstance(data, list):
-        raise ValueError(f"CPU results in {cpu_path} must be a list of samples.")
-
-    return data, cpu_path
-
-
-def compare_with_cpu(
-    server_url: str = SERVER_DEFAULT_URL,
-    cpu_filename: str = "responses_cpu.json",
-    output_filename: str = "responses_tt.json",
-    authorization: str | None = None,
-    timeout: float = 60.0,
-    tolerance: float = 0.05,
-    model: str | None = None,
-):
-    """Compare TT device responses with recorded CPU baselines."""
-
-    if model is None:
-        raise ValueError("Model name required when launching the comparison server.")
-
-    dataset_path = Path(DATASET_DIR)
-    cpu_results, resolved_path = _resolve_cpu_results(dataset_path, cpu_filename, model)
-
-    process = None
-    log_path = None
-    try:
-        process, log_path = launch_cpu_server(model)
-        wait_for_server_ready(process, log_path=log_path)
-
-        metadata = [entry["sample"] for entry in cpu_results]
-        device_results = _replay_samples(metadata, dataset_path, server_url, authorization, timeout)
-    finally:
-        if process is not None:
-            stop_server(process)
-        if log_path is not None and log_path.exists():
-            try:
-                log_content = log_path.read_text(encoding="utf-8", errors="replace")
-                tail = log_content[-4000:]
-                print(f"--- Server log for {model} ({log_path}) ---\n{tail}\n--- End log ---")
-            except OSError as exc:
-                print(f"Could not read server log {log_path}: {exc}")
-
-    if len(device_results) != len(cpu_results):
-        raise ValueError("CPU and device result counts do not match.")
-
-    if output_filename:
-        output_path = Path(output_filename)
-        suffix = output_path.suffix or ".json"
-        stem = output_path.stem or "responses_tt"
-        if model:
-            safe_model = sanitize_model_name(model)
-            output_path = dataset_path / f"{stem}_{safe_model}{suffix}"
-        else:
-            output_path = dataset_path / output_path
-        with output_path.open("w", encoding="utf-8") as f:
-            json.dump(device_results, f, indent=2)
-        print(f"Saved TT responses to {output_path}")
-
-    mismatches = []
-    for cpu_entry, device_entry in zip(cpu_results, device_results):
-        if cpu_entry["sample"] != device_entry["sample"]:
-            raise ValueError("Sample ordering mismatch between CPU and device runs.")
-
-        differences = _compare_structures(cpu_entry["response"], device_entry["response"], tolerance)
-        if differences:
-            mismatches.append(
-                {
-                    "sample": cpu_entry["sample"],
-                    "cpu_response": cpu_entry["response"],
-                    "device_response": device_entry["response"],
-                    "differences": differences,
-                }
-            )
-
-    total = len(cpu_results)
-    match_count = total - len(mismatches)
-    label = f" for model '{model}'" if model else ""
-    print(
-        f"Compared {total} samples{label} using CPU baseline {resolved_path}: {match_count} match, {len(mismatches)} differ"
-    )
-
-    if mismatches:
-        mismatch_path = Path("mismatches.json")
-        suffix = mismatch_path.suffix or ".json"
-        stem = mismatch_path.stem or "mismatches"
-        if model:
-            safe_model = sanitize_model_name(model)
-            mismatch_path = dataset_path / f"{stem}_{safe_model}{suffix}"
-        else:
-            mismatch_path = dataset_path / mismatch_path
-        with mismatch_path.open("w", encoding="utf-8") as f:
-            json.dump(mismatches, f, indent=2)
-        print(f"Wrote mismatch details to {mismatch_path}")
-        print(
-            f"❌ Vision evaluation failed for {model}: {len(mismatches)} mismatches (details: {mismatch_path})"
-        )
-    else:
-        print(
-            f"✅ Vision evaluation passed for {model}: all {total} samples match the CPU baseline"
-        )
-
-    return mismatches
-
-
-def compare_models_with_cpu(
-    server_url: str = SERVER_DEFAULT_URL,
-    cpu_filename: str = "responses_cpu.json",
-    output_filename: str = "responses_tt.json",
-    authorization: str | None = None,
-    timeout: float = 60.0,
-    tolerance: float = 0.05,
-    models: list[str] | None = None,
-):
-    """Iterate over the configured models and compare TT results with CPU baselines."""
-    
-    summary: dict[str, list[dict]] = {}
-
-    target_models = models or list(MODELS)
-    passed = 0
-    failed = 0
-
-    for model in target_models:
-        print(f"\n=== Comparing TT outputs for model: {model} ===")
-        try:
-            mismatches = compare_with_cpu(
+            results = _replay_samples(
+                metadata=metadata,
+                dataset_path=dataset_path,
                 server_url=server_url,
-                cpu_filename=cpu_filename,
-                output_filename=output_filename,
                 authorization=authorization,
                 timeout=timeout,
-                tolerance=tolerance,
-                model=model,
             )
-            summary[model] = mismatches
-            if mismatches:
-                failed += 1
-            else:
-                passed += 1
-        except Exception as exc:  # pragma: no cover - surface errors to caller
-            failed += 1
-            summary[model] = [{"error": str(exc)}]
-            print(f"❌ Comparison failed for {model}: {exc}")
+        finally:
+            # Clean up the server process if we started one
+            if process is not None:
+                stop_server(process)
 
-    total = len(target_models)
-    if total:
-        if failed:
-            print(
-                f"\n❌ Vision evaluation comparisons completed with {failed} failure(s) out of {total} model(s)"
-            )
-        else:
-            print(
-                f"\n✅ Vision evaluation comparisons passed for all {total} model(s)"
-            )
+        correct, total, mismatches = _analyze_results(results)
+        
+        accuracy = (correct / total) if total else 0.0
+        accuracy_summary[model] = accuracy
 
-    return summary
+        print(
+            f"[{mode.upper()}] {model}: {accuracy * 100:.2f}% accuracy ({correct}/{total} correct)"
+        )
+        
+        if mismatches:
+            mismatch_path = dataset_path / f"{model}_{mode}_mismatches.json"
+            _write_json(mismatch_path, mismatches)
+            print(f"  Saved {len(mismatches)} mismatches to {mismatch_path}")
+
+    _write_json(summary_path, accuracy_summary)
+    print(f"Saved {mode} accuracy summary to {summary_path}")
+
 
 
 """
+Usage:
+1. Download the dataset (n images).
+2. Measure CPU accuracy for the dataset -> output JSON
+    For each model start the server in CPU mode
+    Run inference for all images
+    Compare the returned label with the one from metadata
+    Calculate the percentage of correct labels
+    Save to the JSON file cpu_accuracy.json { model: accuracy }
+3. Measure device accuracy for the dataset -> output JSON
+    There are two invocation variants
+     - CI: the server is already running for a given model, we need the server URL and the name of the model under test
+     - Local: start the server in device mode for each model
 
-Prepare for test
-================
-
-1. Install datasets library
-2. Export HF_TOKEN
-3. Download images
-    Download 20 images from ImageNet validation set
-    Save images and metadata to folder "tests/server_tests/datasets/imagenet_subset"
-4. Record CPU results
-    For each vison model    
-    Start server in "cpu" mode
-    Run test to record results
-    Save to folder "tests/server_tests/datasets/imagenet_subset"
-    
-Test
-====
-
-1. For each model run using TT device
-2. Compare results with expected values
-3. Report differences
-
-
-Example usage
-=============
-
-Prepare dataset:
-python tests/server_tests/test_cases/vision_evals_test.py --download
-
-Record CPU results for all models:
-python tests/server_tests/test_cases/vision.py --record_cpu
-
-Record CPU results for specific model:
-python tests/server_tests/test_cases/vision_evals_test.py --record_cpu --model tt-xla-resnet
-
-Compare TT device results with CPU baselines for all models:
-python tests/server_tests/test_cases/vision_evals_test.py --compare
-
-Compare TT device results with CPU baselines for specific model:
-python tests/server_tests/test_cases/vision_evals_test.py --compare --model tt-xla-resnet
-
+Example commands:
+    python tests/server_tests/test_cases/vision_evals_test.py --download 20
+    python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy
+    python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
+    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy
+    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/cnn/search-image
 """
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Vision evaluation test utility")
-    parser.add_argument("--download", action="store_true", help="Download and prepare the dataset")
-    parser.add_argument("--record_cpu", action="store_true", help="Record CPU server responses")
-    parser.add_argument("--compare", action="store_true", help="Compare TT device responses with CPU baselines")
+    parser.add_argument(
+        "--download",
+        nargs="?",
+        const=20,
+        type=int,
+        metavar="COUNT",
+        help="Download and prepare the dataset (defaults to 20 samples).",
+    )
+    parser.add_argument("--measure_cpu_accuracy", action="store_true", help="Measure CPU model accuracy")
+    parser.add_argument("--measure_device_accuracy", action="store_true", help="Measure device model accuracy")
     parser.add_argument("--model", help="Specific model runner to compare; defaults to all configured models.")
-    parser.add_argument("--server_url", help="Server URL to use for TT device comparisons; defaults to SERVER_DEFAULT_URL.")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--server_url",
+        help="Server URL to use for TT device comparisons"
+    )
+    args = parser.parse_args()   
+
+    if args.server_url and not args.model:
+        print("When providing a server URL model must be specified (--model)")
+        exit(1)
+    
     target_models = [args.model] if args.model else MODELS
-    if args.download:
-        prepare_vision_eval_test()
-    if args.record_cpu:
-        record_cpu_vision_eval_results(models=target_models)
-    if args.compare:        
-        compare_models_with_cpu(models=target_models, server_url=args.server_url or SERVER_DEFAULT_URL)
+    
+    if args.download is not None:
+        download_samples(count=args.download)
+    elif args.measure_cpu_accuracy or args.measure_device_accuracy:
+        measure_accuracy(
+            models=target_models,
+            server_url=args.server_url,
+            mode="cpu" if args.measure_cpu_accuracy else "device"
+        )
+
