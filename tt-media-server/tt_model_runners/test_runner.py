@@ -13,6 +13,7 @@ from domain.completion_response import (
     FinalResultOutput,
     StreamingChunkOutput,
 )
+from domain.embedding_response import EmbeddingResponse
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
@@ -83,4 +84,7 @@ class TestRunner(BaseDeviceRunner):
         )
 
     def run(self, requests: list[CompletionRequest]):
-        return []
+        print(f"TestRunner.run() requests: {requests}")
+        return [
+            EmbeddingResponse(embedding=[0.1] * 384, total_tokens=384) for _ in requests
+        ]
