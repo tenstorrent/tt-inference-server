@@ -7,6 +7,7 @@ import base64
 import itertools
 import json
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import Literal
@@ -223,6 +224,62 @@ def download_samples(count: int = 20) -> None:
     time.sleep(5)  # Workaround for straming dataset cleanup issues
 
 
+def compare_results() -> None:
+    """Compare CPU and device accuracy results and print a summary."""
+
+    dataset_path = Path(DATASET_DIR)
+    cpu_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
+    device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
+
+    if not cpu_accuracy_path.exists():
+        print(f"CPU accuracy file not found: {cpu_accuracy_path}")
+        print("Run CPU accuracy measurement with --measure_cpu_accuracy")
+        return
+    if not device_accuracy_path.exists():
+        print(f"Device accuracy file not found: {device_accuracy_path}")
+        print("Run device accuracy measurement with --measure_device_accuracy")
+        return
+
+    with cpu_accuracy_path.open("r", encoding="utf-8") as f:
+        cpu_accuracy = json.load(f)
+    with device_accuracy_path.open("r", encoding="utf-8") as f:
+        device_accuracy = json.load(f)
+
+    print("\nAccuracy Comparison (CPU vs Device):")
+    print(f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18}")
+    print("-" * 90)
+
+    unacceptable: list[str] = []
+
+    for model in sorted(set(cpu_accuracy.keys()).union(device_accuracy.keys())):
+        cpu_value = cpu_accuracy.get(model)
+        device_value = device_accuracy.get(model)
+
+        cpu_pct = cpu_value * 100.0 if cpu_value is not None else None
+        device_pct = device_value * 100.0 if device_value is not None else None
+
+        if cpu_pct is not None and device_pct is not None:
+            diff = device_pct - cpu_pct
+            if diff < -5.0:
+                unacceptable.append(model)
+            diff_display = f"{diff:18.2f}"
+        else:
+            diff_display = f"{'N/A':>18}"
+
+        cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
+        device_display = f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
+
+        print(f"{model:30} {cpu_display} {device_display} {diff_display}")
+
+    if unacceptable:
+        formatted = ", ".join(unacceptable)
+        print(
+            f"Device accuracy is not acceptable: {formatted} fell more than 5% below the CPU baseline."
+        )
+        sys.exit(1)
+    
+    
+    
 def measure_accuracy(
     models: list[str] | None = None,
     server_url: str = None,
@@ -246,7 +303,6 @@ def measure_accuracy(
                 process, log_path = launch_cpu_server(model)
                 wait_for_server_ready(process, log_path=log_path)
                 print(f"CPU server is ready for model: {model}")
-                server_url = SERVER_DEFAULT_URL
             elif mode == "device":
                 if server_url:
                     print(f"Using existing server at {server_url} for model: {model}")
@@ -255,12 +311,11 @@ def measure_accuracy(
                     process, log_path = launch_device_server(model)
                     wait_for_server_ready(process, log_path=log_path)
                     print(f"Device server is ready for model: {model}")
-                    server_url = SERVER_DEFAULT_URL
 
             results = _replay_samples(
                 metadata=metadata,
                 dataset_path=dataset_path,
-                server_url=server_url,
+                server_url=server_url or SERVER_DEFAULT_URL,
                 authorization=authorization,
                 timeout=timeout,
             )
@@ -308,6 +363,7 @@ Example commands:
     python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
     python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy
     python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/cnn/search-image
+    python tests/server_tests/test_cases/vision_evals_test.py --compare_results
 """
 
 if __name__ == "__main__":
@@ -322,6 +378,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--measure_cpu_accuracy", action="store_true", help="Measure CPU model accuracy")
     parser.add_argument("--measure_device_accuracy", action="store_true", help="Measure device model accuracy")
+    parser.add_argument("--compare_results", action="store_true", help="Compare CPU and device accuracy results")
     parser.add_argument("--model", help="Specific model runner to compare; defaults to all configured models.")
     parser.add_argument(
         "--server_url",
@@ -343,4 +400,7 @@ if __name__ == "__main__":
             server_url=args.server_url,
             mode="cpu" if args.measure_cpu_accuracy else "device"
         )
+        compare_results()
+    elif args.compare_results:
+        compare_results()
 

@@ -7,7 +7,7 @@
 
 set -e  # Exit on any error
 
-FORGE_MODELS_SHA="main"
+FORGE_MODELS_SHA="copilot/add-top-k-argument-to-postprocess"
 
 REPO_URL="https://github.com/tenstorrent/tt-forge-models.git"
 TARGET_DIR="model_loaders"

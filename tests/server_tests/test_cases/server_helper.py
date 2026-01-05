@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-SERVER_STARTUP_TIMEOUT = 90
+SERVER_STARTUP_TIMEOUT = 5*60 # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
 SERVER_DEFAULT_URL = "http://127.0.0.1:8000/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
@@ -26,6 +26,26 @@ def _launch_server(
 
     if not TT_MEDIA_SERVER_DIR.exists():
         raise FileNotFoundError(f"tt-media-server directory not found at {TT_MEDIA_SERVER_DIR}")
+
+    if not runs_on_cpu:
+        print("Reseting device...")
+        try:
+            subprocess.run(
+                ["tt-smi", "-r"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "tt-smi command not found. Install it with 'pip install tt-smi' before launching device servers."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            error_output = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise RuntimeError(
+                f"tt-smi reset failed with exit code {exc.returncode}: {error_output}"
+            ) from exc
 
     env = os.environ.copy()
     env["MODEL_RUNNER"] = model_runner
