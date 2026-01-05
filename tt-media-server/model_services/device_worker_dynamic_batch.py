@@ -63,17 +63,20 @@ def setup_worker_environment(worker_id: str):
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue_name: str,  # ✅ CHANGED: Pass queue name instead of queue object
+    result_queue: str,  # ✅ CHANGED: Pass queue name instead of queue object
     warmup_signals_queue: Queue,
     error_queue: Queue,
+    result_queue_name: str = None,
 ):
     setup_worker_environment(worker_id)
     logger = TTLogger()
 
-    result_queue = SharedMemoryChunkQueue(name=result_queue_name, create=False)
-    logger.info(
-        f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
-    )
+    # attach to queue if it's provided
+    if result_queue_name is not None:
+        result_queue = SharedMemoryChunkQueue(name=result_queue_name, create=False)
+        logger.info(
+            f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
+        )
 
     # Create a single event loop for this worker process
     # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop

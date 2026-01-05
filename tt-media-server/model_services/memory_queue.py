@@ -368,6 +368,10 @@ class SharedMemoryChunkQueue:
         except Exception as e:
             self.logger.error(f"[MemoryQueue] Error closing: {e}")
 
+    def join_thread():
+        """Placeholder method to mimic a multiprocessing queue"""
+        return True
+
     def unlink(self):
         try:
             self.shm.unlink()

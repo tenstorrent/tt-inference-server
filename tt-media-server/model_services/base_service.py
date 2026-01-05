@@ -158,78 +158,51 @@ class BaseService(ABC):
     )
     async def process_streaming(self, request):
         """Handle model-level streaming through the scheduler/device worker using composite keys"""
-        queue = asyncio.Queue()
-        self.scheduler.result_queues[request._task_id] = queue
+        queue = self.scheduler.result_queues[request._task_id] = asyncio.Queue()
 
         # Submit the request
         self.scheduler.process_request(request)
 
         try:
-            # Add extra time based on request duration if available (e.g., audio duration)
+            # Calculate timeout ONCE
             dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
 
-            final_received = False
-
-            while not final_received:
-                batch = []
-
-                # Get first item (blocking with timeout)
+            while True:
                 try:
-                    first_chunk = await asyncio.wait_for(
-                        queue.get(), timeout=dynamic_timeout
-                    )
-                    batch.append(first_chunk)
-                except asyncio.TimeoutError:
+                    # Get chunk without extra timeout overhead
+                    chunk = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    # Wait only when queue is empty
+                    chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
+
+                # Type-based dispatch (faster than isinstance)
+                chunk_type = chunk.get("type")
+
+                if chunk_type == "streaming_chunk":
+                    formatted_chunk = chunk["chunk"]
+                    # Inline the check - no function calls
+                    if formatted_chunk and formatted_chunk.text:
+                        yield formatted_chunk
+
+                elif chunk_type == "final_result":
+                    if chunk.get("return", False):
+                        final_result = chunk["result"]
+                        if final_result is not None:
+                            yield final_result
+                    break
+                else:
                     self.logger.error(
-                        f"Streaming timed out for task {request._task_id} after {dynamic_timeout}s"
+                        f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
                     )
-                    raise
-
-                # DRAIN QUEUE - get all available items without blocking
-                while not queue.empty():
-                    try:
-                        chunk = queue.get_nowait()
-                        batch.append(chunk)
-                        if len(batch) >= 100:  # Limit batch size
-                            break
-                    except asyncio.QueueEmpty:
-                        break
-
-                for chunk in batch:
-                    if (
-                        isinstance(chunk, dict)
-                        and chunk.get("type") == "streaming_chunk"
-                    ):
-                        formatted_chunk = chunk.get("chunk")
-                        if (
-                            formatted_chunk
-                            and hasattr(formatted_chunk, "text")
-                            and formatted_chunk.text
-                        ):
-                            yield formatted_chunk
-
-                    elif (
-                        isinstance(chunk, dict) and chunk.get("type") == "final_result"
-                    ):
-                        if chunk.get("return_result", False):
-                            final_result = chunk.get("result")
-                            if final_result is not None:
-                                yield final_result
-                        final_received = True
-                        break
-
-                    else:
-                        self.logger.error(
-                            f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
-                        )
-                        raise ValueError(
-                            f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
-                        )
+                    raise ValueError(f"Streaming protocol violation: {chunk_type}")
 
         except asyncio.TimeoutError:
+            self.logger.error(
+                f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
+            )
             raise
         except Exception as e:
             self.logger.error(

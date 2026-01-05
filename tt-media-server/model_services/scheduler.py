@@ -34,14 +34,13 @@ class Scheduler:
             self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
         )
         self.warmup_signals_queue = Queue(worker_count)
-        
-        # ✅ Only create result_queue once - reuse if it exists
-        if not hasattr(self, "result_queue") or self.result_queue is None:
-            self.result_queue = SharedMemoryChunkQueue(name="chunk_queue", create=True)
-            self.logger.info("Created new SharedMemoryChunkQueue")
-        else:
-            self.logger.info("Reusing existing SharedMemoryChunkQueue")
-            
+
+        self.result_queue = (
+            SharedMemoryChunkQueue(name="chunk_queue", create=True)
+            if self.settings.use_memory_queue
+            else Queue()
+        )
+
         self.error_queue = Queue()
 
     def get_worker_count(self):
@@ -132,6 +131,7 @@ class Scheduler:
                 if self.workers_to_open
                 else Exception("No more workers to start")
             )
+            # in case it's a device pair remove starting bracket open
             worker_id = worker_id.lstrip("(").rstrip(")")
 
         self.logger.info(f"Starting worker {worker_id}")
@@ -143,9 +143,10 @@ class Scheduler:
             args=(
                 worker_id,
                 self.task_queue,
-                self.result_queue.name,
+                self.result_queue,
                 self.warmup_signals_queue,
                 self.error_queue,
+                self.result_queue.name,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -154,15 +155,13 @@ class Scheduler:
         # ✅ Initialize ALL required fields
         self.worker_info[worker_id] = {
             "process": p,
+            "start_time": time.time(),
             "restart_count": 0,
-            "last_restart": None,
-            "error_count": 0,  # ✅ ADD THIS
-            "is_ready": False,  # ✅ ADD THIS
-            "start_time": time.time(),  # ✅ ADD THIS (used in get_worker_info)
-            "ready_time": None,  # ✅ ADD THIS (used in get_worker_info)
+            "is_ready": False,
+            "error_count": 0,
         }
 
-        self.logger.info(f"Worker {worker_id} started")
+        self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
     def restart_worker(self, worker_id: str):
         """Restart a dead worker"""
@@ -195,28 +194,20 @@ class Scheduler:
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
-        """✅ Robust result listener that never stops on errors"""
-        self.logger.info("Result listener started")
-        consecutive_errors = 0
-        max_consecutive_errors = 100  # High threshold before giving up
-
         while self.listener_running:
             try:
                 # ✅ Non-blocking get
                 result = await self.result_queue.get_nowait()
 
                 if result is None:
-                    # Queue empty - yield control with exponential backoff to reduce contention
-                    # Start with 0.1ms, increase up to 5ms
-                    sleep_time = min(0.0001 * (2 ** min(consecutive_errors, 5)), 0.005)
+                    # Queue empty - yield control with backoff
+                    sleep_time = 0.005
                     await asyncio.sleep(sleep_time)
-                    consecutive_errors = min(consecutive_errors + 1, 10)  # Cap at 10
                     continue
 
                 worker_id, result_key, input_data = result
 
                 if result_key is None:
-                    self.logger.info("Received shutdown signal in result_listener")
                     self.listener_running = False
                     break
 
@@ -224,7 +215,6 @@ class Scheduler:
 
                 if queue_obj:
                     await queue_obj.put(input_data)
-                    consecutive_errors = 0  # Reset on success
                 else:
                     current_queues = list(self.result_queues.keys())
                     self.logger.warning(
@@ -232,59 +222,20 @@ class Scheduler:
                         f"Current queues: {current_queues}"
                     )
 
-                # Reset worker restart count
-                if worker_id is not None:
-                    worker_id_str = str(worker_id)
-                    if worker_id_str in self.worker_info:
-                        self.worker_info[worker_id_str]["restart_count"] = 0
-
-            except KeyError as e:
-                # ✅ Handle specific error without exc_info
-                consecutive_errors += 1
-                self.logger.error(
-                    f"KeyError in result_listener (#{consecutive_errors}): {e}\n"
-                )
-                await asyncio.sleep(0.1)
+                # # Reset worker restart count on successful job
+                # self.worker_info[worker_id]["restart_count"] = 0
 
             except Exception as e:
-                # ✅ Catch all other exceptions without stopping
-                consecutive_errors += 1
-                self.logger.error(
-                    f"Error in result_listener (#{consecutive_errors}): {e}\n"
-                )
-
-                # Only stop if we have too many consecutive errors
-                if consecutive_errors >= max_consecutive_errors:
-                    self.logger.error(
-                        f"Result listener has {consecutive_errors} consecutive errors, stopping"
-                    )
-                    break
-
-                await asyncio.sleep(0.1)
+                self.logger.error(f"Error in result_listener: {e}")
 
         self.logger.info("Result listener stopped")
 
     async def error_listener(self):
-        """✅ Robust error listener"""
-        consecutive_errors = 0
-        max_consecutive_errors = 100
-
         while self.listener_running:
             try:
                 worker_id, result_key, error = await asyncio.to_thread(
                     self.error_queue.get
                 )
-
-                # ✅ Defensive: Check if worker exists
-                if worker_id not in self.worker_info:
-                    self.logger.warning(
-                        f"Unknown worker_id {worker_id} in error_listener, skipping"
-                    )
-                    continue
-
-                # ✅ Defensive: Initialize error_count if missing
-                if "error_count" not in self.worker_info[worker_id]:
-                    self.worker_info[worker_id]["error_count"] = 0
 
                 self.worker_info[worker_id]["error_count"] += 1
 
@@ -309,36 +260,12 @@ class Scheduler:
                 if queue:
                     await queue.put(Exception(error))
 
-                consecutive_errors = 0  # Reset on success
-
-            except KeyError as e:
-                consecutive_errors += 1
-                self.logger.error(
-                    f"KeyError in error_listener (#{consecutive_errors}): {e}\n"
-                )
-                await asyncio.sleep(0.1)
-
             except Exception as e:
-                consecutive_errors += 1
-                self.logger.error(
-                    f"Error in error_listener (#{consecutive_errors}): {e}\n"
-                )
-
-                if consecutive_errors >= max_consecutive_errors:
-                    self.logger.error(
-                        f"Error listener has {consecutive_errors} consecutive errors, stopping"
-                    )
-                    break
-
-                await asyncio.sleep(0.1)
+                self.logger.error(f"Error in error_listener: {e}", exc_info=True)
 
         self.logger.info("Error listener stopped")
 
     async def device_warmup_listener(self):
-        """✅ Robust warmup listener"""
-        consecutive_errors = 0
-        max_consecutive_errors = 100
-
         while self.device_warmup_listener_running:
             try:
                 device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
@@ -346,13 +273,6 @@ class Scheduler:
                     break
 
                 self.logger.info(f"Device {device_id} is warmed up")
-
-                # ✅ Defensive: Check if worker exists
-                if device_id not in self.worker_info:
-                    self.logger.warning(
-                        f"Unknown device_id {device_id} in warmup_listener, skipping"
-                    )
-                    continue
 
                 # Thread-safe device tracking
                 self.worker_info[device_id]["is_ready"] = True
@@ -376,26 +296,10 @@ class Scheduler:
 
                 consecutive_errors = 0  # Reset on success
 
-            except KeyError as e:
-                consecutive_errors += 1
-                self.logger.error(
-                    f"KeyError in device_warmup_listener (#{consecutive_errors}): {e}\n"
-                )
-                await asyncio.sleep(0.1)
-
             except Exception as e:
-                consecutive_errors += 1
                 self.logger.error(
                     f"Error in device_warmup_listener (#{consecutive_errors}): {e}\n"
                 )
-
-                if consecutive_errors >= max_consecutive_errors:
-                    self.logger.error(
-                        f"Warmup listener has {consecutive_errors} consecutive errors, stopping"
-                    )
-                    break
-
-                await asyncio.sleep(0.1)
 
         self.logger.info("Device warmup listener is done")
 
@@ -505,7 +409,7 @@ class Scheduler:
             )
 
     async def worker_health_monitor(self):
-        """✅ Robust health monitor"""
+        """Monitor worker health and restart dead workers"""
         while self.monitor_running and self.is_ready:
             try:
                 dead_workers = []
@@ -548,7 +452,7 @@ class Scheduler:
                         )
                         if self.settings.allow_deep_reset:
                             self.logger.info("Trying deep restart of all workers")
-                            await self.deep_restart_workers()
+                            self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
 
