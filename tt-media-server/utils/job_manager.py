@@ -29,7 +29,7 @@ class Job:
     id: str
     job_type: str
     model: str
-    parameters: dict = field(default_factory=dict)
+    request_parameters: dict = field(default_factory=dict)
     status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
@@ -70,7 +70,7 @@ class Job:
             "status": self.status.value,
             "created_at": self.created_at,
             "model": self.model,
-            "parameters": self.parameters,
+            "request_parameters": self.request_parameters,
         }
         if self.completed_at:
             data["completed_at"] = self.completed_at
@@ -116,7 +116,7 @@ class JobManager:
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                parameters=request.model_dump(mode="json"),
+                request_parameters=request.model_dump(mode="json"),
             )
             self._jobs[job_id] = job
             self._logger.info(f"Job {job_id} created.")
@@ -125,9 +125,10 @@ class JobManager:
                 self.db.insert_job(
                     job_id=job.id,
                     job_type=job.job_type,
+                    model=job.model,
+                    request_parameters=job.request_parameters,
                     status=job.status.value,
                     created_at=job.created_at,
-                    parameters=job.parameters,
                 )
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
@@ -227,7 +228,7 @@ class JobManager:
                     job.id,
                     job.status.value,
                     completed_at=job.completed_at,
-                    error={"code": "processing_error", "message": str(e)},
+                    error_message={"code": "processing_error", "message": str(e)},
                 )
         finally:
             job._task = None
@@ -308,7 +309,7 @@ class JobManager:
                 job = Job(
                     id=db_job["id"],
                     job_type=db_job["job_type"],
-                    parameters=db_job["parameters"],
+                    request_parameters=db_job["request_parameters"],
                     status=JobStatus(db_job["status"]),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),

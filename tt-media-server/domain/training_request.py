@@ -6,6 +6,4 @@ from domain.base_request import BaseRequest
 
 
 class TrainingRequest(BaseRequest):
-    model_id: str
-    dataset_id: str
     hyperparameters: dict

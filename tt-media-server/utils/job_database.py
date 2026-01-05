@@ -35,7 +35,8 @@ class JobDatabase:
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 job_type TEXT NOT NULL,
-                parameters TEXT,
+                model TEXT NOT NULL,
+                request_parameters TEXT,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP,
                 completed_at TIMESTAMP,
@@ -49,7 +50,8 @@ class JobDatabase:
         self,
         job_id: str,
         job_type: str,
-        parameters: dict,
+        model: str,
+        request_parameters: dict,
         status: str,
         created_at: int,
     ) -> None:
@@ -59,9 +61,9 @@ class JobDatabase:
 
         cursor.execute(
             """
-            INSERT INTO jobs (id, job_type, status, parameters, created_at) VALUES (?, ?, ?, ?, ?)
+            INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (job_id, job_type, status, json.dumps(parameters), created_at),
+            (job_id, job_type, model, status, json.dumps(request_parameters), created_at),
         )
         conn.commit()
         conn.close()
@@ -119,8 +121,8 @@ class JobDatabase:
         for row in rows:
             # Convert row to dict and parse the JSON strings back to Python objects
             job_dict = dict(row)
-            if job_dict.get("parameters"):
-                job_dict["parameters"] = json.loads(job_dict["parameters"])
+            if job_dict.get("request_parameters"):
+                job_dict["request_parameters"] = json.loads(job_dict["request_parameters"])
             if job_dict.get("error_message"):
                 job_dict["error_message"] = json.loads(job_dict["error_message"])
             jobs.append(job_dict)
