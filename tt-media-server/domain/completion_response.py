@@ -10,8 +10,8 @@ from typing import Any, Dict, Literal, Optional, TypedDict, Union
 @dataclass
 class CompletionStreamChunk:
     text: str
-    index: int
-    finish_reason: Optional[str]
+    index: Optional[int] = None
+    finish_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {

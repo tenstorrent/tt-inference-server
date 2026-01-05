@@ -288,7 +288,9 @@ def main():
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+    assert all_params, (
+        f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+    )
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
