@@ -356,11 +356,16 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
+    # Use constraints file to prevent torch downgrade when installing mteb[openai].
+    # See: https://github.com/tenstorrent/tt-inference-server/issues/1652
+    constraints_file = default_venv_path / "torch_constraints.txt"
+    constraints_file.write_text("torch>=2.9.0\n")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'mteb[openai]' tiktoken openai",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"--extra-index-url https://download.pytorch.org/whl/cpu "
+        f"--constraint {constraints_file} 'mteb[openai]' tiktoken openai",
         logger=logger,
     )
-
     return True
 
 
