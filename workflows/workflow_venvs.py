@@ -338,9 +338,6 @@ def setup_evals_run_script(
         logger=logger,
     )
     # Use constraints file to prevent torch downgrade when installing mteb[openai].
-    # sentence-transformers (dep of mteb) has torch>=1.11.0 with no upper bound,
-    # but mteb's transitive deps can cause torch to be downgraded to 2.8.x which
-    # breaks torchvision 0.24.1+ (requires torch>=2.9).
     # See: https://github.com/tenstorrent/tt-inference-server/issues/1652
     constraints_file = default_venv_path / "torch_constraints.txt"
     constraints_file.write_text("torch>=2.9.0\n")
