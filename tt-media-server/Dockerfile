@@ -177,7 +177,7 @@ RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
     && pip install --no-cache-dir setuptools_scm cmake ninja packaging"
 RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
     && if [ \"${TT_XLA_VERSION}\" = \"latest\" ]; then \
-        pip install --no-cache-dir pjrt-plugin-tt vllm-tt --no-build-isolation --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
+        pip install --no-cache-dir pjrt-plugin-tt vllm-tt --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
     else \
         pip install --no-cache-dir pjrt-plugin-tt==${TT_XLA_VERSION} vllm-tt==${TT_XLA_VERSION} --no-build-isolation --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
     fi"
