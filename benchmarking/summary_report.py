@@ -29,7 +29,7 @@ def format_backend_value(backend: str) -> str:
     if backend == "vllm":
         return "vLLM"
     elif backend == "genai-perf":
-        return "genai-perf"
+        return "genai"
     else:
         return backend if backend else NOT_MEASURED_STR
 
