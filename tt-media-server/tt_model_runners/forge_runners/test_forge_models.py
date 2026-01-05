@@ -86,9 +86,9 @@ class TestForgeRunners:
 
         try:
             runner = runner_class(device_id="0")
-            await runner.load_model()
+            await runner.warmup()
             requests = create_image_search_request()
-            result = runner.run_inference(requests)
+            result = runner.run(requests)
 
             # Print runner class and result for debugging/expected output generation
             print(f"\n=== {runner_class.__name__} in {mode} mode ===")

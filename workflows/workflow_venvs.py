@@ -306,6 +306,19 @@ def setup_evals_audio(
     return True
 
 
+def setup_evals_embedding(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_evals_embedding() ...")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} mteb openai",
+        logger=logger,
+    )
+    return True
+
+
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -343,6 +356,11 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'mteb[openai]' tiktoken openai",
+        logger=logger,
+    )
+
     return True
 
 
@@ -483,6 +501,10 @@ _venv_config_list = [
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_AUDIO, setup_function=setup_evals_audio
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+        setup_function=setup_evals_embedding,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,

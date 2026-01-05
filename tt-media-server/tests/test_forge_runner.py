@@ -45,9 +45,9 @@ class TestForgeRunner:
             assert "ForgeRunner" in type(runner).__name__
 
     @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
-    def test_load_model(self, runner):
+    def test_warmup(self, runner):
         """Test model loading"""
-        with patch.object(runner.loader, "load_model") as mock_load_model, patch.object(
+        with patch.object(runner.loader, "warmup") as mock_warmup, patch.object(
             runner.loader, "load_inputs"
         ) as mock_load_inputs, patch("forge.compile") as mock_compile:
             mock_model = Mock()
@@ -55,16 +55,16 @@ class TestForgeRunner:
             mock_compiled = Mock()
             mock_output = Mock()
 
-            mock_load_model.return_value = mock_model
+            mock_warmup.return_value = mock_model
             mock_load_inputs.return_value = mock_inputs
             mock_compile.return_value = mock_compiled
             mock_compiled.return_value = mock_output
 
-            result = asyncio.run(runner.load_model())
+            result = asyncio.run(runner.warmup())
 
             assert result is True
             assert runner.compiled_model == mock_compiled
-            mock_load_model.assert_called_once()
+            mock_warmup.assert_called_once()
             mock_load_inputs.assert_called_once()
             mock_compile.assert_called_once_with(
                 mock_model, sample_inputs=[mock_inputs]
@@ -90,7 +90,7 @@ class TestForgeRunner:
         assert device == {"device_id": "MockDevice"}
 
     @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
-    def test_run_inference(self, runner):
+    def test_run(self, runner):
         """Test inference execution"""
         with patch.object(
             runner.loader, "load_inputs"
@@ -105,7 +105,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
 
-            result = runner.run_inference("test prompt")
+            result = runner.run("test prompt")
 
             assert (
                 result
@@ -116,7 +116,7 @@ class TestForgeRunner:
             mock_print_results.assert_called_once_with(mock_output)
 
     @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
-    def test_run_inference_default_steps(self, runner):
+    def test_run_default_steps(self, runner):
         """Test inference with default parameters"""
         with patch.object(
             runner.loader, "load_inputs"
@@ -131,7 +131,7 @@ class TestForgeRunner:
             mock_load_inputs.return_value = mock_inputs
             runner.compiled_model = mock_compiled
 
-            result = runner.run_inference("test prompt")
+            result = runner.run("test prompt")
 
             assert (
                 result

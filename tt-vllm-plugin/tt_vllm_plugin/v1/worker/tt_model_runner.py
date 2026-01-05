@@ -1090,6 +1090,11 @@ class TTModelRunner:
                     read_from_device=True,
                 )
 
+            # tt_out is a tuple of (logits, logprobs)
+            # v1 currently doesn't handle logprobs from TT models
+            if isinstance(tt_out, tuple):
+                tt_out = tt_out[0]
+
             sampled_token_ids_per_dp: list[torch.Tensor] = []
             start = 0
             for dp_rank, sz in enumerate(batch_size_per_dp):

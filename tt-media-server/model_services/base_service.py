@@ -4,13 +4,17 @@
 
 import asyncio
 from abc import ABC
+from typing import Any, Optional
 
+from config.constants import JobTypes
 from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.hugging_face_utils import HuggingFaceUtils
+from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
 
@@ -19,6 +23,9 @@ class BaseService(ABC):
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
+        self._job_manager = get_job_manager()
+        if settings.download_weights_from_service:
+            HuggingFaceUtils().download_weights()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int
@@ -132,12 +139,12 @@ class BaseService(ABC):
 
         try:
             result = await asyncio.wait_for(
-                queue.get(), timeout=settings.inference_timeout_seconds
+                queue.get(), timeout=settings.request_processing_timeout_seconds
             )
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.inference_timeout_seconds}s"
+                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
             )
             raise
         except Exception as e:
@@ -160,15 +167,11 @@ class BaseService(ABC):
         try:
             # Add extra time based on request duration if available (e.g., audio duration)
             # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            dynamic_timeout = settings.inference_timeout_seconds
+            dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
-            self.logger.debug(
-                f"Using timeout of {dynamic_timeout}s for streaming request"
-            )
 
-            chunk_count = 0
             while True:
                 chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
@@ -181,9 +184,6 @@ class BaseService(ABC):
                         and formatted_chunk.text
                     ):
                         yield formatted_chunk
-
-                    # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
-                    chunk_count += 1
 
                 elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
                     if chunk.get("return", False):
@@ -202,7 +202,7 @@ class BaseService(ABC):
 
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
+                f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
             )
             raise
         except Exception as e:
@@ -212,3 +212,24 @@ class BaseService(ABC):
             raise
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
+
+    async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
+        return await self._job_manager.create_job(
+            job_id=request._task_id,
+            job_type=job_type,
+            model=settings.model_weights_path,
+            request=request,
+            task_function=self.process_request,
+        )
+
+    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
+        return self._job_manager.get_all_jobs_metadata(job_type)
+
+    def get_job_metadata(self, job_id: str) -> Optional[dict]:
+        return self._job_manager.get_job_metadata(job_id)
+
+    def get_job_result(self, job_id: str) -> Optional[Any]:
+        return self._job_manager.get_job_result(job_id)
+
+    def cancel_job(self, job_id: str) -> bool:
+        return self._job_manager.cancel_job(job_id)

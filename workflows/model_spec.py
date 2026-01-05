@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Union
 from workflows.utils import (
     get_repo_root_path,
     get_version,
+    parse_commits_from_docker_image,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
@@ -20,7 +21,9 @@ from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 VERSION = get_version()
 
 
-def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) -> str:
+def generate_docker_tag(
+    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+) -> str:
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
@@ -29,10 +32,13 @@ def generate_docker_tag(version: str, tt_metal_commit: str, vllm_commit: str) ->
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: str
+    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
-    _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    if vllm_commit is None:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
+    else:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -243,6 +249,12 @@ forge_vllm_plugin_impl = ImplSpec(
     impl_name="forge-vllm-plugin",
     repo_url="https://github.com/tenstorrent/tt-xla/tree/main",
     code_path="integrations/vllm_plugin",
+)
+tt_vllm_plugin_impl = ImplSpec(
+    impl_id="tt_vllm_plugin",
+    impl_name="tt-vllm-plugin",
+    repo_url="https://github.com/dmadicTT/tt-vllm-plugin",
+    code_path="tt_vllm_plugin",
 )
 
 
@@ -750,6 +762,12 @@ class ModelSpec:
 
         if args.override_docker_image:
             object.__setattr__(self, "docker_image", args.override_docker_image)
+            # Parse commits from docker image tag and update model_spec
+            tt_metal_commit, vllm_commit = parse_commits_from_docker_image(
+                args.override_docker_image
+            )
+            object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
+            object.__setattr__(self, "vllm_commit", vllm_commit)
 
 
 @dataclass(frozen=True)
@@ -1209,8 +1227,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="fbbbd2d",
-        vllm_commit="7a9b86f",
+        tt_metal_commit="5491d3c",
+        vllm_commit="f49265a",
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1472,8 +1490,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="fbbbd2d",
-        vllm_commit="7a9b86f",
+        tt_metal_commit="5491d3c",
+        vllm_commit="f49265a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1870,8 +1888,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="fbbbd2d",
-        vllm_commit="7a9b86f",
+        tt_metal_commit="5491d3c",
+        vllm_commit="f49265a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1882,7 +1900,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
+                    "sample_on_device_mode": "all",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1947,11 +1965,10 @@ spec_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="5491d3c",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         # img2img uses the same weights as base SDXL
@@ -1986,11 +2003,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2048,11 +2064,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2074,11 +2089,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="e95ffa5",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2100,11 +2114,10 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=["Motif-Technologies/Motif-Image-6B-Preview"],
-        tt_metal_commit="32812e9",
+        tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
         model_type=ModelType.CNN,
         display_name="motif-image-6b-preview",
         inference_engine=InferenceEngine.MEDIA.value,
@@ -2125,12 +2138,61 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
+        weights=["genmo/mochi-1-preview"],
+        tt_metal_commit="c180ef7",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.CNN,
+        display_name="mochi-1-preview",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
+        tt_metal_commit="c180ef7",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.CNN,
+        display_name="wan2.2-t2v-a14b-diffusers",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="fbbbd2d",
+        tt_metal_commit="5491d3c",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.AUDIO,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2154,6 +2216,63 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["BAAI/bge-large-en-v1.5"],
+        tt_metal_commit="2496be4",
+        impl=tt_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.MEDIA.value,
+        display_name="BGE-Large-EN-v1.5",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "3072",
+                    "MAX_MODEL_LENGTH": "384",
+                    "MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "3072",
+                    "MAX_MODEL_LENGTH": "384",
+                    "MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "3072",
+                    "MAX_MODEL_LENGTH": "384",
+                    "MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "3072",
+                    "MAX_MODEL_LENGTH": "384",
+                    "MIN_MODEL_LENGTH": "32",
+                },
+            ),
+        ],
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-4B"],
@@ -2231,7 +2350,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2256,7 +2375,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -2281,7 +2400,107 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["efficientnet"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="efficientnet",
+        inference_engine=InferenceEngine.FORGE.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["segformer"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="segformer",
+        inference_engine=InferenceEngine.FORGE.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["vit"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="vit",
+        inference_engine=InferenceEngine.FORGE.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["unet"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.CNN,
+        display_name="unet",
+        inference_engine=InferenceEngine.FORGE.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),

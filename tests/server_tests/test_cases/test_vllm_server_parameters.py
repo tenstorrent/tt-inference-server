@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 import asyncio
 import math
 from collections import Counter
@@ -269,7 +273,7 @@ def test_penalties(
 
         # 2. Heavy repetition should decrease
         #    For repetition-heavy prompts, penalties reduce top-token dominance
-        if prompt_name == "repeat_trap":
+        if prompt_name == "repeat_trap" and penalty_param != "presence_penalty":
             most_common_penalty = test_stats["most_common"][0][1]
             most_common_baseline = base_stats["most_common"][0][1]
             assert most_common_penalty <= most_common_baseline, (

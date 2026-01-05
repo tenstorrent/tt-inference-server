@@ -18,8 +18,8 @@ from utils.decorators import log_execution_time
 
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     def _load_pipeline(self):
         self.pipeline = DiffusionPipeline.from_pretrained(
@@ -43,7 +43,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         )
 
     def _warmup_inference_block(self):
-        self.run_inference(
+        self.run(
             [
                 ImageGenerateRequest.model_construct(
                     prompt="Sunrise on a beach",
@@ -76,7 +76,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest]):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )

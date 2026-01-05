@@ -12,70 +12,17 @@ CI runs, extracting model specifications, performance reports, and status inform
 
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Optional, Tuple
 
+# Add project root to Python path to allow imports from workflows
+import sys
+
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(project_root))
+from workflows.utils import parse_commits_from_docker_image
+
 logger = logging.getLogger(__name__)
-
-
-def parse_commits_from_docker_image(
-    docker_image: str,
-) -> Tuple[Optional[str], Optional[str]]:
-    """Extract tt-metal and vllm commits from docker image tag.
-
-    Supports two tag formats:
-
-    1. Format for LLMs: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
-       Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
-
-    2. Format for media server: version-tt_metal_commit(40)
-       Example: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
-       (vllm_commit will be None for this format)
-
-    Args:
-        docker_image: Full docker image string with tag
-
-    Returns:
-        Tuple of (tt_metal_commit, vllm_commit) or (None, None) if parsing fails
-    """
-    if not docker_image or ":" not in docker_image:
-        return None, None
-
-    try:
-        # Extract tag portion after the last ':'
-        tag = docker_image.split(":")[-1]
-
-        # First try: Pattern to match format with both metal and vllm commits: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
-        # Example: 0.4.0-4733994fc8bea3db5a1ba0aa5b18fd9f658708c0-47f6635-56816832543
-        vllm_server_pattern = r"^([0-9.]+)-([0-9a-fA-F]{40})-([0-9a-fA-F]{7})-(\d+)$"
-        match = re.match(vllm_server_pattern, tag)
-
-        if match:
-            version, tt_metal_commit, vllm_commit, timestamp = match.groups()
-            logger.info(
-                f"Parsed commits from docker image tag: tt-metal={tt_metal_commit}, vllm={vllm_commit}"
-            )
-            return tt_metal_commit, vllm_commit
-
-        # Second try: Pattern to match format with opnly metal commit: version-tt_metal_commit(40)
-        # Example: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
-        media_server_pattern = r"^([0-9.]+)-([0-9a-fA-F]{40})$"
-        match = re.match(media_server_pattern, tag)
-
-        if match:
-            version, tt_metal_commit = match.groups()
-            logger.info(
-                f"Parsed only tt-metal commit from docker image tag: tt-metal={tt_metal_commit}"
-            )
-            return tt_metal_commit, None
-
-        logger.debug(f"Docker image tag does not match expected format: {tag}")
-        return None, None
-
-    except Exception as e:
-        logger.debug(f"Failed to parse commits from docker image '{docker_image}': {e}")
-        return None, None
 
 
 def latest_json_by_mtime(dir_path: Path, pattern: str) -> Optional[Path]:

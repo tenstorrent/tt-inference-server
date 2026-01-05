@@ -18,6 +18,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
 )
+from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 
@@ -44,28 +45,33 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
+    download_weights_from_service: bool = True
 
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
+    use_dynamic_batcher: bool = False
 
     # Worker management settings
-    new_device_delay_seconds: int = 15
-    new_runner_delay_seconds: int = 5
+    new_device_delay_seconds: int = 0
+    new_runner_delay_seconds: int = 2
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
     default_throttle_level: str = "5"
 
     # Timeout settings
-    inference_timeout_seconds: int = 1000
+    request_processing_timeout_seconds: int = 1000
 
-    # Text processing settings
-    min_context_length: int = 32
-    max_model_length: int = 128
-    max_num_batched_tokens: int = 128
-    max_num_seqs: int = 1
+    # Job management settings
+    max_jobs: int = 10000
+    job_cleanup_interval_seconds: int = 300
+    job_retention_seconds: int = 86400
+    job_max_stuck_time_seconds: int = 10800
+    enable_job_persistence: bool = False
+
+    vllm: VLLMSettings = VLLMSettings()
 
     # Image processing settings
     image_return_format: str = "JPEG"
@@ -108,6 +114,23 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Model service could not be deduced from model runner {self.model_runner}."
                 )
+
+        # set model weights path using model name
+        if self.model_weights_path is None or self.model_weights_path == "":
+            # Convert string to enum first
+            model_runner_enum = ModelRunners(self.model_runner)
+
+            # Use dictionary key access
+            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+
+            if model_names_set:
+                # Get first model name from the set
+                model_name = list(model_names_set)[0]
+                if model_name:
+                    supported_model = getattr(SupportedModels, model_name.name, None)
+                    if supported_model:
+                        self.model_weights_path = supported_model.value
+
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()

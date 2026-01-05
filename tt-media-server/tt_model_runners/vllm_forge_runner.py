@@ -8,36 +8,36 @@ import traceback
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind
 
 
-class VLLMForgeRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-
-    def set_device(self):
-        return {}
+class VLLMForgeRunner(BaseDeviceRunner):
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
 
     @log_execution_time(
         "VLLM Forge model load",
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
-            model="meta-llama/Llama-3.1-8B-Instruct",
-            max_model_len=65536,
-            max_num_seqs=32,
+            model=self.settings.vllm.model,
+            max_model_len=self.settings.vllm.max_model_length,
+            max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
+            max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
-            block_size=64,
-            max_num_batched_tokens=65536,
-            seed=9472,
+            gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
+            additional_config={
+                "enable_const_eval": False,
+                "min_context_len": self.settings.vllm.min_context_length,
+            },
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
@@ -56,23 +56,43 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[CompletionRequest]):
+    def run(self, requests: list[CompletionRequest]):
         """Synchronous wrapper for async inference"""
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._run_inference_async(requests))
+        return loop.run_until_complete(self._run_async(requests))
 
-    async def _run_inference_async(self, requests: list[CompletionRequest]):
+    async def _run_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
 
             request = requests[0]
+            # Harcode those sampling params
+            # SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], include_stop_str_in_output=False, ignore_eos=False, max_tokens=231, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, truncate_prompt_tokens=None, guided_decoding=None, extra_args=None)
             sampling_params = SamplingParams(
-                temperature=request.temperature if request.temperature else 0.8,
-                top_p=request.top_p if request.top_p else 0.95,
-                max_tokens=request.max_tokens if request.max_tokens else 16,
-                output_kind=RequestOutputKind.DELTA
-                if request.stream
-                else RequestOutputKind.FINAL_ONLY,
+                n=1,
+                presence_penalty=0.0,
+                frequency_penalty=0.0,
+                repetition_penalty=1.0,
+                seed=None,
+                stop=[],
+                stop_token_ids=[],
+                bad_words=[],
+                include_stop_str_in_output=False,
+                ignore_eos=False,
+                min_tokens=0,
+                logprobs=None,
+                prompt_logprobs=None,
+                temperature=0.0,
+                top_p=1.0,
+                top_k=0,
+                min_p=0.0,
+                max_tokens=request.max_tokens if request.max_tokens else 65536,
+                skip_special_tokens=True,
+                spaces_between_special_tokens=True,
+                truncate_prompt_tokens=None,
+                guided_decoding=None,
+                extra_args=None,
+                output_kind=RequestOutputKind.DELTA,
             )
             if request.stream:
                 return self._generate_streaming(request, sampling_params)
@@ -90,30 +110,49 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest, sampling_params: SamplingParams
     ):
-        self.logger.info(f"Device {self.device_id}: Starting streaming generation")
+        task_id = request._task_id
+        chunk_type = "streaming_chunk"
+        final_type = "final_result"
 
-        generated_text = ""
+        chunks = []
+        chunks_append = chunks.append
+
+        strip_eos = TextUtils.strip_eos
+
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+            request.prompt, sampling_params, task_id
         ):
-            for output in request_output.outputs:
-                cleaned_text = TextUtils.clean_text(output.text)
+            outputs = request_output.outputs
+            if not outputs:
+                continue
 
-                # Yield non-empty chunks
-                if not cleaned_text:
+            for output in outputs:
+                chunk_text = output.text
+                if not chunk_text:
                     continue
-                generated_text += cleaned_text
+
+                if chunk_text.endswith(("</s>", "<|endoftext|>", "<|im_end|>")):
+                    chunk_text = strip_eos(chunk_text)
+                    if not chunk_text:
+                        continue
+
+                chunks_append(chunk_text)
 
                 yield {
-                    "type": "streaming_chunk",
-                    "chunk": CompletionStreamChunk(text=cleaned_text),
-                    "task_id": request._task_id,
+                    "type": chunk_type,
+                    "chunk": CompletionStreamChunk(text=chunk_text),
+                    "task_id": task_id,
                 }
 
+        if chunks:
+            final_text = TextUtils.clean_text("".join(chunks))
+        else:
+            final_text = ""
+
         yield {
-            "type": "final_result",
-            "result": CompletionStreamChunk(text=generated_text),
-            "task_id": request._task_id,
+            "type": final_type,
+            "result": CompletionStreamChunk(text=final_text),
+            "task_id": task_id,
             "return": False,
         }
 
@@ -124,13 +163,14 @@ class VLLMForgeRunner(BaseMetalDeviceRunner):
     ):
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
-        generated_text = ""
+        generated_text = []
         async for request_output in self.llm_engine.generate(
             request.prompt, sampling_params, request._task_id
         ):
             if request_output.outputs:
-                generated_text = TextUtils.clean_text(request_output.outputs[0].text)
-                break
+                generated_text.append(request_output.outputs[0].text)
+
+        generated_text = "".join(generated_text)
 
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 

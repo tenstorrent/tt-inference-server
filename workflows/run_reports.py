@@ -1070,6 +1070,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
+        or model_spec.model_type.name == ModelType.EMBEDDING.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
@@ -1619,6 +1620,31 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     return reformated_benchmarks_release_data
 
 
+def benchmarks_release_data_format_embedding(
+    model_spec, device_str, benchmark_summary_data
+):
+    """Convert the benchmark release data to the desired format for EMBEDDING models"""
+
+    return [
+        {
+            "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+            "model": model_spec.model_name,
+            "model_name": model_spec.model_name,
+            "model_id": model_spec.model_id,
+            "backend": model_spec.model_type.name.lower(),
+            "device": device_str,
+            "num_requests": benchmark_summary_data.get("num_requests", 1),
+            "ISL": benchmark_summary_data.get("input_sequence_length", 0),
+            "concurrency": benchmark_summary_data.get("max_con", 0),
+            "tput_user": benchmark_summary_data.get("mean_tps", 0),
+            "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
+            "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
+            "filename": benchmark_summary_data.get("filename", ""),
+            "task_type": model_spec.model_type.name.lower(),
+        }
+    ]
+
+
 def add_target_checks_cnn_and_image(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
@@ -1657,27 +1683,73 @@ def add_target_checks_cnn_and_image(
     return target_checks
 
 
-def calculate_target_metrics(avg_ttft, target_ttft):
-    """Calculate TTFT metrics for functional, complete, and target thresholds.
+def add_target_checks_embedding(metrics):
+    """Add target checks for EMBEDDING models based on evals and benchmark data."""
+    logger.info("Adding target_checks to EMBEDDING benchmark release data")
+
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "tput_user": metrics["functional_tput_user"],
+            "tput_user_ratio": metrics["functional_tput_user_ratio"],
+            "tput_user_check": metrics["functional_tput_user_check"],
+            "tput_prefill": metrics["functional_tput_prefill"],
+            "tput_prefill_ratio": metrics["functional_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["functional_tput_prefill_check"],
+            "e2el_ms": metrics["functional_e2el_ms"],
+            "e2el_ms_ratio": metrics["functional_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["functional_e2el_ms_check"],
+        },
+        "complete": {
+            "tput_user": metrics["complete_tput_user"],
+            "tput_user_ratio": metrics["complete_tput_user_ratio"],
+            "tput_user_check": metrics["complete_tput_user_check"],
+            "tput_prefill": metrics["complete_tput_prefill"],
+            "tput_prefill_ratio": metrics["complete_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["complete_tput_prefill_check"],
+            "e2el_ms": metrics["complete_e2el_ms"],
+            "e2el_ms_ratio": metrics["complete_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["complete_e2el_ms_check"],
+        },
+        "target": {
+            "tput_user": metrics["target_tput_user"],
+            "tput_user_ratio": metrics["target_tput_user_ratio"],
+            "tput_user_check": metrics["target_tput_user_check"],
+            "tput_prefill": metrics["target_tput_prefill"],
+            "tput_prefill_ratio": metrics["target_tput_prefill_ratio"],
+            "tput_prefill_check": metrics["target_tput_prefill_check"],
+            "e2el_ms": metrics["target_e2el_ms"],
+            "e2el_ms_ratio": metrics["target_e2el_ms_ratio"],
+            "e2el_ms_check": metrics["target_e2el_ms_check"],
+        },
+    }
+
+    return target_checks
+
+
+def calculate_target_metrics(metrics_config):
+    """Calculate metrics for functional, complete, and target thresholds.
 
     Args:
-        avg_ttft: Average TTFT from benchmark results
-        target_ttft: Target TTFT from performance reference
+        metrics_config: List of metric configurations. Each config is a dict with:
+            - avg_metric: Average metric from benchmark results
+            - target_metric: Target metric from performance reference
+            - field_name: Name of the metric field
+            - is_ascending_metric: If True, higher values are preffered (e.g., throughput).
+                               If False, lower values are preffered (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
     """
 
-    def get_ttft_ratio_and_check(avg_ttft, ref_ttft):
-        if not ref_ttft:
+    def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
+        if not ref_metric:
             return "Undefined", "Undefined"
-        ratio = avg_ttft / ref_ttft
-        if ratio < 1.0:
-            check = 2
-        elif ratio > 1.0:
-            check = 3
+        ratio = avg_metric / ref_metric
+        if is_ascending_metric:
+            check = 2 if ratio > 1.0 else 3
         else:
-            check = "Undefined"
+            check = 2 if ratio < 1.0 else 3
         return ratio, check
 
     # Define target level multipliers
@@ -1688,13 +1760,21 @@ def calculate_target_metrics(avg_ttft, target_ttft):
     }
 
     metrics = {}
-    for level, multiplier in target_multipliers.items():
-        level_ttft = target_ttft * multiplier
-        ratio, check = get_ttft_ratio_and_check(avg_ttft, level_ttft)
+    for config in metrics_config:
+        avg_metric = config["avg_metric"]
+        target_metric = config["target_metric"]
+        field_name = config["field_name"]
+        is_ascending_metric = config.get("is_ascending_metric", False)
 
-        metrics[f"{level}_ttft"] = level_ttft
-        metrics[f"{level}_ttft_ratio"] = ratio
-        metrics[f"{level}_ttft_check"] = check
+        for level, multiplier in target_multipliers.items():
+            level_metric = target_metric * multiplier
+            ratio, check = get_metric_ratio_and_check(
+                avg_metric, level_metric, is_ascending_metric
+            )
+
+            metrics[f"{level}_{field_name}"] = level_metric
+            metrics[f"{level}_{field_name}_ratio"] = ratio
+            metrics[f"{level}_{field_name}_check"] = check
 
     return metrics
 
@@ -1926,7 +2006,17 @@ def main():
             )
 
             # Calculate all target metrics using centralized function
-            metrics = calculate_target_metrics(avg_ttft, target_ttft)
+            # TTFT: lower is better, so is_ascending_metric=False
+            metrics = calculate_target_metrics(
+                [
+                    {
+                        "avg_metric": avg_ttft,
+                        "target_metric": target_ttft,
+                        "field_name": "ttft",
+                        "is_ascending_metric": False,
+                    },
+                ]
+            )
 
             target_checks = {}
             if (
@@ -1936,14 +2026,6 @@ def main():
                 logger.info(
                     "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
                 )
-                target_checks = add_target_checks_cnn_and_image(
-                    targets,
-                    evals_release_data,
-                    benchmark_summary_data,
-                    metrics,
-                )
-            elif model_spec.model_type.name == "EMBEDDING":
-                logger.info("Adding target_checks for Embedding benchmark release data")
                 target_checks = add_target_checks_cnn_and_image(
                     targets,
                     evals_release_data,
@@ -1979,6 +2061,57 @@ def main():
                             logger.warning(
                                 f"Could not read server test file {json_file}: {e}"
                             )
+        elif model_spec.model_type.name == ModelType.EMBEDDING.name:
+            # Get performance targets using the shared utility
+            # Extract the device we are running on
+            device_str = cli_args.get("device").lower()
+            targets = get_performance_targets(
+                model_spec.model_name,
+                device_str,
+                model_type=model_spec.model_type.name,
+            )
+            logger.info(f"Performance targets: {targets}")
+
+            benchmark_summary_data = benchmarks_release_data[0]
+
+            avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
+            avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
+            avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
+
+            metrics = calculate_target_metrics(
+                [
+                    {
+                        "avg_metric": avg_tput_user,
+                        "target_metric": targets.tput_user,
+                        "field_name": "tput_user",
+                        "is_ascending_metric": True,
+                    },
+                    {
+                        "avg_metric": avg_tput_prefill,
+                        "target_metric": targets.tput_prefill,
+                        "field_name": "tput_prefill",
+                        "is_ascending_metric": True,
+                    },
+                    {
+                        "avg_metric": avg_e2el_ms,
+                        "target_metric": targets.e2el_ms,
+                        "field_name": "e2el_ms",
+                        "is_ascending_metric": False,
+                    },
+                ]
+            )
+
+            logger.info("Adding target_checks for Embedding benchmark release data")
+            target_checks = add_target_checks_embedding(
+                metrics,
+            )
+
+            benchmarks_release_data = benchmarks_release_data_format_embedding(
+                model_spec, device_str, benchmark_summary_data
+            )
+
+            if benchmarks_release_data:
+                benchmarks_release_data[0]["target_checks"] = target_checks
 
         # Build the final JSON output
         output_data = {

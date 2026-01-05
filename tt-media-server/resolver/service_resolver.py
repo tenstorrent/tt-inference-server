@@ -2,11 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import threading
+
 from config.constants import ModelServices
 from config.settings import settings
 from model_services.base_service import BaseService
 from utils.logger import TTLogger
-import threading
 
 # Supported model services with factory functions
 _SUPPORTED_MODEL_SERVICES = {
@@ -25,6 +26,9 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.VIDEO: lambda: __import__(
         "model_services.video_service", fromlist=["VideoService"]
     ).VideoService(),
+    ModelServices.TRAINING: lambda: __import__(
+        "model_services.training_service", fromlist=["TrainingService"]
+    ).TrainingService(),
 }
 
 # Singleton holders per service type
