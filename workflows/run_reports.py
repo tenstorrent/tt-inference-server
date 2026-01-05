@@ -18,7 +18,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import cap_benchmark_params
-from benchmarking.summary_report import generate_report, get_markdown_table
+from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
@@ -35,6 +35,14 @@ from workflows.workflow_config import (
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
+
+from benchmarking.summary_report import (
+    generate_report as benchmark_generate_report_helper,
+)
+from stress_tests.stress_tests_summary_report import (
+    generate_report as stress_test_generate_report_helper,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -390,8 +398,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
         )
     # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata, model_spec=model_spec
+    release_str, release_raw, disp_md_path, stats_file_path = (
+        benchmark_generate_report_helper(
+            files, output_dir, report_id, metadata, model_spec=model_spec
+        )
     )
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
@@ -1203,6 +1213,368 @@ def generate_evals_markdown_table(results, meta_data) -> str:
     return markdown
 
 
+def generate_stress_tests_markdown_table(release_raw, model_config):
+    """Generate markdown table for test results with mean values only (original format)."""
+
+    # Define display columns: ISL, OSL, Concurrency, Num Prompts
+    # Then mean values for TTFT, TPOT, ITL, E2EL
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+        # Mean metrics only (original format)
+        ("ttft", "TTFT (ms)"),
+        ("tpot", "TPOT (ms)"),
+        ("itl", "ITL (ms)"),
+        ("e2el", "E2EL (ms)"),
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        "TTFT (ms)": 1,
+        "TPOT (ms)": 1,
+        "ITL (ms)": 1,
+        "E2EL (ms)": 1,
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
+    """Generate detailed markdown table with percentile statistics for test results."""
+
+    # Define display columns in requested order:
+    # ISL, OSL, Concurrency, Num Prompts
+    # Then for each metric (ttft, tpot, itl, e2el): mean, p05, p25, p50, p95, p99
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+        # TTFT metrics: mean, p05, p25, p50, p95, p99
+        ("ttft", "TTFT (ms)"),
+        ("p5_ttft", "P5 TTFT (ms)"),
+        ("p25_ttft", "P25 TTFT (ms)"),
+        ("p50_ttft", "P50 TTFT (ms)"),
+        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p99_ttft", "P99 TTFT (ms)"),
+        # TPOT metrics: mean, p05, p25, p50, p95, p99
+        ("tpot", "TPOT (ms)"),
+        ("p5_tpot", "P5 TPOT (ms)"),
+        ("p25_tpot", "P25 TPOT (ms)"),
+        ("p50_tpot", "P50 TPOT (ms)"),
+        ("p95_tpot", "P95 TPOT (ms)"),
+        ("p99_tpot", "P99 TPOT (ms)"),
+        # ITL metrics: mean, p05, p25, p50, p95, p99
+        ("itl", "ITL (ms)"),
+        ("p5_itl", "P5 ITL (ms)"),
+        ("p25_itl", "P25 ITL (ms)"),
+        ("p50_itl", "P50 ITL (ms)"),
+        ("p95_itl", "P95 ITL (ms)"),
+        ("p99_itl", "P99 ITL (ms)"),
+        # E2EL metrics: mean, p05, p25, p50, p95, p99
+        ("e2el", "E2EL (ms)"),
+        ("p5_e2el", "P5 E2EL (ms)"),
+        ("p25_e2el", "P25 E2EL (ms)"),
+        ("p50_e2el", "P50 E2EL (ms)"),
+        ("p95_e2el", "P95 E2EL (ms)"),
+        ("p99_e2el", "P99 E2EL (ms)"),
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards based on benchmarking standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        # TTFT
+        "TTFT (ms)": 1,
+        "P5 TTFT (ms)": 1,
+        "P25 TTFT (ms)": 1,
+        "P50 TTFT (ms)": 1,
+        "P95 TTFT (ms)": 1,
+        "P99 TTFT (ms)": 1,
+        # TPOT
+        "TPOT (ms)": 1,
+        "P5 TPOT (ms)": 1,
+        "P25 TPOT (ms)": 1,
+        "P50 TPOT (ms)": 1,
+        "P95 TPOT (ms)": 1,
+        "P99 TPOT (ms)": 1,
+        # ITL
+        "ITL (ms)": 1,
+        "P5 ITL (ms)": 1,
+        "P25 ITL (ms)": 1,
+        "P50 ITL (ms)": 1,
+        "P95 ITL (ms)": 1,
+        "P99 ITL (ms)": 1,
+        # E2EL
+        "E2EL (ms)": 1,
+        "P5 E2EL (ms)": 1,
+        "P25 E2EL (ms)": 1,
+        "P50 E2EL (ms)": 1,
+        "P95 E2EL (ms)": 1,
+        "P99 E2EL (ms)": 1,
+        # Throughput
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "osl":
+                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+
+            # TTFT metrics
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_ttft":
+                value = row.get("p5_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_ttft":
+                value = row.get("p25_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_ttft":
+                value = row.get("p50_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_ttft":
+                value = row.get("p95_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_ttft":
+                value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
+
+            # TPOT metrics
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_tpot":
+                value = row.get("p5_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_tpot":
+                value = row.get("p25_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_tpot":
+                value = row.get("p50_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_tpot":
+                value = row.get("p95_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_tpot":
+                value = row.get("p99_tpot_ms", NOT_MEASURED_STR)
+
+            # ITL metrics
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_itl":
+                value = row.get("p5_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_itl":
+                value = row.get("p25_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_itl":
+                value = row.get("p50_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_itl":
+                value = row.get("p95_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_itl":
+                value = row.get("p99_itl_ms", NOT_MEASURED_STR)
+
+            # E2EL metrics
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_e2el":
+                value = row.get("p5_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_e2el":
+                value = row.get("p25_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_e2el":
+                value = row.get("p50_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_e2el":
+                value = row.get("p95_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_e2el":
+                value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
+
+            # Throughput metrics
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def stress_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate stress test report using stress_tests-specific summary report module."""
+    file_name_pattern = f"stress_test_{model_spec.model_id}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/stress_tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "stress_tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Stress Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No stress test files found. Skipping.")
+        return "", None, None, None
+
+    # Use the stress_tests-specific generate_report function
+    release_str, release_raw, disp_md_path, stats_file_path = (
+        stress_test_generate_report_helper(files, output_dir, report_id, metadata)
+    )
+
+    # Generate stress test-specific release report
+    # Build stress test performance report
+    stress_test_release_str = (
+        f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
+    )
+
+    if release_raw:
+        # Check if percentile report is requested
+        percentile_report = getattr(args, "percentile_report", False)
+
+        # Create stress test-specific markdown table (detailed or simple format)
+        if percentile_report:
+            logger.info("Generating detailed percentile report for stress tests")
+            stress_test_markdown = generate_stress_tests_markdown_table_detailed(
+                release_raw, model_spec
+            )
+        else:
+            logger.info(
+                "Generating simplified report for stress tests (use --percentile-report for detailed statistics)"
+            )
+            stress_test_markdown = generate_stress_tests_markdown_table(
+                release_raw, model_spec
+            )
+
+        stress_test_release_str += stress_test_markdown
+    else:
+        stress_test_release_str += (
+            "No stress test results found for this model and device combination.\n"
+        )
+
+    # Save stress test-specific summary
+    summary_fpath = output_dir / f"stress_test_summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(stress_test_release_str)
+
+    # Save raw data
+    data_fpath = data_dir / f"stress_test_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4, default=str)
+
+    return stress_test_release_str, release_raw, summary_fpath, data_fpath
+
+
 def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
@@ -1491,13 +1863,25 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json):
+        def __init__(
+            self, output_path, model, device, model_spec_json, percentile_report=False
+        ):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.model_spec_json = model_spec_json
+            self.percentile_report = percentile_report
 
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
+    # Extract percentile_report flag from cli_args
+    percentile_report = cli_args.get("percentile_report", False)
+
+    simple_args = SimpleArgs(
+        args.output_path,
+        model,
+        device_str,
+        args.model_spec_json,
+        percentile_report=percentile_report,
+    )
 
     # generate benchmarks report
     (
@@ -1520,6 +1904,15 @@ def main():
     tests_release_str, tests_release_data = generate_tests_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
+    # generate stress test report
+    (
+        stress_tests_release_str,
+        stress_tests_release_data,
+        stress_tests_disp_md_path,
+        stress_tests_data_file_path,
+    ) = stress_test_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
 
     # generate server tests report
     server_tests_release_str, server_tests_release_data = server_tests_generate_report(
@@ -1538,7 +1931,7 @@ def main():
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{server_tests_release_str}"
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -1725,6 +2118,7 @@ def main():
             "metadata": metadata,
             "benchmarks_summary": benchmarks_release_data,
             "evals": evals_release_data,
+            "stress_tests": stress_tests_release_data,
             "benchmarks": benchmarks_detailed_data
             if benchmarks_detailed_data
             else [
