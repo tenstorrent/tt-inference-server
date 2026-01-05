@@ -259,6 +259,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             license=None,  # License info not available in model spec
             public_training_code=None,  # Training code availability unknown
             public_training_data=None,  # Training data availability unknown
+            training_datasets=None,  # Training datasets not specified
         )
         model.mteb_model_meta = model_meta
 
