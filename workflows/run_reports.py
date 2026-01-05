@@ -575,14 +575,19 @@ def aiperf_benchmark_generate_report(
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
 
+    # Look for GenAI-Perf benchmark files
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
     output_dir = Path(args.output_path) / "benchmarks_aiperf"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("AIPerf Benchmark Summary")
     logger.info(f"Found {len(aiperf_files)} AIPerf benchmark files")
     logger.info(f"Found {len(vllm_files)} vLLM benchmark files for comparison")
+    logger.info(f"Found {len(genai_files)} GenAI-Perf benchmark files for comparison")
 
-    if not aiperf_files and not vllm_files:
+    if not aiperf_files and not vllm_files and not genai_files:
         logger.info("No benchmark files found. Skipping AIPerf report.")
         return "", [], None, None
 
@@ -628,9 +633,10 @@ def aiperf_benchmark_generate_report(
     # Deduplicate files to keep only latest run for each config
     vllm_files = deduplicate_by_config(vllm_files)
     aiperf_files = deduplicate_by_config(aiperf_files)
+    genai_files = deduplicate_by_config(genai_files)
 
     logger.info(
-        f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf files"
+        f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf, {len(genai_files)} GenAI-Perf files"
     )
 
     # Separate text-only and image benchmarks
@@ -638,12 +644,14 @@ def aiperf_benchmark_generate_report(
     vllm_image_files = [f for f in vllm_files if "images" in Path(f).name]
     aiperf_text_only_files = [f for f in aiperf_files if "images" not in Path(f).name]
     aiperf_image_files = [f for f in aiperf_files if "images" in Path(f).name]
+    genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
+    genai_image_files = [f for f in genai_files if "images" in Path(f).name]
 
     logger.info(
-        f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf"
+        f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf, {len(genai_text_only_files)} GenAI-Perf"
     )
     logger.info(
-        f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf"
+        f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf, {len(genai_image_files)} GenAI-Perf"
     )
 
     # Process text-only vLLM benchmarks
@@ -890,17 +898,142 @@ def aiperf_benchmark_generate_report(
             logger.warning(f"Error processing AIPerf image file {filepath}: {e}")
             continue
 
+    # Process GenAI-Perf text files
+    genai_text_results = []
+    for filepath in sorted(genai_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: genai_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf file {filepath}: {e}")
+            continue
+
+    # Process GenAI-Perf image files
+    genai_image_results = []
+    for filepath in sorted(genai_image_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_image_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf image file {filepath}: {e}")
+            continue
+
     if (
         not aiperf_text_results
         and not vllm_text_results
+        and not genai_text_results
         and not aiperf_image_results
         and not vllm_image_results
+        and not genai_image_results
     ):
         return "", [], None, None
 
     # Sort text benchmarks by ISL, OSL, concurrency
     vllm_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
     aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+    genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
 
     # Sort image benchmarks by ISL, OSL, concurrency, image size
     vllm_image_results.sort(
@@ -913,6 +1046,15 @@ def aiperf_benchmark_generate_report(
         )
     )
     aiperf_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+    genai_image_results.sort(
         key=lambda x: (
             x["isl"],
             x["osl"],
