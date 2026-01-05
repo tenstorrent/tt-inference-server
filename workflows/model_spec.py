@@ -1525,6 +1525,33 @@ spec_templates = [
     ),
     ModelSpecTemplate(
         weights=[
+            "deepseek-ai/DeepSeek-R1-0528",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="local",
+        vllm_commit="local",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+        ],
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
+    ModelSpecTemplate(
+        weights=[
             "meta-llama/Llama-3.3-70B-Instruct",
             "meta-llama/Llama-3.1-70B",
             "meta-llama/Llama-3.1-70B-Instruct",
