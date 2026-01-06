@@ -1,0 +1,48 @@
+[build-system]
+requires = [
+    "setuptools>=77.0.3",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tt-vllm-plugin"
+version = "0.1.0"
+description = "vLLM plugin for Tenstorrent hardware acceleration"
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Tenstorrent AI ULC"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "vllm==0.10.1.1",
+    # Pin torch/numpy to versions compatible with tt-metal
+    "torch>=2.7.1,<2.8",
+    "numpy>=1.24.4,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.entry-points."vllm.platform_plugins"]
+tt = "tt_vllm_plugin:register"
+
+[project.entry-points."vllm.general_plugins"]
+tt_model_registry = "tt_vllm_plugin:register_models"
+
+[tool.setuptools.packages.find]
+include = ["tt_vllm_plugin*"]

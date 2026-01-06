@@ -1,9 +1,8 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-pjrt-plugin-tt==0.5.0
+pjrt-plugin-tt==0.6.0.dev20251202
+vllm-tt==0.6.0.dev20251202
 torchvision
 
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
-datasets # for yolov10
-ultralytics # for yolov10

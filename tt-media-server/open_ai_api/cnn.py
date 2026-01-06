@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from fastapi import APIRouter, Depends, Security, HTTPException
 from domain.image_search_request import ImageSearchRequest
+from fastapi import APIRouter, Depends, HTTPException, Security
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -11,11 +11,11 @@ from security.api_key_cheker import get_api_key
 router = APIRouter()
 
 
-@router.post('/search-image')
+@router.post("/search-image")
 async def searchImage(
     image_search_request: ImageSearchRequest,
     service: BaseService = Depends(service_resolver),
-    api_key: str = Security(get_api_key)
+    api_key: str = Security(get_api_key),
 ):
     """
     Process image search request using CNN model.

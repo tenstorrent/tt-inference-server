@@ -317,12 +317,12 @@ def generate_prompts(prompt_config: PromptConfig):
         # default case
         logger.info("Generating random prompts...")
         # -1 is for the extra token added by vLLM
-        assert (
-            prompt_config.input_seq_len > -1
-        ), "input_seq_len must be set for random prompts."
-        assert (
-            prompt_config.max_prompt_length > -1
-        ), "max_length must be set for random prompts."
+        assert prompt_config.input_seq_len > -1, (
+            "input_seq_len must be set for random prompts."
+        )
+        assert prompt_config.max_prompt_length > -1, (
+            "max_length must be set for random prompts."
+        )
         prompts = generate_random_prompts(
             prompt_config.num_prompts,
             prompt_config.max_prompt_length,
@@ -331,9 +331,9 @@ def generate_prompts(prompt_config: PromptConfig):
             prompt_config.tokenizer_model,
         )
     elif prompt_config.dataset is not None:
-        assert (
-            prompt_config.max_prompt_length > -1
-        ), "max_length must be set for datasets prompts."
+        assert prompt_config.max_prompt_length > -1, (
+            "max_length must be set for datasets prompts."
+        )
         logger.info(f"Generating prompts from the '{prompt_config.dataset}' dataset...")
         if prompt_config.dataset == "alpaca_eval":
             prompts = load_alpaca_eval_dataset_samples(prompt_config.num_prompts)

@@ -8,10 +8,12 @@ from enum import Enum, IntEnum, auto
 class WorkflowType(IntEnum):
     BENCHMARKS = auto()
     EVALS = auto()
+    STRESS_TESTS = auto()
     TESTS = auto()
     REPORTS = auto()
     SERVER = auto()
     RELEASE = auto()
+    SPEC_TESTS = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -23,14 +25,20 @@ class WorkflowType(IntEnum):
 
 class WorkflowVenvType(IntEnum):
     LOCAL_SETUP_VALIDATION = auto()
+    STRESS_TESTS_RUN_SCRIPT = auto()
+    STRESS_TESTS = auto()
     EVALS_RUN_SCRIPT = auto()
+    TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
+    EVALS_EMBEDDING = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
+    BENCHMARKS_EMBEDDING = auto()
+    BENCHMARKS_GENAI_PERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
 
@@ -38,6 +46,7 @@ class WorkflowVenvType(IntEnum):
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    GENAI_PERF = auto()
 
 
 class DeviceTypes(IntEnum):

@@ -2,9 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from typing import Optional
+
 from domain.base_request import BaseRequest
 from pydantic import Field
-from typing import Optional
+
 
 class VideoGenerateRequest(BaseRequest):
     # Required fields

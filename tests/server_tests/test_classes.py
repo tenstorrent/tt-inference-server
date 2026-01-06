@@ -38,6 +38,15 @@ class TestConfig:
         """Get configuration value by key"""
         return self.config.get(key, default)
 
+    def __str__(self):
+        """String representation of TestConfig"""
+        return (
+            f"TestConfig(timeout={self.test_timeout}s, "
+            f"retry_attempts={self.retry_attempts}, "
+            f"retry_delay={self.retry_delay}s, "
+            f"break_on_failure={self.break_on_failure})"
+        )
+
     @classmethod
     def create_default(cls):
         """Create default test configuration"""
@@ -64,6 +73,7 @@ class TestReport:
         result: Any = None,
         logs: List = None,
         attempts: int = 1,
+        descrtiption: str = "",
     ):
         self.test_name = test_name
         self.success = success
@@ -74,7 +84,8 @@ class TestReport:
         self.logs = logs or []  # Store test execution logs
         self.attempts = attempts  # Store number of attempts made
         self.timestamp = time.time()
+        self.description = descrtiption
 
     def __str__(self):
-        status = "✓ PASS" if self.success else "✗ FAIL"
+        status = "✅ PASS" if self.success else "❌ FAIL"
         return f"{status} {self.test_name} ({self.duration:.2f}s, {self.attempts} attempts)"

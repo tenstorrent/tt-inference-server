@@ -61,7 +61,11 @@ def get_trace_context_lens(
     Returns:
         List of (input_seq_len, output_seq_len) tuples
     """
-    return [(seq_len, output_len) for seq_len in PADDED_SEQ_LENS if (seq_len + output_len) <= max_context]
+    return [
+        (seq_len, output_len)
+        for seq_len in PADDED_SEQ_LENS
+        if (seq_len + output_len) <= max_context
+    ]
 
 
 class PromptClient:
@@ -83,8 +87,8 @@ class PromptClient:
         self.server_ready = False
 
     def _get_authorization(self) -> Optional[str]:
-        if self.env_config.authorization:
-            return self.env_config.authorization
+        if self.env_config.vllm_api_key:
+            return self.env_config.vllm_api_key
 
         if self.env_config.jwt_secret:
             json_payload = json.loads(
@@ -96,19 +100,32 @@ class PromptClient:
             return encoded_jwt
 
         logger.warning(
-            "Neither AUTHORIZATION nor JWT_SECRET environment variables are set. "
+            "Neither VLLM_API_KEY nor JWT_SECRET environment variables are set. "
             "Proceeding without authorization."
         )
         return None
 
-    def _get_api_base_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
+    def _get_api_base_url(self, include_v1: bool = True) -> str:
+        """Get base API URL, optionally with /v1 suffix.
+
+        Args:
+            include_v1: If True, append /v1 for OpenAI-compatible endpoints.
+                       If False, return root URL for vLLM-specific endpoints.
+        """
+        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
 
     def _get_api_health_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
+        return f"{self._get_api_base_url(include_v1=False)}/health"
+
+    def _get_api_tokenize_url(self) -> str:
+        return f"{self._get_api_base_url(include_v1=False)}/tokenize"
+
+    def _get_api_detokenize_url(self) -> str:
+        return f"{self._get_api_base_url(include_v1=False)}/detokenize"
 
     def get_health(self) -> requests.Response:
         return requests.get(self.health_url, headers=self.headers)
@@ -402,9 +419,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert (
-                len(images) == 0
-            ), "legacy API does not support images, use --use_chat_api option."
+            assert len(images) == 0, (
+                "legacy API does not support images, use --use_chat_api option."
+            )
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
@@ -441,6 +458,58 @@ class PromptClient:
             stream,
             use_chat_api,
         )
+
+    def tokenize(self, prompt: str, model: Optional[str] = None) -> dict:
+        """
+        Tokenize text using server-side tokenization.
+
+        Args:
+            prompt: The text to tokenize
+            model: Model to use for tokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with tokenization result including tokens
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_tokenize_url()
+
+        payload = {"model": model_name, "prompt": prompt}
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side tokenization failed: {error_msg}")
+            return {"error": error_msg}
+
+    def detokenize(self, tokens: List[int], model: Optional[str] = None) -> dict:
+        """
+        Detokenize tokens using server-side detokenization.
+
+        Args:
+            tokens: The token IDs to detokenize
+            model: Model to use for detokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with detokenization result including prompt
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_detokenize_url()
+
+        payload = {"model": model_name, "tokens": tokens}
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side detokenization failed: {error_msg}")
+            return {"error": error_msg}
 
     def _process_response(
         self,
@@ -660,7 +729,6 @@ class PromptClient:
 def run_background_trace_capture(
     hf_model_repo: str,
     service_port: int,
-    jwt_secret: str = None,
     supported_modalities: List[str] = None,
     max_context: int = None,
     context_lens: List[Tuple[int, int]] = None,
@@ -676,7 +744,6 @@ def run_background_trace_capture(
     Args:
         hf_model_repo: HuggingFace model repository ID
         service_port: Port where the vLLM server is running
-        jwt_secret: JWT secret for authentication (optional)
         supported_modalities: List of supported modalities (e.g., ["text", "image"])
         max_context: Maximum context length supported by the model (for calculating traces)
         context_lens: List of (input_seq_len, output_seq_len) tuples (overrides calculation)
@@ -708,7 +775,6 @@ def run_background_trace_capture(
 
         # Configure environment
         env_config = EnvironmentConfig()
-        env_config.jwt_secret = jwt_secret if jwt_secret else None
         env_config.service_port = service_port
         env_config.vllm_model = hf_model_repo
 

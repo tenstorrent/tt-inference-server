@@ -26,6 +26,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -48,29 +49,12 @@ IMAGE_RESOLUTIONS = [
     ]
 # fmt: on
 
-
-def setup_audio_benchmarks(model_spec, logger):
-    """Setup audio-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up audio benchmarks for model: {model_spec.model_name}")
-    # Audio-specific benchmark setup can be added here
-    pass
-
-
-def setup_cnn_benchmarks(model_spec, logger):
-    """Setup CNN-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up CNN benchmarks for model: {model_spec.model_name}")
-    # CNN-specific benchmark setup can be added here
-    pass
+BENCHMARKS_TASK_TYPES = [
+    ModelType.IMAGE,
+    ModelType.CNN,
+    ModelType.AUDIO,
+    ModelType.EMBEDDING,
+]
 
 
 def parse_args():
@@ -89,6 +73,18 @@ def parse_args():
         type=str,
         help="Path for benchmark output",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
 
     parser.add_argument(
@@ -180,11 +176,40 @@ def main():
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
+    # Check for tools selection (genai vs vllm)
+    tools = cli_args.get("tools", "vllm")
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
+    logger.info(f"tools=: {tools}")
+
+    # Route to genai-perf benchmarks if tools=genai
+    if tools == "genai":
+        logger.info("Using genai-perf (Triton SDK) for benchmarking")
+
+        # Determine debug mode from limit_samples_mode
+        limit_samples_mode_str = cli_args.get("limit_samples_mode")
+        debug_mode = False
+        if limit_samples_mode_str:
+            from workflows.workflow_types import EvalLimitMode
+
+            limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+            # Enable debug mode for quick test modes
+            if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
+                debug_mode = True
+                logger.info(
+                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
+                )
+
+        return run_genai_benchmarks(
+            model_spec=model_spec,
+            output_path=args.output_path,
+            jwt_secret=jwt_secret,
+            service_port=service_port,
+            debug=debug_mode,
+        )
 
     # set environment vars
     if jwt_secret:
@@ -215,15 +240,8 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type == ModelType.CNN:
-        setup_cnn_benchmarks(model_spec, logger)
-        return run_cnn_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
-        )
-
-    if model_spec.model_type == ModelType.AUDIO:
-        setup_audio_benchmarks(model_spec, logger)
-        return run_audio_benchmarks(
+    if model_spec.model_type in BENCHMARKS_TASK_TYPES:
+        return run_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
 
@@ -323,30 +341,13 @@ def main():
     return main_return_code
 
 
-def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
-    Run CNN benchmarks for the given model and device.
-    """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
-    )
-    return MediaClientFactory.run_media_task(
-        model_spec,
-        all_params,
-        device,
-        output_path,
-        service_port,
-        task_type=MediaTaskType.BENCHMARK,
-    )
-
-
-def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
-    """
-    Run Audio benchmarks for the given model and device.
+    Run benchmarks for the given model and device. Here we are running IMAGE, CNN
+    and AUDIO benchmarks.
     """
     logger.info(
-        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+        f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
     return MediaClientFactory.run_media_task(
         model_spec,

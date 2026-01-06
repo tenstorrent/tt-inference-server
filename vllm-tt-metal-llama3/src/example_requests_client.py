@@ -297,7 +297,7 @@ async def run_batched_requests(
         for batch_start in range(0, total_requests, concurrent_limit):
             batch_size = min(concurrent_limit, total_requests - batch_start)
             logger.info(
-                f"Processing batch of {batch_size} requests ({batch_start+1}-{batch_start+batch_size} of {total_requests})..."
+                f"Processing batch of {batch_size} requests ({batch_start + 1}-{batch_start + batch_size} of {total_requests})..."
             )
 
             batch_tasks = []
@@ -369,13 +369,13 @@ def main():
     )
     args = parser.parse_args()
 
-    assert (
-        args.temperature >= 0.0 and args.temperature <= 1.0
-    ), "temperature:={args.temperature} must be between 0.0 and 1.0"
+    assert args.temperature >= 0.0 and args.temperature <= 1.0, (
+        "temperature:={args.temperature} must be between 0.0 and 1.0"
+    )
     assert args.max_tokens > 0, f"max_tokens:={args.max_tokens} must be greater than 0"
-    assert (
-        args.num_concurrent > 0
-    ), f"num_concurrent:={args.num_concurrent} must be greater than 0"
+    assert args.num_concurrent > 0, (
+        f"num_concurrent:={args.num_concurrent} must be greater than 0"
+    )
     assert args.n_requests > 0, f"n_requests:={args.n_requests} must be greater than 0"
 
     model = args.model
@@ -522,7 +522,7 @@ def main():
 
         # Print individual results if needed
         for i, result in enumerate(results):
-            print(f"\nRequest {i+1} Results:")
+            print(f"\nRequest {i + 1} Results:")
             pprint(result)
 
         # Print comprehensive summary statistics

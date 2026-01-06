@@ -16,6 +16,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
 # Add the script's directory to the Python path
@@ -47,35 +48,64 @@ IMAGE_RESOLUTIONS = [
     ]
 # fmt: on
 
+EVAL_TASK_TYPES = [
+    ModelType.IMAGE,
+    ModelType.CNN,
+    ModelType.AUDIO,
+    ModelType.EMBEDDING,
+]
 
-def setup_audio_evaluation(args, logger):
-    """Setup audio-specific evaluation environment.
+
+def _check_media_server_health(model_spec, device, output_path, service_port):
+    """
+    Check if media server is healthy using DeviceLivenessTest.
 
     Args:
-        args: Parsed command line arguments
-        logger: Logger instance
+        model_spec: Model specification
+        device: Device type
+        output_path: Output path for logs
+        service_port: Service port number
+
+    Returns:
+        tuple[bool, str]: (is_healthy, runner_in_use)
+
+    Raises:
+        RuntimeError: If media server is not healthy after all retry attempts
     """
-    # For audio models, use API_KEY directly instead of JWT
-    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
-    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
-    os.environ["OPENAI_API_KEY"] = api_key
-    logger.info(
-        "OPENAI_API_KEY environment variable set for audio model authentication."
+
+    # Create a minimal strategy instance just for health check
+    class HealthCheckStrategy(BaseMediaStrategy):
+        def run_eval(self):
+            pass
+
+        def run_benchmark(self, num_calls):
+            pass
+
+    health_checker = HealthCheckStrategy(
+        all_params=None,
+        model_spec=model_spec,
+        device=device,
+        output_path=output_path,
+        service_port=service_port,
     )
 
+    is_healthy, runner_in_use = health_checker.get_health()
+    if not is_healthy:
+        raise RuntimeError("❌ Media server is not healthy. Aborting evaluations.")
 
-def setup_cnn_evaluation(args, logger):
-    """Setup CNN-specific evaluation environment.
+    logger.info(f"✅ Media server is healthy. Runner in use: {runner_in_use}")
+    return is_healthy, runner_in_use
 
+
+def _setup_openai_api_key(args, logger):
+    """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
     Args:
         args: Parsed command line arguments
         logger: Logger instance
     """
-    # For CNN models, use API_KEY directly instead of JWT
-    # tt-media-server expects Authorization: Bearer {API_KEY}, not a JWT token
     api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
     os.environ["OPENAI_API_KEY"] = api_key
-    logger.info("OPENAI_API_KEY environment variable set for CNN model authentication.")
+    logger.info("OPENAI_API_KEY environment variable set.")
 
 
 def parse_args():
@@ -94,6 +124,18 @@ def parse_args():
         type=str,
         help="Path for evaluation output",
         required=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
     )
     parser.add_argument(
         "--jwt-secret",
@@ -280,10 +322,8 @@ def main():
     assert device == model_spec.device_type
 
     # Setup authentication based on model type
-    if model_spec.model_type == ModelType.AUDIO:
-        setup_audio_evaluation(args, logger)
-    elif model_spec.model_type == ModelType.CNN:
-        setup_cnn_evaluation(args, logger)
+    if model_spec.model_type in EVAL_TASK_TYPES:
+        _setup_openai_api_key(args, logger)
     elif args.jwt_secret:
         # For LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(
@@ -320,7 +360,11 @@ def main():
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
-    if model_spec.model_type == ModelType.CNN:
+    if (
+        model_spec.model_type == ModelType.CNN
+        or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
+    ):
         return run_media_evals(
             eval_config,
             model_spec,
@@ -334,6 +378,17 @@ def main():
     # This runs accuracy evaluations (WER scores) via lmms-eval, not performance benchmarks.
     elif model_spec.model_type == ModelType.AUDIO:
         logger.info("Running audio evals with lmms-eval ...")
+
+        # Check if media server is healthy before running evals
+        _check_media_server_health(
+            model_spec=model_spec,
+            device=device,
+            output_path=args.output_path,
+            service_port=cli_args.get(
+                "service_port", os.getenv("SERVICE_PORT", "8000")
+            ),
+        )
+
         return_codes = []
         for task in eval_config.tasks:
             logger.info(
@@ -409,15 +464,14 @@ def main():
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
     """
-    Run media evals for CNN models only (not AUDIO models).
+    Run media evals for cnn and image models only (not AUDIO models).
 
     AUDIO models use lmms-eval directly and do not call this function.
-    This function uses ImageClient which can handle both CNN and audio transcription
-    models via tt-media-server, but in the evals workflow it's only called for CNN models.
+    This function uses ImageClient which can handle both cnn, image and audio transcription
+    models via tt-media-server, but in the evals workflow it's only called for cnn and image models.
     """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
     logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
+        f"Running media (image and cnn) benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
     return MediaClientFactory.run_media_task(
         model_spec,
