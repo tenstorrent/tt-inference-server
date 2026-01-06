@@ -1066,10 +1066,8 @@ spec_templates = [
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({
-                        "image": 10
-                    }),
-                    "num_scheduler_steps": 1
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
