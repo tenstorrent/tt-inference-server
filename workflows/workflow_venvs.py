@@ -319,6 +319,25 @@ def setup_evals_embedding(
     return True
 
 
+def setup_stress_tests_run_script(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_stress_tests_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1 aiohttp",
+        logger=logger,
+    )
+    # Remove the redundant download section since we now use stress_tests/stress_tests_benchmarking_script.py
+    # The old benchmark_serving.py downloads are no longer needed
+    return True
+
+
 def setup_evals_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -337,11 +356,16 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
+    # Use constraints file to prevent torch downgrade when installing mteb[openai].
+    # See: https://github.com/tenstorrent/tt-inference-server/issues/1652
+    constraints_file = default_venv_path / "torch_constraints.txt"
+    constraints_file.write_text("torch>=2.9.0\n")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'mteb[openai]' tiktoken openai",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"--extra-index-url https://download.pytorch.org/whl/cpu "
+        f"--constraint {constraints_file} 'mteb[openai]' tiktoken openai",
         logger=logger,
     )
-
     return True
 
 
@@ -456,6 +480,14 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
         setup_function=setup_evals_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
+        setup_function=setup_stress_tests_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.STRESS_TESTS,
+        setup_function=setup_stress_tests_run_script,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
