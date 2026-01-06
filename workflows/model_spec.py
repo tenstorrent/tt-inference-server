@@ -1671,7 +1671,7 @@ spec_templates = [
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
-                }
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
