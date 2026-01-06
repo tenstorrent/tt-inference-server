@@ -2,10 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from typing import Optional
+
 from domain.base_request import BaseRequest
 from pydantic import Field
-from typing import Optional
+
 
 class TextEmbeddingRequest(BaseRequest):
     input: str
+    model: str
     dimensions: Optional[int] = Field(default=None, ge=0)

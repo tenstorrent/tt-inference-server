@@ -1,0 +1,997 @@
+[
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for ",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations ",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 11
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 15
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for ",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 25
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-base-1.0-img-2-img"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "Img2ImgGenerationParamTest",
+                "module": "tests.server_tests.test_cases.img2img_generation_param_test",
+                "enabled": true,
+                "description": "Test img2img generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["stable-diffusion-xl-1.0-inpainting-0.1"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "InpaintingGenerationParamTest",
+                "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
+                "enabled": true,
+                "description": "Test inpainting generation params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["distil-large-v3"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 80,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 0.7
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 4,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionParamTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            },
+            {
+                "name": "DeviceStabilityTest",
+                "module": "tests.server_tests.test_cases.device_stability_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["distil-large-v3"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 4,
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 5,
+                    "num_of_devices": 4,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test single audio 60s transcription and expect chunking",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 2,
+                    "num_of_devices": 1,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionParamTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
+                "enabled": true,
+                "description": "Test audio transcription params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["distil-large-v3"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 2
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 2,
+                    "num_of_devices": 32,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test single audio 60s transcription and expect chunking",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 2,
+                    "num_of_devices": 1,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionParamTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
+                "enabled": true,
+                "description": "Test audio transcription params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            }
+        ]
+    },
+        {
+        "weights" : ["whisper-large-v3"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 80,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 6
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 12,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test single audio 60s transcription and expect chunking",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 12,
+                    "num_of_devices": 1,
+                    "dataset": "60s"
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["whisper-large-v3"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 5,
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 10,
+                    "num_of_devices": 4,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test single audio 60s transcription and expect chunking",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 6,
+                    "num_of_devices": 1,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionParamTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
+                "enabled": true,
+                "description": "Test audio transcription params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["whisper-large-v3"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 30s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 4,
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test audio 60s load",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 7,
+                    "num_of_devices": 32,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_test",
+                "enabled": true,
+                "description": "Test single audio 60s transcription and expect chunking",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "audio_transcription_time": 4,
+                    "num_of_devices": 1,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionParamTest",
+                "module": "tests.server_tests.test_cases.audio_transcription_param_test",
+                "enabled": true,
+                "description": "Test audio transcription params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            }
+        ]
+    }
+]

@@ -3,16 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Callable, Union
+from typing import Callable, Dict, List, Union
 
-from workflows.workflow_types import WorkflowVenvType, EvalLimitMode
-from workflows.utils import map_configs_by_attr
-from workflows.model_spec import MODEL_SPECS
 from evals.eval_utils import (
+    score_multilevel_keys_mean,
     score_task_keys_mean,
     score_task_single_key,
-    score_multilevel_keys_mean,
 )
+from workflows.model_spec import MODEL_SPECS
+from workflows.utils import map_configs_by_attr
+from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 
 @dataclass(frozen=True)
@@ -76,9 +76,9 @@ class EvalTask:
                 raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
 
     def validate_data(self):
-        assert not (
-            self.use_chat_api and self.apply_chat_template
-        ), "Chat API applies chat template."
+        assert not (self.use_chat_api and self.apply_chat_template), (
+            "Chat API applies chat template."
+        )
 
 
 @dataclass(frozen=True)
@@ -158,8 +158,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=46.0,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=58.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3533832922",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -287,8 +287,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=65.6,
                     published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=69.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/607#issuecomment-3524037012",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -455,8 +455,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -563,7 +563,7 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -671,8 +671,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -709,7 +709,7 @@ _eval_config_list = [
                 },
             ),
         ],
-    ),   
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-VL-72B-Instruct",
         tasks=[
@@ -779,8 +779,8 @@ _eval_config_list = [
                     "stream": "False",
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
                 },
             ),
             EvalTask(
@@ -817,7 +817,7 @@ _eval_config_list = [
                 },
             ),
         ],
-    ),   
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
@@ -1905,6 +1905,40 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="openai/whisper-large-v3",
         tasks=[
             EvalTask(
@@ -2038,6 +2072,40 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="BAAI/bge-large-en-v1.5",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,  # Using META as a placeholder
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/BAAI/bge-large-en-v1.5",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Embedding-4B",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="resnet-50",
         tasks=[
             EvalTask(
@@ -2089,7 +2157,7 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        hf_model_repo="yolov4",
+        hf_model_repo="segformer",
         tasks=[
             EvalTask(
                 task_name="load_image",
@@ -2098,15 +2166,15 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=43.5,
-                    published_score_ref="https://arxiv.org/abs/2004.10934",
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2105.15203",
                     score_func=lambda results: 0.0,
                 ),
             ),
         ],
     ),
     EvalConfig(
-        hf_model_repo="yolov8",
+        hf_model_repo="unet",
         tasks=[
             EvalTask(
                 task_name="load_image",
@@ -2115,15 +2183,15 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=53.0,
-                    published_score_ref="https://docs.ultralytics.com/models/yolov8/#what-are-the-performance-metrics-for-yolov8-models",
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/1505.04597",
                     score_func=lambda results: 0.0,
                 ),
             ),
         ],
     ),
     EvalConfig(
-        hf_model_repo="yolov9",
+        hf_model_repo="vit",
         tasks=[
             EvalTask(
                 task_name="load_image",
@@ -2132,25 +2200,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=53.0,
-                    published_score_ref="https://github.com/WongKinYiu/yolov9",
-                    score_func=lambda results: 0.0,
-                ),
-            ),
-        ],
-    ),
-    EvalConfig(
-        hf_model_repo="yolov10",
-        tasks=[
-            EvalTask(
-                task_name="load_image",
-                workflow_venv_type=WorkflowVenvType.EVALS_META,
-                include_path="work_dir",
-                max_concurrent=None,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=53.0,
-                    published_score_ref="https://arxiv.org/abs/2405.14458",
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2010.11929",
                     score_func=lambda results: 0.0,
                 ),
             ),
@@ -2172,7 +2223,7 @@ _eval_config_list = [
                 ),
             ),
         ],
-    ),    
+    ),
 ]
 
 

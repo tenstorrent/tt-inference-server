@@ -3,23 +3,28 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import os
 import tempfile
-import pytest
-import json
-from pathlib import Path
-from unittest.mock import patch, mock_open
 from argparse import Namespace
+from pathlib import Path
+from unittest.mock import mock_open, patch
+
+import pytest
 
 from run import main
-from workflows.setup_host import HostSetupManager
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelSource,
+    get_model_id,
+)
 from workflows.run_workflows import run_workflows
-from workflows.model_spec import MODEL_SPECS, get_model_id
-from workflows.workflow_types import WorkflowType
-from workflows.workflow_config import WORKFLOW_CONFIGS
+from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
 )
+from workflows.workflow_config import WORKFLOW_CONFIGS
+from workflows.workflow_types import WorkflowType
 
 
 class TestWorkflowUtils:
@@ -132,9 +137,9 @@ class TestWorkflowVenvValidation:
 
         for workflow_type in workflows_requiring_venv:
             config = WORKFLOW_CONFIGS[workflow_type]
-            assert (
-                config.workflow_run_script_venv_type is not None
-            ), f"{workflow_type.name} workflow must have a venv configuration"
+            assert config.workflow_run_script_venv_type is not None, (
+                f"{workflow_type.name} workflow must have a venv configuration"
+            )
 
     def test_server_workflow_is_special_case(self):
         """Document that server workflow intentionally has no venv config."""
@@ -170,7 +175,10 @@ class TestWorkflowExecution:
             run_id="test",
             disable_trace_capture=False,
         )
-        model_spec = Namespace(cli_args=args)
+        model_spec = Namespace(
+            cli_args=args,
+            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
+        )
 
         # Track workflow calls in order
         workflow_calls = []
@@ -187,15 +195,15 @@ class TestWorkflowExecution:
             return_codes = run_workflows(model_spec, "test_json_path.json")
 
             # Verify all expected workflows were called
-            assert len(return_codes) == 3  # benchmarks, evals, reports
+            assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
             assert all(code == 0 for code in return_codes)
-            assert mock_run_single.call_count == 3
+            assert mock_run_single.call_count == 4
 
             # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", "REPORTS"]
-            assert (
-                workflow_calls == expected_order
-            ), f"Expected {expected_order}, got {workflow_calls}"
+            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+            assert workflow_calls == expected_order, (
+                f"Expected {expected_order}, got {workflow_calls}"
+            )
 
             # Check trace capture logic by examining args modifications
             # Note: The args object is modified in place, so we rely on the implementation details
@@ -303,11 +311,11 @@ class TestHostSetupIntegration:
             assert mock_setup_weights.called
 
         # Verify that setup completed successfully
-        assert manager.setup_config.model_source == "huggingface"
+        assert manager.setup_config.model_source == ModelSource.HUGGINGFACE.value
         assert manager.setup_config.persistent_volume_root.exists()
 
     def test_error_handling_insufficient_resources(
-        self, temp_dir, mock_env_vars, mock_system_calls
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
     ):
         """Test error handling when system resources are insufficient."""
         # Mock insufficient disk space

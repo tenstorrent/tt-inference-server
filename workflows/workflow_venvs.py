@@ -87,9 +87,8 @@ def setup_evals_common(
     return True
 
 
-def setup_audio_venv(venv_config: VenvConfig) -> bool:
-    """Setup audio-specific virtual environment.
-
+def setup_venv(venv_config: VenvConfig) -> bool:
+    """Setup a generic virtual environment.
     Args:
         venv_config: Virtual environment configuration
 
@@ -98,28 +97,10 @@ def setup_audio_venv(venv_config: VenvConfig) -> bool:
     """
     work_dir = venv_config.venv_path / "work_dir"
     if not work_dir.exists():
-        logger.info(f"Creating work_dir for audio server testing: {work_dir}")
+        logger.info(f"Creating work_dir for generic server testing: {work_dir}")
         work_dir.mkdir(parents=True, exist_ok=True)
     else:
-        logger.info(f"work_dir already exists for audio server testing: {work_dir}")
-    return True
-
-
-def setup_cnn_venv(venv_config: VenvConfig) -> bool:
-    """Setup CNN-specific virtual environment.
-
-    Args:
-        venv_config: Virtual environment configuration
-
-    Returns:
-        True if setup was successful
-    """
-    work_dir = venv_config.venv_path / "work_dir"
-    if not work_dir.exists():
-        logger.info(f"Creating work_dir for CNN server testing: {work_dir}")
-        work_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        logger.info(f"work_dir already exists for CNN server testing: {work_dir}")
+        logger.info(f"work_dir already exists for generic server testing: {work_dir}")
     return True
 
 
@@ -128,10 +109,13 @@ def setup_evals_meta(
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    if model_spec.model_type == ModelType.AUDIO:
-        return setup_audio_venv(venv_config)
-    elif model_spec.model_type == ModelType.CNN:
-        return setup_cnn_venv(venv_config)
+    if (
+        model_spec.model_type == ModelType.AUDIO
+        or model_spec.model_type == ModelType.CNN
+        or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.EMBEDDING
+    ):
+        return setup_venv(venv_config)
 
     # Default: Llama-specific setup
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
@@ -219,6 +203,26 @@ def setup_evals_meta(
     return True
 
 
+def setup_benchmarks_embedding(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_benchmarks_embedding() ...")
+    work_dir = venv_config.venv_path / "work_dir"
+    if not work_dir.exists():
+        logger.info(f"Creating work_dir for generic server testing: {work_dir}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.info(f"work_dir already exists for generic server testing: {work_dir}")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip vllm torch",
+        logger=logger,
+    )
+
+    return True
+
+
 def setup_benchmarks_http_client_vllm_api(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -302,6 +306,38 @@ def setup_evals_audio(
     return True
 
 
+def setup_evals_embedding(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_evals_embedding() ...")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} mteb openai",
+        logger=logger,
+    )
+    return True
+
+
+def setup_stress_tests_run_script(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_stress_tests_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1 aiohttp",
+        logger=logger,
+    )
+    # Remove the redundant download section since we now use stress_tests/stress_tests_benchmarking_script.py
+    # The old benchmark_serving.py downloads are no longer needed
+    return True
+
+
 def setup_evals_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -318,6 +354,16 @@ def setup_evals_run_script(
     )
     run_command(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        logger=logger,
+    )
+    # Use constraints file to prevent torch downgrade when installing mteb[openai].
+    # See: https://github.com/tenstorrent/tt-inference-server/issues/1652
+    constraints_file = default_venv_path / "torch_constraints.txt"
+    constraints_file.write_text("torch>=2.9.0\n")
+    run_command(
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"--extra-index-url https://download.pytorch.org/whl/cpu "
+        f"--constraint {constraints_file} 'mteb[openai]' tiktoken openai",
         logger=logger,
     )
     return True
@@ -371,6 +417,21 @@ def setup_hf_setup(
     return True
 
 
+def setup_benchmarks_genai_perf(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup for genai-perf benchmarks (Docker-based, minimal local setup)."""
+    logger.info("running setup_benchmarks_genai_perf() ...")
+    # Ensure Docker is available
+    run_command("docker --version", logger=logger)
+    # Create artifacts directory
+    artifacts_dir = venv_config.venv_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    return True
+
+
 def create_local_setup_venv(
     uv_exec: Path,
 ) -> bool:
@@ -398,14 +459,43 @@ def create_local_setup_venv(
     return venv_config.venv_python
 
 
+def setup_tests_run_script(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_tests_run_script() ...")
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
+        logger=logger,
+    )
+    return True
+
+
 _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
         setup_function=setup_evals_run_script,
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
+        setup_function=setup_stress_tests_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.STRESS_TESTS,
+        setup_function=setup_stress_tests_run_script,
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
         setup_function=setup_benchmarks_run_script,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
+        setup_function=setup_tests_run_script,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON, setup_function=setup_evals_common
@@ -418,8 +508,17 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.EVALS_AUDIO, setup_function=setup_evals_audio
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+        setup_function=setup_evals_embedding,
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
         setup_function=setup_benchmarks_http_client_vllm_api,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_EMBEDDING,
+        setup_function=setup_benchmarks_embedding,
         python_version="3.11",
     ),
     VenvConfig(
@@ -429,6 +528,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         setup_function=setup_hf_setup,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,
+        setup_function=setup_benchmarks_genai_perf,
     ),
 ]
 

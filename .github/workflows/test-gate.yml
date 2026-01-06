@@ -1,0 +1,759 @@
+name: Test Gate
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main", "dev"]
+    types: [opened, synchronize, reopened]
+  merge_group:
+
+jobs:
+  detect-changes:
+    name: Detect Code Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-test: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.py'
+              - '**/requirements*.txt'
+              - 'pyproject.toml'
+              - '.github/workflows/*.yml'
+
+  lint:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: ruff check .
+
+      - name: Run ruff format check
+        run: ruff format --check .
+
+  unit-tests:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'requirements-dev.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
+
+      - name: Run tt-inference-server tests
+        run: |
+          echo "Running tests from tests/ directory..."
+          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+
+          # try to find final pytest summary line (robust)
+          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
+          if [ -z "$SUMMARY_LINE" ]; then
+            SUMMARY_LINE=$(tail -n 5 main_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
+          fi
+
+          extract_number() {
+            line="$1"; token="$2"
+            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
+          }
+
+          MAIN_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
+          MAIN_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MAIN_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
+          MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+          if [ -z "$MAIN_ERRORS" ]; then
+            MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+          fi
+          MAIN_ERRORS=${MAIN_ERRORS:-0}
+          MAIN_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
+
+          # Try to detect collection-time errors like "X tests collected / Y errors"
+          MAIN_COLLECTION_ERRORS=$(
+            grep -oE "[0-9]+ tests collected / [0-9]+ errors" main_test_output.txt \
+              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+              | tail -n1 || echo "0"
+          )
+          MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
+
+          # sanitize numeric-only
+          MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
+          MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
+          MAIN_SKIPPED=$(echo "$MAIN_SKIPPED" | tr -dc '0-9'); MAIN_SKIPPED=${MAIN_SKIPPED:-0}
+          MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
+          MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_COLLECTION_ERRORS" | tr -dc '0-9'); MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
+
+          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
+          echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
+          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
+          echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
+          echo "MAIN_COLLECTION_ERRORS=$MAIN_COLLECTION_ERRORS" >> $GITHUB_ENV
+
+          cat main_test_output.txt
+
+          # Fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
+          MAIN_TOTAL_FAILED=$(( MAIN_FAILED + MAIN_ERRORS + MAIN_COLLECTION_ERRORS ))
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "${MAIN_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
+            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
+            # fail the step intentionally so PR will be blocked
+            exit 1
+          fi
+
+      - name: Run tt-media-server tests
+        if: always()
+        env:
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
+        working-directory: tt-media-server
+        run: |
+          echo "Running tests from tt-media-server/tests/"
+          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+
+          # parse final pytest summary line robustly
+          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" ../media_test_output.txt | tail -n 1 || true)
+          if [ -z "$SUMMARY_LINE" ]; then
+            SUMMARY_LINE=$(tail -n 5 ../media_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
+          fi
+
+          extract_number() {
+            line="$1"; token="$2"
+            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
+          }
+
+          MEDIA_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
+          MEDIA_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
+          MEDIA_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
+          MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+          if [ -z "$MEDIA_ERRORS" ]; then
+            MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+          fi
+          MEDIA_ERRORS=${MEDIA_ERRORS:-0}
+          MEDIA_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
+
+          # Try to detect collection-time errors like "X tests collected / Y errors"
+          MEDIA_COLLECTION_ERRORS=$(
+            grep -oE "[0-9]+ tests collected / [0-9]+ errors" ../media_test_output.txt \
+              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+              | tail -n1 || echo "0"
+          )
+          MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
+
+          # sanitize numeric-only
+          MEDIA_PASSED=$(echo "$MEDIA_PASSED" | tr -dc '0-9'); MEDIA_PASSED=${MEDIA_PASSED:-0}
+          MEDIA_FAILED=$(echo "$MEDIA_FAILED" | tr -dc '0-9'); MEDIA_FAILED=${MEDIA_FAILED:-0}
+          MEDIA_SKIPPED=$(echo "$MEDIA_SKIPPED" | tr -dc '0-9'); MEDIA_SKIPPED=${MEDIA_SKIPPED:-0}
+          MEDIA_ERRORS=$(echo "$MEDIA_ERRORS" | tr -dc '0-9'); MEDIA_ERRORS=${MEDIA_ERRORS:-0}
+          MEDIA_COLLECTED=$(echo "$MEDIA_COLLECTED" | tr -dc '0-9'); MEDIA_COLLECTED=${MEDIA_COLLECTED:-0}
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_COLLECTION_ERRORS" | tr -dc '0-9'); MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
+
+          # persist numeric envs (safe)
+          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
+          echo "MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
+          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
+          echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
+          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
+
+          cat ../media_test_output.txt
+
+          # Track failures but don't exit yet - let summary run
+          MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
+          echo "MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
+            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
+            echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
+          fi
+
+      - name: Test Results Summary
+        if: always()
+        run: |
+          echo "===== 🧪 Test Results Summary ====="
+          echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
+          echo >> $GITHUB_STEP_SUMMARY
+
+          # --- Re-parse both outputs to guarantee correct numbers (avoid env contamination) ---
+          parse_summary() {
+            file="$1"
+            # find final summary line
+            sline=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" "$file" | tail -n1 || true)
+            if [ -z "$sline" ]; then
+              sline=$(tail -n 5 "$file" | sed -n '/./,$p' | tail -n 1 || true)
+            fi
+            extract() {
+              echo "$sline" | sed -nE "s/.* ([0-9]+) ${1}.*/\\1/p" || echo "0"
+            }
+            passed=$(extract "passed"); passed=$(echo "$passed" | tr -dc '0-9'); passed=${passed:-0}
+            failed=$(extract "failed"); failed=$(echo "$failed" | tr -dc '0-9'); failed=${failed:-0}
+            skipped=$(extract "skipped"); skipped=$(echo "$skipped" | tr -dc '0-9'); skipped=${skipped:-0}
+            errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
+            if [ -z "$errors" ]; then
+              errors=$(echo "$sline" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
+            fi
+            errors=$(echo "$errors" | tr -dc '0-9'); errors=${errors:-0}
+            collected=$(extract "collected"); collected=$(echo "$collected" | tr -dc '0-9'); collected=${collected:-0}
+            collection_errors=$(
+              grep -oE "[0-9]+ tests collected / [0-9]+ errors" "$file" \
+                | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
+                | tail -n1 || echo "0"
+            )
+            collection_errors=$(echo "$collection_errors" | tr -dc '0-9'); collection_errors=${collection_errors:-0}
+
+            # compute totals: total = passed + skipped + failed + errors + collection_errors
+            total_failed=$(( failed + errors + collection_errors ))
+            total=$(( passed + skipped + failed + errors + collection_errors ))
+
+            printf "%s|%s|%s|%s|%s|%s|%s\n" "$passed" "$skipped" "$failed" "$errors" "$collection_errors" "$total_failed" "$total"
+          }
+
+          # parse MAIN
+          MAIN_VALUES=$(parse_summary main_test_output.txt)
+          MAIN_PASSED=$(echo "$MAIN_VALUES" | cut -d'|' -f1)
+          MAIN_SKIPPED=$(echo "$MAIN_VALUES" | cut -d'|' -f2)
+          MAIN_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f3)
+          MAIN_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f4)
+          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_VALUES" | cut -d'|' -f5)
+          MAIN_TOTAL_FAILED=$(echo "$MAIN_VALUES" | cut -d'|' -f6)
+          MAIN_TOTAL=$(echo "$MAIN_VALUES" | cut -d'|' -f7)
+
+          # parse MEDIA
+          MEDIA_VALUES=$(parse_summary media_test_output.txt)
+          MEDIA_PASSED=$(echo "$MEDIA_VALUES" | cut -d'|' -f1)
+          MEDIA_SKIPPED=$(echo "$MEDIA_VALUES" | cut -d'|' -f2)
+          MEDIA_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f3)
+          MEDIA_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f4)
+          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_VALUES" | cut -d'|' -f5)
+          MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
+          MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f7)
+
+          # overall
+          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
+          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
+          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
+          TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED ))
+
+          # Print results as formatted table
+          MAIN_STATUS="✅"
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ]; then
+            MAIN_STATUS="❌"
+          fi
+
+          MEDIA_STATUS="✅"
+          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            MEDIA_STATUS="❌"
+          fi
+
+          OVERALL_STATUS="✅"
+          if [ "$TOTAL_FAILED" -gt 0 ]; then
+            OVERALL_STATUS="❌"
+          fi
+
+          # Print to console with aligned columns
+          printf "┌─────────────────────────┬───────┬────────┬─────────┬────────┬────────┐\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │ Status │\n" "Component" "Total" "Passed" "Skipped" "Failed"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-inference-server" "$MAIN_TOTAL" "$MAIN_PASSED" "$MAIN_SKIPPED" "$MAIN_TOTAL_FAILED" "$MAIN_STATUS"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "tt-media-server" "$MEDIA_TOTAL" "$MEDIA_PASSED" "$MEDIA_SKIPPED" "$MEDIA_TOTAL_FAILED" "$MEDIA_STATUS"
+          printf "├─────────────────────────┼───────┼────────┼─────────┼────────┼────────┤\n"
+          printf "│ %-23s │ %5s │ %6s │ %7s │ %6s │   %s   │\n" "Overall" "$TOTAL_TESTS" "$TOTAL_PASSED" "$TOTAL_SKIPPED" "$TOTAL_FAILED" "$OVERALL_STATUS"
+          printf "└─────────────────────────┴───────┴────────┴─────────┴────────┴────────┘\n"
+
+          # Print markdown table to GitHub Step Summary
+          {
+            echo "| Component | Total | Passed | Skipped | Failed | Status |"
+            echo "|-----------|------:|-------:|--------:|-------:|:------:|"
+            echo "| **tt-inference-server** | $MAIN_TOTAL | $MAIN_PASSED | $MAIN_SKIPPED | $MAIN_TOTAL_FAILED | $MAIN_STATUS |"
+            echo "| **tt-media-server** | $MEDIA_TOTAL | $MEDIA_PASSED | $MEDIA_SKIPPED | $MEDIA_TOTAL_FAILED | $MEDIA_STATUS |"
+            echo "| **Overall** | **$TOTAL_TESTS** | **$TOTAL_PASSED** | **$TOTAL_SKIPPED** | **$TOTAL_FAILED** | $OVERALL_STATUS |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          # final PR block decision
+          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_TOTAL_FAILED" -gt 0 ]; then
+            echo "❌ Some tests failed - PR merge will be blocked"
+            echo "❌ Some tests failed - PR merge will be blocked" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=true
+          else
+            echo "✅ All tests passed - PR is ready for review"
+            echo "✅ All tests passed - PR is ready for review" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_SHOULD_FAIL=false
+          fi
+
+          # Store test results for PR comment
+          echo "FINAL_TOTAL_TESTS=$TOTAL_TESTS" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_PASSED=$TOTAL_PASSED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_SKIPPED=$TOTAL_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_TOTAL_FAILED=$TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL=$MAIN_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_MAIN_TOTAL_FAILED=$MAIN_TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL=$MEDIA_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+
+          # Fail the workflow if any tests failed
+          if [ "$WORKFLOW_SHOULD_FAIL" = "true" ]; then
+            echo "💥 Failing workflow due to test failures"
+            exit 1
+          fi
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_SKIPPED, FINAL_TOTAL_FAILED,
+                    FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_SKIPPED, FINAL_MAIN_TOTAL_FAILED,
+                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_SKIPPED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
+
+            // Determine overall status
+            const overallPassed = parseInt(FINAL_TOTAL_FAILED) === 0;
+            const statusIcon = overallPassed ? '✅' : '❌';
+            const statusText = overallPassed ? 'PASSED' : 'FAILED';
+
+            // Build the comment body
+            const commentBody = `## ${statusIcon} Test Results - ${statusText}
+
+            ### Summary
+            | Component | Total | Passed | Skipped | Failed | Status |
+            |-----------|-------|--------|---------|--------|--------|
+            | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_SKIPPED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_SKIPPED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
+
+            ### Details
+            - **Python Version**: 3.10
+            - **Workflow**: \`${context.workflow}\`
+            - **Commit**: \`${context.sha.substring(0, 7)}\`
+            - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+
+            ${overallPassed
+              ? '🎉 All tests passed! This PR is ready for review.'
+              : '⚠️ Some tests failed. Please review the failing tests before merging.'}`;
+
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Results -')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+
+  llm-streaming-performance:
+    needs: detect-changes
+    name: LLM Streaming Performance Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'tt-media-server/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run LLM Streaming Performance Test
+        run: |
+          # Run pytest and capture output (visible in job logs via tee)
+          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          # Parse CI report metrics
+          TOKENS=$(grep 'tokens_received=' test_output.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep 'total_time_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep 'mean_interval_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep 'throughput_tps=' test_output.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep 'overhead_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep 'threshold_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+
+          # Determine status
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            STATUS="✅ PASSED"
+          else
+            STATUS="❌ FAILED"
+          fi
+
+          # Write formatted summary
+          {
+            echo "## 🚀 LLM Streaming Performance Test"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | $STATUS |"
+            echo "| **Tokens Received** | $TOKENS |"
+            echo "| **Total Time** | ${TOTAL_TIME}ms |"
+            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
+            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
+            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          exit $TEST_EXIT_CODE
+
+
+  forge-runner-changes:
+    name: Detect Forge Runner Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.filter.outputs.forge_runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Evaluate forge runner paths
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            forge_runner:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/tt_model_runners/**'
+
+
+  forge-runner-cpu-tests:
+    needs: forge-runner-changes
+    if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
+    name: Forge Runner CPU Tests (Python 3.11)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          # Dissable pip caching for now, it take longer than install sometimes
+          # cache: 'pip'
+          # cache-dependency-path: |
+          #   tt-media-server/requirements.txt
+          #   tt-media-server/tt_model_runners/forge_runners/requirements.txt
+
+      - name: Create venv, install dependencies
+        shell: bash
+        run: |
+          python3.11 -m venv venv-3.11
+          source venv-3.11/bin/activate
+          export VLLM_TARGET_DEVICE="empty"
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r tt_model_runners/forge_runners/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run CPU-only tests
+        shell: bash
+        run: |
+          source venv-3.11/bin/activate
+          pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
+
+  test-coverage:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' && github.event_name == 'pull_request' }}
+    name: Test Coverage Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'requirements-dev.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
+          pip install pytest-cov diff-cover
+
+      - name: Run tt-media-server tests with coverage
+        env:
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
+        run: |
+          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
+          # This makes paths match git diff output
+          pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
+            --cov=tt-media-server \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v --tb=short --continue-on-collection-errors || true
+
+      - name: Check coverage of changed lines
+        id: diff-cover
+        run: |
+          # Get the base branch
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
+          # Check if coverage file exists
+          if [ ! -f coverage.xml ]; then
+            echo "⚠️ No coverage file found"
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            echo "coverage_pct=N/A" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Checking coverage for tt-media-server only (gradual rollout)"
+
+          # Generate diff-cover report for changed lines only
+          # --exclude uses fnmatch patterns (shell-style wildcards)
+          diff-cover coverage.xml \
+            --compare-branch=origin/${BASE_REF} \
+            --exclude '*/tests/*' '*/performance_tests/*' \
+            --fail-under=50 \
+            > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
+
+          cat diff-cover-output.txt
+
+          # Extract coverage percentage
+          COVERAGE_PCT=$(grep -oE "Coverage: [0-9]+(\.[0-9]+)?%" diff-cover-output.txt | grep -oE "[0-9]+(\.[0-9]+)?" | tail -1 || echo "0")
+          echo "coverage_pct=$COVERAGE_PCT" >> $GITHUB_OUTPUT
+
+          if [ "$DIFF_COVER_FAILED" = "true" ]; then
+            echo "coverage_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail if coverage below threshold
+        if: ${{ steps.diff-cover.outputs.coverage_passed == 'false' }}
+        run: |
+          echo ""
+          echo "❌ COVERAGE FAILED"
+          echo "=================="
+          echo "Coverage: ${{ steps.diff-cover.outputs.coverage_pct }}% (required: 50%)"
+          echo ""
+
+          # Show just the summary from diff-cover (first ~20 lines)
+          if [ -f diff-cover-output.txt ]; then
+            head -25 diff-cover-output.txt
+          fi
+
+          echo ""
+          echo "💡 Add tests for the files listed above to increase coverage."
+          echo ""
+
+          exit 1
+
+      - name: Generate coverage summary
+        if: always()
+        run: |
+          COVERAGE_PCT="${{ steps.diff-cover.outputs.coverage_pct }}"
+          COVERAGE_PASSED="${{ steps.diff-cover.outputs.coverage_passed }}"
+
+          # Determine status
+          if [ "$COVERAGE_PASSED" = "true" ]; then
+            STATUS_ICON="✅"
+            STATUS_TEXT="PASSED"
+          else
+            STATUS_ICON="⚠️"
+            STATUS_TEXT="BELOW THRESHOLD"
+          fi
+
+          echo "## $STATUS_ICON Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage of Changed Lines" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coverage** | ${COVERAGE_PCT}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Threshold** | 50% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | $STATUS_ICON $STATUS_TEXT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment coverage on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coveragePct = '${{ steps.diff-cover.outputs.coverage_pct }}';
+            const coveragePassed = '${{ steps.diff-cover.outputs.coverage_passed }}' === 'true';
+
+            const statusIcon = coveragePassed ? '✅' : '❌';
+            const statusText = coveragePassed ? 'PASSED' : 'FAILED';
+
+            const commentBody = `## ${statusIcon} Test Coverage Report
+
+            ### Coverage of Changed Lines
+
+            | Metric | Value |
+            |--------|-------|
+            | **Coverage** | ${coveragePct}% |
+            | **Threshold** | 50% |
+            | **Status** | ${statusIcon} ${statusText} |
+
+            > 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage.
+            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches at least 50%.**' : ''}`;
+
+            // Find existing coverage comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Coverage Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            diff-cover-output.txt
+          retention-days: 14
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          # Fail if any required job failed
+          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
+            echo "❌ Lint check failed"
+            exit 1
+          fi
+          if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
+            echo "❌ Unit tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
+            echo "❌ Forge runner tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
+            echo "❌ Test coverage below 50% threshold - PR blocked"
+            exit 1
+          fi
+          echo "✅ All checks passed (or were skipped)"

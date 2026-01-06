@@ -3,23 +3,31 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-
+import time
+import uuid
 from multiprocessing import Process, Queue
 from threading import Lock
-import uuid
-import torch
 
 from config.settings import settings
-from model_services.device_worker import setup_cpu_threading_limits
+from device_workers.worker_utils import setup_cpu_threading_limits
+from model_services.tt_queue import TTQueue
 from utils.logger import TTLogger
 
-def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, worker_id, worker_function, worker_context_setup=None):
+
+def _process_worker_tasks(
+    task_queue,
+    result_queue,
+    error_queue,
+    worker_name,
+    worker_id,
+    worker_function,
+    worker_context_setup=None,
+):
     """Worker process - similar to device_worker"""
     logger = TTLogger()
     logger.info(f"{worker_name} worker {worker_id} started")
 
     setup_cpu_threading_limits("2")
-    torch.set_num_threads(2)
 
     worker_context = None
     if worker_context_setup:
@@ -47,14 +55,21 @@ def _process_worker_tasks(task_queue, result_queue, error_queue, worker_name, wo
 
         except Exception as e:
             logger.error(f"Error in {worker_name} worker: {e}")
-            if 'task_id' in locals():
+            if "task_id" in locals():
                 error_queue.put((task_id, str(e)))
 
     logger.info(f"{worker_name} worker stopped")
 
 
 class CpuWorkloadHandler:
-    def __init__(self, name: str, worker_count: int,  worker_function, worker_context_setup=None, warmup_task_data=None):
+    def __init__(
+        self,
+        name: str,
+        worker_count: int,
+        worker_function,
+        worker_context_setup=None,
+        warmup_task_data=None,
+    ):
         self.name = name
         self.worker_count = worker_count
         self.worker_function = worker_function
@@ -73,7 +88,9 @@ class CpuWorkloadHandler:
         self.error_listener_task = asyncio.create_task(self._error_listener())
 
     def _init_queues(self):
-        self.task_queue = Queue(settings.max_queue_size)
+        self.task_queue = TTQueue(
+            max_size=settings.max_queue_size, batch_enabled=settings.max_batch_size > 1
+        )
         self.result_queue = Queue()
         self.error_queue = Queue()
 
@@ -83,23 +100,34 @@ class CpuWorkloadHandler:
         for i in range(self.worker_count):
             worker = Process(
                 target=_process_worker_tasks,
-                args=(self.task_queue, self.result_queue, self.error_queue, self.name, i, self.worker_function, self.worker_context_setup),
-                name=f"{self.name}Worker-{i}"
+                args=(
+                    self.task_queue,
+                    self.result_queue,
+                    self.error_queue,
+                    self.name,
+                    i,
+                    self.worker_function,
+                    self.worker_context_setup,
+                ),
+                name=f"{self.name}Worker-{i}",
             )
             worker.start()
             self.workers.append(worker)
             self.logger.info(f"Started {self.name} worker {i} with PID {worker.pid}")
+            time.sleep(settings.new_runner_delay_seconds)
 
     def _warmup_workers(self, warmup_task_data=None):
-        if (warmup_task_data is None):
+        if warmup_task_data is None:
             self.logger.info("No warmup task data provided, skipping warmup")
             return
         for i in range(self.worker_count):
             warmup_task_id = f"warmup-{i}"
-            self.task_queue.put( (warmup_task_id,) + tuple(warmup_task_data))
+            self.task_queue.put((warmup_task_id,) + tuple(warmup_task_data))
             self.logger.info(f"Submitted warmup task for {self.name} worker {i}")
 
-        self.logger.info(f"Submitted {self.worker_count} warmup tasks to {self.name} workers")
+        self.logger.info(
+            f"Submitted {self.worker_count} warmup tasks to {self.name} workers"
+        )
 
     async def _result_listener(self):
         """Listen for results from worker processes"""
@@ -151,30 +179,36 @@ class CpuWorkloadHandler:
             for _ in self.workers:
                 try:
                     self.task_queue.put(None, timeout=2.0)
-                except:
-                    self.logger.warning(f"Timeout sending shutdown signal to {self.name} worker")
+                except Exception:
+                    self.logger.warning(
+                        f"Timeout sending shutdown signal to {self.name} worker"
+                    )
 
             # Send shutdown signals to listeners
             try:
                 self.result_queue.put((None, None), timeout=1.0)
                 self.error_queue.put((None, None), timeout=1.0)
-            except:
-                self.logger.warning(f"Timeout sending shutdown signals to {self.name} listeners")
+            except Exception:
+                self.logger.warning(
+                    f"Timeout sending shutdown signals to {self.name} listeners"
+                )
 
             # Wait for workers to finish
             for i, worker in enumerate(self.workers):
                 if worker.is_alive():
                     worker.join(timeout=10.0)
                     if worker.is_alive():
-                        self.logger.warning(f"{self.name} worker {i} did not shutdown gracefully")
+                        self.logger.warning(
+                            f"{self.name} worker {i} did not shutdown gracefully"
+                        )
                         worker.terminate()
                         worker.join(timeout=2.0)
                         if worker.is_alive():
                             worker.kill()
 
-            if hasattr(self, 'result_listener_task'):
+            if hasattr(self, "result_listener_task"):
                 self.result_listener_task.cancel()
-            if hasattr(self, 'error_listener_task'):
+            if hasattr(self, "error_listener_task"):
                 self.error_listener_task.cancel()
 
             try:
@@ -213,7 +247,7 @@ class CpuWorkloadHandler:
 
         try:
             return await asyncio.wait_for(result_future, timeout=None)
-        except Exception as e:
+        except Exception:
             self._pop_and_cancel_future(task_id)
             raise
 
