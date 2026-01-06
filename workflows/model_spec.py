@@ -1453,13 +1453,11 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 30712832,
+                    "fabric_config": "FABRIC_1D",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
-                },
-                override_tt_config={
-                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
