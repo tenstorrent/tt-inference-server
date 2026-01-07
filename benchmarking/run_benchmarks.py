@@ -174,22 +174,15 @@ def main():
     service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
-    # Check if user explicitly set --disable-trace-capture flag
-    # For store_true flags, True means user explicitly passed the flag
-    user_explicitly_set = disable_trace_capture
-
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
-    if not user_explicitly_set and hasattr(model_spec, "has_builtin_warmup"):
+    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
         if model_spec.has_builtin_warmup:
             # Model has builtin warmup - disable client-side trace capture
             disable_trace_capture = True
-        else:
-            # Model doesn't have builtin warmup - enable client-side trace capture
-            disable_trace_capture = False
             logger.info(
-                "Model does not have builtin warmup (has_builtin_warmup=False), "
-                "automatically enabling trace capture for benchmarks workflow"
+                "Model has builtin warmup (has_builtin_warmup=True), "
+                "automatically disabling trace capture for benchmarks workflow"
             )
 
     device = DeviceTypes.from_string(device_str)
