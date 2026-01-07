@@ -238,6 +238,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+gpt_oss_impl = ImplSpec(
+    impl_id="gpt_oss",
+    impl_name="gpt-oss",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gpt_oss",
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -902,6 +908,74 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-20b"],
+        impl=gpt_oss_impl,
+        tt_metal_commit="0e962a8",
+        vllm_commit="f49265a",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=False,
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                # override_tt_config={
+                #     "data_parallel": 4,
+                #     "trace_region_size": 66147328,
+                #     "sample_on_device_mode": "decode_only",
+                # },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "VLLM_USE_V1": "1",
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        tt_metal_commit="0e962a8",
+        vllm_commit="f49265a",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                # override_tt_config={
+                #     "data_parallel": 4,
+                #     "trace_region_size": 66147328,
+                #     "sample_on_device_mode": "decode_only",
+                # },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
     ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
