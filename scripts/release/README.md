@@ -1,6 +1,12 @@
 # Release process
 
-The release process can be run locally on a laptop or on a remote server. 
+This document gives the step by step instructions for making a release. There are a few points where optional steps are listed, especially for dealing with manual overrides or carrying forward older tt-metal SHA model versions.
+
+The release process can be run locally on a laptop or on a remote server. However, the Docker image building for carrying forward older tt-metal SHA model versions should be done on a remote machine with high CPU and RAM because it will make parallel Docker image builds.
+
+## Summary Diagram
+
+![release-summary-2025-08-14-1106.png](release-summary-2025-08-14-1106.png)
 
 ## pre-requisite requirements
 permissions requirement:
