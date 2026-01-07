@@ -163,12 +163,12 @@ def model_weights_to_model_name(model_weights: str) -> str:
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
-    assert isinstance(impl_name, str), (
-        f"Impl name must be a string, got {type(impl_name)}"
-    )
-    assert isinstance(model_name, str), (
-        f"Model name must be a string, got {type(model_name)}"
-    )
+    assert isinstance(
+        impl_name, str
+    ), f"Impl name must be a string, got {type(impl_name)}"
+    assert isinstance(
+        model_name, str
+    ), f"Model name must be a string, got {type(model_name)}"
     assert isinstance(device, str), f"Device must be a string, got {type(device)}"
 
     # Validate that all parameters are non-empty
@@ -376,7 +376,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
-    has_builtin_warmup: bool = True
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         default_env_vars = {
@@ -475,9 +475,9 @@ class ModelSpec:
         assert self.hf_model_repo, "hf_model_repo must be set"
         assert self.model_name, "model_name must be set"
         assert self.model_id, "model_id must be set"
-        assert self.inference_engine in [e.value for e in InferenceEngine], (
-            f"inference_engine must be one of {[e.value for e in InferenceEngine]}"
-        )
+        assert self.inference_engine in [
+            e.value for e in InferenceEngine
+        ], f"inference_engine must be one of {[e.value for e in InferenceEngine]}"
 
     @staticmethod
     def infer_param_count(hf_model_repo: str) -> Optional[int]:
@@ -804,7 +804,7 @@ class ModelSpecTemplate:
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (shared across all weights)
     )
-    has_builtin_warmup: bool = True
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         self._validate_data()
@@ -814,10 +814,10 @@ class ModelSpecTemplate:
         """Validate that required specification is present."""
         assert self.device_model_specs, "device_model_specs must be provided"
         assert self.weights, "weights must be provided"
-        assert self.inference_engine in [engine.value for engine in InferenceEngine], (
-            f"inference_engine must be a valid InferenceEngine! \
+        assert self.inference_engine in [
+            engine.value for engine in InferenceEngine
+        ], f"inference_engine must be a valid InferenceEngine! \
             Available: {[engine for engine in InferenceEngine]}"
-        )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
@@ -1095,7 +1095,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        has_builtin_warmup=False,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1130,7 +1129,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        has_builtin_warmup=False,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1153,7 +1151,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        has_builtin_warmup=False,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1179,7 +1176,6 @@ spec_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
-        has_builtin_warmup=False,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
@@ -1269,6 +1265,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1529,6 +1526,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1936,6 +1934,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
