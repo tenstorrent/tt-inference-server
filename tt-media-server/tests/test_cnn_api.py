@@ -142,8 +142,12 @@ class TestSearchImageEndpoint:
             api_key="test-api-key",
         )
 
-        assert result["status"] == "success"
-        assert result["image_data"] == expected_result
+        assert result.status == "success"
+        # Pydantic converts dicts to ImagePrediction objects, compare underlying data
+        assert len(result.image_data) == 1
+        assert len(result.image_data[0]) == 1
+        assert result.image_data[0][0].object == "cat"
+        assert result.image_data[0][0].confidence_level == 95.5
         mock_service.process_request.assert_called_once_with(mock_image_search_request)
 
     @pytest.mark.asyncio
@@ -186,5 +190,5 @@ class TestSearchImageEndpoint:
             api_key="test-api-key",
         )
 
-        assert result["status"] == "success"
-        assert result["image_data"] == expected_result
+        assert result.status == "success"
+        assert result.image_data == expected_result
