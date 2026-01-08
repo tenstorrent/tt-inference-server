@@ -68,12 +68,13 @@ class Job:
             "created_at": self.created_at,
             "model": self.model,
             "request_parameters": self.request_parameters,
-            "result_path": self.result_path,
         }
         if self.completed_at:
             data["completed_at"] = self.completed_at
         if self.error:
             data["error"] = self.error
+        if self.result_path:
+            data["result_path"] = self.result_path
         return data
 
 
