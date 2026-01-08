@@ -88,6 +88,7 @@ def run_genai_benchmarks(
     jwt_secret: str,
     service_port: str = "8000",
     debug: bool = False,
+    raw_output: bool = False,
 ) -> int:
     """
     Run genai-perf benchmarks using Docker container.
@@ -98,6 +99,7 @@ def run_genai_benchmarks(
         jwt_secret: JWT secret for authentication
         service_port: Service port for the inference server
         debug: If True, run in debug mode with verbose logging
+        raw_output: If True, print and save original genai-perf JSON output
 
     Returns:
         Return code (0 for success, non-zero for failure)
@@ -196,6 +198,8 @@ def run_genai_benchmarks(
 
     if debug:
         cmd.append("--debug")
+    if raw_output:
+        cmd.append("--raw-output")
 
     logger.info(f"Running Docker command: {' '.join(cmd)}")
 

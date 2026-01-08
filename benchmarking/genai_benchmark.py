@@ -344,6 +344,7 @@ def run_benchmark(
     auth_token,
     artifact_base,
     verbose=False,
+    raw_output=False,
 ):
     num_prompts = get_num_prompts(isl, osl, concurrency)
 
@@ -460,6 +461,32 @@ def run_benchmark(
                 benchmarks_output_dir,
             )
 
+            # Print and save raw genai-perf output if requested
+            if raw_output:
+                # Find the raw JSON file in nested directory structure
+                raw_json_path = None
+                for subdir in glob.glob(os.path.join(artifact_dir, "*")):
+                    if os.path.isdir(subdir):
+                        candidate = os.path.join(subdir, "profile_export_genai_perf.json")
+                        if os.path.exists(candidate):
+                            raw_json_path = candidate
+                            break
+
+                if raw_json_path:
+                    with open(raw_json_path, "r") as f:
+                        raw_data = json.load(f)
+                    print("\n--- RAW GENAI-PERF OUTPUT ---")
+                    print(json.dumps(raw_data, indent=2))
+
+                    # Save copy to benchmarks_output_dir
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    raw_filename = f"raw_genai_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_con-{concurrency}.json"
+                    raw_filepath = os.path.join(benchmarks_output_dir, raw_filename)
+                    with open(raw_filepath, "w") as f:
+                        json.dump(raw_data, f, indent=2)
+                    print(f"Raw output saved to: {raw_filepath}")
+
             # Still add to aggregator for final summary table
             bench_res = BenchmarkResult(
                 isl=isl,
@@ -538,6 +565,11 @@ def parse_args():
         type=str,
         help="Path to output JSON file for results",
     )
+    parser.add_argument(
+        "--raw-output",
+        action="store_true",
+        help="Print and save original genai-perf JSON output",
+    )
     return parser.parse_args()
 
 
@@ -608,6 +640,7 @@ def main():
             auth_token,
             artifact_base,
             verbose=True,
+            raw_output=args.raw_output,
         )
 
         # Medium benchmark
@@ -628,6 +661,7 @@ def main():
             auth_token,
             artifact_base,
             verbose=True,
+            raw_output=args.raw_output,
         )
 
         aggregator.print_summary_table()
@@ -648,6 +682,7 @@ def main():
                 url,
                 auth_token,
                 artifact_base,
+                raw_output=args.raw_output,
             )
 
         # 2. Max Concurrency Sweeps
@@ -667,6 +702,7 @@ def main():
                     url,
                     auth_token,
                     artifact_base,
+                    raw_output=args.raw_output,
                 )
 
         aggregator.print_summary_table()

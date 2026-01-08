@@ -178,6 +178,7 @@ def main():
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     # Check for tools selection (genai vs vllm)
     tools = cli_args.get("tools", "vllm")
+    raw_output = cli_args.get("raw_output", False)
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
@@ -209,6 +210,7 @@ def main():
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
+            raw_output=raw_output,
         )
 
     # set environment vars

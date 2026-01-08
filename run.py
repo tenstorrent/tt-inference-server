@@ -198,6 +198,11 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
     )
+    parser.add_argument(
+        "--raw-output",
+        action="store_true",
+        help="Print and save original genai-perf JSON output (only applies to --tools genai)",
+    )
 
     args = parser.parse_args()
 
