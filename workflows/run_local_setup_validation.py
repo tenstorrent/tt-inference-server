@@ -8,7 +8,6 @@ import json
 import logging
 import os
 from packaging.specifiers import SpecifierSet
-from packaging.version import Version
 from pathlib import Path
 import re
 import signal
@@ -248,7 +247,9 @@ def main():
         ) -> None:
             version_specifier = version_requirement.specifier
             enforcement_mode = version_requirement.mode
-            meets_requirement = Version(version) in SpecifierSet(version_specifier)
+            meets_requirement = SpecifierSet(version_specifier).contains(
+                version, prereleases=True
+            )
             if meets_requirement:
                 return
             message = f"{requirement_name} version '{version}' does not satisfy the {enforcement_mode.name} requirement '{version_specifier}'."
