@@ -40,7 +40,8 @@ class JobDatabase:
                 status TEXT NOT NULL,
                 created_at TIMESTAMP,
                 completed_at TIMESTAMP,
-                error_message TEXT
+                error_message TEXT,
+                result_path TEXT
             );
         """)
         conn.commit()
@@ -73,6 +74,7 @@ class JobDatabase:
         job_id: str,
         status: str,
         completed_at: Optional[int] = None,
+        result_path: Optional[str] = None,
         error_message: Optional[dict] = None,
     ) -> None:
         """Update job status and optional fields."""
@@ -89,6 +91,10 @@ class JobDatabase:
         if error_message is not None:
             updates.append("error_message = ?")
             params.append(json.dumps(error_message))
+
+        if result_path is not None:
+            updates.append("result_path = ?")
+            params.append(result_path)
 
         query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"
         params.append(job_id)

@@ -33,7 +33,7 @@ class Job:
     status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
-    result: Optional[Any] = None
+    result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
 
@@ -44,15 +44,12 @@ class Job:
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
 
-    def mark_completed(self, result: Any):
+    def mark_completed(self, result_path: str):
+        if self.result_path is not None and not isinstance(self.result_path, str):
+            raise TypeError(f"result_path must be str, not {type(self.result_path)}")
         self.completed_at = int(time.time())
         self.status = JobStatus.COMPLETED
-        self.result = result
-
-    def mark_failed(self, error_code: str, error_message: str):
-        self.completed_at = int(time.time())
-        self.status = JobStatus.FAILED
-        self.error = {"code": error_code, "message": error_message}
+        self.result_path = result_path
 
     def is_in_progress(self) -> bool:
         return self.status == JobStatus.IN_PROGRESS
@@ -71,6 +68,7 @@ class Job:
             "created_at": self.created_at,
             "model": self.model,
             "request_parameters": self.request_parameters,
+            "result_path": self.result_path,
         }
         if self.completed_at:
             data["completed_at"] = self.completed_at
@@ -152,12 +150,12 @@ class JobManager:
                 return job.to_public_dict()
             return None
 
-    def get_job_result(self, job_id: str) -> Optional[Any]:
-        """Get job result if completed."""
+    def get_job_result_path(self, job_id: str) -> Optional[str]:
+        """Get job result path if completed."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
             if job and job.is_terminal():
-                return job.result if job.is_completed() else job.error
+                return job.result_path if job.is_completed() else None
             return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -206,15 +204,15 @@ class JobManager:
             if self.db:
                 self.db.update_job_status(job.id, job.status.value)
 
-            result = await task_function(request)
+            result_path = await task_function(request)
 
-            job.mark_completed(result=result)
+            job.mark_completed(result_path=result_path)
             if self.db:
                 self.db.update_job_status(
                     job.id,
                     job.status.value,
                     completed_at=job.completed_at,
-                    result=result,
+                    result_path=result_path,
                 )
 
         except asyncio.CancelledError:
@@ -287,11 +285,11 @@ class JobManager:
             running_task = job._task
 
         # Delete result file if it's a file path
-        if job.result and isinstance(job.result, str):
+        if job.result_path and isinstance(job.result_path, str):
             try:
-                if os.path.exists(job.result):
-                    os.remove(job.result)
-                    self._logger.debug(f"Deleted file for job {job.id}: {job.result}")
+                if os.path.exists(job.result_path):
+                    os.remove(job.result_path)
+                    self._logger.debug(f"Deleted file for job {job.id}: {job.result_path}")
             except Exception as e:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
