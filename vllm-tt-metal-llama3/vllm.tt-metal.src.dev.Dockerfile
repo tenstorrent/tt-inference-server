@@ -12,6 +12,10 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 # connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
+# Fix for tt-metal commit e6eb467d27: debug logs now write to CWD by default
+# Ensure TT_METAL_LOGS_PATH is set to a writable directory
+ENV TT_METAL_LOGS_PATH=/tmp/tt-metal-logs
+
 # Switch back to root for entrypoint
 USER root
 

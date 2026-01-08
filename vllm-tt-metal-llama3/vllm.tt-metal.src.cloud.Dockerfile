@@ -123,7 +123,9 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
     vllm_dir=${HOME_DIR}/vllm \
-    LOGURU_LEVEL=INFO
+    LOGURU_LEVEL=INFO \
+    # Fix for tt-metal commit e6eb467d27: debug logs now write to CWD by default
+    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 # Environment variables defined by other env vars
 ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
     PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
@@ -153,7 +155,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} ${APP_DIR} \
+    && mkdir -p ${HOME_DIR} ${APP_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
