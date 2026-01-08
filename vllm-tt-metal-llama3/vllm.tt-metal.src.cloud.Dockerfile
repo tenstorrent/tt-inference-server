@@ -41,7 +41,9 @@ ENV PYTHONPATH=${TT_METAL_HOME} \
     PATH="$CARGO_HOME/bin:$PATH"
 
 # Install only essential build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Remove kitware apt source to avoid GPG key issues (not needed for this build)
+RUN rm -f /etc/apt/sources.list.d/kitware.list || true \
+    && apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-dev \
     git \
@@ -130,7 +132,9 @@ ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
     LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # Install only runtime dependencies + create IDENTICAL user
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Remove kitware apt source to avoid GPG key issues (not needed for runtime)
+RUN rm -f /etc/apt/sources.list.d/kitware.list || true \
+    && apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     python3-venv \
     libgl1 \
