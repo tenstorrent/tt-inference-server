@@ -13,8 +13,8 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 # Fix for tt-metal commit e6eb467d27: debug logs now write to CWD by default
-# Ensure TT_METAL_LOGS_PATH is set to a writable directory
-ENV TT_METAL_LOGS_PATH=/tmp/tt-metal-logs
+# Ensure TT_METAL_LOGS_PATH is set to a writable directory (matches cloud Dockerfile)
+ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 
 # Switch back to root for entrypoint
 USER root
