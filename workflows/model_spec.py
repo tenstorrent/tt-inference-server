@@ -2275,9 +2275,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2286,9 +2286,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2297,9 +2297,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2308,9 +2308,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
                     "TT_METAL_INSPECTOR_RPC": "0",
