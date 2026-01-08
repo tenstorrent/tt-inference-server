@@ -29,7 +29,7 @@ def format_backend_value(backend: str) -> str:
     if backend == "vllm":
         return "vLLM"
     elif backend == "genai-perf":
-        return "genai-perf"
+        return "genai"
     else:
         return backend if backend else NOT_MEASURED_STR
 
@@ -84,7 +84,69 @@ def _get_task_type(model_id: str) -> str | None:
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # First try the image benchmark pattern
+    # Try AIPerf image benchmark pattern first (most specific)
+    aiperf_image_pattern = r"""
+        ^aiperf_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        _images-(?P<images_per_prompt>\d+)
+        _height-(?P<image_height>\d+)
+        _width-(?P<image_width>\d+)
+        \.json$
+    """
+
+    # Try AIPerf image pattern first
+    match = re.search(aiperf_image_pattern, filename, re.VERBOSE)
+    if match:
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "images_per_prompt": int(match.group("images_per_prompt")),
+            "image_height": int(match.group("image_height")),
+            "image_width": int(match.group("image_width")),
+            "task_type": "image",
+            "backend": "aiperf",
+        }
+
+    # Try AIPerf text benchmark pattern
+    aiperf_text_pattern = r"""
+        ^aiperf_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+
+    # Try aiperf text pattern
+    match = re.search(aiperf_text_pattern, filename, re.VERBOSE)
+    if match:
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "task_type": "text",
+            "backend": "aiperf",
+        }
+
+    # Try the image benchmark pattern
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
@@ -100,7 +162,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         \.json$
     """
 
-    # Try image pattern first
+    # Try image pattern
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
         # Extract and convert numeric parameters for image benchmarks
@@ -208,53 +270,114 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
-    if params.get("task_type") == "cnn":
-        # For CNN benchmarks, extract data from JSON content
-        benchmarks_data = data.get("benchmarks: ", data)
+    # Handle aiperf benchmark files
+    if params.get("backend") == "aiperf":
+        # AIPerf files already contain metrics in vLLM-compatible format
+        mean_tpot_ms = data.get("mean_tpot_ms", 0)
+        if mean_tpot_ms and mean_tpot_ms > 0:
+            mean_tps = 1000.0 / mean_tpot_ms
+            std_tps = None
+            if data.get("std_tpot_ms"):
+                std_tps = mean_tps - (1000.0 / (mean_tpot_ms + data.get("std_tpot_ms")))
+        else:
+            mean_tps = None
+            std_tps = None
+
+        actual_max_con = min(params["max_con"], params["num_requests"])
+        tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+        tps_prefill_throughput = None
+        if data.get("mean_ttft_ms") and data.get("mean_ttft_ms") > 0:
+            tps_prefill_throughput = (
+                params["input_sequence_length"] * actual_max_con
+            ) / (data.get("mean_ttft_ms") / 1000)
+
         metrics = {
             "timestamp": params["timestamp"],
-            "model": data.get("model", ""),
-            "model_name": data.get("model", ""),
-            "model_id": data.get("model", ""),
-            "backend": "cnn",
-            "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                "num_inference_steps", 0
-            ),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
-            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                "inference_steps_per_second", 0
-            ),
+            "model_name": params["model_name"],
+            "model_id": data.get("model_id", ""),
+            "backend": "aiperf",
+            "device": params.get("device", ""),
+            "input_sequence_length": params["input_sequence_length"],
+            "output_sequence_length": params["output_sequence_length"],
+            "max_con": actual_max_con,
+            "mean_ttft_ms": data.get("mean_ttft_ms"),
+            "std_ttft_ms": data.get("std_ttft_ms"),
+            "mean_tpot_ms": mean_tpot_ms,
+            "std_tpot_ms": data.get("std_tpot_ms"),
+            "mean_tps": mean_tps,
+            "std_tps": std_tps,
+            "tps_decode_throughput": tps_decode_throughput,
+            "tps_prefill_throughput": tps_prefill_throughput,
+            "mean_e2el_ms": data.get("mean_e2el_ms"),
+            "request_throughput": data.get("request_throughput"),
+            "total_input_tokens": data.get("total_input_tokens"),
+            "total_output_tokens": data.get("total_output_tokens"),
+            "num_prompts": data.get("num_prompts", ""),
+            "num_requests": params["num_requests"],
             "filename": filename,
-            "task_type": "cnn",
+            "task_type": params["task_type"],
         }
+
+        # Add image-specific fields if this is an image benchmark
+        if params["task_type"] == "image":
+            metrics["images_per_prompt"] = params.get("images_per_prompt", 1)
+            metrics["image_height"] = params.get("image_height", 0)
+            metrics["image_width"] = params.get("image_width", 0)
+
         return format_metrics(metrics)
 
-    if params.get("task_type") == "image":
-        # For IMAGE benchmarks, extract data from JSON content
-        benchmarks_data = data.get("benchmarks: ", data)
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model": data.get("model", ""),
-            "model_name": data.get("model", ""),
-            "model_id": data.get("model", ""),
-            "backend": "image",
-            "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                "num_inference_steps", 0
-            ),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
-            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                "inference_steps_per_second", 0
-            ),
-            "filename": filename,
-            "task_type": "image",
-        }
-        return format_metrics(metrics)
+    # Check if this is a CNN/SDXL-style benchmark (old format with benchmarks_data structure)
+    # These have task_type "cnn" or "image" but use a different JSON format
+    benchmarks_data = data.get("benchmarks: ", None)
+    if benchmarks_data and benchmarks_data.get("benchmarks"):
+        # This is a CNN/SDXL-style benchmark
+        if params.get("task_type") == "cnn":
+            metrics = {
+                "timestamp": params["timestamp"],
+                "model": data.get("model", ""),
+                "model_name": data.get("model", ""),
+                "model_id": data.get("model", ""),
+                "backend": "cnn",
+                "device": params["device"],
+                "num_requests": benchmarks_data.get("benchmarks").get(
+                    "num_requests", 0
+                ),
+                "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                    "num_inference_steps", 0
+                ),
+                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+                * 1000,  # ttft is already in seconds, convert to ms
+                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                    "inference_steps_per_second", 0
+                ),
+                "filename": filename,
+                "task_type": "cnn",
+            }
+            return format_metrics(metrics)
+        elif params.get("task_type") == "image":
+            # SDXL-style image benchmark
+            metrics = {
+                "timestamp": params["timestamp"],
+                "model": data.get("model", ""),
+                "model_name": data.get("model", ""),
+                "model_id": data.get("model", ""),
+                "backend": "image",
+                "device": params["device"],
+                "num_requests": benchmarks_data.get("benchmarks").get(
+                    "num_requests", 0
+                ),
+                "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                    "num_inference_steps", 0
+                ),
+                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+                * 1000,  # ttft is already in seconds, convert to ms
+                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                    "inference_steps_per_second", 0
+                ),
+                "filename": filename,
+                "task_type": "image",
+            }
+            return format_metrics(metrics)
 
     if params.get("task_type") == "audio":
         # For audio benchmarks, extract data from JSON content
@@ -716,6 +839,32 @@ def save_markdown_table(
 def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
+
+    # Sort results by config then source (vllm, aiperf, genai-perf) for consistent ordering
+    def get_sort_key(result):
+        """Generate sort key: (isl, osl, concurrency, images, height, width, source_priority)"""
+        isl = result.get("input_sequence_length", 0)
+        osl = result.get("output_sequence_length", 0)
+        concurrency = result.get("max_con", 1)
+        backend = result.get("backend", "")
+
+        # Define source priority: vllm=0, aiperf=1, genai-perf=2
+        # Note: "openai-chat" is vLLM's backend label for image/VLM benchmarks
+        source_priority = {
+            "vllm": 0,
+            "openai-chat": 0,
+            "aiperf": 1,
+            "genai-perf": 2,
+        }.get(backend, 3)
+
+        # For image benchmarks, also include image dimensions
+        images = result.get("images_per_prompt", 0)
+        height = result.get("image_height", 0)
+        width = result.get("image_width", 0)
+
+        return (isl, osl, concurrency, images, height, width, source_priority)
+
+    results.sort(key=get_sort_key)
 
     # Save to CSV
     output_dir = Path(output_dir)
