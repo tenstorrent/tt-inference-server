@@ -177,7 +177,7 @@ class TestWorkflowExecution:
         )
         model_spec = Namespace(
             cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",
+            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
         )
 
         # Track workflow calls in order

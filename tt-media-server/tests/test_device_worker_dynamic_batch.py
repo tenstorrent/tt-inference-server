@@ -41,17 +41,17 @@ sys.modules["utils.torch_utils"].set_torch_thread_limits = Mock()
 # Mock device manager to prevent actual device detection
 sys.modules["utils.device_manager"] = Mock()
 
-
-# Mock domain objects
-class MockCompletionRequest:
-    def __init__(self, task_id, prompt="test prompt", stream=False):
-        self._task_id = task_id
-        self.prompt = prompt
-        self.stream = stream
+from domain.completion_request import CompletionRequest
 
 
-sys.modules["domain.completion_request"] = Mock()
-sys.modules["domain.completion_request"].CompletionRequest = MockCompletionRequest
+def create_test_request(
+    task_id: str, prompt: str = "test prompt", stream: bool = False
+) -> CompletionRequest:
+    """Create a CompletionRequest with explicit task_id for testing."""
+    request = CompletionRequest(prompt=prompt, stream=stream)
+    request._task_id = task_id
+    return request
+
 
 # Mock device runner and fabric
 mock_device_runner = Mock()
@@ -164,7 +164,7 @@ class TestDeviceWorkerDynamicBatch:
         result_queue.put = capture_put
 
         # Create non-streaming request
-        regular_request = MockCompletionRequest("task_1", stream=False)
+        regular_request = create_test_request("task_1", stream=False)
 
         # Mock queue to return request then shutdown
         task_queue.get.side_effect = [regular_request, None]
@@ -212,7 +212,7 @@ class TestDeviceWorkerDynamicBatch:
         result_queue.put = capture_put
 
         # Create streaming request
-        streaming_request = MockCompletionRequest("stream_task_1", stream=True)
+        streaming_request = create_test_request("stream_task_1", stream=True)
 
         # Mock queue to return request then shutdown
         task_queue.get.side_effect = [streaming_request, None]
@@ -270,8 +270,8 @@ class TestDeviceWorkerDynamicBatch:
         result_queue.put = capture_put
 
         # Create multiple streaming requests
-        stream_req_1 = MockCompletionRequest("stream_1", stream=True)
-        stream_req_2 = MockCompletionRequest("stream_2", stream=True)
+        stream_req_1 = create_test_request("stream_1", stream=True)
+        stream_req_2 = create_test_request("stream_2", stream=True)
 
         # Mock queue to return requests then shutdown
         task_queue.get.side_effect = [stream_req_1, stream_req_2, None]
@@ -341,8 +341,8 @@ class TestDeviceWorkerDynamicBatch:
         result_queue.put = capture_put
 
         # Create mixed requests
-        regular_req = MockCompletionRequest("regular", stream=False)
-        stream_req = MockCompletionRequest("streaming", stream=True)
+        regular_req = create_test_request("regular", stream=False)
+        stream_req = create_test_request("streaming", stream=True)
 
         # Mock queue
         task_queue.get.side_effect = [regular_req, stream_req, None]
@@ -395,7 +395,7 @@ class TestDeviceWorkerDynamicBatch:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Create request that will fail
-        failing_request = MockCompletionRequest("fail_task", stream=False)
+        failing_request = create_test_request("fail_task", stream=False)
 
         task_queue.get.side_effect = [failing_request, None]
 
@@ -437,7 +437,7 @@ class TestDeviceWorkerDynamicBatch:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Create streaming request that will fail
-        failing_stream = MockCompletionRequest("stream_fail", stream=True)
+        failing_stream = create_test_request("stream_fail", stream=True)
 
         task_queue.get.side_effect = [failing_stream, None]
 
@@ -485,7 +485,7 @@ class TestDeviceWorkerDynamicBatch:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Create request
-        request = MockCompletionRequest("no_response", stream=False)
+        request = create_test_request("no_response", stream=False)
 
         task_queue.get.side_effect = [request, None]
 
