@@ -16,7 +16,9 @@ class TrainingService(BaseService):
             raise ValueError("The job type must be TRAINING, since the chosen model service is TrainingService")
         if settings.dataset_loader == "" or settings.dataset_loader == None:
             raise ValueError("The dataset loader must be set")
-        request.dataset=settings.dataset_loader.value
+        
+        request.dataset = settings.dataset_loader.value
+
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
