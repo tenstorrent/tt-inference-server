@@ -39,6 +39,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_GENAI_PERF = auto()
+    BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
 
@@ -47,6 +48,7 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
     GENAI_PERF = auto()
+    AIPERF = auto()
 
 
 class DeviceTypes(IntEnum):
