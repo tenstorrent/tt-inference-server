@@ -124,7 +124,6 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     VLLM_TARGET_DEVICE="tt" \
     vllm_dir=${HOME_DIR}/vllm \
     LOGURU_LEVEL=INFO \
-    # Fix for tt-metal commit e6eb467d27: debug logs now write to CWD by default
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 # Environment variables defined by other env vars
 ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
