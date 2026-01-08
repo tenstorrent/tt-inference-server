@@ -154,10 +154,6 @@ def verify_inference_output(
         first_prediction = result[0]
         label = first_prediction.get("object", "")
         prob_raw = first_prediction.get("confidence_level", 0)
-    # Handle legacy format: {"top1_class_label": "...", "top1_class_probability": ...}
-    elif isinstance(result, dict) and "top1_class_label" in result:
-        label = result["top1_class_label"]
-        prob_raw = result["top1_class_probability"]
     else:
         return False
 

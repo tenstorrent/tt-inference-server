@@ -11,7 +11,6 @@ os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = (
 )
 
 import base64
-import inspect
 from io import BytesIO
 from typing import List, Union
 
@@ -201,19 +200,6 @@ class ForgeRunner(BaseDeviceRunner):
         )
         self.logger.info("Getting base predictions from loader")
 
-        # Check if loader supports new API with top_k/min_confidence parameters
-        sig = inspect.signature(self.loader.output_postprocess)
-        supports_new_api = (
-            "top_k" in sig.parameters and "min_confidence" in sig.parameters
-        )
-
-        if not supports_new_api:
-            self.logger.warning(
-                "Loader does not support top_k/min_confidence, using legacy behavior"
-            )
-            raw_predictions = self.loader.output_postprocess(output)
-            return self._legacy_postprocess(raw_predictions, top_k, min_confidence)
-
         raw_predictions = self.loader.output_postprocess(
             output, top_k=top_k, min_confidence=min_confidence
         )
@@ -228,38 +214,6 @@ class ForgeRunner(BaseDeviceRunner):
             predictions.append({"label": label, "probability": prob})
 
         return predictions
-
-    def _legacy_postprocess(
-        self, raw_predictions: dict, top_k: int, min_confidence: float
-    ) -> list:
-        """
-        Handle legacy loader output format (single top-1 prediction).
-
-        Note: top_k and min_confidence are ignored in legacy mode since the
-        loader doesn't support filtering. They are kept as parameters for
-        API consistency.
-
-        Args:
-            raw_predictions: Dict with 'label' and 'probability' keys
-            top_k: Ignored - legacy loader only returns top-1
-            min_confidence: Ignored - legacy loader doesn't filter
-
-        Returns:
-            List of prediction dicts matching the new format
-        """
-        label = raw_predictions.get("label", "")
-        probability = raw_predictions.get("probability", 0.0)
-
-        # Parse probability
-        if isinstance(probability, str):
-            prob = float(probability.rstrip("%"))
-        else:
-            prob = float(probability)
-            # If value is in 0-1 range, convert to 0-100 percentage
-            if prob <= 1.0:
-                prob = prob * 100.0
-
-        return [{"label": label, "probability": prob}]
 
     def _format_response(self, predictions: list, response_format: str):
         """
