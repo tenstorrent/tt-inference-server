@@ -132,7 +132,8 @@ class TestSearchImageEndpoint:
         """Test that searchImage returns correct success response."""
         from open_ai_api.cnn import searchImage
 
-        expected_result = [{"object": "cat", "confidence_level": 95.5}]
+        # Service returns List[List[ImagePrediction]] structure
+        expected_result = [[{"object": "cat", "confidence_level": 95.5}]]
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
         result = await searchImage(
@@ -175,7 +176,8 @@ class TestSearchImageEndpoint:
         from open_ai_api.cnn import searchImage
 
         mock_image_search_request.response_format = "verbose_json"
-        expected_result = "cat,95.5,dog,80.2"
+        # Service returns List[str] structure for verbose format
+        expected_result = ["cat,95.5,dog,80.2"]
         mock_service.process_request = AsyncMock(return_value=expected_result)
 
         result = await searchImage(
