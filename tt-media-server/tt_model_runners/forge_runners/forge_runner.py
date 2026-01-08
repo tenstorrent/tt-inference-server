@@ -21,6 +21,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 from config.constants import ResponseFormat
 from domain.image_search_request import ImageSearchRequest
+from domain.image_search_response import ImagePrediction
 from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -277,6 +278,6 @@ class ForgeRunner(BaseDeviceRunner):
 
         self.logger.info("Formatting response in JSON format")
         return [
-            {"object": p["label"], "confidence_level": p["probability"]}
+            ImagePrediction(object=p["label"], confidence_level=p["probability"])
             for p in predictions
         ]

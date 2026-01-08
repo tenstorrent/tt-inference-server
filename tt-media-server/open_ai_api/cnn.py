@@ -7,6 +7,7 @@ from typing import Optional
 
 from config.constants import ResponseFormat
 from domain.image_search_request import ImageSearchRequest
+from domain.image_search_response import ImageSearchResponse
 from fastapi import (
     APIRouter,
     Depends,
@@ -57,12 +58,12 @@ async def _parse_image_search_request(
     )
 
 
-@router.post("/search-image")
+@router.post("/search-image", response_model=ImageSearchResponse)
 async def searchImage(
     image_search_request: ImageSearchRequest = Depends(_parse_image_search_request),
     service: BaseService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-):
+) -> ImageSearchResponse:
     """
     Process image search request using CNN model.
 
@@ -78,6 +79,6 @@ async def searchImage(
     """
     try:
         result = await service.process_request(image_search_request)
-        return {"image_data": result, "status": "success"}
+        return ImageSearchResponse(image_data=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
