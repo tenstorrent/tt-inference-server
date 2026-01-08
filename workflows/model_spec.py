@@ -306,20 +306,23 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        # 1. infer env vars first because they may be used to infer vllm args
+        self._infer_env_vars()
+        
+        # 2. infer vllm args
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
             "max_num_seqs": str(self.max_concurrency),
             "max_num_batched_tokens": str(self.max_context),
             "num_scheduler_steps": "10",
-            "max-log-len": "32",
+            "max-log-len": "0",
             "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
 
-        self._infer_env_vars()
 
     def _infer_env_vars(self):
         inferred_env_vars = {}
@@ -474,6 +477,11 @@ class ModelSpec:
                 "subdevice_type",
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
+
+        # infer changes to vllm_args based on env_vars
+        if "VLLM_USE_V1" in self.env_vars:
+            # remove args that are not supported by V1
+            self.device_model_spec.vllm_args.pop('num_scheduler_steps', None)
 
     def _validate_data(self):
         """Validate that required specification is present."""
