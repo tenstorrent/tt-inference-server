@@ -181,8 +181,6 @@ class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
 
-class DatasetLoaders(Enum):
-    SST2 = "sst2"
 
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type

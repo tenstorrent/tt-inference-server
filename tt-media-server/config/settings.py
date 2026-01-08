@@ -16,7 +16,6 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
-    DatasetLoaders,
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,8 +28,8 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_1.value
+    is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -38,17 +37,14 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.LORA_TRAINER.value
     model_service: Optional[str] = (
-        None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
+        ModelServices.TRAINING.value  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
-
-    # Dataset settings
-    dataset_loader: str = DatasetLoaders.SST2.value
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -72,7 +68,7 @@ class Settings(BaseSettings):
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
-    enable_job_persistence: bool = False
+    enable_job_persistence: bool = True
 
     # Text processing settings
     min_context_length: int = 32
