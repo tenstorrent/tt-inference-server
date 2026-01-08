@@ -19,6 +19,47 @@ python_functions = ["test_*"]
 # Optional: specify test class patterns
 python_classes = ["Test*"]
 
+# Test markers for selective test execution
+markers = [
+    # Test Types (from server_tests_config.json)
+    "load: Load testing with concurrent requests",
+    "param: Parameter validation tests",
+    "e2e: Full system tests covering complete workflows",
+    "eval: Model evaluation tests",
+    "stability: Long-running stability tests",
+    "prerequisite: Tests that run before all others (DeviceLivenessTest)",
+
+    # Standard pytest markers
+    "unit: Fast, isolated tests with no external dependencies",
+    "integration: Medium-speed tests with local dependencies",
+    "smoke: Quick sanity checks for basic functionality",
+
+    # Performance Characteristics
+    "fast: Tests completing in <10 seconds",
+    "slow: Tests taking >30 seconds to complete",
+    "heavy: Resource-intensive tests (large models, high memory)",
+
+    # Hardware Targets
+    "n150: Tests for N150 device (1 chip)",
+    "n300: Tests for N300 device (2 chips)",
+    "t3k: Tests for T3K device (4 chips)",
+    "galaxy: Tests for Galaxy device (32 chips)",
+
+    # Model Categories
+    "image: Image generation/processing model tests",
+    "audio: Audio transcription model tests",
+    "cnn: CNN model tests",
+    "llm: Large Language Model tests",
+
+    # Specific Models (from server_tests_config.json)
+    "sdxl: Stable Diffusion XL tests (base)",
+    "sdxl_img2img: Stable Diffusion XL img2img tests",
+    "sdxl_inpaint: Stable Diffusion XL inpainting tests",
+    "sd35: Stable Diffusion 3.5 tests",
+    "whisper: Whisper large model tests",
+    "distil_whisper: Distil Whisper model tests",
+]
+
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",

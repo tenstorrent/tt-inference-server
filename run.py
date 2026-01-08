@@ -3,33 +3,33 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
 import argparse
 import getpass
 import logging
-import subprocess
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
+from workflows.log_setup import setup_run_logger
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.run_docker_server import run_docker_server
+from workflows.run_workflows import WorkflowSetup, run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    get_run_id,
     load_dotenv,
     run_command,
     write_dotenv,
-    get_run_id,
 )
-from workflows.run_workflows import run_workflows, WorkflowSetup
-from workflows.run_docker_server import run_docker_server
-from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 from workflows.workflow_venvs import create_local_setup_venv
 
@@ -198,6 +198,66 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
     )
+    parser.add_argument(
+        "--server-tests",
+        type=str,
+        default=os.getenv("SERVER_TESTS", "false"),
+        help="Run server tests using server_tests/run.py (true/false). Default is false.",
+    )
+
+    # SPEC_TESTS workflow arguments (server tests filtering)
+    spec_tests_group = parser.add_argument_group(
+        "SPEC_TESTS workflow",
+        "Arguments for --workflow spec_tests (server tests with marker-based filtering)",
+    )
+    spec_tests_group.add_argument(
+        "--markers",
+        type=str,
+        nargs="+",
+        help="Filter tests by markers (e.g., load smoke fast)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--match-all-markers",
+        action="store_true",
+        help="Require ALL markers to match (default: ANY marker matches)",
+    )
+    spec_tests_group.add_argument(
+        "--exclude-markers",
+        type=str,
+        nargs="+",
+        help="Exclude tests with these markers (e.g., slow heavy)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--model-category",
+        type=str,
+        nargs="+",
+        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--suite-category",
+        type=str,
+        help="Load suites for a specific category (e.g., image, audio)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--test-name",
+        type=str,
+        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--skip-prerequisites",
+        action="store_true",
+        help="Skip prerequisite tests (DeviceLivenessTest)",
+    )
+    spec_tests_group.add_argument(
+        "--list-tests",
+        action="store_true",
+        help="List matching tests without running them (dry-run)",
+    )
 
     args = parser.parse_args()
 
@@ -329,9 +389,28 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  server_tests:               {args.server_tests}",
         "",
-        "=" * 60,
     ]
+
+    # Add SPEC_TESTS args if workflow is spec_tests
+    if args.workflow.lower() == "spec_tests":
+        lines.extend(
+            [
+                "SPEC_TESTS args:",
+                f"  markers:                    {args.markers}",
+                f"  match_all_markers:          {args.match_all_markers}",
+                f"  exclude_markers:            {args.exclude_markers}",
+                f"  model_category:             {args.model_category}",
+                f"  suite_category:             {args.suite_category}",
+                f"  test_name:                  {args.test_name}",
+                f"  skip_prerequisites:         {args.skip_prerequisites}",
+                f"  list_tests:                 {args.list_tests}",
+                "",
+            ]
+        )
+
+    lines.append("=" * 60)
 
     return "\n".join(lines)
 
