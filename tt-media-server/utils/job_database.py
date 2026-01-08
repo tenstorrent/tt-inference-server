@@ -113,6 +113,28 @@ class JobDatabase:
         conn.commit()
         conn.close()
 
+    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:   
+        """Retrieve a specific job from the database by its ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            job_dict = dict(row)
+
+            if job_dict.get("request_parameters"):
+                job_dict["request_parameters"] = json.loads(job_dict["request_parameters"])
+                    
+            if job_dict.get("error_message"):
+                job_dict["error_message"] = json.loads(job_dict["error_message"])
+                    
+            return job_dict
+            
+        return None
+
     def get_all_jobs(self) -> List[Dict[str, Any]]:
         """Retrieve all jobs from the database."""
         conn = self._get_connection()
