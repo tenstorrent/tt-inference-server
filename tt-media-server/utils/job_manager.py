@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Dict, Optional
 
 from config.constants import JobTypes
 from config.settings import get_settings
