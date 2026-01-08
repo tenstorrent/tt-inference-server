@@ -175,6 +175,7 @@ class AudioTasks(Enum):
 class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
+    TEXT = "text"
 
 
 class JobTypes(Enum):
