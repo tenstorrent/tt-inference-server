@@ -47,18 +47,37 @@ class LLMStreamingClient:
                         f"Request failed with status {response.status}: {error_text}"
                     )
 
-                async for _ in response.content.iter_any():
+                buffer = ""
+                async for chunk in response.content.iter_any():
                     receive_timestamp_ns = time.perf_counter_ns()
-                    sample = TokenTimeSample(
-                        token_index=token_index,
-                        receive_timestamp_ns=receive_timestamp_ns,
-                    )
-                    samples.append(sample)
-                    token_index += 1
+                    buffer += chunk.decode("utf-8")
 
-                    # Show progress every 10 tokens
-                    if token_index % 10 == 0:
-                        print(".", end="", flush=True)
+                    # Parse SSE lines from buffer
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+
+                        # Skip empty lines and comments
+                        if not line or line.startswith(":"):
+                            continue
+
+                        # Parse SSE data lines
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            # Skip [DONE] marker
+                            if data == "[DONE]":
+                                continue
+
+                            sample = TokenTimeSample(
+                                token_index=token_index,
+                                receive_timestamp_ns=receive_timestamp_ns,
+                            )
+                            samples.append(sample)
+                            token_index += 1
+
+                            # Show progress every 10 tokens
+                            if token_index % 10 == 0:
+                                print(".", end="", flush=True)
 
         print(f" Done! ({token_index} tokens)")
 

@@ -582,14 +582,18 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
 
-## Text Processing Settings
+## VLLM Settings
+
+These settings configure VLLM-based model runners and are grouped under `settings.vllm` in the configuration.
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
-| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
+| `VLLM__MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Hugging Face model identifier for VLLM inference. |
+| `VLLM__MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `VLLM__MAX_MODEL_LENGTH` | `2048` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. |
+| `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
+| `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
+| `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 
 ## Image Processing Settings
 
