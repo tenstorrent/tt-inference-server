@@ -194,9 +194,9 @@ def parse_arguments():
     parser.add_argument(
         "--tools",
         type=str,
-        choices=["genai", "vllm"],
+        choices=["vllm", "genai", "aiperf"],
         default="vllm",
-        help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
+        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
     )
 
     args = parser.parse_args()
@@ -329,6 +329,7 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  tools:                      {args.tools}",
         "",
         "=" * 60,
     ]

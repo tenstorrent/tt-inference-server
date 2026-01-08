@@ -7,6 +7,7 @@ import csv
 import json
 import logging
 import sys
+import re
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -368,23 +369,695 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
+def aiperf_release_markdown(release_raw):
+    """Generate markdown table for AIPerf benchmarks with detailed metrics.
+
+    This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
+    for each key metric category.
+    """
+    # Define display columns mapping - NVIDIA style with detailed percentiles
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        # TTFT metrics
+        ("mean_ttft_ms", "TTFT Avg (ms)"),
+        ("median_ttft_ms", "TTFT P50 (ms)"),
+        ("p99_ttft_ms", "TTFT P99 (ms)"),
+        # TPOT metrics (Time Per Output Token)
+        ("mean_tpot_ms", "TPOT Avg (ms)"),
+        ("median_tpot_ms", "TPOT P50 (ms)"),
+        ("p99_tpot_ms", "TPOT P99 (ms)"),
+        # E2EL metrics (End-to-End Latency)
+        ("mean_e2el_ms", "E2EL Avg (ms)"),
+        ("median_e2el_ms", "E2EL P50 (ms)"),
+        ("p99_e2el_ms", "E2EL P99 (ms)"),
+        # Throughput
+        ("output_token_throughput", "Tok/s"),
+        ("request_throughput", "Req/s"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name in ("request_throughput",):
+                    row_dict[display_header] = f"{value:.4f}"
+                elif col_name in ("output_token_throughput",):
+                    row_dict[display_header] = f"{value:.2f}"
+                else:
+                    row_dict[display_header] = f"{value:.1f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_throughput_markdown(release_raw):
+    """Generate markdown table for benchmarks with derived throughput metrics.
+
+    This follows the genai-perf comparison style with Tput User, Tput Decode, and Tput Prefill
+    columns for easy comparison between vLLM, AIPerf, and genai-perf benchmarks.
+    """
+    # Define display columns - genai-perf comparison style with Source column
+    display_cols = [
+        ("source", "Source"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput_decode", "Tput Decode (TPS)"),
+        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        # Calculate derived throughput metrics
+        tpot = row.get("mean_tpot_ms", 0)
+        ttft = row.get("mean_ttft_ms", 0)
+        isl = row.get("isl", 0)
+        concurrency = row.get("concurrency", 1)
+
+        tput_user = 1000.0 / tpot if tpot > 0 else 0
+        tput_decode = tput_user * concurrency
+        tput_prefill = (isl * concurrency) / (ttft / 1000.0) if ttft > 0 else 0
+
+        # Add derived metrics to row
+        row_with_derived = dict(row)
+        row_with_derived["tput_user"] = tput_user
+        row_with_derived["tput_decode"] = tput_decode
+        row_with_derived["tput_prefill"] = tput_prefill
+
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row_with_derived.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name == "request_throughput":
+                    row_dict[display_header] = f"{value:.3f}"
+                elif col_name in ("tput_user", "tput_decode", "tput_prefill"):
+                    row_dict[display_header] = f"{value:.1f}"
+                elif col_name in ("mean_ttft_ms", "mean_tpot_ms", "mean_e2el_ms"):
+                    row_dict[display_header] = f"{value:.1f}"
+                else:
+                    row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_throughput_markdown_with_images(release_raw):
+    """Generate markdown table for image benchmarks with image parameters.
+    Similar to aiperf_throughput_markdown but includes image dimensions.
+    """
+    # Define display columns for image benchmarks
+    display_cols = [
+        ("source", "Source"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        ("images", "Images"),
+        ("image_width", "Width"),
+        ("image_height", "Height"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput_decode", "Tput Decode (TPS)"),
+        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        # Calculate derived throughput metrics
+        tpot = row.get("mean_tpot_ms", 0)
+        ttft = row.get("mean_ttft_ms", 0)
+        isl = row.get("isl", 0)
+        concurrency = row.get("concurrency", 1)
+
+        tput_user = 1000.0 / tpot if tpot > 0 else 0
+        tput_decode = tput_user * concurrency
+        tput_prefill = (isl * concurrency) / (ttft / 1000.0) if ttft > 0 else 0
+
+        # Add derived metrics to row
+        row_with_derived = dict(row)
+        row_with_derived["tput_user"] = tput_user
+        row_with_derived["tput_decode"] = tput_decode
+        row_with_derived["tput_prefill"] = tput_prefill
+
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row_with_derived.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name == "request_throughput":
+                    row_dict[display_header] = f"{value:.3f}"
+                elif col_name in ("tput_user", "tput_decode", "tput_prefill"):
+                    row_dict[display_header] = f"{value:.1f}"
+                elif col_name in ("mean_ttft_ms", "mean_tpot_ms", "mean_e2el_ms"):
+                    row_dict[display_header] = f"{value:.1f}"
+                else:
+                    row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Generate benchmark report specifically for AIPerf results.
+
+    AIPerf provides more detailed metrics than vLLM's benchmark_serving.py,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate report in NVIDIA's genai-perf style.
+    Table 2 (Comparison) combines both vLLM and AIPerf results for easy comparison.
+    """
+    # All benchmark tools now use the same output directory
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    # Look for aiperf benchmark files
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+    aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
+
+    # Also look for vLLM benchmark files for comparison table
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+
+    output_dir = Path(args.output_path) / "benchmarks_aiperf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("AIPerf Benchmark Summary")
+    logger.info(f"Found {len(aiperf_files)} AIPerf benchmark files")
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files for comparison")
+
+    if not aiperf_files and not vllm_files:
+        logger.info("No benchmark files found. Skipping AIPerf report.")
+        return "", [], None, None
+
+    # Helper function to keep only the latest file for each (isl, osl, concurrency, task_type) config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration.
+
+        Files are sorted by name (which includes timestamp) in reverse order,
+        so we keep the first occurrence of each config.
+
+        Config key includes:
+        - isl, osl, concurrency, num_requests (base params)
+        - images, height, width (for image benchmarks - treated as separate configs)
+        """
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    # Deduplicate files to keep only latest run for each config
+    vllm_files = deduplicate_by_config(vllm_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+
+    logger.info(
+        f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf files"
+    )
+
+    # Separate text-only and image benchmarks
+    vllm_text_only_files = [f for f in vllm_files if "images" not in Path(f).name]
+    vllm_image_files = [f for f in vllm_files if "images" in Path(f).name]
+    aiperf_text_only_files = [f for f in aiperf_files if "images" not in Path(f).name]
+    aiperf_image_files = [f for f in aiperf_files if "images" in Path(f).name]
+
+    logger.info(
+        f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf"
+    )
+    logger.info(
+        f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf"
+    )
+
+    # Process text-only vLLM benchmarks
+    vllm_text_results = []
+    for filepath in sorted(vllm_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}*.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "vLLM",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "vllm",
+            }
+            vllm_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing vLLM file {filepath}: {e}")
+            continue
+
+    # Process text-only AIPerf files
+    aiperf_text_results = []
+    for filepath in sorted(aiperf_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: aiperf_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "aiperf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "aiperf",
+            }
+            aiperf_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing AIPerf file {filepath}: {e}")
+            continue
+
+    # Process image vLLM benchmarks
+    vllm_image_results = []
+    for filepath in sorted(vllm_image_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "vLLM",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "vllm",
+            }
+            vllm_image_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing vLLM image file {filepath}: {e}")
+            continue
+
+    # Process image AIPerf files
+    aiperf_image_results = []
+    for filepath in sorted(aiperf_image_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "aiperf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "aiperf",
+            }
+            aiperf_image_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing AIPerf image file {filepath}: {e}")
+            continue
+
+    if (
+        not aiperf_text_results
+        and not vllm_text_results
+        and not aiperf_image_results
+        and not vllm_image_results
+    ):
+        return "", [], None, None
+
+    # Sort text benchmarks by ISL, OSL, concurrency
+    vllm_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+    aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+
+    # Sort image benchmarks by ISL, OSL, concurrency, image size
+    vllm_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+    aiperf_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+
+    # Build the complete report
+    release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+    # TEXT BENCHMARKS SECTION
+    if aiperf_text_results:
+        release_str += "## AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += (
+            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+        )
+
+        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # IMAGE BENCHMARKS SECTION
+    if aiperf_image_results:
+        release_str += "## AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += (
+            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+        )
+
+        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # Metric definitions
+    release_str += "**Metric Definitions:**\n"
+    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+    release_str += "> - **N**: Total number of requests\n"
+    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **Tok/s**: Output token throughput\n"
+    release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"AIPerf report saved to: {disp_md_path}")
+
+    # Save CSV data for text benchmarks
+    text_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_text_stats_{report_id}.csv"
+    )
+    text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if aiperf_text_results:
+        headers = list(aiperf_text_results[0].keys())
+        with open(text_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in aiperf_text_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"AIPerf text benchmark data saved to: {text_data_file_path}")
+
+    # Save CSV data for image benchmarks
+    image_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_image_stats_{report_id}.csv"
+    )
+    if aiperf_image_results:
+        headers = list(aiperf_image_results[0].keys())
+        with open(image_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in aiperf_image_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"AIPerf image benchmark data saved to: {image_data_file_path}")
+
+    # Return combined results for both text and image
+    all_aiperf_results = aiperf_text_results + aiperf_image_results
+    return release_str, all_aiperf_results, disp_md_path, text_data_file_path
+
+
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for both vLLM and genai-perf benchmark files
+    # Look for vLLM, genai-perf, and AIPerf benchmark files (all stack together)
+    # All benchmark tools now use the same unified output directory
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+    aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
 
-    files = vllm_files + genai_files
     logger.info(
-        f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files before deduplication"
+    )
+
+    # Deduplicate files - keep only latest run for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    vllm_files = deduplicate_by_config(vllm_files)
+    genai_files = deduplicate_by_config(genai_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+
+    logger.info(
+        f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, {len(aiperf_files)} AIPerf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
-    logger.info("Benchmark Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
+
+    if not vllm_files and not genai_files and not aiperf_files:
         logger.info("No benchmark files found. Skipping.")
         return (
             "",
@@ -397,12 +1070,120 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
-    # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = (
-        benchmark_generate_report_helper(
-            files, output_dir, report_id, metadata, model_spec=model_spec
-        )
+
+    # Process each tool separately to generate individual tables
+    # Order: vLLM -> AIPerf -> GenAI-Perf (for both text and image)
+    all_tool_results = []
+
+    # Import display functions once
+    from benchmarking.summary_report import (
+        create_display_dict,
+        create_image_display_dict,
+        get_markdown_table,
+        save_to_csv,
+        save_markdown_table,
     )
+
+    # Process all tools and collect results by type (text/image)
+    text_sections = []
+    image_sections = []
+
+    # Process vLLM benchmarks
+    if vllm_files:
+        _, vllm_release_raw, _, _ = benchmark_generate_report_helper(
+            vllm_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(vllm_release_raw)
+
+        # Separate text and image for vLLM
+        vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
+
+        if vllm_text:
+            vllm_text_display = [create_display_dict(r) for r in vllm_text]
+            vllm_text_md = get_markdown_table(vllm_text_display)
+            text_sections.append(
+                f"#### vLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_text_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [create_image_display_dict(r) for r in vllm_image]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
+            )
+
+    # Process AIPerf benchmarks
+    if aiperf_files:
+        _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
+            aiperf_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(aiperf_release_raw)
+
+        # Separate text and image for AIPerf
+        aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
+        aiperf_image = [r for r in aiperf_release_raw if r.get("task_type") == "image"]
+
+        if aiperf_text:
+            aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
+            aiperf_text_md = get_markdown_table(aiperf_text_display)
+            text_sections.append(
+                f"#### AIPerf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_text_md}"
+            )
+
+        if aiperf_image:
+            aiperf_image_display = [create_image_display_dict(r) for r in aiperf_image]
+            aiperf_image_md = get_markdown_table(aiperf_image_display)
+            image_sections.append(
+                f"#### AIPerf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
+            )
+
+    # Process GenAI-Perf benchmarks
+    if genai_files:
+        _, genai_release_raw, _, _ = benchmark_generate_report_helper(
+            genai_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(genai_release_raw)
+
+        # Separate text and image for GenAI-Perf
+        genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
+        genai_image = [r for r in genai_release_raw if r.get("task_type") == "image"]
+
+        if genai_text:
+            genai_text_display = [create_display_dict(r) for r in genai_text]
+            genai_text_md = get_markdown_table(genai_text_display)
+            text_sections.append(
+                f"#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_text_md}"
+            )
+
+        if genai_image:
+            genai_image_display = [create_image_display_dict(r) for r in genai_image]
+            genai_image_md = get_markdown_table(genai_image_display)
+            image_sections.append(
+                f"#### GenAI-Perf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
+            )
+
+    # Combine sections: all text first, then all image
+    markdown_sections = text_sections + image_sections
+
+    # Combine all sections
+    release_str = ""
+    if markdown_sections:
+        release_str = (
+            f"### Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n"
+            + "\n\n".join(markdown_sections)
+        )
+
+    # Save combined CSV for all tools
+    stats_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
+    stats_file_path.parent.mkdir(parents=True, exist_ok=True)
+    save_to_csv(all_tool_results, stats_file_path)
+
+    # Save display markdown
+    disp_md_path = output_dir / f"benchmark_display_{report_id}.md"
+    save_markdown_table(release_str, disp_md_path)
+
+    release_raw = all_tool_results
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
 
@@ -422,10 +1203,17 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         for params in raw_perf_refs
     ]
 
-    # Separate text and image benchmarks from release_raw
-    text_release_raw = [r for r in release_raw if r.get("task_type", "text") == "text"]
+    # For performance targets, use only vLLM results (as per user requirement)
+    vllm_release_raw = [
+        r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
+    ]
+
+    # Separate text and image benchmarks from vLLM results (for targets)
+    text_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "text"
+    ]
     image_release_raw = [
-        r for r in release_raw if r.get("task_type", "text") == "image"
+        r for r in vllm_release_raw if r.get("task_type", "text") == "image"
     ]
 
     # Separate text and image performance references
@@ -1883,13 +2671,23 @@ def main():
         percentile_report=percentile_report,
     )
 
-    # generate benchmarks report
+    # generate vLLM benchmarks report
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    # generate AIPerf benchmarks report (separate detailed report)
+    (
+        aiperf_release_str,
+        aiperf_release_data,
+        aiperf_disp_md_path,
+        aiperf_data_file_path,
+    ) = aiperf_benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
@@ -1919,19 +2717,31 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
-    # if no benchmark data exists, do not
+    # Collect benchmark display content
+    benchmarks_disp_md_str = ""
     try:
-        with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
-            benchmarks_disp_md_str = f.read()
-    except TypeError:
-        benchmarks_disp_md_str = ""
+        if benchmarks_disp_md_path:
+            with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+                benchmarks_disp_md_str = f.read()
+    except (TypeError, FileNotFoundError):
+        pass
 
     logging.info("Release Summary\n\n")
 
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
+
+    # Combine all benchmark sections
+    all_benchmarks_str = ""
+    if benchmarks_disp_md_str:
+        all_benchmarks_str += benchmarks_disp_md_str + "\n\n"
+    if benchmarks_release_str:
+        all_benchmarks_str += benchmarks_release_str + "\n\n"
+    if aiperf_release_str:
+        all_benchmarks_str += aiperf_release_str + "\n\n"
+
+    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
     # save to file
     release_output_dir = Path(args.output_path) / "release"
@@ -2045,22 +2855,6 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
-            server_tests_path = Path(project_root) / "test_reports"
-            if server_tests_path.exists():
-                server_tests_json_files = list(server_tests_path.glob("*.json"))
-                if server_tests_json_files:
-                    logger.info(
-                        f"Found {len(server_tests_json_files)} server test report(s)"
-                    )
-                    for json_file in server_tests_json_files:
-                        try:
-                            with open(json_file, "r", encoding="utf-8") as test_file:
-                                test_data = json.load(test_file)
-                                server_tests_data.append(test_data)
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not read server test file {json_file}: {e}"
-                            )
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -2113,10 +2907,40 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
+        # Read AIPerf benchmark data if available
+        aiperf_detailed_data = None
+        if aiperf_data_file_path:
+            try:
+                with open(aiperf_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    aiperf_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read AIPerf CSV data: {e}")
+
+        # Read server tests data if available
+        server_tests_data = []
+        server_tests_path = Path(project_root) / "test_reports"
+        if server_tests_path.exists():
+            server_tests_json_files = list(server_tests_path.glob("*.json"))
+            if server_tests_json_files:
+                logger.info(
+                    f"Found {len(server_tests_json_files)} server test report(s)"
+                )
+                for json_file in server_tests_json_files:
+                    try:
+                        with open(json_file, "r", encoding="utf-8") as test_file:
+                            test_data = json.load(test_file)
+                            server_tests_data.append(test_data)
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read server test file {json_file}: {e}"
+                        )
+
         # Build the final JSON output
         output_data = {
             "metadata": metadata,
             "benchmarks_summary": benchmarks_release_data,
+            "aiperf_benchmarks": aiperf_release_data if aiperf_release_data else [],
             "evals": evals_release_data,
             "stress_tests": stress_tests_release_data,
             "benchmarks": benchmarks_detailed_data
@@ -2127,6 +2951,9 @@ def main():
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            "aiperf_benchmarks_detailed": aiperf_detailed_data
+            if aiperf_detailed_data
+            else [],
         }
 
         # Add server_tests only if data exists
