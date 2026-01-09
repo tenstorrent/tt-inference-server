@@ -29,6 +29,9 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.TRAINING: lambda: __import__(
         "model_services.training_service", fromlist=["TrainingService"]
     ).TrainingService(),
+    ModelServices.TTS: lambda: __import__(
+        "model_services.tts_service", fromlist=["TTSService"]
+    ).TTSService(),
 }
 
 # Singleton holders per service type

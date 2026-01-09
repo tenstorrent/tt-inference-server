@@ -79,6 +79,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.MOCK: lambda wid, num_threads: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid, num_threads),
+    ModelRunners.TT_SPEECHT5_TTS: lambda wid, num_threads: __import__(
+        "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
+    ).TTSpeechT5Runner(wid),
 }
 
 
