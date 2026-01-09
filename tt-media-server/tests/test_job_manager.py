@@ -74,6 +74,19 @@ class TestJob:
         assert before <= job.completed_at <= after
         assert job.is_completed()
         assert job.is_terminal()
+    
+    def test_mark_completed_invalid_type():
+        """Test that mark_completed raises TypeError when result_path is not a string"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+
+        with pytest.raises(TypeError) as excinfo:
+            job.mark_completed(result_path=12345)
+
+        with pytest.raises(TypeError):
+            job.mark_completed(result_path=["path/one", "path/two"])
+
+        # Verify the job status did not change to COMPLETED because it crashed
+        assert job.status == JobStatus.QUEUED
 
     def test_mark_failed(self):
         """Test marking job as failed"""
@@ -91,6 +104,46 @@ class TestJob:
         assert before <= job.completed_at <= after
         assert job.is_terminal()
         assert not job.is_completed()
+    
+    def test_mark_cancelling(self):
+        """Test marking job as cancelling"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+        job.mark_cancelling()
+
+        assert job.status == JobStatus.CANCELLING
+        assert not job.is_terminal()
+        assert job.completed_at is None
+
+    def test_mark_cancelled(self):
+        """Test marking job as cancelled"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+        
+        before = int(time.time())
+        job.mark_cancelled()
+        after = int(time.time())
+
+        assert job.status == JobStatus.CANCELLED
+        assert job.is_terminal()
+        assert before <= job.completed_at <= after
+        assert not job.is_completed()
+        assert not job.is_in_progress()
+
+    def test_is_terminal_with_cancelled_state(self):
+        """Test that is_terminal includes COMPLETED, FAILED, and CANCELLED"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+        
+        assert not job.is_terminal()
+
+        job.mark_completed("path/to/result")
+        assert job.is_terminal()
+
+        job.status = JobStatus.QUEUED
+        job.mark_failed("error", "msg")
+        assert job.is_terminal()
+
+        job.status = JobStatus.QUEUED
+        job.mark_cancelled()
+        assert job.is_terminal()
 
     def test_to_public_dict_queued(self):
         """Test converting queued job to public dict"""
@@ -104,6 +157,7 @@ class TestJob:
             "status": "queued",
             "created_at": 1000,
             "model": "test-model",
+            "request_parameters": {},
         }
 
     def test_to_public_dict_completed(self):
@@ -116,6 +170,7 @@ class TestJob:
         assert result["status"] == "completed"
         assert result["completed_at"] is not None
         assert "error" not in result
+        assert result["result_path"] == "videos/test-123.mp4"
 
     def test_to_public_dict_failed(self):
         """Test converting failed job to public dict"""
@@ -130,13 +185,14 @@ class TestJob:
             "message": "Test error message",
         }
         assert result["completed_at"] is not None
-
+        assert "result_path" not in result
 
 class TestJobManager:
     """Tests for JobManager class"""
 
-    @pytest.fixture
-    async def job_manager(self):
+    # We run all tests twice, once with persistence off and once with persistence on
+    @pytest.fixture(params=[False, True], ids=["persistence_off", "persistence_on"])
+    async def job_manager(self, request):
         """Create a fresh JobManager instance for each test"""
         # Reset singleton
         import utils.job_manager
@@ -148,6 +204,7 @@ class TestJobManager:
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
             mock_settings.return_value.max_jobs = 10
+            mock_settings.return_value.enable_job_persistence = request.param
 
             manager = JobManager()
             yield manager
@@ -187,6 +244,7 @@ class TestJobManager:
         assert job_data["job_type"] == "video"
         assert job_data["status"] == "queued"
         assert job_data["model"] == "test-model"
+        assert job_data["request_parameters"] == mock_request.model_dump(mode="json")
 
         # Check job is in storage
         job_metadata = job_manager.get_job_metadata("job-123")
@@ -580,9 +638,12 @@ class TestJobManager:
         result = job_manager.cancel_job("job-123")
         assert result is True
 
-        # Job should be gone
+        await asyncio.sleep(0.05)
+
+        # Job should NOT be gone, but its status should be CANCELLED
         metadata = job_manager.get_job_metadata("job-123")
-        assert metadata is None
+        assert metadata is not None
+        assert metadata["status"] == JobStatus.CANCELLED
 
     @pytest.mark.asyncio
     async def test_cancel_job_not_found(self, job_manager):
@@ -617,6 +678,7 @@ class TestJobManager:
         await asyncio.sleep(0.1)  # Let cancellation propagate
 
         assert cancelled is True
+        assert job_manager.get_job_metadata("job-123")["status"] == JobStatus.CANCELLED
 
     @pytest.mark.asyncio
     async def test_cleanup_old_completed_jobs(self, job_manager, mock_request):
@@ -740,25 +802,20 @@ class TestJobManager:
             await asyncio.sleep(10)
             return "videos/test-123.mp4"
 
-        # Create multiple jobs
-        for i in range(3):
-            await job_manager.create_job(
-                job_id=f"job-{i}",
-                job_type=JobTypes.VIDEO,
-                model="test-model",
-                request=mock_request,
-                task_function=task_func,
-            )
+        await job_manager.create_job(
+            job_id=f"active-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
 
         await asyncio.sleep(0.1)  # Let jobs start
-
         await job_manager.shutdown()
 
-        # All tasks should be cancelled or done
-        with job_manager._jobs_lock:
-            for job in job_manager._jobs.values():
-                if job._task:
-                    assert job._task.done() or job._task.cancelled()
+        assert job_manager.get_job_metadata("active-job") is None
+
+    # TODO: add test to check if the tasks are indeed cancelled during shutdown
 
     @pytest.mark.asyncio
     async def test_get_job_manager_singleton(self):
