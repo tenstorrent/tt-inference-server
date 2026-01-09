@@ -131,32 +131,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
         return device_params
 
-    def set_device(self):
-        """Override to use simple device initialization like the demo"""
-        if self.ttnn_device is None:
-            # Handle empty device_id by defaulting to 0
-            device_id_int = int(self.device_id) if self.device_id else 0
-
-            # N150 device validation: ensure we're using device 0
-            if device_id_int != 0:
-                self.logger.warning(
-                    f"Device {device_id_int}: TTS on N150 is designed for device 0, but got device {device_id_int}"
-                )
-
-            self.logger.info(
-                f"Device {device_id_int}: Initializing simple TTNN device for N150 (like demo_ttnn.py)"
-            )
-            # Use same device initialization as demo_ttnn.py
-            self.ttnn_device = ttnn.open_device(
-                device_id=device_id_int, l1_small_size=24576
-            )
-            self.ttnn_device.enable_program_cache()
-            self.logger.info(
-                f"Device {device_id_int}: Simple device initialized successfully for N150"
-            )
-        self.max_batch_size = self.settings.max_batch_size
-        return self.ttnn_device
-
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:

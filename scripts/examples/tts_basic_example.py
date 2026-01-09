@@ -32,7 +32,13 @@ BASE_URL = "http://localhost:8000"
 API_KEY = "your-secret-key"
 
 
-def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.wav"):
+def generate_speech(
+    text: str,
+    speaker_id: int = 0,
+    output_file: str = "output.wav",
+    base_url: str = BASE_URL,
+    api_key: str = API_KEY,
+):
     """
     Generate speech from text using the TTS API.
 
@@ -40,6 +46,8 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
         text: Text to convert to speech
         speaker_id: Speaker voice ID (0-7456)
         output_file: Output WAV file path
+        base_url: TTS server URL
+        api_key: API authentication key
 
     Returns:
         True if successful, False otherwise
@@ -49,8 +57,8 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
     logger.info(f"Output file: {output_file}")
 
     # Prepare request
-    url = f"{BASE_URL}/tts/tts"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    url = f"{base_url}/tts/tts"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"text": text, "stream": False, "speaker_id": speaker_id}
 
     try:
@@ -80,7 +88,7 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
 
     except requests.exceptions.ConnectionError:
         logger.error("❌ Error: Could not connect to server")
-        logger.error(f"Make sure the server is running at {BASE_URL}")
+        logger.error(f"Make sure the server is running at {base_url}")
         return False
     except requests.exceptions.Timeout:
         logger.error("❌ Error: Request timed out")
@@ -143,13 +151,10 @@ Notes:
     if args.speaker_id < 0 or args.speaker_id > 7456:
         logger.warning("Warning: Speaker ID should be between 0 and 7456")
 
-    # Update global config
-    global BASE_URL, API_KEY
-    BASE_URL = args.url
-    API_KEY = args.api_key
-
     # Generate speech
-    success = generate_speech(args.text, args.speaker_id, args.output)
+    success = generate_speech(
+        args.text, args.speaker_id, args.output, args.url, args.api_key
+    )
 
     if success:
         logger.info(f"🎵 You can play the audio with: aplay {args.output}")
