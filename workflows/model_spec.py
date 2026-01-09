@@ -2341,9 +2341,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2352,9 +2352,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2363,9 +2363,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2374,9 +2374,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
         ],

@@ -39,7 +39,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
         self.isl = int(
-            model_spec.device_model_spec.env_vars.get("MAX_MODEL_LENGTH", 1024)
+            model_spec.device_model_spec.env_vars.get("VLLM__MAX_MODEL_LENGTH", 1024)
         )
         self.num_calls = 1000
         self.dimensions = 1000
