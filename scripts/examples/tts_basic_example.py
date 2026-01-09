@@ -21,6 +21,11 @@ import argparse
 import requests
 import sys
 
+from utils.logger import TTLogger
+
+
+logger = TTLogger(__name__)
+
 
 # API Configuration
 BASE_URL = "http://localhost:8000"
@@ -39,9 +44,9 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
     Returns:
         True if successful, False otherwise
     """
-    print(f"Generating speech for: '{text}'")
-    print(f"Speaker ID: {speaker_id}")
-    print(f"Output file: {output_file}")
+    logger.info(f"Generating speech for: '{text}'")
+    logger.info(f"Speaker ID: {speaker_id}")
+    logger.info(f"Output file: {output_file}")
 
     # Prepare request
     url = f"{BASE_URL}/tts/tts"
@@ -50,7 +55,7 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
 
     try:
         # Send request
-        print("\nSending request to TTS server...")
+        logger.info("Sending request to TTS server...")
         response = requests.post(url, headers=headers, json=payload, timeout=60)
 
         # Check response
@@ -60,29 +65,29 @@ def generate_speech(text: str, speaker_id: int = 0, output_file: str = "output.w
                 f.write(response.content)
 
             file_size = len(response.content)
-            print(f"✓ Success! Generated {file_size} bytes of audio")
-            print(f"✓ Saved to: {output_file}")
+            logger.info(f"✅ Success! Generated {file_size} bytes of audio")
+            logger.info(f"✅ Saved to: {output_file}")
 
             # Calculate approximate duration (16kHz, 16-bit, mono)
             duration = file_size / (16000 * 2)
-            print(f"✓ Approximate duration: {duration:.2f} seconds")
+            logger.info(f"✅ Approximate duration: {duration:.2f} seconds")
 
             return True
         else:
-            print(f"✗ Error: Server returned status code {response.status_code}")
-            print(f"Response: {response.text}")
+            logger.error(f"❌ Error: Server returned status code {response.status_code}")
+            logger.error(f"Response: {response.text}")
             return False
 
     except requests.exceptions.ConnectionError:
-        print("✗ Error: Could not connect to server")
-        print(f"Make sure the server is running at {BASE_URL}")
+        logger.error("❌ Error: Could not connect to server")
+        logger.error(f"Make sure the server is running at {BASE_URL}")
         return False
     except requests.exceptions.Timeout:
-        print("✗ Error: Request timed out")
-        print("The server may be busy or the text is too long")
+        logger.error("❌ Error: Request timed out")
+        logger.error("The server may be busy or the text is too long")
         return False
     except Exception as e:
-        print(f"✗ Error: {type(e).__name__}: {e}")
+        logger.error(f"❌ Error: {type(e).__name__}: {e}")
         return False
 
 
@@ -132,11 +137,11 @@ Notes:
 
     # Validate inputs
     if not args.text.strip():
-        print("Error: Text cannot be empty")
+        logger.error("Error: Text cannot be empty")
         sys.exit(1)
 
     if args.speaker_id < 0 or args.speaker_id > 7456:
-        print("Warning: Speaker ID should be between 0 and 7456")
+        logger.warning("Warning: Speaker ID should be between 0 and 7456")
 
     # Update global config
     global BASE_URL, API_KEY
@@ -147,7 +152,7 @@ Notes:
     success = generate_speech(args.text, args.speaker_id, args.output)
 
     if success:
-        print(f"\n🎵 You can play the audio with: aplay {args.output}")
+        logger.info(f"🎵 You can play the audio with: aplay {args.output}")
         sys.exit(0)
     else:
         sys.exit(1)

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
+import os
 import torch
 import numpy as np
 from typing import Dict, Optional, Union
@@ -51,13 +52,19 @@ class SpeakerEmbeddingsManager:
         Initialize the speaker embeddings manager.
 
         Args:
-            cache_dir: Directory to cache downloaded embeddings (default: ~/.cache/speecht5)
+            cache_dir: Directory to cache downloaded embeddings (default: HF_HOME/speecht5 or /tmp/speecht5)
             custom_embeddings_dir: Directory containing custom speaker embeddings
         """
         self.logger = TTLogger()
-        self.cache_dir = (
-            Path(cache_dir) if cache_dir else Path.home() / ".cache" / "speecht5"
-        )
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+        else:
+            # Use HF_HOME if available (works in docker), otherwise fallback to /tmp
+            hf_home = os.environ.get("HF_HOME")
+            if hf_home:
+                self.cache_dir = Path(hf_home) / "speecht5"
+            else:
+                self.cache_dir = Path("/tmp") / "speecht5"
         self.custom_embeddings_dir = (
             Path(custom_embeddings_dir) if custom_embeddings_dir else None
         )

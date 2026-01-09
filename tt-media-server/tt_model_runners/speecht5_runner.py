@@ -16,7 +16,9 @@ import soundfile as sf
 from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
 
 # Import TTNN SpeechT5 components
-sys.path.append("/home/ttuser/ssinghal/PR-fix/speecht5_tts_final/tt-metal")
+tt_metal_path = os.environ.get("TT_METAL_HOME")
+if tt_metal_path:
+    sys.path.append(tt_metal_path)
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_encoder import (
     TTNNSpeechT5Encoder,
     TTNNEncoderConfig,
@@ -36,6 +38,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import (
     SpeechT5Generator,
 )
 
+from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import (
     TextToSpeechResponse,
@@ -118,24 +121,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.speaker_manager = None
 
         # Limit threading for stability during inference
-        os.environ["OMP_NUM_THREADS"] = "1"
-        os.environ["MKL_NUM_THREADS"] = "1"
+        setup_cpu_threading_limits("1")
 
         # Explicitly disable fabric for non-galaxy devices
         if not settings.is_galaxy:
             os.environ["TT_METAL_FABRIC_DISABLE"] = "1"
 
-    def _prepare_device_params(self):
-        try:
-            device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
-            return self.get_updated_device_params(device_params)
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Device parameter preparation failed: {e}"
-            )
-            raise DeviceInitializationError(
-                f"Device parameter preparation failed: {str(e)}"
-            ) from e
+    def get_pipeline_device_params(self):
+        device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
+        return device_params
 
     def set_device(self):
         """Override to use simple device initialization like the demo"""
@@ -162,15 +156,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             )
         self.max_batch_size = self.settings.max_batch_size
         return self.ttnn_device
-
-    def _handle_load_failure_cleanup(self, device):
-        if device is None:
-            try:
-                self.close_device(None)
-            except Exception as cleanup_error:
-                self.logger.warning(
-                    f"Device {self.device_id}: Failed to cleanup device after failure: {cleanup_error}"
-                )
 
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
@@ -328,7 +313,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 self.logger.error(
                     f"Device {device_id_int}: Model initialization failed: {e}"
                 )
-                self._handle_load_failure_cleanup(self.ttnn_device)
                 raise
 
             # Skip warmup for now to avoid kernel compilation issues

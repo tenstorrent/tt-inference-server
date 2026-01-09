@@ -23,6 +23,8 @@ from security.api_key_cheker import get_api_key
 # Content type constants
 CONTENT_TYPE_MULTIPART = "multipart/form-data"
 CONTENT_TYPE_JSON = "application/json"
+MEDIA_TYPE_AUDIO_WAV = "audio/wav"
+MEDIA_TYPE_NDJSON = "application/x-ndjson"
 
 
 async def parse_tts_request(
@@ -56,10 +58,10 @@ async def parse_tts_request(
     )
 
 
-tts_router = APIRouter()
+router = APIRouter()
 
 
-@tts_router.post("/tts")
+@router.post("/tts")
 async def text_to_speech(
     tts_request: TextToSpeechRequest = Depends(parse_tts_request),
     service=Depends(service_resolver),
@@ -75,15 +77,11 @@ async def text_to_speech(
     Raises:
         HTTPException: If text-to-speech fails.
     """
-    return await handle_tts_request(tts_request, service)
-
-
-async def handle_tts_request(tts_request, service):
     try:
         if not tts_request.stream:
             result = await service.process_request(tts_request)
             if tts_request.response_format.lower() == AudioResponseFormat.TEXT.value:
-                return Response(content=result.audio, media_type="audio/wav")
+                return Response(content=result.audio, media_type=MEDIA_TYPE_AUDIO_WAV)
             return get_dict_response(result)
 
         # Streaming path
@@ -103,12 +101,12 @@ async def handle_tts_request(tts_request, service):
                         yield json.dumps(get_dict_response(partial)) + "\n"
 
             media_type = (
-                "audio/wav"
+                MEDIA_TYPE_AUDIO_WAV
                 if (
                     tts_request.response_format.lower()
                     == AudioResponseFormat.TEXT.value
                 )
-                else "application/x-ndjson"
+                else MEDIA_TYPE_NDJSON
             )
             return StreamingResponse(result_stream(), media_type=media_type)
     except Exception as e:
@@ -121,6 +119,3 @@ def get_dict_response(obj):
             f"Unexpected response type: {type(obj).__name__}. Expected response class with to_dict() method."
         )
     return obj.to_dict()
-
-
-router = tts_router
