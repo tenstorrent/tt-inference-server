@@ -184,7 +184,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     )
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = device.to_mesh_device_str()
-    container_name = f"tt-inference-server-{short_uuid()}"
+    container_id = short_uuid()
+    container_name = f"tt-inference-server-{container_id}"
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -219,6 +220,16 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif model_spec.impl == llama3_70b_galaxy_impl:
         model_env_var = {"TT_LLAMA_TEXT_VER": model_spec.impl.impl_id}
     # TODO: Remove all of this model env var setting https://github.com/tenstorrent/tt-inference-server/issues/1346
+    
+    # Update host_tt_metal_built_dir to use base directory (container ID will be added in worker_utils.py)
+    # This allows multiple containers with same model/device/version to run in parallel
+    # Mount the base tt_metal_built directory, container isolation happens via CONTAINER_ID in worker path
+    setup_config.host_tt_metal_built_dir = (
+        setup_config.host_model_volume_root / "tt_metal_built"
+    )
+    # Ensure base directory exists before mounting
+    setup_config.host_tt_metal_built_dir.mkdir(parents=True, exist_ok=True)
+    
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
@@ -226,6 +237,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Set TT_METAL_BUILT_DIR to point to mounted directory to avoid using Docker overlay filesystem
         # This prevents ~100GB+ of kernel compilation artifacts from filling up root filesystem
         "TT_METAL_BUILT_DIR": str(setup_config.container_tt_metal_built_dir),
+        # Container ID for worker isolation - allows multiple containers to run in parallel
+        "CONTAINER_ID": container_id,
         **(model_env_var if model_env_var is not None else {}),
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
