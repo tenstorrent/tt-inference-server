@@ -29,9 +29,7 @@ class EmbeddingLoadTest(BaseTest):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
-        embedding_target_time = self.targets.get(
-            "embedding_time", 5
-        )  # in seconds
+        embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
 
         if dimensions is not None:

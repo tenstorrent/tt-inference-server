@@ -86,7 +86,9 @@ class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-embedding")):
             with patch.object(
-                strategy, "_run_embedding_transcription_eval", return_value={"pearson": 0.85, "spearman": 0.82, "main_score": 0.835}
+                strategy,
+                "_run_embedding_transcription_eval",
+                return_value={"pearson": 0.85, "spearman": 0.82, "main_score": 0.835},
             ):
                 strategy.run_eval()
 
@@ -144,7 +146,9 @@ class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
         strategy = self._create_strategy()
 
         with patch.object(
-            strategy, "_run_embedding_transcription_eval", side_effect=RuntimeError("MTEB error")
+            strategy,
+            "_run_embedding_transcription_eval",
+            side_effect=RuntimeError("MTEB error"),
         ):
             with pytest.raises(RuntimeError):
                 strategy.run_eval()
@@ -156,7 +160,9 @@ class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-embedding")):
             with patch.object(
-                strategy, "_run_embedding_transcription_eval", return_value={"pearson": 0.85, "spearman": 0.82, "main_score": 0.835}
+                strategy,
+                "_run_embedding_transcription_eval",
+                return_value={"pearson": 0.85, "spearman": 0.82, "main_score": 0.835},
             ):
                 strategy.run_eval()
 
@@ -216,14 +222,16 @@ Some trailing text"""
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-embedding")):
             with patch.object(
-                strategy, "_run_embedding_transcription_benchmark", return_value={
+                strategy,
+                "_run_embedding_transcription_benchmark",
+                return_value={
                     "Total input tokens": "50000",
                     "Benchmark duration": "10.5",
                     "Successful requests": "950",
                     "Failed requests": "50",
                     "Mean E2EL": "0.5",
                     "Request throughput": "90.5",
-                }
+                },
             ):
                 strategy.run_benchmark()
 
@@ -264,9 +272,7 @@ Some trailing text"""
         assert report_data["device"] == "test_device"
         assert report_data["task_type"] == "embedding"
 
-    @patch.object(
-        EmbeddingClientStrategy, "get_health", return_value=(False, None)
-    )
+    @patch.object(EmbeddingClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
         strategy = self._create_strategy()
 
@@ -280,7 +286,9 @@ Some trailing text"""
         strategy = self._create_strategy()
 
         with patch.object(
-            strategy, "_run_embedding_transcription_benchmark", side_effect=subprocess.CalledProcessError(1, "cmd")
+            strategy,
+            "_run_embedding_transcription_benchmark",
+            side_effect=subprocess.CalledProcessError(1, "cmd"),
         ):
             with pytest.raises(subprocess.CalledProcessError):
                 strategy.run_benchmark()
