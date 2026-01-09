@@ -313,7 +313,7 @@ def setup_evals_embedding(
 ) -> bool:
     logger.info("running setup_evals_embedding() ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} mteb openai",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'mteb>=2.6.6' openai",
         logger=logger,
     )
     return True
@@ -356,14 +356,10 @@ def setup_evals_run_script(
         command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
-    # Use constraints file to prevent torch downgrade when installing mteb[openai].
-    # See: https://github.com/tenstorrent/tt-inference-server/issues/1652
-    constraints_file = default_venv_path / "torch_constraints.txt"
-    constraints_file.write_text("torch>=2.9.0\n")
     run_command(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
         f"--extra-index-url https://download.pytorch.org/whl/cpu "
-        f"--constraint {constraints_file} 'mteb[openai]' tiktoken openai",
+        f"'mteb[openai]>=2.6.6' tiktoken openai",
         logger=logger,
     )
     return True
@@ -429,6 +425,43 @@ def setup_benchmarks_genai_perf(
     # Create artifacts directory
     artifacts_dir = venv_config.venv_path / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    return True
+
+
+def setup_benchmarks_aiperf(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup for aiperf benchmarks (pip-based installation).
+
+    AIPerf is a comprehensive benchmarking tool for generative AI models.
+    Repository: https://github.com/ai-dynamo/aiperf
+    """
+    logger.info("running setup_benchmarks_aiperf() ...")
+
+    # Install torch CPU for dependencies that require it (like prompt_client)
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+        logger=logger,
+    )
+
+    # Install aiperf from PyPI
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} aiperf",
+        logger=logger,
+    )
+
+    # Install additional dependencies for tokenization and prompt client
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} transformers pyjwt requests datasets",
+        logger=logger,
+    )
+
+    # Create artifacts directory for benchmark outputs
+    artifacts_dir = venv_config.venv_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
     return True
 
 
@@ -519,6 +552,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_EMBEDDING,
         setup_function=setup_benchmarks_embedding,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
+        setup_function=setup_benchmarks_aiperf,
         python_version="3.11",
     ),
     VenvConfig(

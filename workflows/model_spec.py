@@ -376,6 +376,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         default_env_vars = {
@@ -803,6 +804,7 @@ class ModelSpecTemplate:
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (shared across all weights)
     )
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         self._validate_data()
@@ -894,6 +896,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
+                    has_builtin_warmup=self.has_builtin_warmup,
                 )
 
                 specs.append(spec)
@@ -1287,6 +1290,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1554,6 +1558,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1967,6 +1972,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
@@ -2275,9 +2281,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2286,9 +2292,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2297,9 +2303,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2308,9 +2314,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
                     "TT_METAL_INSPECTOR_RPC": "0",
