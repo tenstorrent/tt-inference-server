@@ -82,7 +82,9 @@ def generate_speech(
 
             return True
         else:
-            logger.error(f"❌ Error: Server returned status code {response.status_code}")
+            logger.error(
+                f"❌ Error: Server returned status code {response.status_code}"
+            )
             logger.error(f"Response: {response.text}")
             return False
 
