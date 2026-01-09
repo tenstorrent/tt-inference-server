@@ -82,6 +82,19 @@
                 "break_on_failure": false,
                 "mock_mode": false
             }
+        },
+        {
+            "name": "EmbeddingParamTest",
+            "module": "tests.server_tests.test_cases.embedding_param_test",
+            "enabled": true,
+            "description": "Test embedding params (input and dimensions)",
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
         }
     ]
 }
