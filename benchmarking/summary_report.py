@@ -665,6 +665,27 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
+def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    """Create display dictionary for image generation benchmarks (SDXL, Flux, etc)."""
+    display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
+        ("num_requests", "Num Requests"),
+        ("num_inference_steps", "Inference Steps"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("inference_steps_per_second", "Steps/Sec"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
     return text.strip()
