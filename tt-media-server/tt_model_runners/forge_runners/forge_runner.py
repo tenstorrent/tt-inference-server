@@ -199,19 +199,13 @@ class ForgeRunner(BaseDeviceRunner):
             f"Post-processing output with top_k: {top_k} and min_confidence: {min_confidence}"
         )
         self.logger.info("Getting base predictions from loader")
-
         raw_predictions = self.loader.output_postprocess(output, top_k=top_k)
-
-        labels = raw_predictions.get("output", {}).get("labels", [])
-        probabilities = raw_predictions.get("output", {}).get("probabilities", [])
-
         self.logger.info("Convert list of dicts and parse probability strings")
         predictions = []
-        for label, probability in zip(labels, probabilities):
+        for label, probability in zip(raw_predictions["labels"], raw_predictions["probabilities"]):
             prob = float(probability.rstrip("%"))
             if prob >= min_confidence:
                 predictions.append({"label": label, "probability": prob})
-
         return predictions
 
     def _format_response(self, predictions: list, response_format: str):

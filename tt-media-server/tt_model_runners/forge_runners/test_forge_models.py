@@ -21,6 +21,7 @@ from typing import Any, List
 
 import pytest
 from domain.image_search_request import ImageSearchRequest
+from domain.image_search_response import ImagePrediction
 
 from .runners import (
     ForgeEfficientnetRunner,
@@ -88,12 +89,12 @@ class TestForgeRunners:
             runner = runner_class(device_id="0")
             await runner.warmup()
             requests = create_image_search_request()
-            result = runner.run(requests)
+            result = runner.run(requests)[0]
 
             # Print runner class and result for debugging/expected output generation
             print(f"\n=== {runner_class.__name__} in {mode} mode ===")
             print(f"Runner class: {runner_class.__name__}")
-            print(f"Result (JSON): {json.dumps(result, indent=2)}")
+            print(f"Result [0]: {result[0]}")
             print("=" * 50)
 
             # Get expected result for this runner
@@ -107,7 +108,7 @@ class TestForgeRunners:
 
             # Verify result structure and content using expected results
             if not verify_inference_output(
-                result,
+                result[0],
                 expected_label=expected_label,
                 min_accuracy=expected_min_accuracy,
             ):
@@ -143,33 +144,16 @@ def create_image_search_request() -> List[ImageSearchRequest]:
 
 
 def verify_inference_output(
-    result: Any, expected_label: str, min_accuracy: float
+    result: ImagePrediction, expected_label: str, min_accuracy: float
 ) -> bool:
     """Verify that the inference output has the expected structure and content."""
 
-    result = result[0]  # Get the first result for verification
-
-    # Handle new JSON format: [{"object": "...", "confidence_level": ...}]
-    if isinstance(result, list) and len(result) > 0:
-        first_prediction = result[0]
-        label = first_prediction.get("object", "")
-        prob_raw = first_prediction.get("confidence_level", 0)
-    else:
-        return False
-
-    # Normalize probability to float (0.0 to 1.0)
-    if isinstance(prob_raw, str):
-        prob = float(prob_raw.rstrip("%")) / 100.0
-    else:
-        # New format returns 0-100, convert to 0-1
-        prob = float(prob_raw) / 100.0 if prob_raw > 1 else float(prob_raw)
-
     # Check if probability meets minimum accuracy requirement
-    if prob < min_accuracy:
+    if result.confidence_level < min_accuracy:
         return False
 
     # Check if label contains the expected label
-    label_lower = label.lower()
+    label_lower = result.object.lower()
     if expected_label.lower() in label_lower:
         return True
 
