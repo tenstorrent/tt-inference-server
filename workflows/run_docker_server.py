@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import atexit
+import json
 import logging
 import shlex
 import subprocess
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
@@ -221,6 +223,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+        # Set TT_METAL_BUILT_DIR to point to mounted directory to avoid using Docker overlay filesystem
+        # This prevents ~100GB+ of kernel compilation artifacts from filling up root filesystem
+        "TT_METAL_BUILT_DIR": str(setup_config.container_tt_metal_built_dir),
         **(model_env_var if model_env_var is not None else {}),
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
@@ -249,6 +254,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+        # Mount tt-metal built directory to avoid using Docker overlay filesystem for kernel compilation artifacts
+        # This prevents ~100GB+ of disk usage from filling up the root filesystem
+        "--mount", f"type=bind,src={setup_config.host_tt_metal_built_dir},dst={setup_config.container_tt_metal_built_dir}",
         "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000

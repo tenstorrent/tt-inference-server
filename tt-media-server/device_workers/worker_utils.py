@@ -36,11 +36,20 @@ def setup_worker_environment(
     if settings.enable_telemetry:
         get_telemetry_client()
 
-    tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-    # use cache per device to reduce number of "binary not found" errors
-    os.environ["TT_METAL_CACHE"] = (
-        f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
-    )
+    # Use mounted TT_METAL_BUILT_DIR if available (prevents Docker overlay filesystem usage)
+    # Otherwise fall back to default location inside container
+    tt_metal_built_dir = os.environ.get("TT_METAL_BUILT_DIR", "")
+    if tt_metal_built_dir:
+        # Use the mounted directory to avoid Docker overlay filesystem
+        os.environ["TT_METAL_CACHE"] = (
+            f"{tt_metal_built_dir}/{str(worker_id).replace(',', '_')}"
+        )
+    else:
+        # Fallback to default location (for non-Docker runs or if mount not configured)
+        tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+        os.environ["TT_METAL_CACHE"] = (
+            f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
+        )
 
     if settings.is_galaxy:
         _setup_galaxy_mesh_config(tt_metal_home)
