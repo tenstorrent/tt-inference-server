@@ -328,7 +328,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     # Check if this is a CNN/SDXL-style benchmark (old format with benchmarks_data structure)
     # These have task_type "cnn" or "image" but use a different JSON format
-    benchmarks_data = data.get("benchmarks: ", None)
+    benchmarks_data = data.get("benchmarks: ", data)
     if benchmarks_data and benchmarks_data.get("benchmarks"):
         # This is a CNN/SDXL-style benchmark
         if params.get("task_type") == "cnn":

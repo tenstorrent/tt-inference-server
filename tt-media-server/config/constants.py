@@ -177,7 +177,8 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
-class AudioResponseFormat(Enum):
+class ResponseFormat(Enum):
+    JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
 
