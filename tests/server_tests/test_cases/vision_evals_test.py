@@ -187,7 +187,7 @@ def download_samples(count: int = 20) -> None:
     )
     dataset = ds.cast_column("image", Image(decode=True))
     samples = itertools.islice(dataset, count)
-    
+
     output_path = Path(DATASET_DIR)
     if output_path.exists():
         shutil.rmtree(output_path)
@@ -201,7 +201,9 @@ def download_samples(count: int = 20) -> None:
         image = sample["image"]
         label_id = sample.get("label")
         label_name = (
-            label_names[label_id] if label_names and label_id is not None else str(label_id)
+            label_names[label_id]
+            if label_names and label_id is not None
+            else str(label_id)
         )
 
         safe_label = (label_name or "unknown").replace(" ", "_")
@@ -277,9 +279,13 @@ def compare_results() -> None:
             diff_display = f"{'N/A':>18}"
 
         cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
-        device_display = f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
+        device_display = (
+            f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
+        )
 
-        logger.info("%s %s %s %s", f"{model:30}", cpu_display, device_display, diff_display)
+        logger.info(
+            "%s %s %s %s", f"{model:30}", cpu_display, device_display, diff_display
+        )
 
     if unacceptable:
         formatted = ", ".join(unacceptable)
@@ -288,9 +294,8 @@ def compare_results() -> None:
             formatted,
         )
         sys.exit(1)
-    
-    
-    
+
+
 def measure_accuracy(
     models: list[str] | None = None,
     server_url: str = None,
@@ -298,7 +303,6 @@ def measure_accuracy(
     authorization: str | None = None,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> None:
-    
     dataset_path = Path(DATASET_DIR)
     metadata = _load_metadata(dataset_path)
     summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
@@ -340,7 +344,7 @@ def measure_accuracy(
                 stop_server(process)
 
         correct, total, mismatches = _analyze_results(results)
-        
+
         accuracy = (correct / total) if total else 0.0
         accuracy_summary[model] = accuracy
 
@@ -352,7 +356,7 @@ def measure_accuracy(
             correct,
             total,
         )
-        
+
         if mismatches:
             mismatch_path = dataset_path / f"{model}_{mode}_mismatches.json"
             _write_json(mismatch_path, mismatches)
@@ -364,7 +368,6 @@ def measure_accuracy(
 
     _write_json(summary_path, accuracy_summary)
     logger.info("Saved %s accuracy summary to %s", mode, summary_path)
-
 
 
 """
@@ -400,31 +403,42 @@ if __name__ == "__main__":
         metavar="COUNT",
         help="Download and prepare the dataset (defaults to 20 samples).",
     )
-    parser.add_argument("--measure_cpu_accuracy", action="store_true", help="Measure CPU model accuracy")
-    parser.add_argument("--measure_device_accuracy", action="store_true", help="Measure device model accuracy")
-    parser.add_argument("--compare_results", action="store_true", help="Compare CPU and device accuracy results")
-    parser.add_argument("--model", help="Specific model runner to compare; defaults to all configured models.")
     parser.add_argument(
-        "--server_url",
-        help="Server URL to use for TT device comparisons"
+        "--measure_cpu_accuracy", action="store_true", help="Measure CPU model accuracy"
     )
-    args = parser.parse_args()   
+    parser.add_argument(
+        "--measure_device_accuracy",
+        action="store_true",
+        help="Measure device model accuracy",
+    )
+    parser.add_argument(
+        "--compare_results",
+        action="store_true",
+        help="Compare CPU and device accuracy results",
+    )
+    parser.add_argument(
+        "--model",
+        help="Specific model runner to compare; defaults to all configured models.",
+    )
+    parser.add_argument(
+        "--server_url", help="Server URL to use for TT device comparisons"
+    )
+    args = parser.parse_args()
 
     if args.server_url and not args.model:
         logger.error("When providing a server URL model must be specified (--model)")
         exit(1)
-    
+
     target_models = [args.model] if args.model else MODELS
-    
+
     if args.download is not None:
         download_samples(count=args.download)
     elif args.measure_cpu_accuracy or args.measure_device_accuracy:
         measure_accuracy(
             models=target_models,
             server_url=args.server_url,
-            mode="cpu" if args.measure_cpu_accuracy else "device"
+            mode="cpu" if args.measure_cpu_accuracy else "device",
         )
         compare_results()
     elif args.compare_results:
         compare_results()
-

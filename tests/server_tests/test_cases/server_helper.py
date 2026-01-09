@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-SERVER_STARTUP_TIMEOUT = 5*60 # wait up to 5 minutes for server to start
+SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
 SERVER_DEFAULT_URL = "http://127.0.0.1:8000/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
@@ -21,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 def _launch_server(
-    model_runner: str,
-    port: int,
-    runs_on_cpu: bool
+    model_runner: str, port: int, runs_on_cpu: bool
 ) -> tuple[subprocess.Popen, Path]:
     """Spawn the media server for a given runner and mode."""
 
     if not TT_MEDIA_SERVER_DIR.exists():
-        raise FileNotFoundError(f"tt-media-server directory not found at {TT_MEDIA_SERVER_DIR}")
+        raise FileNotFoundError(
+            f"tt-media-server directory not found at {TT_MEDIA_SERVER_DIR}"
+        )
 
     if not runs_on_cpu:
         logger.info("Resetting device...")
@@ -84,27 +84,16 @@ def _launch_server(
     return process, log_path
 
 
-def launch_cpu_server(
-    model_runner: str
-) -> tuple[subprocess.Popen, Path]:
+def launch_cpu_server(model_runner: str) -> tuple[subprocess.Popen, Path]:
     """Start the media server in CPU mode for the given model and capture logs."""
 
-    return _launch_server(
-        model_runner=model_runner,
-        port=8000,
-        runs_on_cpu=True
-    )
-    
-def launch_device_server(
-    model_runner: str
-) -> tuple[subprocess.Popen, Path]:
+    return _launch_server(model_runner=model_runner, port=8000, runs_on_cpu=True)
+
+
+def launch_device_server(model_runner: str) -> tuple[subprocess.Popen, Path]:
     """Start the media server in CPU mode for the given model and capture logs."""
 
-    return _launch_server(
-        model_runner=model_runner,
-        port=8000,
-        runs_on_cpu=False
-    )
+    return _launch_server(model_runner=model_runner, port=8000, runs_on_cpu=False)
 
 
 def wait_for_server_ready(
