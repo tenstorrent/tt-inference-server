@@ -113,7 +113,11 @@ python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow server --d
 ```
 Note: add `--dev-mode` flag if you are making changes to the tt-inference-server files and want those to be mounted into the Docker container and used.
 
-**⚠️ Disk Space Warning:** Large model compilations (e.g., SDXL) can use ~100GB+ of disk space. The `tt-metal/built` directory is automatically mounted to the persistent volume when using `--docker-server`, so kernel compilation artifacts are stored on the host filesystem instead of Docker's overlay filesystem. Artifacts are stored at `{persistent_volume_root}/volume_id_{impl_id}-{model_name}-v{version}/tt_metal_built/`. Ensure this location has sufficient space, or set `PERSISTENT_VOLUME_ROOT` environment variable to point to a filesystem with more space.
+**⚠️ Disk Space Warning:** Large model compilations (e.g., SDXL) can use ~100GB+ of disk space. The `tt-metal/built` directory is automatically mounted to the persistent volume when using `--docker-server`, so kernel compilation artifacts are stored on the host filesystem instead of Docker's overlay filesystem. 
+
+**Container Isolation:** Each Docker container gets a unique container ID, and kernel compilation artifacts are stored in isolated directories: `{persistent_volume_root}/volume_id_{impl_id}-{model_name}-v{version}/tt_metal_built/{container_id}/{worker_id}/`. This allows multiple containers (even with the same model/device/version) to run in parallel without conflicts. For example, running 32 containers in parallel will create 32 separate directories, each with its own kernel compilation cache.
+
+**Storage Location:** Artifacts are stored at `{persistent_volume_root}/volume_id_{impl_id}-{model_name}-v{version}/tt_metal_built/{container_id}/{worker_id}/`. Ensure this location has sufficient space (accounting for multiple containers), or set `PERSISTENT_VOLUME_ROOT` environment variable to point to a filesystem with more space.
 
 ```log
 2025-03-26 01:29:38,051 - run_docker_server.py:113 - INFO: Created Docker container ID: 6b8c7038a44a
