@@ -7,7 +7,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 SERVER_STARTUP_TIMEOUT = 5*60 # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
