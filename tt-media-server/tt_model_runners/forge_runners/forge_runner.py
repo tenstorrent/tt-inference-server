@@ -200,9 +200,7 @@ class ForgeRunner(BaseDeviceRunner):
         )
         self.logger.info("Getting base predictions from loader")
 
-        raw_predictions = self.loader.output_postprocess(
-            output, top_k=top_k, min_confidence=min_confidence
-        )
+        raw_predictions = self.loader.output_postprocess(output, top_k=top_k)
 
         labels = raw_predictions.get("output", {}).get("labels", [])
         probabilities = raw_predictions.get("output", {}).get("probabilities", [])
@@ -211,7 +209,8 @@ class ForgeRunner(BaseDeviceRunner):
         predictions = []
         for label, probability in zip(labels, probabilities):
             prob = float(probability.rstrip("%"))
-            predictions.append({"label": label, "probability": prob})
+            if prob >= min_confidence:
+                predictions.append({"label": label, "probability": prob})
 
         return predictions
 
