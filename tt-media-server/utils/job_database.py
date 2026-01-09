@@ -38,8 +38,8 @@ class JobDatabase:
                 model TEXT NOT NULL,
                 request_parameters TEXT,
                 status TEXT NOT NULL,
-                created_at TIMESTAMP,
-                completed_at TIMESTAMP,
+                created_at INTEGER NOT NULL,
+                completed_at INTEGER,
                 error_message TEXT,
                 result_path TEXT
             );
