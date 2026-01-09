@@ -5,7 +5,6 @@
 
 # export TT_METAL_HOME=venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -17,7 +16,7 @@ tt_media_server_dir = (
 )  # Go up 3 levels to tt-media-server
 sys.path.insert(0, str(tt_media_server_dir))
 
-from typing import Any, List
+from typing import List
 
 import pytest
 from domain.image_search_request import ImageSearchRequest
