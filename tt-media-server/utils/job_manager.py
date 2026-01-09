@@ -47,7 +47,7 @@ class Job:
         self.status = JobStatus.IN_PROGRESS
 
     def mark_completed(self, result_path: str):
-        if self.result_path is not None and not isinstance(self.result_path, str):
+        if result_path is not None and not isinstance(result_path, str):
             raise TypeError(f"result_path must be str, not {type(self.result_path)}")
         self.completed_at = int(time.time())
         self.status = JobStatus.COMPLETED
@@ -59,6 +59,11 @@ class Job:
     def mark_cancelled(self):
         self.status = JobStatus.CANCELLED
         self.completed_at = int(time.time())
+    
+    def mark_failed(self, error_code: str, error_message: str):
+        self.completed_at = int(time.time())
+        self.status = JobStatus.FAILED
+        self.error = {"code": error_code, "message": error_message}
 
     def is_in_progress(self) -> bool:
         return self.status == JobStatus.IN_PROGRESS
