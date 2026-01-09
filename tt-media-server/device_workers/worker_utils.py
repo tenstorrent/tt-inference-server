@@ -42,19 +42,13 @@ def setup_worker_environment(
     tt_metal_built_dir = os.environ.get("TT_METAL_BUILT_DIR", "")
     container_id = os.environ.get("CONTAINER_ID", "")
     worker_id_text = str(worker_id).replace(',', '_')
-    if tt_metal_built_dir:
+    if tt_metal_built_dir and container_id:
         # Use the mounted directory to avoid Docker overlay filesystem
         # Include container ID for isolation between multiple containers running in parallel
         # Path structure: {tt_metal_built_dir}/{container_id}/{worker_id}/
-        if container_id:
-            os.environ["TT_METAL_CACHE"] = (
-                f"{tt_metal_built_dir}/{container_id}/{worker_id_text}"
-            )
-        else:
-            # Fallback for backward compatibility (containers without CONTAINER_ID)
-            os.environ["TT_METAL_CACHE"] = (
-                f"{tt_metal_built_dir}/{worker_id_text}"
-            )
+        os.environ["TT_METAL_CACHE"] = (
+            f"{tt_metal_built_dir}/{container_id}/{worker_id_text}"
+        )
     else:
         # Fallback to default location (for non-Docker runs or if mount not configured)
         os.environ["TT_METAL_CACHE"] = (
