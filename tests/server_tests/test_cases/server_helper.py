@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import logging
 import os
 import subprocess
 import time
@@ -16,6 +17,8 @@ TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[3] / "tt-media-server"
 READY_LOG_TEXT = "All devices are warmed up and ready"
 LOG_DIR = Path(__file__).resolve().parent / "server_logs"
 
+logger = logging.getLogger(__name__)
+
 
 def _launch_server(
     model_runner: str,
@@ -28,7 +31,7 @@ def _launch_server(
         raise FileNotFoundError(f"tt-media-server directory not found at {TT_MEDIA_SERVER_DIR}")
 
     if not runs_on_cpu:
-        print("Reseting device...")
+        logger.info("Resetting device...")
         try:
             subprocess.run(
                 ["tt-smi", "-r"],

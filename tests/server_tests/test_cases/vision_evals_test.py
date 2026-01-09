@@ -5,6 +5,7 @@
 import argparse
 import base64
 import itertools
+import logging
 import json
 import shutil
 import sys
@@ -39,6 +40,8 @@ ACCURACY_FILE_BY_MODE = {
     "cpu": "cpu_accuracy.json",
     "device": "device_accuracy.json",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _load_metadata(dataset_path: Path) -> list[dict]:
@@ -220,8 +223,13 @@ def download_samples(count: int = 20) -> None:
     with metadata_path.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"Saved {len(metadata)} ImageNet samples to {output_path} (metadata: {metadata_path})")    
-    time.sleep(5)  # Workaround for straming dataset cleanup issues
+    logger.info(
+        "Saved %s ImageNet samples to %s (metadata: %s)",
+        len(metadata),
+        output_path,
+        metadata_path,
+    )
+    time.sleep(5)  # Workaround for streaming dataset cleanup issues
 
 
 def compare_results() -> None:
@@ -232,12 +240,12 @@ def compare_results() -> None:
     device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
 
     if not cpu_accuracy_path.exists():
-        print(f"CPU accuracy file not found: {cpu_accuracy_path}")
-        print("Run CPU accuracy measurement with --measure_cpu_accuracy")
+        logger.warning("CPU accuracy file not found: %s", cpu_accuracy_path)
+        logger.info("Run CPU accuracy measurement with --measure_cpu_accuracy")
         return
     if not device_accuracy_path.exists():
-        print(f"Device accuracy file not found: {device_accuracy_path}")
-        print("Run device accuracy measurement with --measure_device_accuracy")
+        logger.warning("Device accuracy file not found: %s", device_accuracy_path)
+        logger.info("Run device accuracy measurement with --measure_device_accuracy")
         return
 
     with cpu_accuracy_path.open("r", encoding="utf-8") as f:
@@ -245,9 +253,11 @@ def compare_results() -> None:
     with device_accuracy_path.open("r", encoding="utf-8") as f:
         device_accuracy = json.load(f)
 
-    print("\nAccuracy Comparison (CPU vs Device):")
-    print(f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18}")
-    print("-" * 90)
+    logger.info("Accuracy Comparison (CPU vs Device):")
+    logger.info(
+        f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18}"
+    )
+    logger.info("-" * 90)
 
     unacceptable: list[str] = []
 
@@ -269,12 +279,13 @@ def compare_results() -> None:
         cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
         device_display = f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
 
-        print(f"{model:30} {cpu_display} {device_display} {diff_display}")
+        logger.info("%s %s %s %s", f"{model:30}", cpu_display, device_display, diff_display)
 
     if unacceptable:
         formatted = ", ".join(unacceptable)
-        print(
-            f"Device accuracy is not acceptable: {formatted} fell more than 5% below the CPU baseline."
+        logger.error(
+            "Device accuracy is not acceptable: %s fell more than 5%% below the CPU baseline.",
+            formatted,
         )
         sys.exit(1)
     
@@ -299,18 +310,22 @@ def measure_accuracy(
 
         try:
             if mode == "cpu":
-                print(f"Starting CPU server for model: {model}")
+                logger.info("Starting CPU server for model: %s", model)
                 process, log_path = launch_cpu_server(model)
                 wait_for_server_ready(process, log_path=log_path)
-                print(f"CPU server is ready for model: {model}")
+                logger.info("CPU server is ready for model: %s", model)
             elif mode == "device":
                 if server_url:
-                    print(f"Using existing server at {server_url} for model: {model}")
+                    logger.info(
+                        "Using existing server at %s for model: %s",
+                        server_url,
+                        model,
+                    )
                 else:
-                    print(f"Starting device server for model: {model}")
+                    logger.info("Starting device server for model: %s", model)
                     process, log_path = launch_device_server(model)
                     wait_for_server_ready(process, log_path=log_path)
-                    print(f"Device server is ready for model: {model}")
+                    logger.info("Device server is ready for model: %s", model)
 
             results = _replay_samples(
                 metadata=metadata,
@@ -329,17 +344,26 @@ def measure_accuracy(
         accuracy = (correct / total) if total else 0.0
         accuracy_summary[model] = accuracy
 
-        print(
-            f"[{mode.upper()}] {model}: {accuracy * 100:.2f}% accuracy ({correct}/{total} correct)"
+        logger.info(
+            "[%s] %s: %.2f%% accuracy (%s/%s correct)",
+            mode.upper(),
+            model,
+            accuracy * 100,
+            correct,
+            total,
         )
         
         if mismatches:
             mismatch_path = dataset_path / f"{model}_{mode}_mismatches.json"
             _write_json(mismatch_path, mismatches)
-            print(f"  Saved {len(mismatches)} mismatches to {mismatch_path}")
+            logger.info(
+                "Saved %s mismatches to %s",
+                len(mismatches),
+                mismatch_path,
+            )
 
     _write_json(summary_path, accuracy_summary)
-    print(f"Saved {mode} accuracy summary to {summary_path}")
+    logger.info("Saved %s accuracy summary to %s", mode, summary_path)
 
 
 
@@ -387,7 +411,7 @@ if __name__ == "__main__":
     args = parser.parse_args()   
 
     if args.server_url and not args.model:
-        print("When providing a server URL model must be specified (--model)")
+        logger.error("When providing a server URL model must be specified (--model)")
         exit(1)
     
     target_models = [args.model] if args.model else MODELS
