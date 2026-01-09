@@ -49,6 +49,8 @@ def setup_worker_environment(
         os.environ["TT_METAL_CACHE"] = (
             f"{tt_metal_built_dir}/{container_id}/{worker_id_text}"
         )
+    elif tt_metal_built_dir:
+        os.environ["TT_METAL_CACHE"] = f"{tt_metal_built_dir}/{worker_id_text}"
     else:
         # Fallback to default location (for non-Docker runs or if mount not configured)
         os.environ["TT_METAL_CACHE"] = f"{tt_metal_home}/built/{worker_id_text}"
