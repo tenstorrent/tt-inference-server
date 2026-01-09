@@ -210,9 +210,20 @@ class JobManager:
                 # Only cleanup/delete jobs that were still running
                 # because they are now in an inconsistent state.
                 if not job.is_terminal():
+                    self._logger.info(f"Cleaning up active job {job_id} during shutdown. \
+                        The job will be removed from the database and memory.")
+                    
                     task = self._cleanup_job(job)
                     if task:
                         running_tasks.append(task)
+                    
+                    # Remove from DB so it doesn't "ghost" on restart, and from memory.
+                    if self.db:
+                        self.db.delete_job(job_id)
+                    self._jobs.pop(job_id)
+                else:
+                    # For completed/failed jobs, just stop tracking in memory.
+                    # They stay in the DB because they are finished.
                     self._jobs.pop(job_id)
 
         if running_tasks:
