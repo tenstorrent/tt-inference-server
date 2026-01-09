@@ -13,6 +13,8 @@ from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind
+from kv_cache.kv_cache_storage import KVCache, KVCacheMetadata
+from typing import Optional
 
 
 class VLLMForgeRunner(BaseDeviceRunner):
@@ -51,6 +53,39 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
+    def _create_sampling_params(self, request: CompletionRequest) -> SamplingParams:
+        """
+        Create sampling parameters from request
+
+        Centralized method for creating sampling params - used by all inference modes.
+        """
+        return SamplingParams(
+            n=1,
+            presence_penalty=0.0,
+            frequency_penalty=0.0,
+            repetition_penalty=1.0,
+            seed=None,
+            stop=[],
+            stop_token_ids=[],
+            bad_words=[],
+            include_stop_str_in_output=False,
+            ignore_eos=False,
+            min_tokens=0,
+            logprobs=None,
+            prompt_logprobs=None,
+            temperature=0.0,
+            top_p=1.0,
+            top_k=0,
+            min_p=0.0,
+            max_tokens=request.max_tokens if request.max_tokens else 65536,
+            skip_special_tokens=True,
+            spaces_between_special_tokens=True,
+            truncate_prompt_tokens=None,
+            guided_decoding=None,
+            extra_args=None,
+            output_kind=RequestOutputKind.DELTA,
+        )
+
     @log_execution_time(
         "Run VLLM Forge inference",
         TelemetryEvent.MODEL_INFERENCE,
@@ -61,43 +96,34 @@ class VLLMForgeRunner(BaseDeviceRunner):
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self._run_async(requests))
 
-    async def _run_async(self, requests: list[CompletionRequest]):
+    async def _run_async(self, requests: list[CompletionRequest], mode: str = "full"):
+        """
+        Run inference (full, prefill-only, or decode-only)
+
+        Args:
+            requests: List of completion requests
+            mode: Execution mode - "full" (default), "prefill", or "decode"
+        """
         try:
-            self.logger.debug(f"Device {self.device_id}: Running inference")
+            self.logger.debug(f"Device {self.device_id}: Running inference in {mode} mode")
 
             request = requests[0]
-            # Harcode those sampling params
-            # SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], include_stop_str_in_output=False, ignore_eos=False, max_tokens=231, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, truncate_prompt_tokens=None, guided_decoding=None, extra_args=None)
-            sampling_params = SamplingParams(
-                n=1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                repetition_penalty=1.0,
-                seed=None,
-                stop=[],
-                stop_token_ids=[],
-                bad_words=[],
-                include_stop_str_in_output=False,
-                ignore_eos=False,
-                min_tokens=0,
-                logprobs=None,
-                prompt_logprobs=None,
-                temperature=0.0,
-                top_p=1.0,
-                top_k=0,
-                min_p=0.0,
-                max_tokens=request.max_tokens if request.max_tokens else 65536,
-                skip_special_tokens=True,
-                spaces_between_special_tokens=True,
-                truncate_prompt_tokens=None,
-                guided_decoding=None,
-                extra_args=None,
-                output_kind=RequestOutputKind.DELTA,
-            )
-            if request.stream:
-                return self._generate_streaming(request, sampling_params)
+
+            # Create sampling params (centralized in runner)
+            sampling_params = self._create_sampling_params(request)
+
+            if mode == "prefill":
+                # Prefill-only mode - extract KV cache
+                return await self.run_prefill_only(request, mode=mode)
+            elif mode == "decode":
+                # Decode mode requires KV cache - should use load_kv_cache_and_decode instead
+                raise ValueError("Decode mode requires KV cache. Use load_kv_cache_and_decode() instead.")
             else:
-                return await self._generate_non_streaming(request, sampling_params)
+                # Full mode - normal inference
+                if request.stream:
+                    return self._generate_streaming(request, sampling_params)
+                else:
+                    return await self._generate_non_streaming(request, sampling_params)
         except Exception as e:
             self.logger.error(
                 f"Device {self.device_id}: Inference failed: {type(e).__name__}: {e}"
@@ -175,3 +201,159 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 
         return [CompletionStreamChunk(text=generated_text)]
+
+    async def run_prefill_only(
+        self, request: CompletionRequest, mode: str = "prefill"
+    ) -> Optional[KVCache]:
+        """
+        Run prefill phase only and extract KV cache
+
+        This method runs the prefill phase and stops before decode,
+        then extracts the KV cache for transfer to decode worker.
+
+        Args:
+            request: Completion request
+            mode: Execution mode ("prefill" or "decode")
+
+        Returns:
+            KVCache object if successful, None otherwise
+        """
+        try:
+            self.logger.info(
+                f"Device {self.device_id}: Running prefill-only for task {request._task_id}"
+            )
+
+            # Create sampling params using centralized method
+            sampling_params = self._create_sampling_params(request)
+
+            # TODO: Implement actual prefill-only mode in vLLM
+            # This requires modifying vLLM engine to support stopping after prefill
+            # For now, this is a placeholder that would need integration with vLLM internals
+
+            # The actual implementation would:
+            # 1. Run prefill phase (process prompt tokens)
+            # 2. Stop before decode phase
+            # 3. Extract KV cache from engine's internal state
+            # 4. Return KVCache object
+
+            # Placeholder: Access engine's scheduler to get sequence metadata
+            # scheduler = self.llm_engine.scheduler
+            # seq_group = scheduler.get_seq_group(request._task_id)
+            # if seq_group:
+            #     # Extract KV cache from sequence group
+            #     kv_cache = self._extract_kv_cache_from_seq_group(seq_group)
+            #     return kv_cache
+
+            self.logger.warning(
+                f"Device {self.device_id}: Prefill-only mode not yet fully implemented. "
+                "This requires vLLM engine modifications."
+            )
+            return None
+
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Prefill-only failed: {type(e).__name__}: {e}"
+            )
+            return None
+
+    def _extract_kv_cache_from_engine(self, task_id: str) -> Optional[KVCache]:
+        """
+        Extract KV cache from vLLM engine's internal state
+
+        This is a placeholder method that would need to access vLLM's internal
+        KV cache storage. The actual implementation depends on vLLM's internal API.
+
+        Args:
+            task_id: Task ID to extract KV cache for
+
+        Returns:
+            KVCache object if successful, None otherwise
+        """
+        # TODO: Implement actual KV cache extraction from vLLM engine
+        # This would require:
+        # 1. Access to engine's cache engine (cache_engine)
+        # 2. Access to sequence metadata to get KV cache blocks
+        # 3. Conversion from vLLM's KV cache format to our KVCache format
+
+        # Placeholder implementation:
+        # cache_engine = self.llm_engine.cache_engine
+        # if cache_engine:
+        #     # Get KV cache blocks for this sequence
+        #     # Convert to our format
+        #     pass
+
+        return None
+
+    async def load_kv_cache_and_decode(
+        self,
+        request: CompletionRequest,
+        kv_cache: KVCache,
+        mode: str = "decode",
+    ):
+        """
+        Load KV cache into engine and continue decode phase
+
+        This method loads a transferred KV cache into the engine and
+        continues the decode phase from where prefill left off.
+
+        Args:
+            request: Completion request
+            kv_cache: KV cache to load
+            mode: Execution mode ("prefill" or "decode")
+
+        Yields:
+            Decode chunks as they are generated
+        """
+        try:
+            self.logger.info(
+                f"Device {self.device_id}: Loading KV cache for task {request._task_id}"
+            )
+
+            # Create sampling params using centralized method
+            sampling_params = self._create_sampling_params(request)
+
+            # TODO: Implement actual KV cache loading into vLLM engine
+            # This requires:
+            # 1. Loading KV cache into engine's cache engine
+            # 2. Setting up sequence metadata to point to loaded cache
+            # 3. Continuing decode from the loaded cache state
+
+            # Placeholder implementation:
+            # cache_engine = self.llm_engine.cache_engine
+            # if cache_engine:
+            #     # Load KV cache blocks
+            #     # Set up sequence to use loaded cache
+            #     pass
+
+            # Continue decode
+            task_id = request._task_id
+            async for request_output in self.llm_engine.generate(
+                "",  # Empty prompt since we're continuing from KV cache
+                sampling_params,
+                task_id,
+            ):
+                outputs = request_output.outputs
+                if not outputs:
+                    continue
+
+                for output in outputs:
+                    chunk_text = output.text
+                    if not chunk_text:
+                        continue
+
+                    yield {
+                        "type": "streaming_chunk",
+                        "chunk": CompletionStreamChunk(text=chunk_text),
+                        "task_id": task_id,
+                    }
+
+            self.logger.info(
+                f"Device {self.device_id}: Decode with loaded KV cache completed"
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Load KV cache and decode failed: "
+                f"{type(e).__name__}: {e}"
+            )
+            raise RuntimeError(f"Load KV cache and decode failed: {str(e)}") from e

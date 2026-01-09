@@ -18,6 +18,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
 )
+from config.kv_cache_settings import KVCacheSettings
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
 
     vllm: VLLMSettings = VLLMSettings()
+    kv_cache: KVCacheSettings = KVCacheSettings()
 
     # Image processing settings
     image_return_format: str = "JPEG"
