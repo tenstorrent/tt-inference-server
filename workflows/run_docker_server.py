@@ -3,14 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import atexit
-import json
 import logging
 import shlex
 import subprocess
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
@@ -212,7 +210,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif model_spec.impl == llama3_70b_galaxy_impl:
         model_env_var = {"TT_LLAMA_TEXT_VER": model_spec.impl.impl_id}
     # TODO: Remove all of this model env var setting https://github.com/tenstorrent/tt-inference-server/issues/1346
-    
+
     # Update host_tt_metal_built_dir to use base directory (container ID will be added in worker_utils.py)
     # This allows multiple containers with same model/device/version to run in parallel
     # Mount the base tt_metal_built directory, container isolation happens via CONTAINER_ID in worker path
@@ -221,7 +219,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     )
     # Ensure base directory exists before mounting
     setup_config.host_tt_metal_built_dir.mkdir(parents=True, exist_ok=True)
-    
+
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,

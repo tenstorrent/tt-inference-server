@@ -24,8 +24,8 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import (
-    ModelSpec,
     ModelSource,
+    ModelSpec,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
@@ -87,9 +87,7 @@ class SetupConfig:
             / f"cache_{self.model_spec.model_name}"
         )
         # host path for tt-metal built artifacts (kernel compilation cache)
-        self.host_tt_metal_built_dir = (
-            self.host_model_volume_root / "tt_metal_built"
-        )
+        self.host_tt_metal_built_dir = self.host_model_volume_root / "tt_metal_built"
         # container paths
         self.container_tt_metal_cache_dir = (
             self.cache_root / "tt_metal_cache" / f"cache_{self.model_spec.model_name}"
