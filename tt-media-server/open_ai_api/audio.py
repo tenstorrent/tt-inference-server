@@ -5,7 +5,7 @@
 import json
 from typing import Optional
 
-from config.constants import AudioResponseFormat, AudioTasks
+from config.constants import AudioTasks, ResponseFormat
 from config.settings import settings
 from domain.audio_processing_request import AudioProcessingRequest
 from fastapi import (
@@ -29,7 +29,7 @@ async def parse_audio_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
     stream: Optional[bool] = Form(False),
-    response_format: Optional[str] = Form(AudioResponseFormat.VERBOSE_JSON.value),
+    response_format: Optional[str] = Form(ResponseFormat.VERBOSE_JSON.value),
     is_preprocessing_enabled: Optional[bool] = Form(True),
     perform_diarization: Optional[bool] = Form(False),
     temperatures: Optional[str] = Form(None),
@@ -47,7 +47,7 @@ async def parse_audio_request(
         return AudioProcessingRequest(
             file=file_content,
             stream=stream or False,
-            response_format=response_format or AudioResponseFormat.VERBOSE_JSON.value,
+            response_format=response_format or ResponseFormat.VERBOSE_JSON.value,
             is_preprocessing_enabled=is_preprocessing_enabled
             if is_preprocessing_enabled is not None
             else True,
@@ -116,7 +116,7 @@ async def handle_audio_request(audio_request, service):
     try:
         if not audio_request.stream:
             result = await service.process_request(audio_request)
-            if audio_request.response_format.lower() == AudioResponseFormat.TEXT.value:
+            if audio_request.response_format.lower() == ResponseFormat.TEXT.value:
                 return Response(content=result.text, media_type="text/plain")
             return get_dict_response(result)
         else:
@@ -129,7 +129,7 @@ async def handle_audio_request(audio_request, service):
                 async for partial in service.process_streaming_request(audio_request):
                     if (
                         audio_request.response_format.lower()
-                        == AudioResponseFormat.TEXT.value
+                        == ResponseFormat.TEXT.value
                     ):
                         yield partial.text + "\n"
                     else:
@@ -137,10 +137,7 @@ async def handle_audio_request(audio_request, service):
 
             media_type = (
                 "text/plain"
-                if (
-                    audio_request.response_format.lower()
-                    == AudioResponseFormat.TEXT.value
-                )
+                if (audio_request.response_format.lower() == ResponseFormat.TEXT.value)
                 else "application/x-ndjson"
             )
             return StreamingResponse(result_stream(), media_type=media_type)

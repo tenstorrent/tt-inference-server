@@ -185,7 +185,8 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
-class AudioResponseFormat(Enum):
+class ResponseFormat(Enum):
+    JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
 
@@ -276,12 +277,14 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),

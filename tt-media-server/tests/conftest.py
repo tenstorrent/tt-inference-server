@@ -315,6 +315,12 @@ for submodule, mock in submodules.items():
     if submodule not in sys.modules:
         sys.modules[submodule] = mock
 
+# Mock open_ai_api modules that use FastAPI decorators with Pydantic models
+# This prevents import errors when test_device_worker.py mocks domain objects
+mock_open_ai_api_image = MagicMock()
+mock_open_ai_api_image.router = MagicMock()
+sys.modules["open_ai_api.image"] = mock_open_ai_api_image
+
 # Add tests.ttnn as a proper module mock to avoid pytest import issues
 if "tests.ttnn" not in sys.modules:
     tests_ttnn_mock = MagicMock()
