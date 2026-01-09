@@ -139,7 +139,7 @@ def create_image_search_request() -> List[ImageSearchRequest]:
     if image_data.startswith("data:image/jpeg;base64,"):
         image_data = image_data.split(",", 1)[1]
 
-    return [ImageSearchRequest(prompt=image_data)]
+    return [ImageSearchRequest(prompt=image_data, min_confidence=0.0)]
 
 
 def verify_inference_output(
