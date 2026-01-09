@@ -202,7 +202,9 @@ class ForgeRunner(BaseDeviceRunner):
         raw_predictions = self.loader.output_postprocess(output, top_k=top_k)
         self.logger.info("Convert list of dicts and parse probability strings")
         predictions = []
-        for label, probability in zip(raw_predictions["labels"], raw_predictions["probabilities"]):
+        for label, probability in zip(
+            raw_predictions["labels"], raw_predictions["probabilities"]
+        ):
             prob = float(probability.rstrip("%"))
             if prob >= min_confidence:
                 predictions.append({"label": label, "probability": prob})
