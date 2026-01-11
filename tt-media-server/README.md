@@ -255,6 +255,84 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+
+# Text-to-Speech (TTS) test call
+
+The TTS API converts text to speech audio using the SpeechT5 model.
+
+- JSON Request: Send a JSON POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+      "text": "Hello, this is a test of the text to speech system.",
+    "stream": false,
+    "response_format": "verbose_json"
+}'
+```
+
+- Form Data Request: Send a multipart form data POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -F "text=Hello, this is a test of the text to speech system." \
+  -F "stream=false" \
+  -F "response_format=verbose_json"
+```
+
+- Get raw audio (WAV format):
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello, this is a test.",
+    "response_format": "text"
+}' \
+  -o output.wav
+```
+
+# Image search test call
+
+The image search API uses a CNN model to search for similar images. It supports multiple input methods.
+
+- Base64 JSON Request: Send a JSON POST request to `/search-image`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/search-image' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "[base64 encoded image]",
+  "response_format": "json",
+  "top_k": 3,
+  "min_confidence": 70.0
+}'
+```
+
+- File Upload: Send a multipart form data POST request to `/search-image`
+```bash
+curl -X POST "http://localhost:8000/search-image" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/image.jpg" \
+  -F "response_format=json" \
+  -F "top_k=5" \
+  -F "min_confidence=80.0"
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prompt` / `file` | string / file | required | Base64-encoded image (JSON) or image file (multipart) |
+| `response_format` | string | `"json"` | Response format for results |
+| `top_k` | integer | `3` | Number of top results to return |
+| `min_confidence` | float | `70.0` | Minimum confidence threshold (0-100) |
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Video generation API
 
 ## Submit video generation job
