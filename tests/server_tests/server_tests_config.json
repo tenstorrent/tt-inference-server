@@ -993,5 +993,161 @@
                 }
             }
         ]
+    },
+    {
+        "weights" : ["bge-large-en-v1.5"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "embedding_time": 5
+                }
+            },
+            {
+                "name": "EmbeddingParamTest",
+                "module": "tests.server_tests.test_cases.embedding_param_test",
+                "enabled": true,
+                "description": "Test embedding params (input and dimensions)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["bge-large-en-v1.5"],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "embedding_time": 5
+                }
+            },
+            {
+                "name": "EmbeddingParamTest",
+                "module": "tests.server_tests.test_cases.embedding_param_test",
+                "enabled": true,
+                "description": "Test embedding params (input and dimensions)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["bge-large-en-v1.5"],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "embedding_time": 5
+                }
+            },
+            {
+                "name": "EmbeddingParamTest",
+                "module": "tests.server_tests.test_cases.embedding_param_test",
+                "enabled": true,
+                "description": "Test embedding params (input and dimensions)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
     }
 ]
