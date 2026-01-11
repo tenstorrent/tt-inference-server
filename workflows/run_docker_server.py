@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
@@ -184,7 +185,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     )
     device = DeviceTypes.from_string(args.device)
     mesh_device_str = device.to_mesh_device_str()
-    container_name = f"tt-inference-server-{short_uuid()}"
+    container_id = short_uuid()
+    container_name = f"tt-inference-server-{container_id}"
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -219,10 +221,30 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif model_spec.impl == llama3_70b_galaxy_impl:
         model_env_var = {"TT_LLAMA_TEXT_VER": model_spec.impl.impl_id}
     # TODO: Remove all of this model env var setting https://github.com/tenstorrent/tt-inference-server/issues/1346
+
+    # Update host_tt_metal_built_dir to use base directory (container ID will be added in worker_utils.py)
+    # This allows multiple containers with same model/device/version to run in parallel
+    # Mount the base tt_metal_built directory, container isolation happens via CONTAINER_ID in worker path
+    host_model_volume_root = Path(setup_config.host_model_volume_root)
+    setup_config.host_tt_metal_built_dir = host_model_volume_root / "tt_metal_built"
+    # Ensure base directory exists before mounting
+    # Skip mkdir if it's already a Path-like object (e.g., in tests with mocked paths)
+    if isinstance(setup_config.host_tt_metal_built_dir, Path):
+        try:
+            setup_config.host_tt_metal_built_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, FileNotFoundError):
+            # In test environments, directory creation may fail - this is expected
+            pass
+
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
+        # Set TT_METAL_BUILT_DIR to point to mounted directory to avoid using Docker overlay filesystem
+        # This prevents ~100GB+ of kernel compilation artifacts from filling up root filesystem
+        "TT_METAL_BUILT_DIR": str(setup_config.container_tt_metal_built_dir),
+        # Container ID for worker isolation - allows multiple containers to run in parallel
+        "CONTAINER_ID": container_id,
         **(model_env_var if model_env_var is not None else {}),
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
@@ -251,6 +273,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+        # Mount tt-metal built directory to avoid using Docker overlay filesystem for kernel compilation artifacts
+        # This prevents ~100GB+ of disk usage from filling up the root filesystem
+        "--mount", f"type=bind,src={setup_config.host_tt_metal_built_dir},dst={setup_config.container_tt_metal_built_dir}",
         "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
