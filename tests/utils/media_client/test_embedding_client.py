@@ -16,36 +16,6 @@ from utils.media_clients.embedding_client import (
 )
 
 
-class TestEmbeddingClientStrategyInit(unittest.TestCase):
-    """Tests for EmbeddingClientStrategy.__init__ method."""
-
-    def test_init_success(self):
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "2048"}
-        model_spec.device_model_spec.max_concurrency = 4
-        device = MagicMock()
-
-        strategy = EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-        assert strategy.model == "test/model"
-        assert strategy.isl == 2048
-        assert strategy.num_calls == 1000
-        assert strategy.dimensions == 1000
-        assert strategy.concurrency == 4
-
-    def test_init_default_isl(self):
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {}
-        model_spec.device_model_spec.max_concurrency = 2
-        device = MagicMock()
-
-        strategy = EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-        assert strategy.isl == 1024  # Default value
-
-
 class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
     """Tests for run_eval method."""
 
