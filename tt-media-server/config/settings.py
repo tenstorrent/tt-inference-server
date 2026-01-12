@@ -10,6 +10,7 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
+    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -28,9 +29,9 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "(0,1,2,3)"
-    is_galaxy: bool = False  # used for graph device split and class init
-    device_mesh_shape: tuple = (2, 4)
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = True  # used for graph device split and class init
+    device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
