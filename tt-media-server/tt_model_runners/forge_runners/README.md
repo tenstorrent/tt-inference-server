@@ -30,6 +30,7 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
+   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"   
    pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
