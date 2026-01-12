@@ -31,6 +31,9 @@ class EmbeddingLoadTest(BaseTest):
         devices = self.targets.get("num_of_devices", 1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
+        model = self.config.get("model", "test-model")
+
+        payload["model"] = model
 
         if dimensions is not None:
             payload["dimensions"] = dimensions

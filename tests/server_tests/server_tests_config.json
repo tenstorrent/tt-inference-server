@@ -1008,7 +1008,8 @@
                     "retry_attempts": 120,
                     "retry_delay": 10,
                     "break_on_failure": true,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 1
@@ -1024,7 +1025,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 1,
@@ -1041,7 +1043,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 }
             }
         ]
@@ -1060,7 +1063,8 @@
                     "retry_attempts": 120,
                     "retry_delay": 10,
                     "break_on_failure": true,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 4
@@ -1076,7 +1080,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 4,
@@ -1093,7 +1098,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 }
             }
         ]
@@ -1112,7 +1118,8 @@
                     "retry_attempts": 220,
                     "retry_delay": 10,
                     "break_on_failure": true,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 32
@@ -1128,7 +1135,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 },
                 "targets": {
                     "num_of_devices": 32,
@@ -1145,7 +1153,8 @@
                     "retry_attempts": 1,
                     "retry_delay": 60,
                     "break_on_failure": false,
-                    "mock_mode": false
+                    "mock_mode": false,
+                    "model": "BAAI/bge-large-en-v1.5"
                 }
             }
         ]

@@ -84,6 +84,18 @@ class EmbeddingParamTest(BaseTest):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
         logger.info(f"Testing embedding parameters at {self.url}")
 
+        model = self.config.get("model", "test-model")
+
+        base_payload["model"] = model
+        duplicate_input_payload["model"] = model
+        different_input_payload["model"] = model
+        dimensions_payload["model"] = model
+        different_dimensions_payload["model"] = model
+        dimensions_different_input_payload["model"] = model
+        long_input_payload["model"] = model
+        short_input_payload["model"] = model
+        single_char_input_payload["model"] = model
+
         # Create list of payloads to test different parameters
         payloads = [
             {"name": "base_default", "payload": base_payload},
