@@ -1220,10 +1220,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # Import display functions once
     from benchmarking.summary_report import (
         create_audio_display_dict,
-        create_cnn_display_dict,
         create_display_dict,
         create_embedding_display_dict,
         create_image_display_dict,
+        create_image_generation_display_dict,
         get_markdown_table,
         save_to_csv,
         save_markdown_table,
@@ -1285,10 +1285,12 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if vllm_cnn:
-            vllm_cnn_display = [create_cnn_display_dict(r) for r in vllm_cnn]
+            vllm_cnn_display = [
+                create_image_generation_display_dict(r) for r in vllm_cnn
+            ]
             vllm_cnn_md = get_markdown_table(vllm_cnn_display)
             cnn_sections.append(
-                f"#### vLLM CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+                f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
             )
 
     # Process AIPerf benchmarks
@@ -1346,7 +1348,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         # Note: AIPerf does not currently support CNN models
         # This section is here for future compatibility if support is added
         if aiperf_cnn and aiperf_cnn[0].get("backend") == "aiperf":
-            aiperf_cnn_display = [create_cnn_display_dict(r) for r in aiperf_cnn]
+            aiperf_cnn_display = [
+                create_image_generation_display_dict(r) for r in aiperf_cnn
+            ]
             aiperf_cnn_md = get_markdown_table(aiperf_cnn_display)
             cnn_sections.append(
                 f"#### AIPerf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_cnn_md}"
@@ -1407,13 +1411,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         # Note: GenAI-Perf does not currently support CNN models
         # This section is here for future compatibility if support is added
         if genai_cnn and genai_cnn[0].get("backend") == "genai-perf":
-            genai_cnn_display = [create_cnn_display_dict(r) for r in genai_cnn]
+            genai_cnn_display = [
+                create_image_generation_display_dict(r) for r in genai_cnn
+            ]
             genai_cnn_md = get_markdown_table(genai_cnn_display)
             cnn_sections.append(
                 f"#### GenAI-Perf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_cnn_md}"
             )
 
-    # Combine sections: all text first, then all image, then audio, embedding, cnn
+    # Combine sections: text, image, audio, embedding, then cnn (matching original order)
     markdown_sections = (
         text_sections
         + image_sections
