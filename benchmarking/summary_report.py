@@ -5,6 +5,7 @@
 import argparse
 import csv
 import json
+import logging
 import os
 import re
 import unicodedata
@@ -22,6 +23,8 @@ from workflows.utils import (
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
+
+logger = logging.getLogger(__name__)
 
 
 def format_backend_value(backend: str) -> str:
@@ -165,6 +168,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # Try image pattern
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
+        logger.info(f"Found image benchmark pattern in filename: {filename}")
         # Extract and convert numeric parameters for image benchmarks
         params = {
             "model_name": match.group("model"),
@@ -196,6 +200,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(text_pattern, filename, re.VERBOSE)
 
     if match:
+        logger.info(f"Found text benchmark pattern in filename: {filename}")
         # Extract and convert numeric parameters for text benchmarks
         return {
             "model_name": match.group("model"),
@@ -221,6 +226,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
+        logger.info(f"Found CNN benchmark pattern in filename: {filename}")
         # Check if this is actually an audio model or image model based on model_id
         model_id = match.group(
             "model_id"
@@ -332,6 +338,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     if benchmarks_data and benchmarks_data.get("benchmarks"):
         # This is a CNN/SDXL-style benchmark
         if params.get("task_type") == "cnn":
+            logger.info(f"Processing CNN benchmark file: {filename}")
             metrics = {
                 "timestamp": params["timestamp"],
                 "model": data.get("model", ""),
@@ -355,6 +362,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             }
             return format_metrics(metrics)
         elif params.get("task_type") == "image":
+            logger.info(f"Processing IMAGE benchmark file: {filename}")
             # SDXL-style image benchmark
             metrics = {
                 "timestamp": params["timestamp"],
@@ -380,6 +388,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             return format_metrics(metrics)
 
     if params.get("task_type") == "audio":
+        logger.info(f"Processing AUDIO benchmark file: {filename}")
         # For audio benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
@@ -672,6 +681,24 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
+def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for cnn benchmarks
+    display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
+        ("num_requests", "Num Requests"),
+        ("num_inference_steps", "Num Inference Steps"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("task_type", "Task Type"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
     return text.strip()
@@ -888,11 +915,12 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, image and audio benchmarks
+    # Separate text, image, audio, embedding, and cnn benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
+    cnn_results = [r for r in results if r.get("task_type") == "cnn"]
 
     markdown_sections = []
 
@@ -944,6 +972,13 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         embedding_markdown_str = get_markdown_table(embedding_display_results)
         embedding_section = f"#### Embedding Benchmark Sweeps for {model_name} on {device}\n\n{embedding_markdown_str}"
         markdown_sections.append(embedding_section)
+
+    # Generate cnn benchmarks section if any exist
+    if cnn_results:
+        cnn_display_results = [create_cnn_display_dict(res) for res in cnn_results]
+        cnn_markdown_str = get_markdown_table(cnn_display_results)
+        cnn_section = f"#### CNN Benchmark Sweeps for {model_name} on {device}\n\n{cnn_markdown_str}"
+        markdown_sections.append(cnn_section)
 
     # Combine sections
     if markdown_sections:
