@@ -122,11 +122,7 @@ RUN mkdir -p ${TT_METAL_HOME} \
 
 
 # do the same for /tt_metal folder
-RUN mkdir -p ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git init \
-    && git remote add origin https://github.com/tenstorrent/tt-metal.git \
-    && git config core.sparseCheckout true \
+RUN cd ${TT_METAL_HOME} \
     && echo "/tt_metal/" >> .git/info/sparse-checkout \
     && echo "tt_metal/python_env/" >> .git/info/sparse-checkout \
     && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
