@@ -1,32 +1,27 @@
 import pytest
-import os
-import tempfile
 import asyncio
 from pathlib import Path
 from unittest.mock import patch, Mock
-from utils.job_manager import JobManager, JobStatus, JobTypes
+from utils.job_manager import JobManager, JobTypes
 from domain.base_request import BaseRequest
 
 class TestJobManagerDatabaseIntegration:
     """Integration tests using a real temporary database"""
 
     @pytest.fixture
-    async def job_manager(self):
+    async def job_manager(self, tmp_path):
         """Setup a JobManager with a real temporary SQLite database."""
-        # 1. Reset singleton
+        # Reset singleton
         import utils.job_manager
         utils.job_manager._job_manager_instance = None
 
-        # 2. Create a temporary file for the database
-        fd, temp_db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
+        test_db_file = tmp_path / "test_jobs.db"
         
-        # 3. Patch settings and the DEFAULT_DB_PATH
-        # We patch the path so the real JobDatabase() uses our temp file
-        with patch("utils.job_manager.get_settings") as mock_settings, \
-             patch("utils.job_database.DEFAULT_DB_PATH", Path(temp_db_path)):
+        with patch("utils.job_manager.get_settings") as mock_settings:
             
             mock_settings.return_value.enable_job_persistence = True
+            mock_settings.return_value.job_database_path = test_db_file
+
             mock_settings.return_value.max_jobs = 10
             mock_settings.return_value.job_cleanup_interval_seconds = 1
             mock_settings.return_value.job_retention_seconds = 2
@@ -34,10 +29,8 @@ class TestJobManagerDatabaseIntegration:
             job_manager = JobManager()
             yield job_manager
 
-            # Cleanup: Shutdown job_manager and delete temp DB file
+            # Cleanup
             await job_manager.shutdown()
-            if os.path.exists(temp_db_path):
-                os.remove(temp_db_path)
 
     @pytest.fixture
     def mock_request(self):
@@ -47,7 +40,7 @@ class TestJobManagerDatabaseIntegration:
         return request
 
     @pytest.mark.asyncio
-    async def test_create_job_persists_to_real_db(self, job_manager, mock_request):
+    async def test_create_job_persists_to_db(self, job_manager, mock_request):
         """Verify that create_job actually puts a row in the DB."""
         job_id = "db-integration-1"
         
@@ -81,72 +74,89 @@ class TestJobManagerDatabaseIntegration:
         """Verify the DB status changes as the job progresses."""
         job_id = "lifecycle-id"
 
-        async def slow_task(req):
-            await asyncio.sleep(0.3)
+        async def fast_task(req):
+            await asyncio.sleep(0.1)
             return "done.mp4"
 
-        await job_manager.create_job(job_id, JobTypes.VIDEO, "m", mock_request, slow_task)
+        await job_manager.create_job(job_id, JobTypes.VIDEO, "m", mock_request, fast_task)
 
-        # Check database while job is likely in progress
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)
         db_job_mid = job_manager.db.get_job_by_id(job_id)
         assert db_job_mid["status"] == "in_progress"
 
-        # Check database after completion
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.1)
         db_job_final = job_manager.db.get_job_by_id(job_id)
         assert db_job_final["status"] == "completed"
         assert db_job_final["result_path"] == "done.mp4"
+    
+    @pytest.mark.asyncio
+    async def test_cancel_job_transitions_to_cancelled_in_db(self, job_manager, mock_request):
+        """Verify job moves through cancelling then cancelled using sleeps."""
+        job_id = "cancel-sleep-test"
+        
+        async def long_task_with_slow_cleanup(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.5) 
+                raise
+
+        await job_manager.create_job(job_id, JobTypes.VIDEO, "m", mock_request, long_task_with_slow_cleanup)
+        
+        await asyncio.sleep(0.1)
+        
+        success = job_manager.cancel_job(job_id)
+        assert success is True
+        
+        db_job_mid = job_manager.db.get_job_by_id(job_id)
+        assert db_job_mid["status"] == "cancelling"
+        
+        # Wait for the job to get in the cancelled state
+        await asyncio.sleep(0.6)
+        
+        db_job_final = job_manager.db.get_job_by_id(job_id)
+        assert db_job_final["status"] == "cancelled"
         assert db_job_final["completed_at"] is not None
 
-    @pytest.mark.asyncio
-    async def test_cancel_job_removes_from_db(self, job_manager, mock_request):
-        """Verify that cancel_job actually deletes the row from the DB."""
-        job_id = "cancel-test"
-        
-        async def long_task(req): 
-            await asyncio.sleep(5)
-            return "videos/test-123.mp4"
-        
-        await job_manager.create_job(job_id, JobTypes.VIDEO, "m", mock_request, long_task)
-        
-        # Verify it exists first
-        assert job_manager.db.get_job_by_id(job_id) is not None
-        
-        # Cancel
-        job_manager.cancel_job(job_id)
-        
-        # Assert: Should be gone from DB
-        assert job_manager.db.get_job_by_id(job_id) is None
+
 
     @pytest.mark.asyncio
-    async def test_restore_from_db_on_new_manager(self, mock_request):
-        """
-        Verify that if we create a NEW job_manager, it loads existing 
-        jobs from the same database file.
-        """
-        fd, temp_db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
+    async def test_restore_multiple_jobs_from_db(self, job_manager, mock_request):
+        """Verify that multiple jobs are correctly restored upon manager restart."""
 
-        with patch("utils.job_manager.get_settings") as mock_settings, \
-             patch("utils.job_database.DEFAULT_DB_PATH", Path(temp_db_path)):
-            
+        job_ids = ["job-1", "job-2", "job-3"]
+        db_path = job_manager.db.db_path 
+
+        for jid in job_ids:
+            await job_manager.create_job(
+                jid, 
+                JobTypes.VIDEO, 
+                "m", 
+                mock_request, 
+                lambda r: f"results/{jid}.mp4"
+            )
+        
+        await asyncio.sleep(0.2) 
+        await job_manager.shutdown()
+
+        # Reset Singleton for the second instance
+        import utils.job_manager
+        utils.job_manager._job_manager_instance = None
+
+        # Start the second manager pointing to the same DB
+        with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.enable_job_persistence = True
+            mock_settings.return_value.job_database_path = str(db_path)
             
-            # 1. First job_manager creates a job
-            m1 = JobManager()
-            await m1.create_job("persisted-job", JobTypes.VIDEO, "m", mock_request, lambda r: None)
-            await m1.shutdown()
-            
-            # Reset Singleton for the second job_manager
-            import utils.job_manager
-            utils.job_manager._job_manager_instance = None
-
-            # 2. Second job_manager starts up using the same DB file
             m2 = JobManager()
-            
-            # Assert: The second job_manager should have the job in its memory list
-            assert "persisted-job" in m2._jobs
-            assert m2.get_job_metadata("persisted-job")["id"] == "persisted-job"
-
-        os.remove(temp_db_path)
+            try:
+                assert len(m2._jobs) == len(job_ids)
+                
+                for jid in job_ids:
+                    assert jid in m2._jobs
+                    metadata = m2.get_job_metadata(jid)
+                    assert metadata["id"] == jid
+                    assert metadata["status"] == "completed"
+                    
+            finally:
+                await m2.shutdown()

@@ -796,26 +796,38 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_shutdown_cancels_running_jobs(self, job_manager, mock_request):
-        """Test shutdown cancels all running jobs"""
+        """Test shutdown cancels running jobs, but persists finished jobs"""
 
-        async def task_func(req):
+        async def task_func_long(req):
             await asyncio.sleep(10)
-            return "videos/test-123.mp4"
+            return "videos/test-long.mp4"
+
+        async def task_func_short(req):
+            await asyncio.sleep(0.1)
+            return "videos/test-short.mp4"
 
         await job_manager.create_job(
-            job_id=f"active-job",
+            job_id="job-running",
             job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
-            task_function=task_func,
+            task_function=task_func_long,
         )
 
-        await asyncio.sleep(0.1)  # Let jobs start
+        await job_manager.create_job(
+            job_id="job-finished",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_short,
+        )
+
+        await asyncio.sleep(0.3)
         await job_manager.shutdown()
 
-        assert job_manager.get_job_metadata("active-job") is None
+        assert job_manager.db.get_job_by_id("job-finished") is not None
+        assert job_manager.db.get_job_by_id("job-running") is None
 
-    # TODO: add test to check if the tasks are indeed cancelled during shutdown
 
     @pytest.mark.asyncio
     async def test_get_job_manager_singleton(self):
