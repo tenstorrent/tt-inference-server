@@ -144,6 +144,63 @@ class TestSetupWorkerEnvironment:
 
                 assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0_1"
 
+    def test_sets_metal_cache_with_container_id(self):
+        """Test that TT_METAL_CACHE includes container ID when CONTAINER_ID is set"""
+        worker_id = "0"
+
+        with patch.dict(
+            os.environ,
+            {
+                "TT_METAL_BUILT_DIR": "/home/container_app_user/tt-metal/built",
+                "CONTAINER_ID": "abc12345",
+            },
+            clear=True,
+        ):
+            with patch("device_workers.worker_utils.get_telemetry_client"):
+                setup_worker_environment(worker_id)
+
+                assert (
+                    os.environ["TT_METAL_CACHE"]
+                    == "/home/container_app_user/tt-metal/built/abc12345/0"
+                )
+
+    def test_sets_metal_cache_with_container_id_and_comma_worker_id(self):
+        """Test container ID isolation with comma-separated worker ID"""
+        worker_id = "0,1"
+
+        with patch.dict(
+            os.environ,
+            {
+                "TT_METAL_BUILT_DIR": "/home/container_app_user/tt-metal/built",
+                "CONTAINER_ID": "def67890",
+            },
+            clear=True,
+        ):
+            with patch("device_workers.worker_utils.get_telemetry_client"):
+                setup_worker_environment(worker_id)
+
+                assert (
+                    os.environ["TT_METAL_CACHE"]
+                    == "/home/container_app_user/tt-metal/built/def67890/0_1"
+                )
+
+    def test_fallback_without_container_id(self):
+        """Test backward compatibility when CONTAINER_ID is not set"""
+        worker_id = "0"
+
+        with patch.dict(
+            os.environ,
+            {"TT_METAL_BUILT_DIR": "/home/container_app_user/tt-metal/built"},
+            clear=True,
+        ):
+            with patch("device_workers.worker_utils.get_telemetry_client"):
+                setup_worker_environment(worker_id)
+
+                assert (
+                    os.environ["TT_METAL_CACHE"]
+                    == "/home/container_app_user/tt-metal/built/0"
+                )
+
     def test_initializes_telemetry_when_enabled(self):
         """Test that telemetry is initialized when enabled"""
         with patch.dict(os.environ, {}, clear=True):
