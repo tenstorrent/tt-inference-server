@@ -66,6 +66,7 @@ def device_worker(
     result_queue: Queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
+    result_queue_name: None | str = None,
 ):
     setup_worker_environment(worker_id)
     logger = TTLogger()
