@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
 from typing import Callable, Dict, Optional
+from pathlib import Path
 
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
-
 from utils.logger import TTLogger
 
 
@@ -105,7 +105,7 @@ class JobManager:
         if self._settings.enable_job_persistence:
             from utils.job_database import JobDatabase
 
-            self.db = JobDatabase()
+            self.db = JobDatabase(db_path=Path(self._settings.job_database_path))
             self._logger.info("Job persistence enabled with database")
             self._restore_jobs_from_db()
 
@@ -193,7 +193,7 @@ class JobManager:
 
             self._cleanup_job(job)
 
-            self._logger.info(f"Job {job_id} cancelled and removed from tracking.")
+            self._logger.info(f"Job {job_id} cancellation initiated.")
             return True
 
     async def shutdown(self):
@@ -345,31 +345,36 @@ class JobManager:
             return
 
         try:
+            # Ensure get_all_jobs() handles json.loads internally!
             db_jobs = self.db.get_all_jobs()
-
+            
+            restored_jobs = {}
             for db_job in db_jobs:
+                # Handle "Stuck" Jobs
+                status_val = db_job["status"]
+                if status_val in ["in_progress", "cancelling"]:
+                    status_val = "cancelled" if status_val == "cancelling" else "failed"
+                    self._logger.warning(f"Job {db_job['id']} was stuck in {db_job['status']}. Moved to {status_val}.")
+
                 job = Job(
                     id=db_job["id"],
                     job_type=db_job["job_type"],
                     model=db_job["model"],
-                    request_parameters=db_job["request_parameters"],
-                    status=JobStatus(db_job["status"]),
+                    request_parameters=db_job["request_parameters"], 
+                    status=JobStatus(status_val),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
                 )
+                restored_jobs[job.id] = job
 
-                with self._jobs_lock:
-                    self._jobs[job.id] = job
+            with self._jobs_lock:
+                self._jobs.update(restored_jobs)
 
-                self._logger.debug(
-                    f"Restored job {job.id} from database (status: {job.status.value})"
-                )
+            if restored_jobs:
+                self._logger.info(f"Restored {len(restored_jobs)} job(s) from database")
 
-            restored_count = len(db_jobs)
-            if restored_count > 0:
-                self._logger.info(f"Restored {restored_count} job(s) from database")
         except Exception as e:
             self._logger.error(f"Failed to restore jobs from database: {e}")
 
