@@ -120,6 +120,18 @@ RUN mkdir -p ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
     && git checkout FETCH_HEAD
 
+
+# do the same for /tt_metal folder
+RUN mkdir -p ${TT_METAL_HOME} \
+    && cd ${TT_METAL_HOME} \
+    && git init \
+    && git remote add origin https://github.com/tenstorrent/tt-metal.git \
+    && git config core.sparseCheckout true \
+    && echo "/tt_metal/" >> .git/info/sparse-checkout \
+    && echo "tt_metal/python_env/" >> .git/info/sparse-checkout \
+    && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
+    && git checkout FETCH_HEAD
+
 # Install tt-metal requirements-dev.txt (filtering out relative paths that don't exist)
 # Note: Some dependencies are filtered out as they reference files not in sparse checkout
 RUN --mount=type=cache,target=/root/.cache/pip \
