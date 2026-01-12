@@ -1142,6 +1142,177 @@ def aiperf_benchmark_generate_report(
     return release_str, all_aiperf_results, disp_md_path, text_data_file_path
 
 
+def genai_perf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Generate benchmark report specifically for GenAI-Perf results.
+
+    GenAI-Perf provides detailed metrics similar to AIPerf,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate detailed report following the same format as AIPerf.
+    """
+    # All benchmark tools now use the same output directory
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    # Look for genai-perf benchmark files
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    output_dir = Path(args.output_path) / "benchmarks_genai_perf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("GenAI-Perf Benchmark Summary")
+    logger.info(f"Found {len(genai_files)} GenAI-Perf benchmark files")
+
+    if not genai_files:
+        logger.info("No GenAI-Perf benchmark files found. Skipping GenAI-Perf report.")
+        return "", [], None, None
+
+    # Helper function to keep only the latest file for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, maxcon, n = match.groups()
+                # For image benchmarks, also include image dimensions
+                image_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if image_match:
+                    images, height, width = image_match.groups()
+                    config_key = (isl, osl, maxcon, n, images, height, width)
+                else:
+                    config_key = (isl, osl, maxcon, n)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    genai_files = deduplicate_by_config(genai_files)
+    logger.info(f"After deduplication: {len(genai_files)} GenAI-Perf benchmark files")
+
+    # Process GenAI-Perf files
+    _, genai_release_raw, _, _ = benchmark_generate_report_helper(
+        genai_files, output_dir, report_id, metadata, model_spec=model_spec
+    )
+
+    if not genai_release_raw:
+        logger.info("No GenAI-Perf results to process.")
+        return "", [], None, None
+
+    # Separate text and image benchmarks
+    genai_text_results = [
+        r for r in genai_release_raw if r.get("task_type") == "text"
+    ]
+    genai_image_results = [
+        r for r in genai_release_raw if r.get("task_type") == "image"
+    ]
+
+    # Sort results by ISL, OSL, concurrency for consistent ordering
+    def get_sort_key(x):
+        isl = x.get("input_sequence_length", 0)
+        osl = x.get("output_sequence_length", 0)
+        concurrency = x.get("max_con", 1)
+        # For image benchmarks, also include image dimensions
+        images = x.get("images_per_prompt", 0)
+        height = x.get("image_height", 0)
+        width = x.get("image_width", 0)
+        return (isl, osl, concurrency, images, height, width)
+
+    genai_text_results.sort(key=get_sort_key)
+    genai_image_results.sort(key=get_sort_key)
+
+    # Build the complete report
+    release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+    # TEXT BENCHMARKS SECTION
+    if genai_text_results:
+        release_str += "## GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += (
+            "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+        )
+
+        # Show GenAI-Perf detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # IMAGE BENCHMARKS SECTION
+    if genai_image_results:
+        release_str += "## GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += (
+            "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+        )
+
+        # Show GenAI-Perf detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(genai_image_results)
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # Metric definitions
+    release_str += "**Metric Definitions:**\n"
+    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+    release_str += "> - **N**: Total number of requests\n"
+    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **Tok/s**: Output token throughput\n"
+    release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"GenAI-Perf report saved to: {disp_md_path}")
+
+    # Save CSV data for text benchmarks
+    text_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_text_stats_{report_id}.csv"
+    )
+    text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if genai_text_results:
+        headers = list(genai_text_results[0].keys())
+        with open(text_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_text_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(
+            f"GenAI-Perf text benchmark data saved to: {text_data_file_path}"
+        )
+
+    # Save CSV data for image benchmarks
+    image_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_image_stats_{report_id}.csv"
+    )
+    if genai_image_results:
+        headers = list(genai_image_results[0].keys())
+        with open(image_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_image_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(
+            f"GenAI-Perf image benchmark data saved to: {image_data_file_path}"
+        )
+
+    # Return combined results for both text and image
+    all_genai_results = genai_text_results + genai_image_results
+    return release_str, all_genai_results, disp_md_path, text_data_file_path
+
+
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
     # Look for vLLM, genai-perf, and AIPerf benchmark files (all stack together)
     # All benchmark tools now use the same unified output directory
@@ -2957,6 +3128,16 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate GenAI-Perf benchmarks report (separate detailed report)
+    (
+        genai_perf_release_str,
+        genai_perf_release_data,
+        genai_perf_disp_md_path,
+        genai_perf_data_file_path,
+    ) = genai_perf_benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
     # generate evals report
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
@@ -3006,6 +3187,8 @@ def main():
         all_benchmarks_str += benchmarks_release_str + "\n\n"
     if aiperf_release_str:
         all_benchmarks_str += aiperf_release_str + "\n\n"
+    if genai_perf_release_str:
+        all_benchmarks_str += genai_perf_release_str + "\n\n"
 
     release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
