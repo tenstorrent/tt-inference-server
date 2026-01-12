@@ -221,7 +221,7 @@ def run_command(
 
         stdout_thread = threading.Thread(
             target=stream_subprocess_output,
-            args=(process.stdout, logger, logging.DEBUG),
+            args=(process.stdout, logger, logging.INFO),
         )
         stderr_thread = threading.Thread(
             target=stream_subprocess_output,

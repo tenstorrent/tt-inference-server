@@ -9,12 +9,15 @@
 import argparse
 import glob
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
 
 # --- Default Configuration ---
 DEFAULT_BATCH_1_ISL_OSL_PAIRS = [
@@ -57,13 +60,25 @@ class BenchmarkResult:
     error: str = ""
 
 
+@dataclass
+class RawMetricsResult:
+    isl: int
+    osl: int
+    concurrency: int
+    raw_data: Dict[str, Any]  # Full genai-perf JSON
+
+
 class ResultsAggregator:
     def __init__(self):
         self.results: List[BenchmarkResult] = []
+        self.raw_results: List[RawMetricsResult] = []
         self.start_time = time.time()
 
     def add_result(self, result: BenchmarkResult):
         self.results.append(result)
+
+    def add_raw_result(self, result: RawMetricsResult):
+        self.raw_results.append(result)
 
     def print_summary_table(self, print_runtime=True):
         print("\n" + "=" * 100)
@@ -89,6 +104,53 @@ class ResultsAggregator:
             total_duration = time.time() - self.start_time
             print(f"Total Runtime: {total_duration:.2f} seconds")
         print("=" * 100 + "\n")
+
+    def print_detailed_percentile_table(self):
+        """Print detailed percentile metrics table from raw genai-perf output."""
+        if not self.raw_results:
+            return
+
+        logger.info("\n" + "=" * 100)
+        logger.info(f"{'DETAILED PERCENTILE METRICS':^100}")
+        logger.info("=" * 100)
+
+        header = f"{'ISL':<8} | {'OSL':<8} | {'Metric':<8} | {'Mean':<10} | {'P50':<10} | {'P75':<10} | {'P90':<10} | {'P95':<10} | {'P99':<10} | {'Std':<10}"
+        logger.info(header)
+        logger.info("-" * 100)
+
+        for raw_result in self.raw_results:
+            raw_data = raw_result.raw_data
+            isl = raw_result.isl
+            osl = raw_result.osl
+
+            # Extract metrics for each type
+            metrics_to_show = [
+                ("TTFT", "time_to_first_token"),
+                ("TPOT", "inter_token_latency"),
+                ("ITL", "inter_token_latency"),
+                ("E2EL", "request_latency"),
+            ]
+
+            for metric_name, metric_key in metrics_to_show:
+                if metric_key in raw_data:
+                    metric_data = raw_data[metric_key]
+                    mean = metric_data.get("avg", 0.0)
+                    p50 = metric_data.get("p50", 0.0)
+                    p75 = metric_data.get("p75", 0.0)
+                    p90 = metric_data.get("p90", 0.0)
+                    p95 = metric_data.get("p95", 0.0)
+                    p99 = metric_data.get("p99", 0.0)
+                    std = metric_data.get("std", 0.0)
+
+                    row = (
+                        f"{isl:<8} | {osl:<8} | {metric_name:<8} | "
+                        f"{mean:<10.2f} | {p50:<10.2f} | {p75:<10.2f} | "
+                        f"{p90:<10.2f} | {p95:<10.2f} | {p99:<10.2f} | {std:<10.2f}"
+                    )
+                    logger.info(row)
+
+        logger.info("-" * 100)
+        logger.info("=" * 100 + "\n")
 
     def to_json(self) -> List[Dict[str, Any]]:
         """Export results as JSON-serializable list."""
@@ -487,6 +549,16 @@ def run_benchmark(
                         json.dump(raw_data, f, indent=2)
                     print(f"Raw output saved to: {raw_filepath}")
 
+                    # Store raw data in aggregator for detailed percentile table
+                    aggregator.add_raw_result(
+                        RawMetricsResult(
+                            isl=isl,
+                            osl=osl,
+                            concurrency=concurrency,
+                            raw_data=raw_data,
+                        )
+                    )
+
             # Still add to aggregator for final summary table
             bench_res = BenchmarkResult(
                 isl=isl,
@@ -588,6 +660,14 @@ def load_config_from_env():
 
 
 def main():
+    # Configure logger to output to stdout (matching print() behavior)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+    
     args = parse_args()
     aggregator = ResultsAggregator()
 
@@ -665,6 +745,8 @@ def main():
         )
 
         aggregator.print_summary_table()
+        if args.raw_output:
+            aggregator.print_detailed_percentile_table()
 
     else:
         print("Starting Benchmarks...")
@@ -706,6 +788,8 @@ def main():
                 )
 
         aggregator.print_summary_table()
+        if args.raw_output:
+            aggregator.print_detailed_percentile_table()
 
     # NOTE: Individual result files are already saved per run
     # No longer need aggregated JSON output
