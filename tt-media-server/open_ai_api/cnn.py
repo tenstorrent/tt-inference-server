@@ -82,7 +82,7 @@ async def searchImage(
     """
     try:
         result = await service.process_request(image_search_request)
-        logger.info("✅ Successfully finished image search result")
+        logger.info("✅ Successfully finished image search result, result: %s", result)
         return ImageSearchResponse(image_data=result)
     except Exception as e:
         logger.error("❌ Error processing image search request: %s", e, exc_info=True)
