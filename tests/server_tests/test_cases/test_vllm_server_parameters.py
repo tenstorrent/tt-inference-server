@@ -250,7 +250,7 @@ def test_penalties(
     """Tests repetition, presence, and frequency penalties."""
 
     # Baseline run (no penalty)
-    payload_base = {"messages": messages, "temperature": 0.1, "max_tokens": 1024}
+    payload_base = {"messages": messages, "temperature": 0.1, "max_tokens": 1024, "seed": 1234}
     response_base = api_client(payload_base, timeout=None)
 
     # Test run (with penalty)
