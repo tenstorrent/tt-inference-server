@@ -91,8 +91,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
             mock_logger_instance = MagicMock()
             mock_logger_class.return_value = mock_logger_instance
 
-            runner = ConcreteDeviceRunner(self.device_id, self.num_torch_threads)
-
             # Verify warning was called
             mock_logger_instance.warning.assert_called_once()
             warning_msg = mock_logger_instance.warning.call_args[0][0]
@@ -114,8 +112,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
         with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
             mock_logger_instance = MagicMock()
             mock_logger_class.return_value = mock_logger_instance
-
-            runner = ConcreteDeviceRunner(self.device_id, self.num_torch_threads)
 
             # Warning should not be called for HF_TOKEN
             for call in mock_logger_instance.warning.call_args_list:
@@ -261,8 +257,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
         with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
             mock_logger_instance = MagicMock()
             mock_logger_class.return_value = mock_logger_instance
-
-            runner = ConcreteDeviceRunner(self.device_id, self.num_torch_threads)
 
             # Verify info was called with tensor parallel message
             mock_logger_instance.info.assert_called_once()
