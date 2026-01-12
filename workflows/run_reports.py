@@ -1219,16 +1219,22 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
     # Import display functions once
     from benchmarking.summary_report import (
+        create_audio_display_dict,
+        create_cnn_display_dict,
         create_display_dict,
+        create_embedding_display_dict,
         create_image_display_dict,
         get_markdown_table,
         save_to_csv,
         save_markdown_table,
     )
 
-    # Process all tools and collect results by type (text/image)
+    # Process all tools and collect results by type (text/image/audio/embedding/cnn)
     text_sections = []
     image_sections = []
+    audio_sections = []
+    embedding_sections = []
+    cnn_sections = []
 
     # Process vLLM benchmarks
     if vllm_files:
@@ -1237,9 +1243,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text and image for vLLM
+        # Separate text, image, audio, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
+        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
+        vllm_embedding = [
+            r for r in vllm_release_raw if r.get("task_type") == "embedding"
+        ]
+        vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
 
         if vllm_text:
             vllm_text_display = [create_display_dict(r) for r in vllm_text]
@@ -1255,6 +1266,31 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
+        if vllm_audio:
+            vllm_audio_display = [
+                create_audio_display_dict(r, model_spec) for r in vllm_audio
+            ]
+            vllm_audio_md = get_markdown_table(vllm_audio_display)
+            audio_sections.append(
+                f"#### vLLM Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_audio_md}"
+            )
+
+        if vllm_embedding:
+            vllm_embedding_display = [
+                create_embedding_display_dict(r) for r in vllm_embedding
+            ]
+            vllm_embedding_md = get_markdown_table(vllm_embedding_display)
+            embedding_sections.append(
+                f"#### vLLM Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_embedding_md}"
+            )
+
+        if vllm_cnn:
+            vllm_cnn_display = [create_cnn_display_dict(r) for r in vllm_cnn]
+            vllm_cnn_md = get_markdown_table(vllm_cnn_display)
+            cnn_sections.append(
+                f"#### vLLM CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
     # Process AIPerf benchmarks
     if aiperf_files:
         _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1262,9 +1298,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(aiperf_release_raw)
 
-        # Separate text and image for AIPerf
+        # Separate text, image, audio, embedding and cnn for AIPerf
         aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
         aiperf_image = [r for r in aiperf_release_raw if r.get("task_type") == "image"]
+        aiperf_audio = [r for r in aiperf_release_raw if r.get("task_type") == "audio"]
+        aiperf_embedding = [
+            r for r in aiperf_release_raw if r.get("task_type") == "embedding"
+        ]
+        aiperf_cnn = [r for r in aiperf_release_raw if r.get("task_type") == "cnn"]
 
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
@@ -1280,6 +1321,37 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### AIPerf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
             )
 
+        # Note: AIPerf does not currently support audio models
+        # This section is here for future compatibility if support is added
+        if aiperf_audio and aiperf_audio[0].get("backend") == "aiperf":
+            aiperf_audio_display = [
+                create_audio_display_dict(r, model_spec) for r in aiperf_audio
+            ]
+            aiperf_audio_md = get_markdown_table(aiperf_audio_display)
+            audio_sections.append(
+                f"#### AIPerf Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_audio_md}"
+            )
+
+        # Note: AIPerf does not currently support embedding models
+        # This section is here for future compatibility if support is added
+        if aiperf_embedding and aiperf_embedding[0].get("backend") == "aiperf":
+            aiperf_embedding_display = [
+                create_embedding_display_dict(r) for r in aiperf_embedding
+            ]
+            aiperf_embedding_md = get_markdown_table(aiperf_embedding_display)
+            embedding_sections.append(
+                f"#### AIPerf Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_embedding_md}"
+            )
+
+        # Note: AIPerf does not currently support CNN models
+        # This section is here for future compatibility if support is added
+        if aiperf_cnn and aiperf_cnn[0].get("backend") == "aiperf":
+            aiperf_cnn_display = [create_cnn_display_dict(r) for r in aiperf_cnn]
+            aiperf_cnn_md = get_markdown_table(aiperf_cnn_display)
+            cnn_sections.append(
+                f"#### AIPerf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_cnn_md}"
+            )
+
     # Process GenAI-Perf benchmarks
     if genai_files:
         _, genai_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1287,9 +1359,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(genai_release_raw)
 
-        # Separate text and image for GenAI-Perf
+        # Separate text, image, audio, embedding and cnn for GenAI-Perf
         genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
         genai_image = [r for r in genai_release_raw if r.get("task_type") == "image"]
+        genai_audio = [r for r in genai_release_raw if r.get("task_type") == "audio"]
+        genai_embedding = [
+            r for r in genai_release_raw if r.get("task_type") == "embedding"
+        ]
+        genai_cnn = [r for r in genai_release_raw if r.get("task_type") == "cnn"]
 
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
@@ -1305,8 +1382,45 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### GenAI-Perf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
             )
 
-    # Combine sections: all text first, then all image
-    markdown_sections = text_sections + image_sections
+        # Note: GenAI-Perf does not currently support audio models
+        # This section is here for future compatibility if support is added
+        if genai_audio and genai_audio[0].get("backend") == "genai-perf":
+            genai_audio_display = [
+                create_audio_display_dict(r, model_spec) for r in genai_audio
+            ]
+            genai_audio_md = get_markdown_table(genai_audio_display)
+            audio_sections.append(
+                f"#### GenAI-Perf Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_audio_md}"
+            )
+
+        # Note: GenAI-Perf does not currently support embedding models
+        # This section is here for future compatibility if support is added
+        if genai_embedding and genai_embedding[0].get("backend") == "genai-perf":
+            genai_embedding_display = [
+                create_embedding_display_dict(r) for r in genai_embedding
+            ]
+            genai_embedding_md = get_markdown_table(genai_embedding_display)
+            embedding_sections.append(
+                f"#### GenAI-Perf Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_embedding_md}"
+            )
+
+        # Note: GenAI-Perf does not currently support CNN models
+        # This section is here for future compatibility if support is added
+        if genai_cnn and genai_cnn[0].get("backend") == "genai-perf":
+            genai_cnn_display = [create_cnn_display_dict(r) for r in genai_cnn]
+            genai_cnn_md = get_markdown_table(genai_cnn_display)
+            cnn_sections.append(
+                f"#### GenAI-Perf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_cnn_md}"
+            )
+
+    # Combine sections: all text first, then all image, then audio, embedding, cnn
+    markdown_sections = (
+        text_sections
+        + image_sections
+        + audio_sections
+        + embedding_sections
+        + cnn_sections
+    )
 
     # Combine all sections
     release_str = ""
