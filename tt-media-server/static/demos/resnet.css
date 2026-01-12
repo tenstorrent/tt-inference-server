@@ -215,6 +215,48 @@ body {
     border-color: #38b2ac;
 }
 
+.prediction-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    background: #ffffff;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(56, 178, 172, 0.25);
+}
+
+.prediction-table thead {
+    background: rgba(56, 178, 172, 0.15);
+    color: #2c7a7b;
+    font-weight: bold;
+}
+
+.prediction-table th,
+.prediction-table td {
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 0.85em;
+    color: #2d3748;
+}
+
+.prediction-table th:first-child,
+.prediction-table td:first-child {
+    width: 70px;
+    min-width: 10px;
+    text-align: right;
+}
+
+.prediction-table td:nth-child(2) {
+    max-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.prediction-table tbody tr:nth-child(even) {
+    background: rgba(56, 178, 172, 0.08);
+}
+
 .result.error {
     display: block !important;
     background: #fed7d7;
