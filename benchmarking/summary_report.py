@@ -962,13 +962,28 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         markdown_sections.append(text_section)
 
     # Generate image benchmarks section if any exist
+    # Separate VLM models from image generation models based on backend
     if image_results:
-        image_display_results = [
-            create_image_display_dict(res) for res in image_results
-        ]
-        image_markdown_str = get_markdown_table(image_display_results)
-        image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
-        markdown_sections.append(image_section)
+        vlm_results = [r for r in image_results if r.get("backend") != "image"]
+        image_gen_results = [r for r in image_results if r.get("backend") == "image"]
+
+        # VLM models (Qwen2.5-VL, etc.) - use standard image display
+        if vlm_results:
+            vlm_display_results = [
+                create_image_display_dict(res) for res in vlm_results
+            ]
+            vlm_markdown_str = get_markdown_table(vlm_display_results)
+            vlm_section = f"#### VLM Benchmark Sweeps for {model_name} on {device}\n\n{vlm_markdown_str}"
+            markdown_sections.append(vlm_section)
+
+        # Image generation models (SDXL, Flux, SD3.5) - use image generation display
+        if image_gen_results:
+            image_gen_display_results = [
+                create_image_generation_display_dict(res) for res in image_gen_results
+            ]
+            image_gen_markdown_str = get_markdown_table(image_gen_display_results)
+            image_gen_section = f"#### Image Generation Benchmark Sweeps for {model_name} on {device}\n\n{image_gen_markdown_str}"
+            markdown_sections.append(image_gen_section)
 
     # Generate audio benchmarks section if any exist
     if audio_results:
