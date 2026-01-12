@@ -10,7 +10,6 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
-    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -29,16 +28,16 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
-    device_mesh_shape: tuple = (1, 1)
+    device_ids: str = "(0,1,2,3)"
+    is_galaxy: bool = False  # used for graph device split and class init
+    device_mesh_shape: tuple = (2, 4)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.TT_SD3_5.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -72,10 +71,6 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
 
     vllm: VLLMSettings = VLLMSettings()
-
-    # Image processing settings
-    image_return_format: str = "JPEG"
-    image_quality: int = 85
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
