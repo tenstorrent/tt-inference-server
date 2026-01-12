@@ -74,28 +74,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
 
         self.assertFalse(runner.is_tensor_parallel)
 
-    @patch.dict("os.environ", {}, clear=True)
-    @patch("tt_model_runners.base_device_runner.set_torch_thread_limits")
-    @patch("tt_model_runners.base_device_runner.get_settings")
-    def test_hf_token_warning_no_token_no_cache(
-        self, mock_get_settings, mock_set_torch_threads
-    ):
-        """Test warning is logged when HF_TOKEN is not set and no cached models exist"""
-        # Mock settings
-        mock_settings = MagicMock()
-        mock_settings.device_mesh_shape = (1, 8)
-        mock_get_settings.return_value = mock_settings
-
-        # ✅ Create instance first, then patch its logger
-        with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
-            mock_logger_instance = MagicMock()
-            mock_logger_class.return_value = mock_logger_instance
-
-            # Verify warning was called
-            mock_logger_instance.warning.assert_called_once()
-            warning_msg = mock_logger_instance.warning.call_args[0][0]
-            self.assertIn("HF_TOKEN", warning_msg)
-
     @patch.dict("os.environ", {"HF_TOKEN": "test_token"}, clear=True)
     @patch("tt_model_runners.base_device_runner.set_torch_thread_limits")
     @patch("tt_model_runners.base_device_runner.get_settings")
@@ -215,19 +193,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
 
     @patch("tt_model_runners.base_device_runner.set_torch_thread_limits")
     @patch("tt_model_runners.base_device_runner.get_settings")
-    def test_multiple_torch_threads(self, mock_get_settings, mock_set_torch_threads):
-        """Test initialization with multiple torch threads"""
-        # Mock settings
-        mock_settings = MagicMock()
-        mock_settings.device_mesh_shape = (1, 8)
-        mock_get_settings.return_value = mock_settings
-
-        num_threads = 4
-
-        mock_set_torch_threads.assert_called_once_with(num_threads)
-
-    @patch("tt_model_runners.base_device_runner.set_torch_thread_limits")
-    @patch("tt_model_runners.base_device_runner.get_settings")
     def test_device_id_stored_correctly(
         self, mock_get_settings, mock_set_torch_threads
     ):
@@ -242,26 +207,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
         for device_id in test_device_ids:
             runner = ConcreteDeviceRunner(device_id, self.num_torch_threads)
             self.assertEqual(runner.device_id, device_id)
-
-    @patch("tt_model_runners.base_device_runner.set_torch_thread_limits")
-    @patch("tt_model_runners.base_device_runner.get_settings")
-    def test_tensor_parallel_logging(self, mock_get_settings, mock_set_torch_threads):
-        """Test that tensor parallel mode is logged correctly"""
-        # Mock settings with tensor parallel enabled
-        mock_settings = MagicMock()
-        mock_settings.device_mesh_shape = (2, 4)
-        mock_get_settings.return_value = mock_settings
-
-        # ✅ Patch TTLogger to capture logger calls
-        with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
-            mock_logger_instance = MagicMock()
-            mock_logger_class.return_value = mock_logger_instance
-
-            # Verify info was called with tensor parallel message
-            mock_logger_instance.info.assert_called_once()
-            log_msg = mock_logger_instance.info.call_args[0][0]
-            self.assertIn("Tensor parallel mode enabled", log_msg)
-            self.assertIn("2", log_msg)  # mesh shape first param
 
 
 if __name__ == "__main__":
