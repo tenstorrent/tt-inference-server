@@ -423,7 +423,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         return format_metrics(metrics)
 
     if params.get("task_type") == "embedding":
-        # For IMAGE benchmarks, extract data from JSON content
+        # For EMBEDDING benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
             "timestamp": params["timestamp"],
@@ -436,8 +436,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": "embedding",
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
             "input_sequence_length": benchmarks_data.get("benchmarks").get("isl", 0),
+            "output_sequence_length": NOT_MEASURED_STR,  # Not applicable for embeddings
             "max_con": benchmarks_data.get("benchmarks").get("concurrency", 0),
+            "embedding_dimension": benchmarks_data.get("benchmarks").get(
+                "embedding_dimension", NOT_MEASURED_STR
+            ),
+            "mean_ttft_ms": NOT_MEASURED_STR,  # Not applicable for embeddings
+            "mean_tpot_ms": NOT_MEASURED_STR,  # Not applicable for embeddings
             "mean_tps": benchmarks_data.get("benchmarks").get("tput_user", 0.0),
+            "tps_decode_throughput": NOT_MEASURED_STR,  # Not applicable for embeddings
             "tps_prefill_throughput": benchmarks_data.get("benchmarks").get(
                 "tput_prefill", 0.0
             ),
@@ -955,13 +962,28 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         markdown_sections.append(text_section)
 
     # Generate image benchmarks section if any exist
+    # Separate VLM models from image generation models based on backend
     if image_results:
-        image_display_results = [
-            create_image_display_dict(res) for res in image_results
-        ]
-        image_markdown_str = get_markdown_table(image_display_results)
-        image_section = f"#### Image Benchmark Sweeps for {model_name} on {device}\n\n{image_markdown_str}"
-        markdown_sections.append(image_section)
+        vlm_results = [r for r in image_results if r.get("backend") != "image"]
+        image_gen_results = [r for r in image_results if r.get("backend") == "image"]
+
+        # VLM models (Qwen2.5-VL, etc.) - use standard image display
+        if vlm_results:
+            vlm_display_results = [
+                create_image_display_dict(res) for res in vlm_results
+            ]
+            vlm_markdown_str = get_markdown_table(vlm_display_results)
+            vlm_section = f"#### VLM Benchmark Sweeps for {model_name} on {device}\n\n{vlm_markdown_str}"
+            markdown_sections.append(vlm_section)
+
+        # Image generation models (SDXL, Flux, SD3.5) - use image generation display
+        if image_gen_results:
+            image_gen_display_results = [
+                create_image_generation_display_dict(res) for res in image_gen_results
+            ]
+            image_gen_markdown_str = get_markdown_table(image_gen_display_results)
+            image_gen_section = f"#### Image Generation Benchmark Sweeps for {model_name} on {device}\n\n{image_gen_markdown_str}"
+            markdown_sections.append(image_gen_section)
 
     # Generate audio benchmarks section if any exist
     if audio_results:
