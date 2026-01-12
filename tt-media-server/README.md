@@ -633,13 +633,6 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 
-## Image Processing Settings
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
-| `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
-
 ## Audio Processing Settings
 
 | Environment Variable | Default Value | Description |
