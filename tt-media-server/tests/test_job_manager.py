@@ -210,12 +210,7 @@ class TestJobManager:
             yield manager
 
             # Cleanup
-            if manager._cleanup_task:
-                manager._cleanup_task.cancel()
-                try:
-                    await manager._cleanup_task
-                except asyncio.CancelledError:
-                    pass
+            await manager.shutdown()
 
     @pytest.fixture
     def mock_request(self):
@@ -576,7 +571,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"video data"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-123",
@@ -593,7 +588,7 @@ class TestJobManager:
         assert metadata["status"] == "completed"
 
         result = job_manager.get_job_result("job-123")
-        assert result == b"video data"
+        assert result == "videos/test-123.mp4"
 
     @pytest.mark.asyncio
     async def test_job_processing_failure(self, job_manager, mock_request):
@@ -640,7 +635,7 @@ class TestJobManager:
 
         await asyncio.sleep(0.05)
 
-        # Job should NOT be gone, but its status should be CANCELLED
+        # Job should not be deleted, but its status should be CANCELLED
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is not None
         assert metadata["status"] == JobStatus.CANCELLED

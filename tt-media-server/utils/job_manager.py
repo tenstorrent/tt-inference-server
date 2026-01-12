@@ -197,7 +197,7 @@ class JobManager:
             return True
 
     async def shutdown(self):
-        """Gracefully shutdown job manager and cleanup task."""
+        """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
 
         if self._cleanup_task:
@@ -212,28 +212,31 @@ class JobManager:
             for job_id in list(self._jobs.keys()):
                 job = self._jobs[job_id]
                 
-                # Only cleanup/delete jobs that were still running
-                # because they are now in an inconsistent state.
                 if not job.is_terminal():
-                    self._logger.info(f"Cleaning up active job {job_id} during shutdown. \
-                        The job will be removed from the database and memory.")
+                    self._logger.info(f"Terminating active job {job_id} during shutdown.")
                     
                     task = self._cleanup_job(job)
                     if task:
                         running_tasks.append(task)
                     
-                    # Remove from DB so it doesn't "ghost" on restart, and from memory.
+                    job.mark_failed(
+                        error_code="system_shutdown", 
+                        error_message="Job interrupted by server shutdown."
+                    )
+                    
                     if self.db:
-                        self.db.delete_job(job_id)
-                    self._jobs.pop(job_id)
-                else:
-                    # For completed/failed jobs, just stop tracking in memory.
-                    # They stay in the DB because they are finished.
-                    self._jobs.pop(job_id)
+                        self.db.update_job_status(
+                            job.id,
+                            job.status.value,
+                            completed_at=job.completed_at,
+                            error_message=job.error,
+                        )
+                
+                # Always remove from memory tracking during shutdown
+                self._jobs.pop(job_id)
 
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
-
         self._logger.info("Job manager shutdown complete")
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
@@ -250,7 +253,7 @@ class JobManager:
                     job.id,
                     job.status.value,
                     completed_at=job.completed_at,
-                    result_path=result_path,
+                    result_path=job.result_path,
                 )
 
         except asyncio.CancelledError:
@@ -271,7 +274,7 @@ class JobManager:
                     job.id,
                     job.status.value,
                     completed_at=job.completed_at,
-                    error_message={"code": "processing_error", "message": str(e)},
+                    error_message=job.error,
                 )
         finally:
             job._task = None
@@ -340,38 +343,53 @@ class JobManager:
         return running_task
 
     def _restore_jobs_from_db(self):
-        """Restore all jobs from database on server restart."""
+        """Restore jobs and mark stuck jobs as failed or cancelled."""
         if not self.db:
             return
 
         try:
-            # Ensure get_all_jobs() handles json.loads internally!
             db_jobs = self.db.get_all_jobs()
-            
             restored_jobs = {}
             for db_job in db_jobs:
-                # Handle "Stuck" Jobs
-                status_val = db_job["status"]
-                if status_val in ["in_progress", "cancelling"]:
-                    status_val = "cancelled" if status_val == "cancelling" else "failed"
-                    self._logger.warning(f"Job {db_job['id']} was stuck in {db_job['status']}. Moved to {status_val}.")
-
+                original_status = db_job["status"]
+                
                 job = Job(
                     id=db_job["id"],
                     job_type=db_job["job_type"],
                     model=db_job["model"],
-                    request_parameters=db_job["request_parameters"], 
-                    status=JobStatus(status_val),
+                    request_parameters=db_job["request_parameters"],
+                    status=JobStatus(original_status),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
                 )
+
+                # If job was stuck, mark it as failed or cancelled and sync to database
+                if original_status not in ["completed", "failed", "cancelled"]:
+                    if original_status == "cancelling":
+                        job.status = JobStatus.CANCELLED
+                    else:
+                        job.mark_failed("server_restart", "Job interrupted by system restart")
+                    
+                    job.completed_at = db_job["created_at"]
+
+                    self._logger.warning(
+                        f"Job {db_job['id']} was stuck in '{original_status}'. "
+                        f"Syncing to '{job.status.value}'."
+                    )
+                    
+                    self.db.update_job_status(
+                        job.id,
+                        job.status.value,
+                        completed_at=db_job["created_at"],
+                        error_message=job.error,
+                    )
+
                 restored_jobs[job.id] = job
 
             with self._jobs_lock:
                 self._jobs.update(restored_jobs)
-
             if restored_jobs:
                 self._logger.info(f"Restored {len(restored_jobs)} job(s) from database")
 
