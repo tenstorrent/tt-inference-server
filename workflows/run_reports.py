@@ -1200,36 +1200,153 @@ def genai_perf_benchmark_generate_report(
     genai_files = deduplicate_by_config(genai_files)
     logger.info(f"After deduplication: {len(genai_files)} GenAI-Perf benchmark files")
 
-    # Process GenAI-Perf files
-    _, genai_release_raw, _, _ = benchmark_generate_report_helper(
-        genai_files, output_dir, report_id, metadata, model_spec=model_spec
+    # Separate text-only and image benchmarks
+    genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
+    genai_image_files = [f for f in genai_files if "images" in Path(f).name]
+
+    logger.info(
+        f"GenAI-Perf Text benchmarks: {len(genai_text_only_files)}, Image benchmarks: {len(genai_image_files)}"
     )
 
-    if not genai_release_raw:
+    # Process text-only GenAI-Perf benchmarks
+    genai_text_results = []
+    for filepath in sorted(genai_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf text file {filepath}: {e}")
+            continue
+
+    # Process image GenAI-Perf files
+    genai_image_results = []
+    for filepath in sorted(genai_image_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_image_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf image file {filepath}: {e}")
+            continue
+
+    if not genai_text_results and not genai_image_results:
         logger.info("No GenAI-Perf results to process.")
         return "", [], None, None
 
-    # Separate text and image benchmarks
-    genai_text_results = [
-        r for r in genai_release_raw if r.get("task_type") == "text"
-    ]
-    genai_image_results = [
-        r for r in genai_release_raw if r.get("task_type") == "image"
-    ]
-
-    # Sort results by ISL, OSL, concurrency for consistent ordering
-    def get_sort_key(x):
-        isl = x.get("input_sequence_length", 0)
-        osl = x.get("output_sequence_length", 0)
-        concurrency = x.get("max_con", 1)
-        # For image benchmarks, also include image dimensions
-        images = x.get("images_per_prompt", 0)
-        height = x.get("image_height", 0)
-        width = x.get("image_width", 0)
-        return (isl, osl, concurrency, images, height, width)
-
-    genai_text_results.sort(key=get_sort_key)
-    genai_image_results.sort(key=get_sort_key)
+    # Sort text benchmarks by ISL, OSL, concurrency
+    genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+    
+    # Sort image benchmarks by ISL, OSL, concurrency, image dimensions
+    genai_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["images"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
 
     # Build the complete report
     release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
