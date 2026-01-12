@@ -85,5 +85,5 @@ async def searchImage(
         logger.info("✅ Successfully finished image search result")
         return ImageSearchResponse(image_data=result)
     except Exception as e:
-        logger.error("❌ Error processing image search request: %s", e)
+        logger.error("❌ Error processing image search request: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
