@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
+import logging
 from typing import Optional
 
 from config.constants import ResponseFormat
@@ -26,6 +27,8 @@ router = APIRouter()
 
 # Constants
 CONTENT_TYPE_JSON = "application/json"
+
+logger = logging.getLogger(__name__)
 
 
 async def _parse_image_search_request(
@@ -79,6 +82,8 @@ async def searchImage(
     """
     try:
         result = await service.process_request(image_search_request)
+        logger.info("✅ Successfully finished image search result")
         return ImageSearchResponse(image_data=result)
     except Exception as e:
+        logger.error("❌ Error processing image search request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
