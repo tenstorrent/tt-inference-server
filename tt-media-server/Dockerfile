@@ -1,228 +1,167 @@
+# syntax=docker/dockerfile:1
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # ==============================================================================
-# BUILDER STAGE - build tt-metal and inference server
+# Minimal TTNN Docker Image
+#
+# This Dockerfile creates a minimal image with only SFPI dependencies installed
+# and ttnn available via pip. It downloads only the required scripts from tt-metal.
+#
+# Build:
+#   docker build -f Dockerfile.sfpi-minimal -t ttnn-minimal .
+#
+# Run:
+#   docker run --rm -it --device /dev/tenstorrent ttnn-minimal
+#
+# Run with vLLM BGE (embeddings model):
+#   docker run -e MODEL_RUNNER=vllm_bge_large_en_v1_5 -e DEVICE=n150 \
+#     --rm -it -p 8000:8000 --user root \
+#     --device /dev/tenstorrent/ \
+#     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+#     --mount type=bind,src=$HOME/.cache/huggingface,dst=/root/.cache/huggingface \
+#     -e HF_TOKEN=$HF_TOKEN -e MESH_DEVICE='(1,1)' \
+#     ttnn-minimal
 # ==============================================================================
-# Note: Dependencies installed in this stage are NOT included in the final image.
-# Only the built artifacts and files are copied to the runtime stage.
-# Runtime dependencies must be installed separately in the runtime stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
 
-# Build stage
-LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-# connect Github repo with package
-LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+FROM ubuntu:22.04 AS base
+
+LABEL maintainer="Tenstorrent AI ULC"
+LABEL description="Minimal TTNN environment with SFPI dependencies"
 
 ARG DEBIAN_FRONTEND=noninteractive
-# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG PYTHON_VERSION=3.10
 
-
-# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ARG CONTAINER_APP_UID=1000
-ARG DEBIAN_FRONTEND=noninteractive
-
-# make build commit SHA available in the image for reference and debugging
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
-
-ENV ENVIRONMENT=development
-ENV TT_MM_THROTTLE_PERF=5
-
-ENV SHELL=/bin/bash
-ENV CONTAINER_APP_USERNAME=container_app_user
-ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-# tt-metal build vars
-ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
-ENV CONFIG=Release
-ENV TT_METAL_ENV=dev
-ENV LOGURU_LEVEL=INFO
-# derived vars
-ENV PYTHONPATH=${TT_METAL_HOME}
-# note: PYTHON_ENV_DIR is used by create_venv.sh
-ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
-ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
-
-# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
-    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
-
-
-# extra system deps
-RUN apt-get update && apt-get install -y \
-    # required
-    gosu \
-    libgl1 \
-    libsndfile1 \
+# ------------------------------------------------------------------------------
+# System Dependencies
+# ------------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Basic tools
     wget \
-    git-lfs \
-    nano \
-    acl \
-    jq \
-    vim \
-    python3-pip \
-    # pyluwen build dependencies (Rust package with protobuf)
-    build-essential \
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    protobuf-compiler \
-    libprotobuf-dev \
-    pkg-config \
-    htop \
-    screen \
-    tmux \
-    unzip \
-    zip \
     curl \
-    iputils-ping \
-    rsync \
-    && rm -rf /var/lib/apt/lists/* \
-    && protoc --version
-
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
-    chmod +x cmake.sh && \
-    ./cmake.sh --skip-license --prefix=/usr/local && \
-    rm cmake.sh && \
-    cmake --version
-
-# build tt-metal
-RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive --depth 1 \
-    && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
-    && pip3 install --upgrade setuptools wheel \
-    && bash ./build_metal.sh --release -e \
-    && pip3 install cmake \
-    && pip3 install cmake --upgrade \
-    && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-
-# user setup
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && mkdir -p /run/sshd \
-    && chmod 755 /run/sshd
-
-USER ${CONTAINER_APP_USERNAME}
-
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# install tt-smi
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip3 install --upgrade pip \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && . ${HOME_DIR}/.cargo/env \
-    && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
-
-WORKDIR ${HOME_DIR}
-
-# install inference server requirements
-ARG APP_DIR="${HOME_DIR}/app"
-ENV APP_DIR=${APP_DIR}
-WORKDIR ${APP_DIR}
-ENV PYTHONPATH=${TT_METAL_HOME}
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
-    (echo 'Requirements installation failed, trying without pyluwen...' && \
-    grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
-
-# Install tt-vllm-plugin
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && pip install ."
-
-# Cleanup build-only directories
-USER root
-RUN rm -rf ${HOME_DIR}/.rustup \
-    && rm -rf ${HOME_DIR}/.cargo \
-    && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${HOME_DIR}/tt-metal/.cpmcache \
-    && rm -rf ${HOME_DIR}/tt-metal/docs \
-    && rm -rf ${HOME_DIR}/tt-metal/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tech_reports \
-    && rm -rf ${HOME_DIR}/tt-metal/.github \
-    && rm -rf ${HOME_DIR}/tt-metal/contributing \
-    && rm -rf ${HOME_DIR}/tt-metal/releases \
-    && rm -rf ${HOME_DIR}/tt-metal/dockerfile \
-    && rm -rf ${HOME_DIR}/tt-metal/cmake \
-    && rm -rf ${HOME_DIR}/tt-metal/scripts \
-    && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tt-train \
-    && rm -rf ${HOME_DIR}/tt-metal/server/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
-    && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
-
-
-# ==============================================================================
-# RUNTIME STAGE - final lightweight image
-# ==============================================================================
-# This is the final image that will be used. Only the built artifacts from the builder stage
-# are copied here. Any runtime dependencies needed by the application must be installed in this stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
-
-LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
-
-# Reuse all args and environment variables
-ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
-ARG CONTAINER_APP_UID=1000
-ARG CONTAINER_APP_USERNAME=container_app_user
-ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    ENVIRONMENT=development \
-    TT_MM_THROTTLE_PERF=5 \
-    SHELL=/bin/bash \
-    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
-    TT_METAL_HOME=${HOME_DIR}/tt-metal \
-    CONFIG=Release \
-    TT_METAL_ENV=dev \
-    LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
-    VLLM_USE_V1=1 \
-    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
-
-# Install runtime dependencies
-# These packages are required for the application to run in production
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    jq \
+    git \
+    # Python
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-venv \
+    python${PYTHON_VERSION}-dev \
+    # Build essentials (minimal set for ttnn)
+    build-essential \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && mkdir -p /run/sshd \
-    && chmod 755 /run/sshd
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1
 
-# Copy everything from builder
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user ${HOME_DIR}
+# ------------------------------------------------------------------------------
+# Download SFPI Scripts from tt-metal GitHub
+# These are the only files needed for minimal SFPI installation
+# Source: https://github.com/tenstorrent/tt-metal
+# ------------------------------------------------------------------------------
+WORKDIR /tmp/tt-metal
 
-USER ${CONTAINER_APP_USERNAME}
-WORKDIR ${HOME_DIR}/tt-metal
+# Download the three required scripts
+RUN wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/tt_metal/sfpi-info.sh \
+        -O sfpi-info.sh \
+    && wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/tt_metal/sfpi-version \
+        -O sfpi-version \
+    && wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/main/install_dependencies.sh \
+        -O install_dependencies.sh \
+    && chmod +x sfpi-info.sh install_dependencies.sh
 
-# Set up bashrc
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+# Verify downloads
+RUN echo "Downloaded files:" && ls -la /tmp/tt-metal/
 
+# ------------------------------------------------------------------------------
+# Install SFPI (minimal installation using --sfpi flag)
+# This only installs the SFPI toolchain package, nothing else
+# ------------------------------------------------------------------------------
+RUN ./install_dependencies.sh --sfpi
+
+# Cleanup downloaded scripts
+RUN rm -rf /tmp/tt-metal
+
+# ------------------------------------------------------------------------------
+# Create Python Virtual Environment
+# ------------------------------------------------------------------------------
+ENV VENV_PATH=/opt/ttnn-venv
+ENV PATH="${VENV_PATH}/bin:${PATH}"
+
+RUN python3 -m venv ${VENV_PATH}
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    ${VENV_PATH}/bin/pip install --upgrade pip setuptools wheel
+
+# ------------------------------------------------------------------------------
+# Install TTNN
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    ${VENV_PATH}/bin/pip install ttnn
+
+# ------------------------------------------------------------------------------
+# Clone tt-metal models folder (sparse checkout from arg/bge_merge_branch)
+# ------------------------------------------------------------------------------
+ARG TT_METAL_BRANCH=main
+ENV TT_METAL_HOME=/opt/tt-metal
+
+RUN mkdir -p ${TT_METAL_HOME} \
+    && cd ${TT_METAL_HOME} \
+    && git init \
+    && git remote add origin https://github.com/tenstorrent/tt-metal.git \
+    && git config core.sparseCheckout true \
+    && echo "models/" >> .git/info/sparse-checkout \
+    && echo "tt_metal/python_env/" >> .git/info/sparse-checkout \
+    && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
+    && git checkout FETCH_HEAD
+
+# Install tt-metal requirements-dev.txt (filtering out relative paths that don't exist)
+# Note: Some dependencies are filtered out as they reference files not in sparse checkout
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_METAL_HOME} \
+    && grep -v "^-r " tt_metal/python_env/requirements-dev.txt > /tmp/requirements-filtered.txt \
+    && ${VENV_PATH}/bin/pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+       -r /tmp/requirements-filtered.txt || true \
+    && rm /tmp/requirements-filtered.txt
+
+# ------------------------------------------------------------------------------
+# Clone tt-inference-server and install components
+# ------------------------------------------------------------------------------
+ENV TT_INFERENCE_SERVER_HOME=/opt/tt-inference-server
+
+RUN git clone --depth 1 --branch dev https://github.com/tenstorrent/tt-inference-server.git ${TT_INFERENCE_SERVER_HOME}
+
+# Install tt-media-server requirements
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-media-server \
+    && ${VENV_PATH}/bin/pip install -r requirements.txt
+
+# Install tt-vllm-plugin
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd ${TT_INFERENCE_SERVER_HOME}/tt-vllm-plugin \
+    && ${VENV_PATH}/bin/pip install .
+
+# ------------------------------------------------------------------------------
+# Application Setup
+# ------------------------------------------------------------------------------
+WORKDIR ${TT_INFERENCE_SERVER_HOME}/tt-media-server
+
+# Set environment for interactive use
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/opt/tt-metal"
+
+# Device and model configuration
+ENV DEVICE=n150
+ENV VLLM_USE_V1=1
+ENV MODEL=bge-large-en-v1.5
+
+# Expose media server API port
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+
+# Default command - run the media server via uvicorn
+CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && source ./run_uvicorn.sh"]
