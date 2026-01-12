@@ -1069,7 +1069,7 @@ def aiperf_benchmark_generate_report(
 
     # TEXT BENCHMARKS SECTION
     if aiperf_text_results:
-        release_str += "## AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
         release_str += (
             "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         )
@@ -1081,7 +1081,7 @@ def aiperf_benchmark_generate_report(
 
     # IMAGE BENCHMARKS SECTION
     if aiperf_image_results:
-        release_str += "## AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
         release_str += (
             "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         )
@@ -1335,7 +1335,7 @@ def genai_perf_benchmark_generate_report(
 
     # Sort text benchmarks by ISL, OSL, concurrency
     genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
-    
+
     # Sort image benchmarks by ISL, OSL, concurrency, image dimensions
     genai_image_results.sort(
         key=lambda x: (
@@ -1353,10 +1353,8 @@ def genai_perf_benchmark_generate_report(
 
     # TEXT BENCHMARKS SECTION
     if genai_text_results:
-        release_str += "## GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
-        )
+        release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
         # Show GenAI-Perf detailed percentiles (mean, median, P99)
         nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
@@ -1365,10 +1363,8 @@ def genai_perf_benchmark_generate_report(
 
     # IMAGE BENCHMARKS SECTION
     if genai_image_results:
-        release_str += "## GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
-        )
+        release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
         # Show GenAI-Perf detailed percentiles (mean, median, P99)
         nvidia_markdown_str = aiperf_release_markdown(genai_image_results)
@@ -1406,9 +1402,7 @@ def genai_perf_benchmark_generate_report(
             writer.writerow(headers)
             for result in genai_text_results:
                 writer.writerow([str(result.get(h, "")) for h in headers])
-        logger.info(
-            f"GenAI-Perf text benchmark data saved to: {text_data_file_path}"
-        )
+        logger.info(f"GenAI-Perf text benchmark data saved to: {text_data_file_path}")
 
     # Save CSV data for image benchmarks
     image_data_file_path = (
@@ -1421,9 +1415,7 @@ def genai_perf_benchmark_generate_report(
             writer.writerow(headers)
             for result in genai_image_results:
                 writer.writerow([str(result.get(h, "")) for h in headers])
-        logger.info(
-            f"GenAI-Perf image benchmark data saved to: {image_data_file_path}"
-        )
+        logger.info(f"GenAI-Perf image benchmark data saved to: {image_data_file_path}")
 
     # Return combined results for both text and image
     all_genai_results = genai_text_results + genai_image_results
