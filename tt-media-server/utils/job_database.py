@@ -8,13 +8,11 @@ from pathlib import Path
 import sqlite3
 import json
 
-DEFAULT_DB_PATH = Path("./jobs.db")
-
 
 class JobDatabase:
     """Database interface for persistent job storage."""
 
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: Path):
         self.db_path = db_path
         # Ensure the directory exists
         if self.db_path.parent != Path("."):

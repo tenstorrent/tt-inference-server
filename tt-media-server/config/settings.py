@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = True
+    job_database_path: str = "./tt-media-server/jobs.db"
 
     # Text processing settings
     min_context_length: int = 32
