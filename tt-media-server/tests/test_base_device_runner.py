@@ -223,7 +223,6 @@ class TestBaseDeviceRunner(unittest.TestCase):
         mock_get_settings.return_value = mock_settings
 
         num_threads = 4
-        runner = ConcreteDeviceRunner(self.device_id, num_threads)
 
         mock_set_torch_threads.assert_called_once_with(num_threads)
 
