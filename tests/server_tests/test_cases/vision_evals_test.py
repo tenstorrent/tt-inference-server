@@ -15,7 +15,9 @@ from typing import Literal
 
 import requests
 from datasets import DownloadConfig, Image, load_dataset
-from server_helper import (
+
+from tests.server_tests.base_test import BaseTest
+from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
     launch_cpu_server,
@@ -23,8 +25,6 @@ from server_helper import (
     stop_server,
     wait_for_server_ready,
 )
-
-from tests.server_tests.base_test import BaseTest
 from tests.server_tests.test_classes import TestConfig
 
 DATASET_DIR = "tests/server_tests/datasets/imagenet_subset"
