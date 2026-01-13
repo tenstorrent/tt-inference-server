@@ -787,8 +787,7 @@ class ModelSpec:
 
     def add_system_info(self):
         """
-        Collect host and device information from tt-smi and tt-topology,
-        and apply it to this ModelSpec instance.
+        Collect host and device information
         """
         from workflows.run_local_setup_validation import SystemResourceService
 
