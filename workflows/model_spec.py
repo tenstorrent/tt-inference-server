@@ -2277,7 +2277,7 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=8,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
@@ -2288,7 +2288,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=16,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
@@ -2299,7 +2299,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=32,
+                max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
@@ -2310,7 +2310,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=256,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
