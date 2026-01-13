@@ -42,29 +42,32 @@ class BenchmarkConfig:
     tasks: List[BenchmarkTask]
 
 
-BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
+BENCHMARK_ISL_OSL_PAIRS = [
     (128, 128),
     (128, 1024),
     (1024, 128),
     (2048, 128),
-    (3072, 128),
+    (2048, 2048),
     (4096, 128),
     (8192, 128),
     (16384, 128),
-    (32000, 128),
+    (32768, 128),
+    (65536, 128),
 ]
 
-MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS = [
-    (128, 128),
-    (128, 1024),
-    (2048, 128),
-    (2048, 2048),
-    (3000, 64),
-    (4000, 64),
-    (8000, 64),
-    (16000, 64),
-    (32000, 64),
+BENCHMARK_CONCURRENCY = [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
 ]
+
 
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
@@ -76,14 +79,77 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 ]
 
 
+def _expand_text_sweep_params(
+    isl: int,
+    osl: int,
+    max_context: int,
+    model_max_concurrency: int,
+) -> List[BenchmarkTaskParams]:
+    allowed_max_concurrency = get_benchmark_max_concurrency(
+        isl, osl, max_context, model_max_concurrency
+    )
+    return [
+        BenchmarkTaskParams(
+            isl=isl,
+            osl=osl,
+            max_concurrency=concurrency,
+            num_prompts=get_num_prompts(isl, osl, concurrency),
+        )
+        for concurrency in BENCHMARK_CONCURRENCY
+        if concurrency <= allowed_max_concurrency
+    ]
+
+
+def _expand_image_sweep_params(
+    isl: int,
+    osl: int,
+    image_height: int,
+    image_width: int,
+    images_per_prompt: int,
+    max_context: int,
+    model_max_concurrency: int,
+    model_name: str,
+) -> List[BenchmarkTaskParams]:
+    vision_tokens = calculate_vision_tokens(
+        image_height=image_height,
+        image_width=image_width,
+        images_per_prompt=images_per_prompt,
+        model_name=model_name,
+    )
+    allowed_max_concurrency = get_benchmark_max_concurrency(
+        isl,
+        osl,
+        max_context,
+        model_max_concurrency,
+        vision_tokens=vision_tokens,
+    )
+    return [
+        BenchmarkTaskParams(
+            isl=isl,
+            osl=osl,
+            max_concurrency=concurrency,
+            num_prompts=get_num_prompts(isl, osl, concurrency),
+            task_type="image",
+            image_height=image_height,
+            image_width=image_width,
+            images_per_prompt=images_per_prompt,
+        )
+        for concurrency in BENCHMARK_CONCURRENCY
+        if concurrency <= allowed_max_concurrency
+    ]
+
+
 def get_num_prompts(input_len, output_len, max_concurrency):
     # Large sequences (slowest) -> fewest prompts
-    if output_len > 1024 or input_len > 4000:
+    if output_len > 1024 or input_len > 16384:
+        return 1 * max_concurrency
+    
+    if input_len > 4096:
         return 2 * max_concurrency
 
     # Medium sequences
     if (output_len > 128 and output_len <= 1024) or (
-        input_len > 128 and input_len <= 4000
+        input_len > 128 and input_len <= 4096
     ):
         return 4 * max_concurrency
 
@@ -240,13 +306,12 @@ def cap_benchmark_params(
 
 # define benchmark configs for each model and each device configuration
 # uses:
-# 1. BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-# 2. MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-# 3. ISL_OSL_IMAGE_RESOLUTION_PAIRS
+# 1. BENCHMARK_ISL_OSL_PAIRS
+# 2. ISL_OSL_IMAGE_RESOLUTION_PAIRS
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
+BENCHMARK_CONFIGS = {}
 if os.getenv("ONLY_BENCHMARK_TARGETS"):
     # skip the benchmark sweeps and only run the benchmarks defined in the model config
-    BENCHMARK_CONFIGS = {}
     for model_id, model_spec in MODEL_SPECS.items():
         # Apply capping to performance reference entries even in ONLY_BENCHMARK_TARGETS mode
         _device = model_spec.device_type
@@ -266,7 +331,6 @@ if os.getenv("ONLY_BENCHMARK_TARGETS"):
             tasks=[BenchmarkTask(param_map={_device: capped_perf_reference})],
         )
 else:
-    BENCHMARK_CONFIGS = {}
     for model_id, model_spec in MODEL_SPECS.items():
         # Since each ModelConfig now represents a single device, use that device and its max_concurrency
         _device = model_spec.device_type
@@ -292,25 +356,6 @@ else:
                 param_map={_device: capped_perf_reference}
             )
 
-        # get (isl, osl, max_concurrency) from capped perf_ref_task
-        perf_ref_task_runs = {
-            _device: [
-                (
-                    params.isl,
-                    params.osl,
-                    params.image_height,
-                    params.image_width,
-                    params.images_per_prompt,
-                    params.max_concurrency,
-                )
-                if params.task_type == "image"
-                else (params.num_inference_steps,)
-                if params.task_type == "cnn"
-                else (params.isl, params.osl, params.max_concurrency)
-                for params in capped_perf_reference
-            ]
-        }
-
         # make benchmark sweeps table for this device
         if model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(
@@ -328,118 +373,30 @@ else:
             benchmark_task_runs = BenchmarkTask(
                 param_map={
                     _device: [
-                        BenchmarkTaskParams(
+                        expanded_params
+                        for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                        for expanded_params in _expand_text_sweep_params(
                             isl=isl,
                             osl=osl,
-                            max_concurrency=1,
-                            num_prompts=get_num_prompts(isl, osl, 1),
+                            max_context=_max_context,
+                            model_max_concurrency=_model_max_concurrency,
                         )
-                        for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
-                    ]
-                    + [
-                        BenchmarkTaskParams(
-                            isl=isl,
-                            osl=osl,
-                            max_concurrency=get_benchmark_max_concurrency(
-                                isl, osl, _max_context, _model_max_concurrency
-                            ),
-                            num_prompts=get_num_prompts(
-                                isl,
-                                osl,
-                                get_benchmark_max_concurrency(
-                                    isl, osl, _max_context, _model_max_concurrency
-                                ),
-                            ),
-                        )
-                        for isl, osl in MAX_CONCURRENCY_BENCHMARK_COMMON_ISL_OSL_PAIRS
-                        if (
-                            isl,
-                            osl,
-                            get_benchmark_max_concurrency(
-                                isl, osl, _max_context, _model_max_concurrency
-                            ),
-                        )
-                        not in perf_ref_task_runs.get(_device, [])
                     ]
                     + (
+                        # additional vision language model image + text benchmarks
                         [
-                            BenchmarkTaskParams(
+                            expanded_params
+                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
+                            for expanded_params in _expand_image_sweep_params(
                                 isl=isl,
                                 osl=osl,
-                                max_concurrency=1,
-                                num_prompts=get_num_prompts(isl, osl, 1),
-                                task_type="image",
                                 image_height=height,
                                 image_width=width,
                                 images_per_prompt=images_per_prompt,
+                                max_context=_max_context,
+                                model_max_concurrency=_model_max_concurrency,
+                                model_name=model_spec.model_name,
                             )
-                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (isl, osl, height, width, images_per_prompt, 1)
-                            not in perf_ref_task_runs.get(_device, [])
-                        ]
-                        if "image" in model_spec.supported_modalities
-                        else []
-                    )
-                    + (
-                        [
-                            BenchmarkTaskParams(
-                                isl=isl,
-                                osl=osl,
-                                max_concurrency=get_benchmark_max_concurrency(
-                                    isl,
-                                    osl,
-                                    _max_context,
-                                    _model_max_concurrency,
-                                    vision_tokens=calculate_vision_tokens(
-                                        height,
-                                        width,
-                                        images_per_prompt,
-                                        model_spec.model_name,
-                                    ),
-                                ),
-                                num_prompts=get_num_prompts(
-                                    isl,
-                                    osl,
-                                    get_benchmark_max_concurrency(
-                                        isl,
-                                        osl,
-                                        _max_context,
-                                        _model_max_concurrency,
-                                        vision_tokens=calculate_vision_tokens(
-                                            height,
-                                            width,
-                                            images_per_prompt,
-                                            model_spec.model_name,
-                                        ),
-                                    ),
-                                ),
-                                task_type="image",
-                                image_height=height,
-                                image_width=width,
-                                images_per_prompt=images_per_prompt,
-                            )
-                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            if (
-                                isl,
-                                osl,
-                                height,
-                                width,
-                                images_per_prompt,
-                                get_benchmark_max_concurrency(
-                                    isl,
-                                    osl,
-                                    _max_context,
-                                    _model_max_concurrency,
-                                    vision_tokens=calculate_vision_tokens(
-                                        height,
-                                        width,
-                                        images_per_prompt,
-                                        model_spec.model_name,
-                                    ),
-                                ),
-                            )
-                            not in perf_ref_task_runs.get(_device, [])
                         ]
                         if "image" in model_spec.supported_modalities
                         else []
