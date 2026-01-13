@@ -95,4 +95,6 @@ class EmbeddingLoadTest(BaseTest):
         logger.info(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-        logger.info(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+        logger.info(
+            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+        )
