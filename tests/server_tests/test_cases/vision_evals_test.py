@@ -186,6 +186,11 @@ class VisionEvalsTest(BaseTest):
     def _extract_prediction(self, payload: dict) -> tuple[str | None, str | None]:
         logger.info("Extracting prediction.")
         image_data = payload.get("image_data") if isinstance(payload, dict) else None
+
+        # Handle list response (image_data is List[ImageClassificationResult])
+        if isinstance(image_data, list) and image_data:
+            image_data = image_data[0]
+
         if not isinstance(image_data, dict):
             return None, None
 
