@@ -198,6 +198,11 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
     )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
+    )
 
     args = parser.parse_args()
 

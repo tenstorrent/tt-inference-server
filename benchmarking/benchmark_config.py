@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, Iterable, List, Tuple
 
 from workflows.model_spec import MODEL_SPECS, ModelType
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
@@ -53,19 +53,6 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (65536, 128),
 ]
 
-BENCHMARK_CONCURRENCY = [
-    1,
-    2,
-    4,
-    8,
-    16,
-    32,
-    64,
-    128,
-    256,
-    512,
-]
-
 
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
@@ -86,6 +73,10 @@ def _expand_text_sweep_params(
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl, osl, max_context, model_max_concurrency
     )
+    concurrencies = [1]
+    if allowed_max_concurrency > 1:
+        concurrencies.append(allowed_max_concurrency)
+
     return [
         BenchmarkTaskParams(
             isl=isl,
@@ -93,8 +84,7 @@ def _expand_text_sweep_params(
             max_concurrency=concurrency,
             num_prompts=get_num_prompts(isl, osl, concurrency),
         )
-        for concurrency in BENCHMARK_CONCURRENCY
-        if concurrency <= allowed_max_concurrency
+        for concurrency in concurrencies
     ]
 
 
@@ -121,6 +111,10 @@ def _expand_image_sweep_params(
         model_max_concurrency,
         vision_tokens=vision_tokens,
     )
+    concurrencies = [1]
+    if allowed_max_concurrency > 1:
+        concurrencies.append(allowed_max_concurrency)
+
     return [
         BenchmarkTaskParams(
             isl=isl,
@@ -132,8 +126,7 @@ def _expand_image_sweep_params(
             image_width=image_width,
             images_per_prompt=images_per_prompt,
         )
-        for concurrency in BENCHMARK_CONCURRENCY
-        if concurrency <= allowed_max_concurrency
+        for concurrency in concurrencies
     ]
 
 
@@ -233,6 +226,104 @@ def get_benchmark_max_concurrency(
 
     # Return the minimum of context-limited and model-limited concurrency
     return min(max_concurrency_by_context, model_max_concurrency)
+
+
+def powers_of_two_up_to(max_value: int) -> List[int]:
+    """
+    Return [1, 2, 4, ...] up to and including max_value.
+    """
+    if max_value < 1:
+        return []
+    values: List[int] = []
+    v = 1
+    while v <= max_value:
+        values.append(v)
+        v *= 2
+    return values
+
+
+def _benchmark_param_dedupe_key(params: BenchmarkTaskParams) -> Tuple:
+    # Include the fields that define benchmark uniqueness.
+    return (
+        getattr(params, "task_type", "text"),
+        int(params.isl) if params.isl is not None else None,
+        int(params.osl) if params.osl is not None else None,
+        int(params.max_concurrency) if params.max_concurrency is not None else None,
+        int(getattr(params, "image_height", 0) or 0),
+        int(getattr(params, "image_width", 0) or 0),
+        int(getattr(params, "images_per_prompt", 0) or 0),
+        int(getattr(params, "num_inference_steps", 0) or 0),
+        int(getattr(params, "num_eval_runs", 0) or 0),
+    )
+
+
+def expand_concurrency_sweep_params(
+    params_list: Iterable[BenchmarkTaskParams],
+    *,
+    max_context: int,
+    model_max_concurrency: int,
+    model_name: str,
+    candidate_concurrencies: List[int],
+    ensure_allowed_max: bool = True,
+) -> List[BenchmarkTaskParams]:
+    """
+    Expand params_list to include candidate concurrencies (e.g. powers-of-2),
+    capped by per-param allowed max concurrency.
+
+    For image params, vision tokens are included in context accounting.
+    CNN/audio/embedding params (without isl/osl) are returned unchanged.
+    """
+    expanded: List[BenchmarkTaskParams] = []
+    seen = set()
+
+    for params in params_list:
+        # CNN/audio style params don't have isl/osl; keep them unchanged.
+        if params.isl is None or params.osl is None:
+            key = _benchmark_param_dedupe_key(params)
+            if key not in seen:
+                expanded.append(params)
+                seen.add(key)
+            continue
+
+        isl = int(params.isl)
+        osl = int(params.osl)
+
+        # Reuse existing capping logic (includes vision tokens for VLM models).
+        base_data = dict(vars(params))
+        probe_data = dict(base_data)
+        probe_data["max_concurrency"] = int(model_max_concurrency)
+        probe_data["num_prompts"] = get_num_prompts(
+            isl, osl, int(model_max_concurrency)
+        )
+        capped_probe = cap_benchmark_params(
+            BenchmarkTaskParams(**probe_data),
+            max_context=max_context,
+            model_max_concurrency=model_max_concurrency,
+            model_name=model_name,
+        )
+        allowed_max = int(capped_probe.max_concurrency)
+
+        concurrencies = [
+            int(c) for c in candidate_concurrencies if int(c) <= allowed_max
+        ]
+        if ensure_allowed_max and allowed_max not in concurrencies:
+            concurrencies.append(allowed_max)
+        concurrencies = sorted(set(concurrencies))
+
+        for concurrency in concurrencies:
+            new_data = dict(base_data)
+            new_data["max_concurrency"] = int(concurrency)
+            new_data["num_prompts"] = get_num_prompts(
+                isl, osl, int(concurrency)
+            )
+
+            new_params = BenchmarkTaskParams(**new_data)
+            key = _benchmark_param_dedupe_key(new_params)
+            if key not in seen:
+                expanded.append(new_params)
+                seen.add(key)
+
+    return expanded
 
 
 def cap_benchmark_params(
