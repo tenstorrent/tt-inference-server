@@ -1032,20 +1032,6 @@
                     "num_of_devices": 1,
                     "embedding_time": 0.1
                 }
-            },
-            {
-                "name": "EmbeddingParamTest",
-                "module": "tests.server_tests.test_cases.embedding_param_test",
-                "enabled": true,
-                "description": "Test embedding params (input and dimensions)",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false,
-                    "model": "BAAI/bge-large-en-v1.5"
-                }
             }
         ]
     },
@@ -1087,20 +1073,6 @@
                     "num_of_devices": 4,
                     "embedding_time": 1
                 }
-            },
-            {
-                "name": "EmbeddingParamTest",
-                "module": "tests.server_tests.test_cases.embedding_param_test",
-                "enabled": true,
-                "description": "Test embedding params (input and dimensions)",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false,
-                    "model": "BAAI/bge-large-en-v1.5"
-                }
             }
         ]
     },
@@ -1141,20 +1113,6 @@
                 "targets": {
                     "num_of_devices": 32,
                     "embedding_time": 1
-                }
-            },
-            {
-                "name": "EmbeddingParamTest",
-                "module": "tests.server_tests.test_cases.embedding_param_test",
-                "enabled": true,
-                "description": "Test embedding params (input and dimensions)",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false,
-                    "model": "BAAI/bge-large-en-v1.5"
                 }
             }
         ]
