@@ -38,6 +38,8 @@ import wave
 import pytest
 import requests
 
+from tests.server_tests.base_test import BaseTest
+
 # Test configuration
 BASE_URL = "http://localhost:8000"
 API_KEY = "your-secret-key"
@@ -49,7 +51,7 @@ EXPECTED_CHANNELS = 1
 EXPECTED_BIT_DEPTH = 16
 
 
-class TestTTSServerHealth:
+class TestTTSServerHealth(BaseTest):
     """Test server health and availability"""
 
     def test_server_is_running(self):
@@ -73,7 +75,7 @@ class TestTTSServerHealth:
         assert "python_info" in response.text
 
 
-class TestTTSAuthentication:
+class TestTTSAuthentication(BaseTest):
     """Test API authentication"""
 
     def test_missing_auth_token(self):
@@ -105,7 +107,7 @@ class TestTTSAuthentication:
         assert response.status_code not in [401, 403]
 
 
-class TestTTS:
+class TestTTS(BaseTest):
     """Test TTS generation"""
 
     def test_simple_text_generation(self):
@@ -191,7 +193,7 @@ class TestTTS:
             assert len(response.content) > 0
 
 
-class TestTTSErrorHandling:
+class TestTTSErrorHandling(BaseTest):
     """Test error handling for invalid inputs"""
 
     def test_empty_text(self):
@@ -237,7 +239,7 @@ class TestTTSErrorHandling:
         assert response.status_code in [200, 400, 422]
 
 
-class TestTTSPerformance:
+class TestTTSPerformance(BaseTest):
     """Test performance characteristics"""
 
     def test_generation_latency(self):
@@ -279,7 +281,7 @@ class TestTTSPerformance:
             assert response.status_code == 200
 
 
-class TestTTSAudioQuality:
+class TestTTSAudioQuality(BaseTest):
     """Test audio output quality characteristics"""
 
     def test_audio_not_silent(self):
@@ -332,8 +334,3 @@ class TestTTSAudioQuality:
 
         # All formats should be identical
         assert all(f == formats[0] for f in formats), "Inconsistent audio formats"
-
-
-if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v", "--tb=short"])
