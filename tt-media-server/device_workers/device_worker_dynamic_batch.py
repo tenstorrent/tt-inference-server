@@ -64,8 +64,6 @@ def device_worker(
 
     # Define streaming handler
     async def handle_streaming(request):
-        base_key = request._task_id
-
         try:
             result_generator = await device_runner._run_async([request])
 

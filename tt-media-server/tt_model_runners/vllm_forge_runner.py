@@ -139,11 +139,6 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
                 yield (task_id, 0, chunk_text)
 
-        if chunks:
-            final_text = TextUtils.clean_text("".join(chunks))
-        else:
-            final_text = ""
-
         # do this on purpose to avoid over max decode issues
         yield (task_id, 1, "final_text")
 

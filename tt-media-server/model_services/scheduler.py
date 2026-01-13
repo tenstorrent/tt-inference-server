@@ -243,7 +243,7 @@ class Scheduler:
                                 f"Current queues: {current_queues}"
                             )
                     except:  # Queue empty for this worker
-                        pass
+                        self.logger.debug("Queue is currently empty")
 
                 # Only sleep if no results found
                 if not result_found:
