@@ -81,7 +81,7 @@ AVAILABLE_RUNNERS = {
     ).MockRunner(wid, num_threads),
     ModelRunners.TT_SPEECHT5_TTS: lambda wid, num_threads: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
-    ).TTSpeechT5Runner(wid),
+    ).TTSpeechT5Runner(wid, num_threads),
 }
 
 

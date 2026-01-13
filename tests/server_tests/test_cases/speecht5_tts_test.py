@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
-import json
 
 import aiohttp
 from server_tests.base_test import BaseTest
@@ -16,7 +15,7 @@ class SpeechT5TTSTest(BaseTest):
         """Run SpeechT5 TTS tests"""
         results = {}
 
-        # Test 1: Basic TTS generation (non-streaming)
+        # Test 1: Basic TTS generation
         print("Testing basic TTS generation...")
         try:
             basic_result = await self._test_basic_tts()
@@ -36,16 +35,6 @@ class SpeechT5TTSTest(BaseTest):
             results["tts_with_speaker"] = {"error": str(e)}
             print(f"✗ Speaker TTS test failed: {e}")
 
-        # Test 3: Streaming TTS
-        print("Testing streaming TTS...")
-        try:
-            streaming_result = await self._test_streaming_tts()
-            results["streaming_tts"] = streaming_result
-            print("✓ Streaming TTS test passed")
-        except Exception as e:
-            results["streaming_tts"] = {"error": str(e)}
-            print(f"✗ Streaming TTS test failed: {e}")
-
         return results
 
     async def _test_basic_tts(self):
@@ -54,7 +43,6 @@ class SpeechT5TTSTest(BaseTest):
 
         payload = {
             "text": "Hello world, this is a test of SpeechT5 text to speech synthesis.",
-            "stream": False,
         }
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
@@ -109,7 +97,6 @@ class SpeechT5TTSTest(BaseTest):
         payload = {
             "text": "This is a test with a specific speaker voice.",
             "speaker_id": "7306",  # Common speaker ID from CMU Arctic dataset
-            "stream": False,
         }
 
         timeout = aiohttp.ClientTimeout(total=120)
@@ -132,68 +119,3 @@ class SpeechT5TTSTest(BaseTest):
                     "speaker_id": result.get("speaker_id"),
                     "duration": result["duration"],
                 }
-
-    async def _test_streaming_tts(self):
-        """Test streaming TTS generation"""
-        url = f"http://localhost:{self.service_port}/audio/speech"
-
-        payload = {
-            "text": "This is a streaming test of text to speech generation.",
-            "stream": True,
-        }
-
-        timeout = aiohttp.ClientTimeout(total=180)  # 3 minute timeout for streaming
-        chunks_received = 0
-        final_result = None
-
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as response:
-                assert response.status == 200, (
-                    f"Expected status 200, got {response.status}"
-                )
-
-                # Read streaming response line by line
-                async for line in response.content:
-                    line = line.decode("utf-8").strip()
-                    if not line:
-                        continue
-
-                    try:
-                        chunk_data = json.loads(line)
-
-                        if chunk_data.get("type") == "streaming_chunk":
-                            chunks_received += 1
-                            chunk = chunk_data.get("chunk", {})
-                            assert "audio_chunk" in chunk, (
-                                "Streaming chunk should contain audio_chunk"
-                            )
-                            assert "chunk_id" in chunk, (
-                                "Streaming chunk should contain chunk_id"
-                            )
-
-                            # Verify audio chunk is valid base64
-                            audio_chunk_b64 = chunk["audio_chunk"]
-                            base64.b64decode(
-                                audio_chunk_b64
-                            )  # Should not raise exception
-
-                        elif chunk_data.get("type") == "final_result":
-                            final_result = chunk_data.get("result", {})
-                            break
-
-                    except json.JSONDecodeError as e:
-                        raise AssertionError(
-                            f"Invalid JSON in streaming response: {line} - {e}"
-                        )
-
-        # Validate we received chunks and final result
-        assert chunks_received > 0, "Should have received at least one streaming chunk"
-        assert final_result is not None, "Should have received final result"
-        assert "audio" in final_result, "Final result should contain audio"
-
-        return {
-            "status": "success",
-            "chunks_received": chunks_received,
-            "final_duration": final_result.get("duration"),
-            "final_sample_rate": final_result.get("sample_rate"),
-        }

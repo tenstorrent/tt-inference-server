@@ -8,7 +8,16 @@ from fastapi import APIRouter
 
 api_router = APIRouter()
 
-from open_ai_api import audio, cnn, fine_tuning, image, llm, tt_maintenance_api, video
+from open_ai_api import (
+    audio,
+    cnn,
+    fine_tuning,
+    image,
+    llm,
+    text_to_speech,
+    tt_maintenance_api,
+    video,
+)
 
 if settings.model_service == ModelServices.IMAGE.value:
     api_router.include_router(image.router, prefix="/image", tags=["Image processing"])
@@ -18,6 +27,10 @@ elif settings.model_service == ModelServices.CNN.value:
     api_router.include_router(cnn.router, prefix="/cnn", tags=["CNN processing"])
 elif settings.model_service == ModelServices.AUDIO.value:
     api_router.include_router(audio.router, prefix="/audio", tags=["Audio processing"])
+elif settings.model_service == ModelServices.TEXT_TO_SPEECH.value:
+    api_router.include_router(
+        text_to_speech.router, prefix="/audio", tags=["Text to speech processing"]
+    )
 elif settings.model_service == ModelServices.VIDEO.value:
     api_router.include_router(video.router, prefix="/video", tags=["Video processing"])
 elif settings.model_service == ModelServices.TRAINING.value:
