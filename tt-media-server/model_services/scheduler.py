@@ -37,8 +37,15 @@ class Scheduler:
 
         # Create one result queue per worker
         self.result_queues_by_worker = {}
-        for i in range(worker_count):
-            self.result_queues_by_worker[i] = (
+        if self.settings.use_queue_per_worker:
+            for i in range(worker_count):
+                self.result_queues_by_worker[i] = (
+                    SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
+                    if self.settings.use_memory_queue
+                    else Queue()
+                )
+        else:
+            self.result_queues_by_worker[0] = (
                 SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
                 if self.settings.use_memory_queue
                 else Queue()
@@ -140,7 +147,12 @@ class Scheduler:
 
         # Get the queue index for this worker
         worker_index = len(self.worker_info)
-        result_queue = self.result_queues_by_worker[worker_index]
+
+        result_queue = None
+        if self.settings.use_queue_per_worker:
+            result_queue = self.result_queues_by_worker[worker_index]
+        else:
+            result_queue = self.result_queues_by_worker[0]
 
         p = Process(
             target=device_worker_dynamic_batch

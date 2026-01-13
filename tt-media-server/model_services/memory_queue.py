@@ -91,15 +91,12 @@ class SharedMemoryChunkQueue:
         )  # read_lock
 
     def _get_write_idx(self) -> int:
-        """✅ Get write index"""
         return struct.unpack_from("Q", self.shm.buf, self.header_offset_write)[0]
 
     def _get_read_idx(self) -> int:
-        """✅ Get read index"""
         return struct.unpack_from("Q", self.shm.buf, self.header_offset_read)[0]
 
     def _set_write_idx(self, val: int):
-        """✅ Set bounded write index with wraparound"""
         if val < 0:
             raise ValueError(f"write_idx cannot be negative: {val}")
 
@@ -115,7 +112,6 @@ class SharedMemoryChunkQueue:
         struct.pack_into("Q", self.shm.buf, self.header_offset_write, next_write_idx)
 
     def _set_read_idx(self, val: int):
-        """✅ Set bounded read index with wraparound"""
         if val < 0:
             raise ValueError(f"read_idx cannot be negative: {val}")
 
@@ -131,7 +127,6 @@ class SharedMemoryChunkQueue:
         struct.pack_into("Q", self.shm.buf, self.header_offset_read, next_read_idx)
 
     def _get_size(self) -> int:
-        """✅ Calculate size for bounded circular buffer"""
         write_idx = self._get_write_idx()
         read_idx = self._get_read_idx()
 
@@ -141,7 +136,6 @@ class SharedMemoryChunkQueue:
             return (self.capacity - read_idx) + write_idx
 
     def _get_next_write_slot(self) -> int:
-        """✅ Check size BEFORE acquiring lock"""
         # Rough size check without lock (acceptable race)
         write_idx = self._get_write_idx()
         read_idx = self._get_read_idx()
@@ -151,7 +145,7 @@ class SharedMemoryChunkQueue:
         else:
             size = (self.capacity - read_idx) + write_idx
 
-        if size >= self.capacity - 10:  # ✅ Leave margin
+        if size >= self.capacity - 10:  # Leave margin
             return -1
 
         write_idx = self._get_write_idx()
@@ -160,13 +154,11 @@ class SharedMemoryChunkQueue:
         return write_idx
 
     def put(self, task_id: str, is_final: int, text: str) -> bool:
-        """✅ Faster - no lock during data write"""
         slot_idx = self._get_next_write_slot()
 
         if slot_idx == -1:
             return False
 
-        # ✅ No lock held here - write data fast
         if len(task_id) > MAX_TASK_ID_LEN:
             task_id = task_id[:MAX_TASK_ID_LEN]
         if len(text) > MAX_TEXT_LEN:
@@ -295,7 +287,7 @@ class SharedMemoryChunkQueue:
         except Exception as e:
             self.logger.error(f"[MemoryQueue] Error closing: {e}")
 
-    def join_thread():
+    def join_thread(self):
         """Placeholder method to mimic a multiprocessing queue"""
         return True
 
