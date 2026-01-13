@@ -788,18 +788,22 @@ class ModelSpec:
                 # Extract per-device info
                 devices = []
                 for device in tt_smi_data.get("device_info", []):
-                    devices.append({
-                        "board_info": device.get("board_info", {}),
-                        "firmwares": device.get("firmwares", {}),
-                        "telemetry": device.get("telemetry", {}),
-                    })
+                    devices.append(
+                        {
+                            "board_info": device.get("board_info", {}),
+                            "firmwares": device.get("firmwares", {}),
+                            "telemetry": device.get("telemetry", {}),
+                        }
+                    )
                 system_info_data["devices"] = devices
 
                 # Extract KMD version from host_info
                 driver_str = tt_smi_data.get("host_info", {}).get("Driver", "")
                 if driver_str:
                     parts = driver_str.split(" ")
-                    system_info_data["kmd_version"] = parts[-1] if len(parts) > 1 else driver_str
+                    system_info_data["kmd_version"] = (
+                        parts[-1] if len(parts) > 1 else driver_str
+                    )
         except Exception as e:
             print(f"WARNING: Failed to collect tt-smi data: {e}")
 
@@ -807,7 +811,9 @@ class ModelSpec:
         try:
             topology = SystemResourceService.get_system_topology(timeout=10)
             if topology:
-                system_info_data["topology"] = topology.value if hasattr(topology, "value") else str(topology)
+                system_info_data["topology"] = (
+                    topology.value if hasattr(topology, "value") else str(topology)
+                )
         except Exception as e:
             print(f"WARNING: Failed to collect tt-topology data: {e}")
 
