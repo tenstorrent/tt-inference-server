@@ -44,6 +44,10 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             ttnn.set_fabric_config(fabric_config)
         return None
 
+    def load_weights(self):
+        self._load_pipeline()
+        return True
+
     @log_execution_time(
         "SDXL warmup",
         TelemetryEvent.DEVICE_WARMUP,

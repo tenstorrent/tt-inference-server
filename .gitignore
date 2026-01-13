@@ -61,3 +61,6 @@ tt-media-server/huggingface
 
 *.tensorbin
 *.log
+
+# ignore downloaded datsets
+tests/server_tests/datasets/*
