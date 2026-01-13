@@ -137,10 +137,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
                 chunks_append(chunk_text)
 
-                # ✅ YIELD TUPLE: (task_id, is_final, text)
                 yield (task_id, 0, chunk_text)
 
-        # ✅ FINAL CHUNK: is_final=1
         if chunks:
             final_text = TextUtils.clean_text("".join(chunks))
         else:
