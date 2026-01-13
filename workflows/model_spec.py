@@ -376,6 +376,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
+    host_info: Optional[Dict] = None
 
     def __post_init__(self):
         default_env_vars = {
@@ -769,6 +770,49 @@ class ModelSpec:
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
 
+    def add_host_info(self):
+        """
+        Collect host and device information from tt-smi and tt-topology,
+        and apply it to this ModelSpec instance.
+        """
+        from workflows.run_local_setup_validation import SystemResourceService
+
+        host_info_data = {}
+
+        # Get tt-smi data
+        try:
+            tt_smi_data = SystemResourceService.get_tt_smi_data(timeout=10)
+            if tt_smi_data:
+                host_info_data["host_info"] = tt_smi_data.get("host_info", {})
+                host_info_data["host_sw_vers"] = tt_smi_data.get("host_sw_vers", {})
+
+                # Extract per-device info
+                devices = []
+                for device in tt_smi_data.get("device_info", []):
+                    devices.append({
+                        "board_info": device.get("board_info", {}),
+                        "firmwares": device.get("firmwares", {}),
+                        "telemetry": device.get("telemetry", {}),
+                    })
+                host_info_data["devices"] = devices
+
+                # Extract KMD version from host_info
+                driver_str = tt_smi_data.get("host_info", {}).get("Driver", "")
+                if driver_str:
+                    parts = driver_str.split(" ")
+                    host_info_data["kmd_version"] = parts[-1] if len(parts) > 1 else driver_str
+        except Exception as e:
+            print(f"WARNING: Failed to collect tt-smi data: {e}")
+
+        # Get topology info
+        try:
+            topology = SystemResourceService.get_system_topology(timeout=10)
+            if topology:
+                host_info_data["topology"] = topology.value if hasattr(topology, "value") else str(topology)
+        except Exception as e:
+            print(f"WARNING: Failed to collect tt-topology data: {e}")
+
+        object.__setattr__(self, "host_info", host_info_data)
 
 @dataclass(frozen=True)
 class ModelSpecTemplate:
@@ -2507,5 +2551,6 @@ def get_runtime_model_spec(args):
     model_id = get_model_id(args.impl, args.model, args.device)
     model_spec = MODEL_SPECS[model_id]
     model_spec.apply_runtime_args(args)
+    model_spec.add_host_info()
 
     return model_spec
