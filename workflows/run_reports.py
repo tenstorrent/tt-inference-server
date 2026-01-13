@@ -2101,6 +2101,8 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            None,
+            None,
         )
     # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
@@ -2108,16 +2110,19 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
 
     # generate vLLM parameter coverage report
     # TODO: Implement returning raw report, defaulting to None for now
-    markdown_str, release_raw = (
-        generate_vllm_parameter_report(
-            files, output_path, report_id, metadata, model_spec=model_spec
-        ),
-        None,
+    markdown_str = generate_vllm_parameter_report(
+        files, output_path, report_id, metadata, model_spec=model_spec
     )
+    release_raw = None
 
     release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
-    return release_str, release_raw
+    # Write markdown report to file
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"Tests report saved to: {output_path}")
+
+    return release_str, release_raw, output_path, None
 
 
 def generate_evals_markdown_table(results, meta_data) -> str:
@@ -2907,6 +2912,7 @@ def main():
 
         # Check for server tests JSON files
         server_tests_data = []
+        parameter_support_tests_data = []
 
         # Add target_checks for specific model if applicable
         if (
@@ -3100,6 +3106,10 @@ def main():
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
+
+        # Add parameter_support_tests only if data exists
+        if parameter_support_tests_data:
+            output_data["parameter_support_tests"] = parameter_support_tests_data
 
         json.dump(output_data, f, indent=4)
 
