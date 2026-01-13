@@ -26,7 +26,7 @@ headers = {
 class EmbeddingLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
-        print(self.targets)
+        logger.info(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
@@ -52,7 +52,7 @@ class EmbeddingLoadTest(BaseTest):
 
     async def test_concurrent_embedding(self, batch_size):
         async def timed_request(session, index):
-            print(f"Starting request {index}")
+            logger.info(f"Starting request {index}")
             try:
                 start = time.perf_counter()
                 async with session.post(
@@ -63,14 +63,14 @@ class EmbeddingLoadTest(BaseTest):
                         await response.json()
                     else:
                         raise Exception(f"Status {response.status} {response.reason}")
-                    print(
+                    logger.info(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
                     return duration
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
         # First iteration is warmup, second is measured (original behavior)
@@ -86,13 +86,13 @@ class EmbeddingLoadTest(BaseTest):
                 avg_duration = total_duration / batch_size
                 return requests_duration, avg_duration
             if iteration == 0:
-                print("🔥 Warm up run done.")
+                logger.info("🔥 Warm up run done.")
 
-        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
-        print(
+        logger.info(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        logger.info(
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
-        print(
+        logger.info(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+        logger.info(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
