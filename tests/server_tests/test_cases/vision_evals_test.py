@@ -58,6 +58,10 @@ class VisionEvalsTestRequest:
 
 
 class VisionEvalsTest(BaseTest):
+    def __init__(self, config: TestConfig, targets: dict):
+        super().__init__(config, targets)
+        self.eval_results: dict = {}
+
     async def _run_specific_test_async(self):
         request = self.targets.get("request")
         logger.info("Running VisionEvalsTest with request: %s", request)
@@ -92,7 +96,12 @@ class VisionEvalsTest(BaseTest):
                 mode=request.mode,
             )
             self._compare_results()
-            return {"success": True, "action": "measure_accuracy", "mode": request.mode}
+            return {
+                "success": True,
+                "action": "measure_accuracy",
+                "mode": request.mode,
+                "eval_results": self.eval_results,
+            }
 
         elif request.action == "compare":
             self._compare_results()
@@ -101,6 +110,7 @@ class VisionEvalsTest(BaseTest):
         raise ValueError(f"Unknown action: {request.action}")
 
     def _load_metadata(self, dataset_path: Path) -> list[dict]:
+        logger.info(f"Loading metadata from {dataset_path}")
         metadata_path = dataset_path / "metadata.json"
         if not metadata_path.exists():
             raise FileNotFoundError(f"Missing metadata file: {metadata_path}")
@@ -121,6 +131,7 @@ class VisionEvalsTest(BaseTest):
         authorization: str | None,
         timeout: float,
     ) -> list[dict]:
+        logger.info(f"Replaying samples from {dataset_path} to {server_url}")
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {authorization or DEFAULT_AUTHORIZATION}",
@@ -155,6 +166,7 @@ class VisionEvalsTest(BaseTest):
         return results
 
     def _normalize_label(self, raw: str | int | None) -> str:
+        logger.info("Normalizing label.")
         if raw is None:
             return ""
         if isinstance(raw, int):
@@ -172,6 +184,7 @@ class VisionEvalsTest(BaseTest):
         return collapsed.strip("_")
 
     def _extract_prediction(self, payload: dict) -> tuple[str | None, str | None]:
+        logger.info("Extracting prediction.")
         image_data = payload.get("image_data") if isinstance(payload, dict) else None
         if not isinstance(image_data, dict):
             return None, None
@@ -189,6 +202,7 @@ class VisionEvalsTest(BaseTest):
         return label, probability
 
     def _analyze_results(self, entries: list[dict]) -> tuple[int, int, list[dict]]:
+        logger.info("Analyzing results.")
         total = len(entries)
         correct = 0
         mismatches: list[dict] = []
@@ -226,7 +240,7 @@ class VisionEvalsTest(BaseTest):
 
     def _download_samples(self, count: int = 20) -> None:
         """Stream a small ImageNet subset and materialize images plus metadata."""
-
+        logger.info(f"Downloading {count} samples.")
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
@@ -286,7 +300,7 @@ class VisionEvalsTest(BaseTest):
 
     def _compare_results(self) -> None:
         """Compare CPU and device accuracy results and print a summary."""
-
+        logger.info("Comparing results CPU and device accuracy.")
         dataset_path = Path(DATASET_DIR)
         cpu_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
         device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
@@ -355,6 +369,7 @@ class VisionEvalsTest(BaseTest):
         authorization: str | None = None,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        logger.info(f"Measuring accuracy for models: {models} in {mode} mode")
         dataset_path = Path(DATASET_DIR)
         metadata = self._load_metadata(dataset_path)
         summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
@@ -399,6 +414,14 @@ class VisionEvalsTest(BaseTest):
 
             accuracy = (correct / total) if total else 0.0
             accuracy_summary[model] = accuracy
+
+            # Store detailed results for this model
+            self.eval_results[model] = {
+                "accuracy": accuracy,
+                "correct": correct,
+                "total": total,
+                "mismatches_count": len(mismatches),
+            }
 
             logger.info(
                 "[%s] %s: %.2f%% accuracy (%s/%s correct)",
