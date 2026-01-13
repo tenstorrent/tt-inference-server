@@ -30,16 +30,25 @@ class SystemResourceService:
     """Service for monitoring system resources and TT device telemetry"""
 
     @staticmethod
-    def get_tt_smi_data(timeout=10):
-        """Get raw tt-smi data with timeout handling"""
+    def _run_smi_command(executable_name: str, timeout: int = 10):
+        """
+        Run a tt-smi style command and return parsed JSON data.
+
+        Args:
+            executable_name: Name of the executable (e.g., "tt-smi" or "tt-smi-metal")
+            timeout: Timeout in seconds for command execution
+
+        Returns:
+            Parsed JSON data or None if command failed
+        """
         import sys
 
-        tt_smi_executable = os.path.join(sys.prefix, "bin", "tt-smi")
+        executable_path = os.path.join(sys.prefix, "bin", executable_name)
         try:
-            logger.info("Running tt-smi -s to get device telemetry")
+            logger.info(f"Running {executable_name} -s to get device telemetry")
 
             process = subprocess.Popen(
-                [tt_smi_executable, "-s"],
+                [executable_path, "-s"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
@@ -53,22 +62,22 @@ class SystemResourceService:
 
                 if process.returncode != 0:
                     logger.error(
-                        f"tt-smi -s failed with return code {process.returncode}, stderr: {stderr}"
+                        f"{executable_name} -s failed with return code {process.returncode}, stderr: {stderr}"
                     )
                     return None
 
                 # Parse JSON output
                 try:
                     data = json.loads(stdout)
-                    logger.info("Successfully parsed tt-smi data")
+                    logger.info(f"Successfully parsed {executable_name} data")
                     return data
                 except json.JSONDecodeError as e:
                     raise ValueError(
-                        f"Failed to parse tt-smi JSON output: {e}, stdout: {stdout}"
+                        f"Failed to parse {executable_name} JSON output: {e}, stdout: {stdout}"
                     )
 
             except subprocess.TimeoutExpired:
-                logger.error(f"tt-smi -s command timed out after {timeout} seconds")
+                logger.error(f"{executable_name} -s command timed out after {timeout} seconds")
                 # Kill the process group to ensure cleanup
                 try:
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -81,9 +90,19 @@ class SystemResourceService:
                 return None
 
         except FileNotFoundError:
-            raise RuntimeError("tt-smi command not found")
+            raise RuntimeError(f"{executable_name} command not found")
         except Exception as e:
-            raise RuntimeError(f"Error getting tt-smi data: {str(e)}")
+            raise RuntimeError(f"Error getting {executable_name} data: {str(e)}")
+
+    @staticmethod
+    def get_tt_smi_data(timeout: int = 10):
+        """Get raw tt-smi data with timeout handling"""
+        return SystemResourceService._run_smi_command("tt-smi", timeout)
+
+    @staticmethod
+    def get_tt_smi_metal_data(timeout: int = 10):
+        """Get raw tt-smi-metal data with timeout handling"""
+        return SystemResourceService._run_smi_command("tt-smi-metal", timeout)
 
     @staticmethod
     def get_tt_topology_data(timeout=10):
