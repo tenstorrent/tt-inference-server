@@ -427,7 +427,7 @@ ModelConfigs = {
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
