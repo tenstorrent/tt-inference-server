@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from dataclasses import dataclass
+from unittest.mock import MagicMock, patch
 
 import pytest
 from domain.completion_request import CompletionRequest
@@ -38,7 +39,15 @@ class MockAsyncLLMEngine:
 
 
 @pytest.mark.asyncio
-async def test_run_async_non_streaming_concatenates_output_tokens_correctly():
+@patch("tt_model_runners.base_device_runner.get_settings")
+async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
+    mock_get_settings,
+):
+    # Mock settings with a valid device_mesh_shape
+    mock_settings = MagicMock()
+    mock_settings.device_mesh_shape = (1, 8)
+    mock_get_settings.return_value = mock_settings
+
     runner = VLLMForgeRunner(device_id="test-device")
     runner.llm_engine = MockAsyncLLMEngine(
         # This tokens match exactly what the real AsyncLLMEngine yields
@@ -73,7 +82,13 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly():
 
 
 @pytest.mark.asyncio
-async def test_run_async_streaming_yields_each_token():
+@patch("tt_model_runners.base_device_runner.get_settings")
+async def test_run_async_streaming_yields_each_token(mock_get_settings):
+    # Mock settings with a valid device_mesh_shape
+    mock_settings = MagicMock()
+    mock_settings.device_mesh_shape = (1, 8)
+    mock_get_settings.return_value = mock_settings
+
     runner = VLLMForgeRunner(device_id="test-device")
     tokens = [
         "!",
