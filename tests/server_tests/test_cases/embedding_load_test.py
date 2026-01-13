@@ -9,7 +9,6 @@ import time
 import aiohttp
 from server_tests.base_test import BaseTest
 
-# Set up logging
 logger = logging.getLogger(__name__)
 
 payload = {

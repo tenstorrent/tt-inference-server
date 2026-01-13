@@ -1030,7 +1030,7 @@
                 },
                 "targets": {
                     "num_of_devices": 1,
-                    "embedding_time": 5
+                    "embedding_time": 0.1
                 }
             },
             {
@@ -1085,7 +1085,7 @@
                 },
                 "targets": {
                     "num_of_devices": 4,
-                    "embedding_time": 5
+                    "embedding_time": 1
                 }
             },
             {
@@ -1140,7 +1140,7 @@
                 },
                 "targets": {
                     "num_of_devices": 32,
-                    "embedding_time": 5
+                    "embedding_time": 1
                 }
             },
             {
