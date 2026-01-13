@@ -310,76 +310,56 @@ def cap_benchmark_params(
 # 2. ISL_OSL_IMAGE_RESOLUTION_PAIRS
 # num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
 BENCHMARK_CONFIGS = {}
-if os.getenv("ONLY_BENCHMARK_TARGETS"):
-    # skip the benchmark sweeps and only run the benchmarks defined in the model config
-    for model_id, model_spec in MODEL_SPECS.items():
-        # Apply capping to performance reference entries even in ONLY_BENCHMARK_TARGETS mode
-        _device = model_spec.device_type
-        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
-        _max_context = model_spec.device_model_spec.max_context
-        perf_reference = model_spec.device_model_spec.perf_reference
+for model_id, model_spec in MODEL_SPECS.items():
+    # Since each ModelConfig now represents a single device, use that device and its max_concurrency
+    device = model_spec.device_type
+    model_max_concurrency = model_spec.device_model_spec.max_concurrency
+    max_context = model_spec.device_model_spec.max_context
+    perf_reference = model_spec.device_model_spec.perf_reference
 
-        capped_perf_reference = [
-            cap_benchmark_params(
-                params, _max_context, _model_max_concurrency, model_spec.model_name
-            )
-            for params in perf_reference
-        ]
-
-        BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
-            model_id=model_id,
-            tasks=[BenchmarkTask(param_map={_device: capped_perf_reference})],
+    # Apply capping to each perf reference entry (including vision tokens for VLM models)
+    capped_perf_reference = [
+        cap_benchmark_params(
+            params, max_context, model_max_concurrency, model_spec.model_name
         )
-else:
-    for model_id, model_spec in MODEL_SPECS.items():
-        # Since each ModelConfig now represents a single device, use that device and its max_concurrency
-        _device = model_spec.device_type
-        _model_max_concurrency = model_spec.device_model_spec.max_concurrency
-        _max_context = model_spec.device_model_spec.max_context
-        perf_reference = model_spec.device_model_spec.perf_reference
+        for params in perf_reference
+    ]
 
-        # Apply capping to each perf reference entry (including vision tokens for VLM models)
-        capped_perf_reference = [
-            cap_benchmark_params(
-                params, _max_context, _model_max_concurrency, model_spec.model_name
-            )
-            for params in perf_reference
-        ]
+    # Create performance reference task with capped values
+    if model_spec.model_type == ModelType.CNN:
+        perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
+    elif model_spec.model_type == ModelType.EMBEDDING:
+        perf_ref_task = BenchmarkTaskEmbedding(param_map={device: capped_perf_reference})
+    else:
+        perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
 
-        # Create performance reference task with capped values
-        perf_ref_task = BenchmarkTask(param_map={_device: capped_perf_reference})
-        if model_spec.model_type == ModelType.CNN:
-            perf_ref_task = BenchmarkTaskCNN(param_map={_device: capped_perf_reference})
-
-        if model_spec.model_type == ModelType.EMBEDDING:
-            perf_ref_task = BenchmarkTaskEmbedding(
-                param_map={_device: capped_perf_reference}
-            )
-
-        # make benchmark sweeps table for this device
+    tasks = [perf_ref_task]
+    # optionally skip the benchmark sweeps and only run the perf reference targets
+    if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")):
+        # Make benchmark sweeps table for this device
         if model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(
                 param_map={
-                    _device: [
+                    device: [
                         BenchmarkTaskParamsCNN(num_inference_steps=20, num_eval_runs=15)
                     ]
                 }
             )
         elif model_spec.model_type == ModelType.EMBEDDING:
             benchmark_task_runs = BenchmarkTaskEmbedding(
-                param_map={_device: [BenchmarkTaskParams()]}
+                param_map={device: [BenchmarkTaskParams()]}
             )
         else:
             benchmark_task_runs = BenchmarkTask(
                 param_map={
-                    _device: [
+                    device: [
                         expanded_params
                         for isl, osl in BENCHMARK_ISL_OSL_PAIRS
                         for expanded_params in _expand_text_sweep_params(
                             isl=isl,
                             osl=osl,
-                            max_context=_max_context,
-                            model_max_concurrency=_model_max_concurrency,
+                            max_context=max_context,
+                            model_max_concurrency=model_max_concurrency,
                         )
                     ]
                     + (
@@ -393,8 +373,8 @@ else:
                                 image_height=height,
                                 image_width=width,
                                 images_per_prompt=images_per_prompt,
-                                max_context=_max_context,
-                                model_max_concurrency=_model_max_concurrency,
+                                max_context=max_context,
+                                model_max_concurrency=model_max_concurrency,
                                 model_name=model_spec.model_name,
                             )
                         ]
@@ -404,7 +384,6 @@ else:
                 }
             )
 
-        BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
-            model_id=model_id,
-            tasks=[perf_ref_task, benchmark_task_runs],
-        )
+        tasks.append(benchmark_task_runs)
+
+    BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)
