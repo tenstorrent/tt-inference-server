@@ -1001,6 +1001,43 @@
             {
                 "name": "DeviceLivenessTest",
                 "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "SpeechT5TTSTest",
+                "module": "tests.server_tests.test_cases.speecht5_tts_test",
+                "enabled": true,
+                "description": "Test SpeechT5 Text-to-Speech functionality",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                }
+            }
+        ]
+    },
+    {
+        "weights" : ["speecht5-tts"],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
                 "enabled": false,
                 "description": "Test for device liveness checks",
                 "test_config": {
