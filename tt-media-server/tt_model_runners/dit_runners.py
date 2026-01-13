@@ -71,6 +71,10 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
+    def load_weights(self):
+        self.create_pipeline()
+        return True
+
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 

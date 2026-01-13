@@ -9,15 +9,15 @@ All development uses the following workflows in git for the repo repository http
 All normal development work should be done using this simple workflow, making branchs off `dev` and making PRs back to `dev`.
 
 **branches:**
-- `<namett>/feature-<my-description>`
+- `<namett>/<my-description>`
 - `<namett>/fix-<my-description>`
 - `dev`
 
 **workflow for development:**
 1. git checkout `dev` && git pull
-1. git checkout -b `<namett>/feature-<my-description>` or `<namett>/fix-<my-description>`
+1. git checkout -b `<namett>/<my-description>` or `<namett>/fix-<my-description>`
 1. make code changes
-1. PR `<namett>/feature-<my-description>` to `dev`
+1. PR `<namett>/<my-description>` to `dev`
 1. PR reviewed and approved by >= 1 responsible person defined in CODEOWNERS.md
 1. squash and merge PR to `dev`
 
@@ -54,7 +54,7 @@ workflow for release:
   - well named and documented commits refing PR 
   - squash to merge in GitHub
 
-`<namett>/feature-<my-description>`:
+`<namett>/<my-description>`:
 - specific WIP development work
 - based off `dev`, PR back to `dev`
 - multiple people can work together on a single branch, but generally easier to structure collaboration  via multiple PRs into `dev

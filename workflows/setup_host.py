@@ -24,8 +24,8 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import (
-    ModelSource,
     ModelSpec,
+    ModelSource,
 )
 from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
@@ -49,14 +49,12 @@ class SetupConfig:
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
-    host_tt_metal_built_dir: Path = None
     host_model_weights_snapshot_dir: Path = None
     host_model_weights_mount_dir: Path = None
     containter_user_home: Path = Path("/home/container_app_user/")
     cache_root: Path = containter_user_home / "cache_root"
     container_model_spec_dir: Path = containter_user_home / "model_spec"
     container_tt_metal_cache_dir: Path = None
-    container_tt_metal_built_dir: Path = None
     container_model_weights_snapshot_dir: Path = None
     container_model_weights_mount_dir: Path = None
     container_model_weights_path: Path = None
@@ -86,15 +84,9 @@ class SetupConfig:
             / "tt_metal_cache"
             / f"cache_{self.model_spec.model_name}"
         )
-        # host path for tt-metal built artifacts (kernel compilation cache)
-        self.host_tt_metal_built_dir = self.host_model_volume_root / "tt_metal_built"
         # container paths
         self.container_tt_metal_cache_dir = (
             self.cache_root / "tt_metal_cache" / f"cache_{self.model_spec.model_name}"
-        )
-        # container path for tt-metal built artifacts (mounted from host)
-        self.container_tt_metal_built_dir = (
-            self.containter_user_home / "tt-metal" / "built"
         )
         self.container_readonly_model_weights_dir = (
             self.containter_user_home / "readonly_weights_mount"
@@ -534,7 +526,6 @@ class HostSetupManager:
     def make_host_dirs(self):
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
-        self.setup_config.host_tt_metal_built_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
         if not self.check_setup():

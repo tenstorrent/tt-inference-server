@@ -16,8 +16,20 @@ class ImagePrediction(BaseModel):
     )
 
 
+class ImageClassificationResult(BaseModel):
+    """Image classification result with top prediction and full output."""
+
+    top1_class_label: str = Field(description="Top predicted class label")
+    top1_class_probability: str = Field(description="Top prediction probability string")
+    output: Union[dict, str] = Field(
+        description="Full prediction output (dict for JSON, comma-separated string for verbose)"
+    )
+
+
 class ImageSearchResponse(BaseModel):
     """Response for image search API endpoint."""
 
-    image_data: Union[List[List[ImagePrediction]], List[str]]
+    image_data: Union[
+        List[ImageClassificationResult], List[List[ImagePrediction]], List[str]
+    ]
     status: str = "success"

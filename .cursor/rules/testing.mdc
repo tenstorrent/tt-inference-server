@@ -5,7 +5,7 @@ globs:
 alwaysApply: true
 ---
 
-- source .venv/bin/activate to run pytest
+- source .venv/bin/activate to run pytest locally. IMPORTANT If that environment does not exist you must SKIP trying to run the tests. Do not try to install the python venv.
 - Ensure new functionality has test coverage that is meaningful and tests full components with minimal mocking only of external calls.
-- Make sure to run tests via pytest to check for breaking changes
-- If you find a bug in code that is being tested call it out, don't build tests around it
+- Make sure to run tests via `pytest` to check for breaking changes.
+- If you find a bug in code that is being tested, call it out, don't change tests to go around it.

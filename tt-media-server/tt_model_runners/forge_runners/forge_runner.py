@@ -20,7 +20,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 from config.constants import ResponseFormat
 from domain.image_search_request import ImageSearchRequest
-from domain.image_search_response import ImagePrediction
+from domain.image_search_response import ImageClassificationResult
 from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -51,7 +51,7 @@ class ForgeRunner(BaseDeviceRunner):
 
         if runs_on_cpu:
             # Use cpu
-            self.dtype = None
+            # self.dtype = None # Use same dtype on CPU and device
             self.device = torch.device("cpu")
             self.model = self.loader.load_model(self.dtype)
             self.compiled_model = self.model.to(self.device)
@@ -115,15 +115,20 @@ class ForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             output = self.compiled_model(inputs)
-            predictions = self._postprocess_model_output(
-                output,
-                top_k=request.top_k,
-                min_confidence=request.min_confidence,
+            predictions, top1_class_label, top1_class_probability = (
+                self._postprocess_model_output(
+                    output,
+                    top_k=request.top_k,
+                    min_confidence=request.min_confidence,
+                )
             )
 
             # Format response based on response_format
             formatted_result = self._format_response(
-                predictions, request.response_format
+                predictions,
+                request.response_format,
+                top1_class_label,
+                top1_class_probability,
             )
 
             return [formatted_result]
@@ -183,7 +188,7 @@ class ForgeRunner(BaseDeviceRunner):
 
     def _postprocess_model_output(
         self, output, top_k: int, min_confidence: float
-    ) -> list:
+    ) -> tuple[list, str, str]:
         """
         Post-process model output with top_k and min_confidence filtering.
 
@@ -193,7 +198,7 @@ class ForgeRunner(BaseDeviceRunner):
             min_confidence: Minimum confidence threshold (0-100 percentage)
 
         Returns:
-            List of prediction dicts with 'label' and 'probability' keys
+            Tuple of (filtered_predictions, top1_label, top1_probability)
         """
         self.logger.info(
             f"Post-processing output with top_k: {top_k} and min_confidence: {min_confidence}"
@@ -201,32 +206,58 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info("Getting base predictions from loader")
         raw_predictions = self.loader.output_postprocess(output, top_k=top_k)
         self.logger.info("Convert list of dicts and parse probability strings")
+
+        top1_class_label = raw_predictions["labels"][0]
+        top1_class_probability = raw_predictions["probabilities"][0]
+        self.logger.info(f"Top 1 class label: {top1_class_label}")
+        self.logger.info(f"Top 1 class probability: {top1_class_probability}")
+
         predictions = []
-        for label, probability in zip(
-            raw_predictions["labels"], raw_predictions["probabilities"]
+        for label, probability, index in zip(
+            raw_predictions["labels"],
+            raw_predictions["probabilities"],
+            raw_predictions["indices"],
         ):
             prob = float(probability.rstrip("%"))
             if prob >= min_confidence:
-                predictions.append({"label": label, "probability": prob})
-        return predictions
+                predictions.append(
+                    {"label": label, "probability": prob, "index": index}
+                )
 
-    def _format_response(self, predictions: list, response_format: str):
+        return predictions, top1_class_label, top1_class_probability
+
+    def _format_response(
+        self,
+        predictions: list,
+        response_format: str,
+        top1_class_label: str,
+        top1_class_probability: str,
+    ):
         """
         Format predictions based on response_format.
 
         Args:
             predictions: List of {"label": str, "probability": float}
             response_format: "json" or "verbose"
+            top1_class_label: Top 1 class label
+            top1_class_probability: Top 1 class probability
         """
         if response_format == ResponseFormat.VERBOSE_JSON.value.lower():
             self.logger.info("Formatting response in verbose format")
             parts = []
             for p in predictions:
-                parts.extend([str(p["label"]), f"{p['probability']:.1f}"])
-            return ",".join(parts)
+                parts.extend(
+                    [str(p["label"]), f"{p['probability']:.1f}", str(p["index"])]
+                )
+            return f"{top1_class_label},{top1_class_probability},{','.join(parts)}"
 
         self.logger.info("Formatting response in JSON format")
-        return [
-            ImagePrediction(object=p["label"], confidence_level=p["probability"])
-            for p in predictions
-        ]
+        return ImageClassificationResult(
+            top1_class_label=top1_class_label,
+            top1_class_probability=top1_class_probability,
+            output={
+                "labels": [p["label"] for p in predictions],
+                "probabilities": [f"{p['probability']:.4f}%" for p in predictions],
+                "indices": [p["index"] for p in predictions],
+            },
+        )

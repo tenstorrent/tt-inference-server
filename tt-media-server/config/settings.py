@@ -73,10 +73,6 @@ class Settings(BaseSettings):
 
     vllm: VLLMSettings = VLLMSettings()
 
-    # Image processing settings
-    image_return_format: str = "JPEG"
-    image_quality: int = 85
-
     # Audio processing settings
     allow_audio_preprocessing: bool = True
     audio_chunk_duration_seconds: Optional[int] = None
