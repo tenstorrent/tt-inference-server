@@ -90,16 +90,35 @@ class VisionEvalsTest(BaseTest):
 
         elif request.action == "measure_accuracy":
             logger.info("Measuring accuracy for models: %s", target_models)
+
+            # Step 1: Download samples
+            logger.info("Step 1: Downloading samples")
+            self._download_samples(count=request.download_count)
+
+            # Step 2: Measure CPU accuracy (always launches its own CPU server)
+            logger.info("Step 2: Measuring CPU accuracy")
             self._measure_accuracy(
                 models=target_models,
-                server_url=request.server_url,
-                mode=request.mode,
+                server_url=None,  # CPU mode always launches own server
+                mode="cpu",
             )
+
+            # Step 3: Measure device accuracy (uses existing server if provided)
+            logger.info("Step 3: Measuring device accuracy")
+            self._measure_accuracy(
+                models=target_models,
+                server_url=request.server_url,  # Use existing server if provided
+                mode="device",
+            )
+
+            # Step 4: Compare results
+            logger.info("Step 4: Comparing CPU vs device results")
             self._compare_results()
+
             return {
                 "success": True,
                 "action": "measure_accuracy",
-                "mode": request.mode,
+                "mode": "full",
                 "eval_results": self.eval_results,
             }
 
@@ -420,8 +439,10 @@ class VisionEvalsTest(BaseTest):
             accuracy = (correct / total) if total else 0.0
             accuracy_summary[model] = accuracy
 
-            # Store detailed results for this model
-            self.eval_results[model] = {
+            # Store detailed results for this model and mode
+            if model not in self.eval_results:
+                self.eval_results[model] = {}
+            self.eval_results[model][mode] = {
                 "accuracy": accuracy,
                 "correct": correct,
                 "total": total,

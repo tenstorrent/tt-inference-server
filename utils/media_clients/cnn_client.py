@@ -256,9 +256,13 @@ class CnnClientStrategy(BaseMediaStrategy):
         logger.info("Starting VisionEvalsTest")
         result = test.run_tests()
 
-        # Extract eval_results from nested structure
+        # Extract eval_results from nested structure: {model: {cpu: {...}, device: {...}}}
         eval_results = result.get("result", {}).get("eval_results", {})
-        model_result = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
-        logger.info(f"VisionEvalsTest eval_results: {model_result}")
+        model_results = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
+        logger.info(f"VisionEvalsTest model results: {model_results}")
 
-        return model_result
+        # Get device mode results for benchmark comparison
+        device_result = model_results.get("device", {})
+        logger.info(f"VisionEvalsTest device eval_results: {device_result}")
+
+        return device_result
