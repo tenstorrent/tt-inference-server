@@ -780,7 +780,7 @@ class ModelSpec:
 
         # Get tt-smi data
         try:
-            tt_smi_data = SystemResourceService.get_tt_smi_data(timeout=10)
+            tt_smi_data = SystemResourceService.get_tt_smi_metal_data(timeout=10)
             if tt_smi_data:
                 system_info_data["host_info"] = tt_smi_data.get("host_info", {})
                 system_info_data["host_sw_vers"] = tt_smi_data.get("host_sw_vers", {})
