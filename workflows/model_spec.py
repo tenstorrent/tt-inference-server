@@ -1034,8 +1034,8 @@ spec_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c254ee3",
-        vllm_commit="c4f2327",
+        tt_metal_commit="3281fd8",
+        vllm_commit="e5eb7db",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1097,12 +1097,10 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 51934848,
+                    "trace_region_size": 49544000,
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                     "enable_model_warmup": False,
-                    "trace_mode": "none",
-                    "data_parallel": 4,
                 },
             ),
         ],
