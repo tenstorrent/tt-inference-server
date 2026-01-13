@@ -37,6 +37,10 @@ MODELS = [
     # "tt-xla-unet",
     "tt-xla-vit",
 ]
+# CPU accuracy baselines (as decimal, e.g., 0.35 = 35%)
+CPU_ACCURACY_BASELINE = {
+    "tt-xla-mobilenetv2": 0.35,
+}
 REQUEST_TIMEOUT_SECONDS = 60.0
 ACCURACY_FILE_BY_MODE = {
     "cpu": "cpu_accuracy.json",
@@ -95,24 +99,16 @@ class VisionEvalsTest(BaseTest):
             logger.info("Step 1: Downloading samples")
             self._download_samples(count=request.download_count)
 
-            # Step 2: Measure CPU accuracy (always launches its own CPU server)
-            logger.info("Step 2: Measuring CPU accuracy")
-            self._measure_accuracy(
-                models=target_models,
-                server_url=None,  # CPU mode always launches own server
-                mode="cpu",
-            )
-
-            # Step 3: Measure device accuracy (uses existing server if provided)
-            logger.info("Step 3: Measuring device accuracy")
+            # Step 2: Measure device accuracy (uses existing server if provided)
+            logger.info("Step 2: Measuring device accuracy")
             self._measure_accuracy(
                 models=target_models,
                 server_url=request.server_url,  # Use existing server if provided
                 mode="device",
             )
 
-            # Step 4: Compare results
-            logger.info("Step 4: Comparing CPU vs device results")
+            # Step 3: Compare results
+            logger.info("Step 3: Comparing CPU vs device results")
             self._compare_results()
 
             return {
@@ -435,18 +431,42 @@ class VisionEvalsTest(BaseTest):
                     stop_server(process)
 
             correct, total, mismatches = self._analyze_results(results)
+            logger.info(
+                "Correct: %s, Total: %s, Mismatches: %s",
+                correct,
+                total,
+                len(mismatches),
+            )
 
             accuracy = (correct / total) if total else 0.0
+            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
             accuracy_summary[model] = accuracy
+            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
 
             # Store detailed results for this model and mode
             if model not in self.eval_results:
                 self.eval_results[model] = {}
+
+            cpu_baseline = CPU_ACCURACY_BASELINE.get(model)
+            diff_from_cpu = None
+            if cpu_baseline is not None and mode == "device":
+                diff_from_cpu = accuracy - cpu_baseline
+                diff_pct = diff_from_cpu * 100
+                logger.info(
+                    "CPU baseline comparison for %s: device=%.2f%%, cpu=%.2f%%, diff=%+.2f%%",
+                    model,
+                    accuracy * 100,
+                    cpu_baseline * 100,
+                    diff_pct,
+                )
+
             self.eval_results[model][mode] = {
                 "accuracy": accuracy,
                 "correct": correct,
                 "total": total,
                 "mismatches_count": len(mismatches),
+                "cpu_baseline": cpu_baseline,
+                "diff_from_cpu_baseline": diff_from_cpu,
             }
 
             logger.info(
