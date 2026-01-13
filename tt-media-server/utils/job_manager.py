@@ -48,7 +48,7 @@ class Job:
 
     def mark_completed(self, result_path: str):
         if result_path is not None and not isinstance(result_path, str):
-            raise TypeError(f"result_path must be str, not {type(self.result_path)}")
+            raise TypeError(f"result_path must be str, not {type(result_path)}")
         self.completed_at = int(time.time())
         self.status = JobStatus.COMPLETED
         self.result_path = result_path
@@ -215,22 +215,13 @@ class JobManager:
                 if not job.is_terminal():
                     self._logger.info(f"Terminating active job {job_id} during shutdown.")
                     
+                    job.mark_cancelling()
+                    if self.db:
+                        self.db.update_job_status(job.id, job.status.value)
+                    
                     task = self._cleanup_job(job)
                     if task:
                         running_tasks.append(task)
-                    
-                    job.mark_failed(
-                        error_code="system_shutdown", 
-                        error_message="Job interrupted by server shutdown."
-                    )
-                    
-                    if self.db:
-                        self.db.update_job_status(
-                            job.id,
-                            job.status.value,
-                            completed_at=job.completed_at,
-                            error_message=job.error,
-                        )
                 
                 # Always remove from memory tracking during shutdown
                 self._jobs.pop(job_id)
@@ -368,10 +359,11 @@ class JobManager:
                 # If job was stuck, mark it as failed or cancelled and sync to database
                 if original_status not in ["completed", "failed", "cancelled"]:
                     if original_status == "cancelling":
-                        job.status = JobStatus.CANCELLED
+                        job.mark_cancelled()
                     else:
                         job.mark_failed("server_restart", "Job interrupted by system restart")
                     
+                    # override the completed_at time, since it was cancelled due to system restart
                     job.completed_at = db_job["created_at"]
 
                     self._logger.warning(
