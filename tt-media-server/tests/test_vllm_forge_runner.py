@@ -45,12 +45,11 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
 ):
     # Mock settings with a valid device_mesh_shape
     mock_settings = MagicMock()
-    mock_settings.device_mesh_shape = (1, 8)
+    mock_settings.device_mesh_shape = (1, 8)  # Ensure device_mesh_shape[0] is an int
     mock_get_settings.return_value = mock_settings
 
     runner = VLLMForgeRunner(device_id="test-device")
     runner.llm_engine = MockAsyncLLMEngine(
-        # This tokens match exactly what the real AsyncLLMEngine yields
         [
             "!",
             " I",
@@ -86,7 +85,7 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
 async def test_run_async_streaming_yields_each_token(mock_get_settings):
     # Mock settings with a valid device_mesh_shape
     mock_settings = MagicMock()
-    mock_settings.device_mesh_shape = (1, 8)
+    mock_settings.device_mesh_shape = (1, 8)  # Ensure device_mesh_shape[0] is an int
     mock_get_settings.return_value = mock_settings
 
     runner = VLLMForgeRunner(device_id="test-device")
