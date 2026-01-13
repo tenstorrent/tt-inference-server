@@ -20,7 +20,7 @@ from typing import List
 
 import pytest
 from domain.image_search_request import ImageSearchRequest
-from domain.image_search_response import ImagePrediction
+from domain.image_search_response import ImageClassificationResult
 
 from .runners import (
     ForgeEfficientnetRunner,
@@ -93,7 +93,7 @@ class TestForgeRunners:
             # Print runner class and result for debugging/expected output generation
             print(f"\n=== {runner_class.__name__} in {mode} mode ===")
             print(f"Runner class: {runner_class.__name__}")
-            print(f"Result [0]: {result[0]}")
+            print(f"Result: {result}")
             print("=" * 50)
 
             # Get expected result for this runner
@@ -107,7 +107,7 @@ class TestForgeRunners:
 
             # Verify result structure and content using expected results
             if not verify_inference_output(
-                result[0],
+                result,
                 expected_label=expected_label,
                 min_accuracy=expected_min_accuracy,
             ):
@@ -143,16 +143,20 @@ def create_image_search_request() -> List[ImageSearchRequest]:
 
 
 def verify_inference_output(
-    result: ImagePrediction, expected_label: str, min_accuracy: float
+    result: ImageClassificationResult, expected_label: str, min_accuracy: float
 ) -> bool:
     """Verify that the inference output has the expected structure and content."""
+    # Parse probability string (e.g., "99.9995%") to float
+    prob_str = result.top1_class_probability.rstrip("%")
+    confidence = float(prob_str)
 
     # Check if probability meets minimum accuracy requirement
-    if result.confidence_level < min_accuracy:
+    # min_accuracy is 0-1 scale, confidence is 0-100 scale
+    if confidence < min_accuracy * 100:
         return False
 
     # Check if label contains the expected label
-    label_lower = result.object.lower()
+    label_lower = result.top1_class_label.lower()
     if expected_label.lower() in label_lower:
         return True
 

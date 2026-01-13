@@ -37,6 +37,9 @@ class BaseDeviceRunner(ABC):
     def warmup(self):
         pass
 
+    def load_weights(self):
+        return False
+
     @abstractmethod
     def run(self, *args, **kwargs):
         pass
