@@ -1369,7 +1369,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
         impl=tt_transformers_impl,
-        tt_metal_commit="571531f",
+        tt_metal_commit="a3f2fa9",
         vllm_commit="f40de89",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1382,7 +1382,7 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
                 vllm_args={
-                    "limit-mm-per-prompt": json.dumps({"image": 1}),
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "num_scheduler_steps": 1,
                 },
                 override_tt_config={
