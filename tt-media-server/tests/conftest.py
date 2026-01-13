@@ -26,6 +26,7 @@ mock_modules = [
     "torch_xla",
     "datasets",
     "pytorchcv",
+    "pydantic_settings",
 ]
 
 # Add mocks to sys.modules before any imports
@@ -314,6 +315,12 @@ for submodule, mock in submodules.items():
     if submodule not in sys.modules:
         sys.modules[submodule] = mock
 
+# Mock open_ai_api modules that use FastAPI decorators with Pydantic models
+# This prevents import errors when test_device_worker.py mocks domain objects
+mock_open_ai_api_image = MagicMock()
+mock_open_ai_api_image.router = MagicMock()
+sys.modules["open_ai_api.image"] = mock_open_ai_api_image
+
 # Add tests.ttnn as a proper module mock to avoid pytest import issues
 if "tests.ttnn" not in sys.modules:
     tests_ttnn_mock = MagicMock()
@@ -493,9 +500,6 @@ def create_mock_runner_class(class_name: str):
 # Create mock runner modules directly in sys.modules with our custom classes
 # This prevents Python from trying to import and execute the actual runner files
 runner_mocks = {
-    "tt_model_runners.base_device_runner": {
-        "BaseDeviceRunner": type("BaseDeviceRunner", (), {})
-    },  # Base class mock
     "tt_model_runners.sdxl_generate_runner_trace": {
         "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
             "TTSDXLGenerateRunnerTrace"
@@ -520,9 +524,6 @@ runner_mocks = {
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
     },
-    "tt_model_runners.vllm_forge_runner": {
-        "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
-    },
     "tt_model_runners.vllm_bge_large_en_runner": {
         "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
     },
@@ -539,6 +540,9 @@ runner_mocks = {
     },
     "tt_model_runners.lora_trainer_runner": {
         "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    },
+    "tt_model_runners.speecht5_runner": {
+        "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
     },
     "tt_model_runners.forge_runners": {},
     "tt_model_runners.forge_runners.runners": {

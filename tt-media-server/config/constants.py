@@ -20,6 +20,9 @@ class SupportedModels(Enum):
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    QWEN_3_4B = "Qwen/Qwen3-4B"
+    SPEECHT5_TTS = "microsoft/speecht5_tts"
 
 
 # MODEL environment variable
@@ -45,6 +48,9 @@ class ModelNames(Enum):
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    LLAMA_3_2_3B = "Llama-3.2-3B"
+    QWEN_3_4B = "Qwen3-4B"
+    SPEECHT5_TTS = "speecht5-tts"
 
 
 class ModelRunners(Enum):
@@ -71,6 +77,7 @@ class ModelRunners(Enum):
     LORA_TRAINER = "lora_trainer"
     MOCK = "mock"
     TEST = "test"
+    TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
 class ModelServices(Enum):
@@ -80,6 +87,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
     VIDEO = "video"
     TRAINING = "training"
+    TTS = "tts"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -117,6 +125,9 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.TRAINING: {
         ModelRunners.LORA_TRAINER,
     },
+    ModelServices.TTS: {
+        ModelRunners.TT_SPEECHT5_TTS,
+    },
 }
 
 
@@ -131,8 +142,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
-        ModelNames.DISTIL_WHISPER_LARGE_V3,
         ModelNames.OPENAI_WHISPER_LARGE_V3,
+        ModelNames.DISTIL_WHISPER_LARGE_V3,
     },
     ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
@@ -143,6 +154,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
 
@@ -172,7 +185,8 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
-class AudioResponseFormat(Enum):
+class ResponseFormat(Enum):
+    JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
 
@@ -263,12 +277,14 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -415,13 +431,13 @@ ModelConfigs = {
         "max_batch_size": 8,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 32,

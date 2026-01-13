@@ -430,7 +430,40 @@ jobs:
 
       - name: Run LLM Streaming Performance Test
         run: |
-          pytest performance_tests/test_llm_streaming.py -sv >> $GITHUB_STEP_SUMMARY
+          # Run pytest and capture output (visible in job logs via tee)
+          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          # Parse CI report metrics
+          TOKENS=$(grep 'tokens_received=' test_output.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep 'total_time_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep 'mean_interval_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep 'throughput_tps=' test_output.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep 'overhead_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep 'threshold_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+
+          # Determine status
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            STATUS="✅ PASSED"
+          else
+            STATUS="❌ FAILED"
+          fi
+
+          # Write formatted summary
+          {
+            echo "## 🚀 LLM Streaming Performance Test"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | $STATUS |"
+            echo "| **Tokens Received** | $TOKENS |"
+            echo "| **Total Time** | ${TOTAL_TIME}ms |"
+            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
+            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
+            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          exit $TEST_EXIT_CODE
 
 
   forge-runner-changes:
@@ -543,11 +576,12 @@ jobs:
           HF_TOKEN: ""
           MODEL: ""
           JWT_SECRET: ""
-        working-directory: tt-media-server
         run: |
-          # Only check coverage for tt-media-server (gradual rollout)
-          pytest tests/ \
-            --cov=. \
+          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
+          # This makes paths match git diff output
+          pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
+            --cov=tt-media-server \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             -v --tb=short --continue-on-collection-errors || true
@@ -559,7 +593,7 @@ jobs:
           BASE_REF="${{ github.event.pull_request.base.ref }}"
 
           # Check if coverage file exists
-          if [ ! -f tt-media-server/coverage.xml ]; then
+          if [ ! -f coverage.xml ]; then
             echo "⚠️ No coverage file found"
             echo "coverage_passed=true" >> $GITHUB_OUTPUT
             echo "coverage_pct=N/A" >> $GITHUB_OUTPUT
@@ -569,11 +603,11 @@ jobs:
           echo "Checking coverage for tt-media-server only (gradual rollout)"
 
           # Generate diff-cover report for changed lines only
-          # Only check files in tt-media-server directory
-          diff-cover tt-media-server/coverage.xml \
+          # --exclude uses fnmatch patterns (shell-style wildcards)
+          diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
+            --exclude '*/tests/*' '*/performance_tests/*' \
             --fail-under=50 \
-            --include="tt-media-server/*" \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
           cat diff-cover-output.txt
@@ -693,7 +727,7 @@ jobs:
         with:
           name: coverage-reports
           path: |
-            tt-media-server/coverage.xml
+            coverage.xml
             diff-cover-output.txt
           retention-days: 14
 

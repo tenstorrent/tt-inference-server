@@ -9,11 +9,11 @@ from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
 from config.settings import get_settings
-from fastapi import HTTPException
-from model_services.device_worker import device_worker
-from model_services.device_worker_dynamic_batch import (
+from device_workers.device_worker import device_worker
+from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from fastapi import HTTPException
 from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time

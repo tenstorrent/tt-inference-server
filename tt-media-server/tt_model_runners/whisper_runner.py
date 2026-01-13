@@ -9,14 +9,14 @@ from typing import Optional
 import numpy as np
 import torch
 import ttnn
-from config.constants import AudioResponseFormat, SupportedModels
+from config.constants import ResponseFormat, SupportedModels
+from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.audio_processing_request import AudioProcessingRequest
 from domain.audio_text_response import (
     AudioStreamChunk,
     AudioTextResponse,
     AudioTextSegment,
 )
-from model_services.device_worker import setup_cpu_threading_limits
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
@@ -357,7 +357,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "type": "final_result",
             "result": final_result,
             "task_id": request._task_id,
-            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
+            "return": request.response_format.lower() != ResponseFormat.TEXT.value,
         }
 
     async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
@@ -459,8 +459,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "type": "final_result",
             "result": final_result,
             "task_id": request._task_id,
-            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
+            "return": request.response_format.lower() != ResponseFormat.TEXT.value,
         }
+
+    def load_weights(self):
+        self._load_conditional_generation_ref_model()
+        return True
 
     def _format_non_streaming_result(self, result, duration):
         text, start, end = TextUtils.extract_text(result)

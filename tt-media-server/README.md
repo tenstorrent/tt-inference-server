@@ -255,6 +255,84 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+
+# Text-to-Speech (TTS) test call
+
+The TTS API converts text to speech audio using the SpeechT5 model.
+
+- JSON Request: Send a JSON POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+      "text": "Hello, this is a test of the text to speech system.",
+    "stream": false,
+    "response_format": "verbose_json"
+}'
+```
+
+- Form Data Request: Send a multipart form data POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -F "text=Hello, this is a test of the text to speech system." \
+  -F "stream=false" \
+  -F "response_format=verbose_json"
+```
+
+- Get raw audio (WAV format):
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello, this is a test.",
+    "response_format": "text"
+}' \
+  -o output.wav
+```
+
+# Image search test call
+
+The image search API uses a CNN model to search for similar images. It supports multiple input methods.
+
+- Base64 JSON Request: Send a JSON POST request to `/search-image`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/search-image' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "[base64 encoded image]",
+  "response_format": "json",
+  "top_k": 3,
+  "min_confidence": 70.0
+}'
+```
+
+- File Upload: Send a multipart form data POST request to `/search-image`
+```bash
+curl -X POST "http://localhost:8000/search-image" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/image.jpg" \
+  -F "response_format=json" \
+  -F "top_k=5" \
+  -F "min_confidence=80.0"
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prompt` / `file` | string / file | required | Base64-encoded image (JSON) or image file (multipart) |
+| `response_format` | string | `"json"` | Response format for results |
+| `top_k` | integer | `3` | Number of top results to return |
+| `min_confidence` | float | `70.0` | Minimum confidence threshold (0-100) |
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Video generation API
 
 ## Submit video generation job
@@ -542,21 +620,18 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
 
-## Text Processing Settings
+## VLLM Settings
+
+These settings configure VLLM-based model runners and are grouped under `settings.vllm` in the configuration.
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
-| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
-
-## Image Processing Settings
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
-| `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
+| `VLLM__MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Hugging Face model identifier for VLLM inference. |
+| `VLLM__MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `VLLM__MAX_MODEL_LENGTH` | `2048` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. |
+| `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
+| `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
+| `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 
 ## Audio Processing Settings
 

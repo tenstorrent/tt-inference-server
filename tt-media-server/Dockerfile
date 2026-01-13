@@ -198,7 +198,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
-    VLLM_USE_V1=1
+    VLLM_USE_V1=1 \
+    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
@@ -208,7 +209,7 @@ RUN apt-get update && apt-get install -y \
 
 # Create user
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
+    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd

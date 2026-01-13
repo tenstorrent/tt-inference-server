@@ -248,10 +248,23 @@ def main():
         ) -> None:
             version_specifier = version_requirement.specifier
             enforcement_mode = version_requirement.mode
-            meets_requirement = Version(version) in SpecifierSet(version_specifier)
+            parsed_version = Version(version)
+            meets_requirement = parsed_version in SpecifierSet(version_specifier)
             if meets_requirement:
                 return
-            message = f"{requirement_name} version '{version}' does not satisfy the {enforcement_mode.name} requirement '{version_specifier}'."
+            if parsed_version.is_prerelease:
+                message = (
+                    f"{requirement_name} version '{version}' does not satisfy the "
+                    f"{enforcement_mode.name} requirement '{version_specifier}', "
+                    "because this is a prerelease version. "
+                    "Re-run with --skip-system-sw-validation to skip this check."
+                )
+            else:
+                message = (
+                    f"{requirement_name} version '{version}' does not satisfy the "
+                    f"{enforcement_mode.name} requirement '{version_specifier}'. "
+                    "If you want to skip this check, re-run with --skip-system-sw-validation."
+                )
             if enforcement_mode == VersionMode.STRICT:
                 raise ValueError(message)
             elif enforcement_mode == VersionMode.SUGGESTED:

@@ -38,6 +38,7 @@ generated_modules
 *.txt
 unzipped_tti/
 db.sqlite3
+**/generated/inspector/
 
 # secrets
 .env
@@ -60,3 +61,6 @@ tt-media-server/huggingface
 
 *.tensorbin
 *.log
+
+# ignore downloaded datsets
+tests/server_tests/datasets/*

@@ -18,6 +18,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
 )
+from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 
@@ -72,15 +73,7 @@ class Settings(BaseSettings):
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
 
-    # Text processing settings
-    min_context_length: int = 32
-    max_model_length: int = 128
-    max_num_batched_tokens: int = 128
-    max_num_seqs: int = 1
-
-    # Image processing settings
-    image_return_format: str = "JPEG"
-    image_quality: int = 85
+    vllm: VLLMSettings = VLLMSettings()
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
@@ -132,9 +125,9 @@ class Settings(BaseSettings):
                 # Get first model name from the set
                 model_name = list(model_names_set)[0]
                 if model_name:
-                    self.model_weights_path = getattr(
-                        SupportedModels, model_name.name
-                    ).value
+                    supported_model = getattr(SupportedModels, model_name.name, None)
+                    if supported_model:
+                        self.model_weights_path = supported_model.value
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
