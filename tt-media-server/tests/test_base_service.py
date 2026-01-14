@@ -26,40 +26,40 @@ mock_settings.model_runner = "vllm"
 mock_settings.request_processing_timeout_seconds = 30
 mock_settings.model_weights_path = "/tmp/model"
 
-sys.modules["config.settings"] = Mock()
-sys.modules["config.settings"].settings = mock_settings
+# sys.modules["config.settings"] = Mock()
+# sys.modules["config.settings"].settings = mock_settings
 
 # Mock logger
 mock_logger = Mock()
-sys.modules["utils.logger"] = Mock()
-sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
+# sys.modules["utils.logger"] = Mock()
+# sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
-# Mock decorators
-sys.modules["utils.decorators"] = Mock()
-sys.modules["utils.decorators"].log_execution_time = (
-    lambda *args, **kwargs: lambda func: func
-)
+# # Mock decorators
+# sys.modules["utils.decorators"] = Mock()
+# sys.modules["utils.decorators"].log_execution_time = (
+#     lambda *args, **kwargs: lambda func: func
+# )
 
 # Mock job manager
 mock_job_manager = Mock()
-sys.modules["utils.job_manager"] = Mock()
-sys.modules["utils.job_manager"].get_job_manager = Mock(return_value=mock_job_manager)
+# sys.modules["utils.job_manager"] = Mock()
+# sys.modules["utils.job_manager"].get_job_manager = Mock(return_value=mock_job_manager)
 
-# Mock HuggingFaceUtils
-sys.modules["utils.hugging_face_utils"] = Mock()
-sys.modules["utils.hugging_face_utils"].HuggingFaceUtils = Mock()
+# # Mock HuggingFaceUtils
+# sys.modules["utils.hugging_face_utils"] = Mock()
+# sys.modules["utils.hugging_face_utils"].HuggingFaceUtils = Mock()
 
-# Mock config constants
-sys.modules["config.constants"] = Mock()
-sys.modules["config.constants"].JobTypes = Mock()
+# # Mock config constants
+# sys.modules["config.constants"] = Mock()
+# sys.modules["config.constants"].JobTypes = Mock()
 
-# Mock telemetry
-sys.modules["telemetry.telemetry_client"] = Mock()
-sys.modules["telemetry.telemetry_client"].TelemetryEvent = Mock()
+# # Mock telemetry
+# sys.modules["telemetry.telemetry_client"] = Mock()
+# sys.modules["telemetry.telemetry_client"].TelemetryEvent = Mock()
 
-# Mock domain
-sys.modules["domain.base_request"] = Mock()
-sys.modules["domain.base_request"].BaseRequest = Mock
+# # Mock domain
+# sys.modules["domain.base_request"] = Mock()
+# sys.modules["domain.base_request"].BaseRequest = Mock
 
 # Import after mocking
 from model_services.base_service import BaseService

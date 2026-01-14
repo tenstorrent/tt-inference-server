@@ -46,7 +46,7 @@ class Scheduler:
                 )
         else:
             self.result_queues_by_worker[0] = (
-                SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
+                SharedMemoryChunkQueue(name="chunk_queue_0", create=True)
                 if self.settings.use_memory_queue
                 else Queue()
             )
