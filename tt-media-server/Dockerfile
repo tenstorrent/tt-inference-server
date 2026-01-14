@@ -142,12 +142,13 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # Install tt-vllm-plugin
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+# root user is needed because of some permission issues when installing from a non-root user
+USER root
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && pip install --ignore-installed ."
+    && pip install ."
 
 # Cleanup build-only directories
-USER root
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache \
