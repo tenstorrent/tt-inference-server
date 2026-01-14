@@ -62,7 +62,14 @@ class JobDatabase:
             """
             INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (job_id, job_type, model, status, json.dumps(request_parameters), created_at),
+            (
+                job_id,
+                job_type,
+                model,
+                status,
+                json.dumps(request_parameters),
+                created_at,
+            ),
         )
         conn.commit()
         conn.close()
@@ -111,7 +118,7 @@ class JobDatabase:
         conn.commit()
         conn.close()
 
-    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:   
+    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific job from the database by its ID."""
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -124,13 +131,15 @@ class JobDatabase:
             job_dict = dict(row)
 
             if job_dict.get("request_parameters"):
-                job_dict["request_parameters"] = json.loads(job_dict["request_parameters"])
-                    
+                job_dict["request_parameters"] = json.loads(
+                    job_dict["request_parameters"]
+                )
+
             if job_dict.get("error_message"):
                 job_dict["error_message"] = json.loads(job_dict["error_message"])
-                    
+
             return job_dict
-            
+
         return None
 
     def get_all_jobs(self) -> List[Dict[str, Any]]:
@@ -148,7 +157,9 @@ class JobDatabase:
             # Convert row to dict and parse the JSON strings back to Python objects
             job_dict = dict(row)
             if job_dict.get("request_parameters"):
-                job_dict["request_parameters"] = json.loads(job_dict["request_parameters"])
+                job_dict["request_parameters"] = json.loads(
+                    job_dict["request_parameters"]
+                )
             if job_dict.get("error_message"):
                 job_dict["error_message"] = json.loads(job_dict["error_message"])
             jobs.append(job_dict)

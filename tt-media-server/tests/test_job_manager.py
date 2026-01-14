@@ -74,7 +74,7 @@ class TestJob:
         assert before <= job.completed_at <= after
         assert job.is_completed()
         assert job.is_terminal()
-    
+
     def test_mark_completed_invalid_type(self):
         """Test that mark_completed raises TypeError when result_path is not a string"""
         job = Job(id="test-123", job_type="video", model="test-model")
@@ -104,7 +104,7 @@ class TestJob:
         assert before <= job.completed_at <= after
         assert job.is_terminal()
         assert not job.is_completed()
-    
+
     def test_mark_cancelling(self):
         """Test marking job as cancelling"""
         job = Job(id="test-123", job_type="video", model="test-model")
@@ -117,7 +117,7 @@ class TestJob:
     def test_mark_cancelled(self):
         """Test marking job as cancelled"""
         job = Job(id="test-123", job_type="video", model="test-model")
-        
+
         before = int(time.time())
         job.mark_cancelled()
         after = int(time.time())
@@ -131,7 +131,7 @@ class TestJob:
     def test_is_terminal_with_cancelled_state(self):
         """Test that is_terminal includes COMPLETED, FAILED, and CANCELLED"""
         job = Job(id="test-123", job_type="video", model="test-model")
-        
+
         assert not job.is_terminal()
 
         job.mark_completed("path/to/result")
@@ -187,6 +187,7 @@ class TestJob:
         assert result["completed_at"] is not None
         assert "result_path" not in result
 
+
 class TestJobManager:
     """Tests for JobManager class"""
 
@@ -195,17 +196,17 @@ class TestJobManager:
     async def job_manager(self, request, tmp_path):
         """Setup a JobManager, toggling persistence based on parametrization."""
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         test_db_file = tmp_path / "test_jobs.db"
-        
-        with patch("utils.job_manager.get_settings") as mock_settings:
 
+        with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.max_jobs = 10
             mock_settings.return_value.job_cleanup_interval_seconds = 1
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
-            
+
             mock_settings.return_value.enable_job_persistence = request.param
             mock_settings.return_value.job_database_path = str(test_db_file)
 
@@ -622,8 +623,6 @@ class TestJobManager:
             assert db_job["status"] == "completed"
             assert db_job["result_path"] == "videos/test-123.mp4"
 
-        
-
     @pytest.mark.asyncio
     async def test_job_processing_failure(self, job_manager, mock_request):
         """Test job processing failure"""
@@ -653,7 +652,7 @@ class TestJobManager:
             assert db_job is not None
             assert db_job["status"] == "failed"
             assert db_job["error_message"]["code"] == "processing_error"
-    
+
     @pytest.mark.asyncio
     async def test_cancel_job_transitions_to_cancelled(self, job_manager, mock_request):
         """Verify job moves through cancelling then cancelled using sleeps."""
@@ -662,7 +661,7 @@ class TestJobManager:
             try:
                 await asyncio.sleep(10)
             except asyncio.CancelledError:
-                await asyncio.sleep(0.5) 
+                await asyncio.sleep(0.5)
                 raise
 
         await job_manager.create_job(
@@ -672,12 +671,12 @@ class TestJobManager:
             request=mock_request,
             task_function=long_task_with_slow_cleanup,
         )
-        
+
         await asyncio.sleep(0.1)
-        
+
         success = job_manager.cancel_job("job-123")
         assert success is True
-        
+
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is not None
         assert metadata["status"] == JobStatus.CANCELLING
@@ -686,7 +685,7 @@ class TestJobManager:
             assert db_job_mid["status"] == "cancelling"
 
         await asyncio.sleep(0.6)
-        
+
         # Job should not be deleted, but its status should be CANCELLED
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is not None
@@ -899,7 +898,6 @@ class TestJobManager:
             assert finished_job["status"] == "completed"
             assert running_job["status"] == "cancelled"
 
-
     @pytest.mark.asyncio
     async def test_get_job_manager_singleton(self):
         """Test get_job_manager returns singleton instance"""
@@ -907,10 +905,14 @@ class TestJobManager:
 
         utils.job_manager._job_manager_instance = None
 
-        manager1 = get_job_manager()
-        manager2 = get_job_manager()
+        with patch("utils.job_manager.get_settings") as mock_settings:
+            # disabling persistence to prevent file creation during the test
+            mock_settings.return_value.enable_job_persistence = False
 
-        assert manager1 is manager2
+            manager1 = get_job_manager()
+            manager2 = get_job_manager()
+
+            assert manager1 is manager2
 
         # Manual cleanup since no fixture is used
         if manager1._cleanup_task:
@@ -976,7 +978,7 @@ class TestJobManager:
             job = job_manager._jobs.get("job-123")
             assert job is not None
             assert job._task is None  # Should be cleared
-    
+
     # ------------------------------------------------------------------------------------------------
     # database-only tests
     @pytest.mark.asyncio
@@ -985,7 +987,7 @@ class TestJobManager:
         if not job_manager.db:
             pytest.skip("Job persistence is not enabled")
         job_ids = ["job-1", "job-2", "job-3"]
-        db_path = job_manager.db.db_path 
+        db_path = job_manager.db.db_path
 
         async def task_func(req):
             await asyncio.sleep(0.1)
@@ -999,32 +1001,33 @@ class TestJobManager:
                 request=mock_request,
                 task_function=task_func,
             )
-        
-        await asyncio.sleep(0.2) 
+
+        await asyncio.sleep(0.2)
         await job_manager.shutdown()
 
         # Reset Singleton for the second instance
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         # Start the second manager pointing to the same DB
         with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.enable_job_persistence = True
             mock_settings.return_value.job_database_path = str(db_path)
-            
+
             m2 = JobManager()
             try:
                 assert len(m2._jobs) == len(job_ids)
-                
+
                 for jid in job_ids:
                     assert jid in m2._jobs
                     metadata = m2.get_job_metadata(jid)
                     assert metadata["id"] == jid
                     assert metadata["status"] == "completed"
-                    
+
             finally:
                 await m2.shutdown()
-    
+
     @pytest.mark.asyncio
     async def test_restore_stuck_jobs_from_db(self, job_manager):
         """Verify stuck jobs are synced to terminal states and completed jobs stay completed."""
@@ -1032,7 +1035,7 @@ class TestJobManager:
             pytest.skip("Persistence disabled")
 
         db_path = job_manager.db.db_path
-        
+
         job_manager.db.insert_job("job-done", "video", "m1", {}, "completed", 1000)
         job_manager.db.insert_job("job-stuck", "video", "m1", {}, "in_progress", 1001)
         job_manager.db.insert_job("job-aborting", "video", "m1", {}, "cancelling", 1002)
@@ -1040,21 +1043,22 @@ class TestJobManager:
 
         # Reset Singleton to simulate a fresh server start
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         # Start a new manager and verify its auto-restore behavior
         with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.enable_job_persistence = True
             mock_settings.return_value.job_database_path = str(db_path)
-            
+
             m2 = JobManager()
             try:
                 assert "job-done" in m2._jobs
                 assert m2._jobs["job-done"].status == JobStatus.COMPLETED
-                
+
                 assert "job-stuck" in m2._jobs
                 assert m2._jobs["job-stuck"].status == JobStatus.FAILED
-                
+
                 assert "job-stuck2" in m2._jobs
                 assert m2._jobs["job-stuck2"].status == JobStatus.FAILED
 
@@ -1070,7 +1074,6 @@ class TestJobManager:
                 assert db_aborting.get("status") == "cancelled"
                 assert db_stuck2.get("status") == "failed"
                 assert db_done.get("status") == "completed"
-                
+
             finally:
                 await m2.shutdown()
-

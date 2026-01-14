@@ -59,7 +59,7 @@ class Job:
     def mark_cancelled(self):
         self.status = JobStatus.CANCELLED
         self.completed_at = int(time.time())
-    
+
     def mark_failed(self, error_code: str, error_message: str):
         self.completed_at = int(time.time())
         self.status = JobStatus.FAILED
@@ -72,7 +72,11 @@ class Job:
         return self.status == JobStatus.COMPLETED
 
     def is_terminal(self) -> bool:
-        return self.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]
+        return self.status in [
+            JobStatus.COMPLETED,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        ]
 
     def to_public_dict(self) -> dict:
         data = {
@@ -211,18 +215,20 @@ class JobManager:
         with self._jobs_lock:
             for job_id in list(self._jobs.keys()):
                 job = self._jobs[job_id]
-                
+
                 if not job.is_terminal():
-                    self._logger.info(f"Terminating active job {job_id} during shutdown.")
-                    
+                    self._logger.info(
+                        f"Terminating active job {job_id} during shutdown."
+                    )
+
                     job.mark_cancelling()
                     if self.db:
                         self.db.update_job_status(job.id, job.status.value)
-                    
+
                     task = self._cleanup_job(job)
                     if task:
                         running_tasks.append(task)
-                
+
                 # Always remove from memory tracking during shutdown
                 self._jobs.pop(job_id)
 
@@ -252,9 +258,7 @@ class JobManager:
             job.mark_cancelled()
             if self.db:
                 self.db.update_job_status(
-                    job.id, 
-                    job.status.value, 
-                    completed_at=job.completed_at
+                    job.id, job.status.value, completed_at=job.completed_at
                 )
             raise
         except Exception as e:
@@ -327,7 +331,9 @@ class JobManager:
             try:
                 if os.path.exists(job.result_path):
                     os.remove(job.result_path)
-                    self._logger.debug(f"Deleted file for job {job.id}: {job.result_path}")
+                    self._logger.debug(
+                        f"Deleted file for job {job.id}: {job.result_path}"
+                    )
             except Exception as e:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
@@ -343,7 +349,7 @@ class JobManager:
             restored_jobs = {}
             for db_job in db_jobs:
                 original_status = db_job["status"]
-                
+
                 job = Job(
                     id=db_job["id"],
                     job_type=db_job["job_type"],
@@ -361,8 +367,10 @@ class JobManager:
                     if original_status == "cancelling":
                         job.mark_cancelled()
                     else:
-                        job.mark_failed("server_restart", "Job interrupted by system restart")
-                    
+                        job.mark_failed(
+                            "server_restart", "Job interrupted by system restart"
+                        )
+
                     # override the completed_at time, since it was cancelled due to system restart
                     job.completed_at = db_job["created_at"]
 
@@ -370,7 +378,7 @@ class JobManager:
                         f"Job {db_job['id']} was stuck in '{original_status}'. "
                         f"Syncing to '{job.status.value}'."
                     )
-                    
+
                     self.db.update_job_status(
                         job.id,
                         job.status.value,
