@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # Optimized multi-stage build for significantly smaller runtime images
-ARG TT_METAL_DOCKERFILE_URL
+ARG TT_METAL_DOCKERFILE_URL=scratch
 
 # ==============================================================================
 # BUILDER STAGE - Contains all build dependencies and artifacts
@@ -69,8 +69,6 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     mkdir -p "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
-
-USER ${CONTAINER_APP_USERNAME}
 
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
