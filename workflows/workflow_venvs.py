@@ -81,7 +81,7 @@ def setup_evals_common(
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
         "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler] "
-        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0 jieba fuzzywuzzy rouge",
         logger=logger,
     )
     return True

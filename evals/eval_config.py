@@ -1782,6 +1782,25 @@ _eval_config_list = [
             #         },
             #     ),
             # ),
+            EvalTask(
+                task_name="longbench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
