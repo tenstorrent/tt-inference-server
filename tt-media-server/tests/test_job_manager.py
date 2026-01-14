@@ -79,6 +79,7 @@ class TestJob:
         """Test that mark_completed raises TypeError when result_path is not a string"""
         job = Job(id="test-123", job_type="video", model="test-model")
 
+        # result_path must be a string
         with pytest.raises(TypeError):
             job.mark_completed(result_path=12345)
 
@@ -219,7 +220,7 @@ class TestJobManager:
     def mock_request(self):
         """Create a mock BaseRequest"""
 
-        # Creating mock request this way to ensure model dump works correctly
+        # Creating mock request this way to ensure model_dump works correctly
         class MockRequest(BaseRequest):
             dummy_argument: str = "test-task-123"
 
@@ -655,7 +656,7 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_cancel_job_transitions_to_cancelled(self, job_manager, mock_request):
-        """Verify job moves through cancelling then cancelled using sleeps."""
+        """Verify job moves through cancelling then cancelled state."""
 
         async def long_task_with_slow_cleanup(req):
             try:
