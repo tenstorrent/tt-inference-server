@@ -110,9 +110,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest, sampling_params: SamplingParams
     ):
+        """✅ Yields tuples of (task_id, is_final, text) to avoid pickling"""
         task_id = request._task_id
-        chunk_type = "streaming_chunk"
-        final_type = "final_result"
 
         chunks = []
         chunks_append = chunks.append
@@ -138,23 +137,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
                 chunks_append(chunk_text)
 
-                yield {
-                    "type": chunk_type,
-                    "chunk": CompletionStreamChunk(text=chunk_text),
-                    "task_id": task_id,
-                }
+                yield (task_id, 0, chunk_text)
 
-        if chunks:
-            final_text = TextUtils.clean_text("".join(chunks))
-        else:
-            final_text = ""
-
-        yield {
-            "type": final_type,
-            "result": CompletionStreamChunk(text=final_text),
-            "task_id": task_id,
-            "return": False,
-        }
+        # do this on purpose to avoid over max decode issues
+        yield (task_id, 1, "final_text")
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
