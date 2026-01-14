@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
+    use_queue_per_worker: bool = False
+    use_memory_queue: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -72,10 +74,6 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
 
     vllm: VLLMSettings = VLLMSettings()
-
-    # Image processing settings
-    image_return_format: str = "JPEG"
-    image_quality: int = 85
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
