@@ -242,7 +242,7 @@ class Scheduler:
                                 f"No result queue found for task {result_key}. "
                                 f"Current queues: {current_queues}"
                             )
-                    except:  # Queue empty for this worker
+                    except:  # noqa: BLE001, E722
                         self.logger.debug("Queue is currently empty")
 
                 # Only sleep if no results found
