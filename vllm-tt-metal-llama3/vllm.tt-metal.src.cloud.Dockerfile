@@ -88,12 +88,14 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && rm -rf ${TT_METAL_HOME}/.git"
 
 # Build vllm - clone with minimal history and clean
+# root user is needed because of some permission issues when installing from a non-root user
+USER root
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --upgrade pip \
-    && pip install --ignore-installed -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
 
 # ==============================================================================
