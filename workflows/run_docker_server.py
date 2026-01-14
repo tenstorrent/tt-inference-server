@@ -121,14 +121,16 @@ def get_embedding_docker_env_vars(model_spec, args):
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
         "DEVICE_IDS": device_ids_str,
-        "MAX_NUM_BATCHED_TOKENS": model_spec.device_model_spec.env_vars.get(
-            "MAX_NUM_BATCHED_TOKENS", 1024
+        # TODO: Remove these VLLM explicit parameters
+        # https://github.com/tenstorrent/tt-inference-server/issues/1253
+        "VLLM__MAX_NUM_BATCHED_TOKENS": model_spec.device_model_spec.env_vars.get(
+            "VLLM__MAX_NUM_BATCHED_TOKENS", 1024
         ),
-        "MAX_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
-            "MAX_MODEL_LENGTH", 1024
+        "VLLM__MAX_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
+            "VLLM__MAX_MODEL_LENGTH", 1024
         ),
-        "MIN_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
-            "MIN_MODEL_LENGTH", 32
+        "VLLM__MIN_CONTEXT_LENGTH": model_spec.device_model_spec.env_vars.get(
+            "VLLM__MIN_CONTEXT_LENGTH", 32
         ),
     }
 

@@ -118,6 +118,12 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
+    parser.add_argument(
+        "--percentile-report",
+        action="store_true",
+        help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
+    )
+
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
         "--override-docker-image",
@@ -188,9 +194,9 @@ def parse_arguments():
     parser.add_argument(
         "--tools",
         type=str,
-        choices=["genai", "vllm"],
+        choices=["vllm", "genai", "aiperf"],
         default="vllm",
-        help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
+        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
     )
 
     args = parser.parse_args()
@@ -323,6 +329,7 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  tools:                      {args.tools}",
         "",
         "=" * 60,
     ]
@@ -354,6 +361,9 @@ def validate_runtime_args(model_spec):
         assert model_spec.model_id in BENCHMARK_CONFIGS, (
             f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
         )
+    if workflow_type == WorkflowType.STRESS_TESTS:
+        pass  # Model support already validated via MODEL_SPECS check at line 342
+
     if workflow_type == WorkflowType.TESTS:
         assert model_spec.model_name in TEST_CONFIGS, (
             f"Model:={model_spec.model_name} not found in TEST_CONFIGS"

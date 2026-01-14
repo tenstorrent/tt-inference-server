@@ -62,9 +62,14 @@ async def test_streaming_performance_full(server_process):
             f"Overhead per token: {token_overhead_ms:.2f}ms > {thresholds.max_per_token_overhead_ms:.2f}ms"
         )
 
-    print("--------------------------------")
-    print(metrics)
-    print(f"Overhead per token: {token_overhead_ms:.2f}ms")
-    print("--------------------------------")
+    # CI-friendly report format (key=value for easy parsing)
+    print("\n::CI_REPORT_START::")
+    print(f"tokens_received={metrics.received_token_count}")
+    print(f"total_time_ms={metrics.total_streaming_time_ms:.2f}")
+    print(f"mean_interval_ms={metrics.mean_receive_interval_ms:.2f}")
+    print(f"throughput_tps={metrics.throughput_tokens_per_second:.2f}")
+    print(f"overhead_ms={token_overhead_ms:.2f}")
+    print(f"threshold_ms={thresholds.max_per_token_overhead_ms}")
+    print("::CI_REPORT_END::")
 
     assert not failures, f"Performance test failed: {', '.join(failures)}"

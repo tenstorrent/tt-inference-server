@@ -59,10 +59,22 @@ WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
 )
+
+WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.BENCHMARKS,
+    run_script_path=get_repo_root_path() / "benchmarking" / "run_aiperf_benchmarks.py",
+    workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
+    # Use default name="benchmarks" (same as vLLM and GenAI-Perf) for unified output directory
+)
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
     run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
     workflow_run_script_venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
+)
+WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.STRESS_TESTS,
+    run_script_path=get_repo_root_path() / "stress_tests" / "run_stress_tests.py",
+    workflow_run_script_venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
 )
 WORKFLOW_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.TESTS,
@@ -93,6 +105,7 @@ WORKFLOW_REPORT_CONFIG = WorkflowConfig(
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
+    WORKFLOW_STRESS_TESTS_CONFIG,
     WORKFLOW_TESTS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
     WORKFLOW_SPEC_TESTS_CONFIG,
