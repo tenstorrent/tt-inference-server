@@ -2132,7 +2132,9 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
                 logger.info(f"Loaded parameter report from: {parameter_report_path}")
                 break
             except Exception as e:
-                logger.warning(f"Could not read parameter report {parameter_report_path}: {e}")
+                logger.warning(
+                    f"Could not read parameter report {parameter_report_path}: {e}"
+                )
 
     if release_raw is None:
         logger.info("No parameter_report.json found in tests_output directory.")
