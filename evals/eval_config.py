@@ -2224,6 +2224,49 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="openai/gpt-oss-120b",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=80.9,
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=90.0,
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 

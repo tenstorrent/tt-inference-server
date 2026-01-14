@@ -974,7 +974,7 @@ spec_templates = [
                     "num_scheduler_steps": "1",
                 },
                 env_vars={
-                    "VLLM_USE_V1": "1",
+                    "VLLM_USE_V1": "0",
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid that worked on bare metal
                 },
             ),
