@@ -9,11 +9,6 @@ from pathlib import Path
 
 import requests
 
-from tests.server_tests.test_cases.vision_evals_test import (
-    VisionEvalsTest,
-    VisionEvalsTestRequest,
-)
-from tests.server_tests.test_classes import TestConfig
 from utils.media_clients.test_status import CnnGenerationTestStatus
 from workflows.utils import get_num_calls
 
@@ -239,6 +234,13 @@ class CnnClientStrategy(BaseMediaStrategy):
                     }
                 }
         """
+        # Lazy import to avoid loading 'datasets' library at module import time
+        from tests.server_tests.test_cases.vision_evals_test import (
+            VisionEvalsTest,
+            VisionEvalsTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
         logger.info("Running mobilenetv2 eval.")
 
         request = VisionEvalsTestRequest(
