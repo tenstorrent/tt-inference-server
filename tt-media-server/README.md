@@ -108,7 +108,6 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | motif-image-6b-preview | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
-| qwen-image | galaxy, t3k |
 
 For example, to run flux.1-dev on t3k
 1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
@@ -124,7 +123,7 @@ The server supports running large language models using VLLM with the Tenstorren
 1. **Install the TT-VLLM Plugin**
 
    Follow the installation instructions from the repository:
-   https://github.com/dmadicTT/tt-vllm-plugin
+   https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin
 
 2. **Required Environment Variables**
 
@@ -255,6 +254,84 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 *Please note that test_data.json is within docker container or within tests folder*
+
+
+# Text-to-Speech (TTS) test call
+
+The TTS API converts text to speech audio using the SpeechT5 model.
+
+- JSON Request: Send a JSON POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+      "text": "Hello, this is a test of the text to speech system.",
+    "stream": false,
+    "response_format": "verbose_json"
+}'
+```
+
+- Form Data Request: Send a multipart form data POST request to `/tts`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -F "text=Hello, this is a test of the text to speech system." \
+  -F "stream=false" \
+  -F "response_format=verbose_json"
+```
+
+- Get raw audio (WAV format):
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/tts' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello, this is a test.",
+    "response_format": "text"
+}' \
+  -o output.wav
+```
+
+# Image search test call
+
+The image search API uses a CNN model to search for similar images. It supports multiple input methods.
+
+- Base64 JSON Request: Send a JSON POST request to `/search-image`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/search-image' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "[base64 encoded image]",
+  "response_format": "json",
+  "top_k": 3,
+  "min_confidence": 70.0
+}'
+```
+
+- File Upload: Send a multipart form data POST request to `/search-image`
+```bash
+curl -X POST "http://localhost:8000/search-image" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/image.jpg" \
+  -F "response_format=json" \
+  -F "top_k=5" \
+  -F "min_confidence=80.0"
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prompt` / `file` | string / file | required | Base64-encoded image (JSON) or image file (multipart) |
+| `response_format` | string | `"json"` | Response format for results |
+| `top_k` | integer | `3` | Number of top results to return |
+| `min_confidence` | float | `70.0` | Minimum confidence threshold (0-100) |
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 # Video generation API
 
@@ -555,13 +632,6 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
 | `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
-
-## Image Processing Settings
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
-| `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
 
 ## Audio Processing Settings
 
