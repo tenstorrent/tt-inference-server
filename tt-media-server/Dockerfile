@@ -188,6 +188,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
+    PATH=${PYTHON_ENV_DIR}/bin:$PATH \
     VLLM_USE_V1=1 \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
