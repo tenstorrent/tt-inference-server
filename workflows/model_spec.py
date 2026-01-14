@@ -1528,7 +1528,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
         impl=tt_transformers_impl,
-        tt_metal_commit="6831501",
+        tt_metal_commit="5cee4613cc56c896449eb171471ac34ce9047197",  # adam/mistral24b-multimodal branch
         vllm_commit="f40de89",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
