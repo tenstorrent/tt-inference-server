@@ -15,7 +15,9 @@ from typing import Literal
 
 import requests
 from datasets import DownloadConfig, Image, load_dataset
-from server_helper import (
+
+from tests.server_tests.base_test import BaseTest
+from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
     launch_cpu_server,
@@ -23,8 +25,6 @@ from server_helper import (
     stop_server,
     wait_for_server_ready,
 )
-
-from tests.server_tests.base_test import BaseTest
 from tests.server_tests.test_classes import TestConfig
 
 DATASET_DIR = "tests/server_tests/datasets/imagenet_subset"
@@ -37,6 +37,10 @@ MODELS = [
     # "tt-xla-unet",
     "tt-xla-vit",
 ]
+# CPU accuracy baselines (as decimal, e.g., 0.35 = 35%)
+CPU_ACCURACY_BASELINE = {
+    "tt-xla-mobilenetv2": 0.35,
+}
 REQUEST_TIMEOUT_SECONDS = 60.0
 ACCURACY_FILE_BY_MODE = {
     "cpu": "cpu_accuracy.json",
@@ -58,6 +62,10 @@ class VisionEvalsTestRequest:
 
 
 class VisionEvalsTest(BaseTest):
+    def __init__(self, config: TestConfig, targets: dict):
+        super().__init__(config, targets)
+        self.eval_results: dict = {}
+
     async def _run_specific_test_async(self):
         request = self.targets.get("request")
         logger.info("Running VisionEvalsTest with request: %s", request)
@@ -86,13 +94,29 @@ class VisionEvalsTest(BaseTest):
 
         elif request.action == "measure_accuracy":
             logger.info("Measuring accuracy for models: %s", target_models)
+
+            # Step 1: Download samples
+            logger.info("Step 1: Downloading samples")
+            self._download_samples(count=request.download_count)
+
+            # Step 2: Measure device accuracy (uses existing server if provided)
+            logger.info("Step 2: Measuring device accuracy")
             self._measure_accuracy(
                 models=target_models,
-                server_url=request.server_url,
-                mode=request.mode,
+                server_url=request.server_url,  # Use existing server if provided
+                mode="device",
             )
+
+            # Step 3: Compare results
+            logger.info("Step 3: Comparing CPU vs device results")
             self._compare_results()
-            return {"success": True, "action": "measure_accuracy", "mode": request.mode}
+
+            return {
+                "success": True,
+                "action": "measure_accuracy",
+                "mode": "full",
+                "eval_results": self.eval_results,
+            }
 
         elif request.action == "compare":
             self._compare_results()
@@ -101,6 +125,7 @@ class VisionEvalsTest(BaseTest):
         raise ValueError(f"Unknown action: {request.action}")
 
     def _load_metadata(self, dataset_path: Path) -> list[dict]:
+        logger.info(f"Loading metadata from {dataset_path}")
         metadata_path = dataset_path / "metadata.json"
         if not metadata_path.exists():
             raise FileNotFoundError(f"Missing metadata file: {metadata_path}")
@@ -121,6 +146,7 @@ class VisionEvalsTest(BaseTest):
         authorization: str | None,
         timeout: float,
     ) -> list[dict]:
+        logger.info(f"Replaying samples from {dataset_path} to {server_url}")
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {authorization or DEFAULT_AUTHORIZATION}",
@@ -155,6 +181,7 @@ class VisionEvalsTest(BaseTest):
         return results
 
     def _normalize_label(self, raw: str | int | None) -> str:
+        logger.info("Normalizing label.")
         if raw is None:
             return ""
         if isinstance(raw, int):
@@ -172,7 +199,13 @@ class VisionEvalsTest(BaseTest):
         return collapsed.strip("_")
 
     def _extract_prediction(self, payload: dict) -> tuple[str | None, str | None]:
+        logger.info("Extracting prediction.")
         image_data = payload.get("image_data") if isinstance(payload, dict) else None
+
+        # Handle list response (image_data is List[ImageClassificationResult])
+        if isinstance(image_data, list) and image_data:
+            image_data = image_data[0]
+
         if not isinstance(image_data, dict):
             return None, None
 
@@ -189,6 +222,7 @@ class VisionEvalsTest(BaseTest):
         return label, probability
 
     def _analyze_results(self, entries: list[dict]) -> tuple[int, int, list[dict]]:
+        logger.info("Analyzing results.")
         total = len(entries)
         correct = 0
         mismatches: list[dict] = []
@@ -226,7 +260,7 @@ class VisionEvalsTest(BaseTest):
 
     def _download_samples(self, count: int = 20) -> None:
         """Stream a small ImageNet subset and materialize images plus metadata."""
-
+        logger.info(f"Downloading {count} samples.")
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
@@ -286,7 +320,7 @@ class VisionEvalsTest(BaseTest):
 
     def _compare_results(self) -> None:
         """Compare CPU and device accuracy results and print a summary."""
-
+        logger.info("Comparing results CPU and device accuracy.")
         dataset_path = Path(DATASET_DIR)
         cpu_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
         device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
@@ -355,6 +389,7 @@ class VisionEvalsTest(BaseTest):
         authorization: str | None = None,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        logger.info(f"Measuring accuracy for models: {models} in {mode} mode")
         dataset_path = Path(DATASET_DIR)
         metadata = self._load_metadata(dataset_path)
         summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
@@ -396,9 +431,43 @@ class VisionEvalsTest(BaseTest):
                     stop_server(process)
 
             correct, total, mismatches = self._analyze_results(results)
+            logger.info(
+                "Correct: %s, Total: %s, Mismatches: %s",
+                correct,
+                total,
+                len(mismatches),
+            )
 
             accuracy = (correct / total) if total else 0.0
+            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
             accuracy_summary[model] = accuracy
+            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
+
+            # Store detailed results for this model and mode
+            if model not in self.eval_results:
+                self.eval_results[model] = {}
+
+            cpu_baseline = CPU_ACCURACY_BASELINE.get(model)
+            diff_from_cpu = None
+            if cpu_baseline is not None and mode == "device":
+                diff_from_cpu = accuracy - cpu_baseline
+                diff_pct = diff_from_cpu * 100
+                logger.info(
+                    "CPU baseline comparison for %s: device=%.2f%%, cpu=%.2f%%, diff=%+.2f%%",
+                    model,
+                    accuracy * 100,
+                    cpu_baseline * 100,
+                    diff_pct,
+                )
+
+            self.eval_results[model][mode] = {
+                "accuracy": accuracy,
+                "correct": correct,
+                "total": total,
+                "mismatches_count": len(mismatches),
+                "cpu_baseline": cpu_baseline,
+                "diff_from_cpu_baseline": diff_from_cpu,
+            }
 
             logger.info(
                 "[%s] %s: %.2f%% accuracy (%s/%s correct)",
