@@ -21,7 +21,7 @@ class JobDatabase:
 
     def _get_connection(self) -> sqlite3.Connection:
         """Creates a fresh database connection for each operation."""
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
         return conn
 
@@ -80,7 +80,7 @@ class JobDatabase:
         status: str,
         completed_at: Optional[int] = None,
         result_path: Optional[str] = None,
-        error_message: Optional[dict] = None,
+        error_message: Optional[dict[str, str]] = None,
     ) -> None:
         """Update job status and optional fields."""
         conn = self._get_connection()

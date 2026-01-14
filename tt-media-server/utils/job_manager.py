@@ -372,6 +372,7 @@ class JobManager:
                         )
 
                     # override the completed_at time, since it was cancelled due to system restart
+                    # here we override it with the creation time, since we don't know the time of the system restart
                     job.completed_at = db_job["created_at"]
 
                     self._logger.warning(
@@ -382,8 +383,12 @@ class JobManager:
                     self.db.update_job_status(
                         job.id,
                         job.status.value,
-                        completed_at=db_job["created_at"],
+                        completed_at=job.completed_at,
                         error_message=job.error,
+                    )
+                else:
+                    self._logger.debug(
+                        f"Restored job {job.id} from database (status: {job.status.value})"
                     )
 
                 restored_jobs[job.id] = job
