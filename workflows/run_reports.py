@@ -2303,7 +2303,6 @@ def evals_release_report_data(args, results, meta_data, model_spec):
 
     return report_rows
 
-
 def generate_evals_release_markdown(report_rows):
     # Step 1: Convert all values to strings with proper formatting
     def format_value(key, value, row):
