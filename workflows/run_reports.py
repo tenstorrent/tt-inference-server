@@ -2087,6 +2087,8 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
     logger.info("Tests Summary")
@@ -2109,11 +2111,37 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     files = files[0]
 
     # generate vLLM parameter coverage report
-    # TODO: Implement returning raw report, defaulting to None for now
     markdown_str = generate_vllm_parameter_report(
         files, output_path, report_id, metadata, model_spec=model_spec
     )
+
+    # Look for parameter_report.json in tests_output directory
     release_raw = None
+    test_dir_pattern = f"test_{model_spec.model_id}_*"
+    test_dir_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
+    )
+    test_dirs = glob(test_dir_path_pattern)
+
+    for test_dir in test_dirs:
+        parameter_report_path = Path(test_dir) / "parameter_report.json"
+        if parameter_report_path.exists():
+            try:
+                with open(parameter_report_path, "r", encoding="utf-8") as f:
+                    release_raw = json.load(f)
+                logger.info(f"Loaded parameter report from: {parameter_report_path}")
+                break
+            except Exception as e:
+                logger.warning(f"Could not read parameter report {parameter_report_path}: {e}")
+
+    if release_raw is None:
+        logger.info("No parameter_report.json found in tests_output directory.")
+        release_raw = [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ]
 
     release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
@@ -2122,7 +2150,13 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
         f.write(release_str)
     logger.info(f"Tests report saved to: {output_path}")
 
-    return release_str, release_raw, output_path, None
+    # Save raw data to data directory
+    data_fpath = data_dir / f"tests_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+    logger.info(f"Tests data saved to: {data_fpath}")
+
+    return release_str, release_raw, output_path, data_fpath
 
 
 def generate_evals_markdown_table(results, meta_data) -> str:
@@ -2845,7 +2879,12 @@ def main():
     )
 
     # generate tests report
-    tests_release_str, tests_release_data = generate_tests_report(
+    (
+        tests_release_str,
+        tests_release_data,
+        tests_disp_md_path,
+        tests_data_file_path,
+    ) = generate_tests_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
     # generate stress test report
@@ -2912,7 +2951,9 @@ def main():
 
         # Check for server tests JSON files
         server_tests_data = []
-        parameter_support_tests_data = []
+
+        # Use tests_release_data for parameter_support_tests
+        parameter_support_tests_data = tests_release_data if tests_release_data else []
 
         # Add target_checks for specific model if applicable
         if (
