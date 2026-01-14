@@ -192,7 +192,6 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     TT_METAL_HOME=${HOME_DIR}/tt-metal \
-    TT_METAL_BUILT_DIR=${HOME_DIR}/tt-metal/built \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
@@ -204,11 +203,9 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
-# Add Kitware GPG key (required by base image's apt sources)
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
-&& apt-get update && apt-get install -y \
-ffmpeg \
-&& rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create user
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \

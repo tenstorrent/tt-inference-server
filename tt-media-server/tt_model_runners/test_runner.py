@@ -47,19 +47,25 @@ class TestRunner(BaseDeviceRunner):
         )
         task_id = request._task_id
 
-        # Precreate streaming chunks to reduce overhead
-        streaming_chunks = [
-            StreamingChunkOutput(
-                type="streaming_chunk",
-                chunk=CompletionStreamChunk(
-                    text=f"token_{i}",
-                    index=i,
-                    finish_reason=None,
-                ),
-                task_id=task_id,
-            )
-            for i in range(request.max_tokens)
-        ]
+        if self.settings.use_memory_queue:
+            # Memory queue format: (task_id, is_final, text)
+            streaming_chunks = [
+                (task_id, 0, f"token_{i}") for i in range(request.max_tokens)
+            ]
+        else:
+            # StreamingChunkOutput format
+            streaming_chunks = [
+                StreamingChunkOutput(
+                    type="streaming_chunk",
+                    chunk=CompletionStreamChunk(
+                        text=f"token_{i}",
+                        index=i,
+                        finish_reason=None,
+                    ),
+                    task_id=task_id,
+                )
+                for i in range(request.max_tokens)
+            ]
 
         start_time = time.perf_counter()
 
@@ -75,12 +81,17 @@ class TestRunner(BaseDeviceRunner):
 
             yield chunk
 
-        yield FinalResultOutput(
-            type="final_result",
-            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
-            task_id=task_id,
-            return_result=True,
-        )
+        if self.settings.use_memory_queue:
+            yield (task_id, 1, "[DONE]")
+        else:
+            yield FinalResultOutput(
+                type="final_result",
+                result=CompletionStreamChunk(
+                    text="[DONE]", index=0, finish_reason=None
+                ),
+                task_id=task_id,
+                return_result=True,
+            )
 
     def run(self, requests: list[CompletionRequest]):
         return []

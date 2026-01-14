@@ -123,7 +123,7 @@ The server supports running large language models using VLLM with the Tenstorren
 1. **Install the TT-VLLM Plugin**
 
    Follow the installation instructions from the repository:
-   https://github.com/dmadicTT/tt-vllm-plugin
+   https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin
 
 2. **Required Environment Variables**
 
