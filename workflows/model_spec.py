@@ -905,6 +905,38 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    # GPT-OSS (OpenAI) - currently registered for Galaxy vLLM flows.
+    #
+    # Notes:
+    # - `--model` values in run.py are derived from `Path(hf_model_repo).name`,
+    #   so this must remain `gpt-oss-20b` if you want `--model gpt-oss-20b`.
+    # - Docker images are inferred from (version, tt_metal_commit, vllm_commit).
+    #   If you are iterating locally, prefer `--dev-mode` and/or
+    #   `--override-docker-image` at runtime.
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-20b"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="5491d3c",
+        vllm_commit="f49265a",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    # Galaxy is commonly run in 4-way data-parallel; keep scheduler
+                    # conservative to reduce tail latency during health checks / evals.
+                    "num_scheduler_steps": 1,
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D_RING"
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+    ),
     ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
