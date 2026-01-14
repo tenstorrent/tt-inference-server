@@ -131,9 +131,9 @@ class Settings(BaseSettings):
                 # Get first model name from the set
                 model_name = list(model_names_set)[0]
                 if model_name:
-                    self.model_weights_path = getattr(
-                        SupportedModels, model_name.name
-                    ).value
+                    supported_model = getattr(SupportedModels, model_name.name, None)
+                    if supported_model:
+                        self.model_weights_path = supported_model.value
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
