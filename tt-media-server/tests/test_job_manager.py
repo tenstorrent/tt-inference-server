@@ -6,7 +6,7 @@ import asyncio
 import os
 import tempfile
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from config.constants import JobTypes
@@ -79,7 +79,7 @@ class TestJob:
         """Test that mark_completed raises TypeError when result_path is not a string"""
         job = Job(id="test-123", job_type="video", model="test-model")
 
-        with pytest.raises(TypeError) as excinfo:
+        with pytest.raises(TypeError):
             job.mark_completed(result_path=12345)
 
         with pytest.raises(TypeError):
