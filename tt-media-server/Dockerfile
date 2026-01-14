@@ -81,9 +81,7 @@ RUN apt-get update && apt-get install -y \
     && protoc --version
 
 # Install uv for faster package management (replaces pip)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && mv /root/.local/bin/uv /usr/local/bin/uv \
-    && mv /root/.local/bin/uvx /usr/local/bin/uvx
+RUN python3 -m pip install --no-cache-dir uv
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
