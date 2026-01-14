@@ -30,20 +30,19 @@ class SystemResourceService:
     """Service for monitoring system resources and TT device telemetry"""
 
     @staticmethod
-    def _run_smi_command(executable_name: str, timeout: int = 10):
+    def _run_smi_command(executable_path_prefix: str, executable_name: str, timeout: int = 10):
         """
         Run a tt-smi style command and return parsed JSON data.
 
         Args:
+            executable_path_prefix: Prefix path for the executable
             executable_name: Name of the executable (e.g., "tt-smi" or "tt-smi-metal")
             timeout: Timeout in seconds for command execution
 
         Returns:
             Parsed JSON data or None if command failed
         """
-        import sys
-
-        executable_path = os.path.join(sys.prefix, "bin", executable_name)
+        executable_path = os.path.join(executable_path_prefix, "bin", executable_name)
         try:
             logger.info(f"Running {executable_name} -s to get device telemetry")
 
@@ -90,19 +89,19 @@ class SystemResourceService:
                 return None
 
         except FileNotFoundError:
-            raise RuntimeError(f"{executable_name} command not found")
+            raise RuntimeError(f"{executable_name} command not found at {executable_path}")
         except Exception as e:
             raise RuntimeError(f"Error getting {executable_name} data: {str(e)}")
 
     @staticmethod
     def get_tt_smi_data(timeout: int = 10):
         """Get raw tt-smi data with timeout handling"""
-        return SystemResourceService._run_smi_command("tt-smi", timeout)
+        return SystemResourceService._run_smi_command(sys.prefix, "tt-smi", timeout)
 
     @staticmethod
     def get_tt_smi_metal_data(timeout: int = 10):
         """Get raw tt-smi-metal data with timeout handling"""
-        return SystemResourceService._run_smi_command("tt-smi-metal", timeout)
+        return SystemResourceService._run_smi_command("/usr/local", "tt-smi-metal", timeout)
 
     @staticmethod
     def get_tt_topology_data(timeout=10):
