@@ -41,24 +41,46 @@ def handle_code_versions(model_spec_json):
     logger.info(f"commit SHA: {vllm_sha}")
 
 
-# Copied from vllm/examples/offline_inference_tt.py
-def register_tt_models():
-    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
-    if llama_text_version == "tt_transformers":
-        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
-    elif llama_text_version == "llama3_70b_galaxy":
+def _get_impl_id_from_model_spec():
+    """Read impl_id from ModelSpec JSON file if available.
+
+    Returns:
+        str or None: The impl_id from the ModelSpec JSON, or None if unavailable.
+    """
+    model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
+    if model_spec_path:
+        try:
+            spec_path = Path(model_spec_path)
+            if spec_path.exists():
+                with open(spec_path, "r") as f:
+                    model_spec = json.load(f)
+                    return model_spec.get("impl", {}).get("impl_id")
+        except Exception as e:
+            logging.warning(f"Failed to read impl_id from ModelSpec: {e}")
+    return None
+
+
+def register_tt_models(impl_id=None):
+    """Register TT models with vLLM ModelRegistry.
+
+    Args:
+        impl_id: Implementation ID from ModelSpec JSON (e.g., "tt_transformers",
+                 "llama3_70b_galaxy", "qwen3_32b_galaxy"). If None, defaults to
+                 "tt_transformers".
+    """
+    impl_id = impl_id or "tt_transformers"
+
+    # Llama path selection based on impl_id
+    if impl_id == "llama3_70b_galaxy":
         path_llama_text = (
             "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
-    elif llama_text_version == "llama2_70b":
+    elif impl_id == "llama2_70b":
         path_llama_text = (
             "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
         )
-    else:
-        raise ValueError(
-            f"Unsupported TT Llama version: {llama_text_version}, "
-            "pick one of [tt_transformers, llama3_subdevices, llama2_70b]"
-        )
+    else:  # default: tt_transformers
+        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
 
     # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
@@ -70,22 +92,18 @@ def register_tt_models():
     )
 
     # Qwen2.5 - Text
-    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
+    ModelRegistry.register_model(
+        "TTQwen2ForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:QwenForCausalLM",
+    )
 
-    # Qwen3 - Text
-    qwen3_text_version = os.getenv("TT_QWEN3_TEXT_VER", "tt_transformers")
-    if qwen3_text_version == "tt_transformers":
-        path_qwen3_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    elif qwen3_text_version == "qwen3_32b_galaxy":
+    # Qwen3 path selection based on impl_id
+    if impl_id == "qwen3_32b_galaxy":
         path_qwen3_text = (
             "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
         )
     else:
-        raise ValueError(
-            f"Unsupported TT Qwen3 version: {qwen3_text_version}, "
-            "pick one of [tt_transformers, qwen3_32b_galaxy]"
-        )
+        path_qwen3_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
 
     ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen3_text)
 
@@ -113,7 +131,8 @@ def register_tt_models():
     )
 
 
-register_tt_models()
+_impl_id = _get_impl_id_from_model_spec()
+register_tt_models(_impl_id)
 
 
 def model_setup(model_spec_json):
