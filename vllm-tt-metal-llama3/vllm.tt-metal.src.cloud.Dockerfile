@@ -70,6 +70,8 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
+USER ${CONTAINER_APP_USERNAME}
+
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
     && rustup update"
@@ -91,7 +93,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && pip install --ignore-installed -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
 
 # ==============================================================================
