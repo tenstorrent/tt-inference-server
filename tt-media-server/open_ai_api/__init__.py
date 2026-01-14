@@ -8,11 +8,21 @@ from fastapi import APIRouter
 
 api_router = APIRouter()
 
-from open_ai_api import audio, cnn, fine_tuning, image, llm, tt_maintenance_api, video
+from open_ai_api import (
+    audio,
+    cnn,
+    fine_tuning,
+    image,
+    llm,
+    tokenizer,
+    tt_maintenance_api,
+    video,
+)
 
 if settings.model_service == ModelServices.IMAGE.value:
     api_router.include_router(image.router, prefix="/image", tags=["Image processing"])
 elif settings.model_service == ModelServices.LLM.value:
+    api_router.include_router(tokenizer.router, prefix="", tags=["Tokenizer"])
     api_router.include_router(llm.router, prefix="/v1", tags=["Text processing"])
 elif settings.model_service == ModelServices.CNN.value:
     api_router.include_router(cnn.router, prefix="/cnn", tags=["CNN processing"])
@@ -27,3 +37,5 @@ elif settings.model_service == ModelServices.TRAINING.value:
 
 # Maintenance endpoints are always included
 api_router.include_router(tt_maintenance_api.router, prefix="", tags=["Maintenance"])
+
+# Tokenizer endpoints are always included
