@@ -4,7 +4,6 @@
 
 import sys
 from multiprocessing import shared_memory
-from unittest.mock import Mock
 
 import pytest
 
@@ -20,15 +19,21 @@ class MockCompletionStreamChunk:
 
 
 # Create mock modules with proper dependencies
-mock_completion_response = Mock()
-mock_completion_response.CompletionStreamChunk = MockCompletionStreamChunk
-sys.modules["domain.completion_response"] = mock_completion_response
+# Only mock if not already mocked by conftest.py
+if "domain.completion_response" not in sys.modules:
+    from unittest.mock import Mock
 
-# Mock logger
-mock_logger = Mock()
-mock_logger_module = Mock()
-mock_logger_module.TTLogger = Mock(return_value=mock_logger)
-sys.modules["utils.logger"] = mock_logger_module
+    mock_completion_response = Mock()
+    mock_completion_response.CompletionStreamChunk = MockCompletionStreamChunk
+    sys.modules["domain.completion_response"] = mock_completion_response
+else:
+    # Update the existing mock with our MockCompletionStreamChunk
+    sys.modules[
+        "domain.completion_response"
+    ].CompletionStreamChunk = MockCompletionStreamChunk
+
+# DO NOT mock utils.logger here - let conftest.py handle it
+# The logger in conftest.py is already properly configured
 
 # Now import the actual module we're testing
 from model_services.memory_queue import SharedMemoryChunkQueue
@@ -37,7 +42,7 @@ from model_services.memory_queue import SharedMemoryChunkQueue
 @pytest.fixture
 def cleanup_queues():
     """Cleanup any existing shared memory from previous tests"""
-    queue_names = [f"test_queue_{i}" for i in range(10)]
+    queue_names = [f"test_queue_{i}" for i in range(100)]
     for name in queue_names:
         try:
             shm = shared_memory.SharedMemory(name=name)
@@ -155,23 +160,25 @@ class TestQueueSize:
     def test_size_with_wraparound(self, cleanup_queues):
         """Test size calculation with index wraparound"""
         queue = SharedMemoryChunkQueue(capacity=100, name="test_queue_8", create=True)
-        
+
         # Fill queue to near capacity (leaving margin)
         for i in range(80):
             result = queue.put(f"task_{i}", 0, f"text_{i}")
             assert result is True
-        
+
         assert queue._get_size() == 80
-        
+
         # Read some items to advance read_idx
         for i in range(30):
             queue.get_nowait()
-        
+
         # Size should be 50
         assert queue._get_size() == 50
-        
+
         queue.close()
         queue.unlink()
+
+
 class TestPutOperation:
     """Test put operation"""
 
@@ -217,7 +224,7 @@ class TestPutOperation:
 
     def test_put_returns_false_when_queue_full(self, cleanup_queues):
         """Test that put returns False when queue is full"""
-        # Note: This test is skipped because it requires proper struct.pack_into 
+        # Note: This test is skipped because it requires proper struct.pack_into
         # operations on shared memory which our mock doesn't fully support.
         # The actual behavior is tested in integration tests.
         pytest.skip("Requires full shared memory struct operations")
