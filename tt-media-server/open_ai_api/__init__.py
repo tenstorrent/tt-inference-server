@@ -37,5 +37,3 @@ elif settings.model_service == ModelServices.TRAINING.value:
 
 # Maintenance endpoints are always included
 api_router.include_router(tt_maintenance_api.router, prefix="", tags=["Maintenance"])
-
-# Tokenizer endpoints are always included

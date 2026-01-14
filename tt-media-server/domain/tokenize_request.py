@@ -1,10 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 from typing import TypeAlias
 from pydantic import Field
 from domain.base_request import BaseRequest
+from config.vllm_settings import VLLMSettings
 
 
 class TokenizeCompletionRequest(BaseRequest):
-    model: str | None = None
+    model: str = VLLMSettings.model.value
     prompt: str
 
     add_special_tokens: bool = Field(

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from typing import Any
 
@@ -10,8 +10,8 @@ from domain.detokenize_response import DetokenizeResponse
 from domain.tokenize_request import TokenizeRequest
 from domain.tokenize_response import TokenizeResponse
 from fastapi import APIRouter, HTTPException
-from resolver.tokenizer_resolver import get_tokenizer
 from utils.logger import TTLogger
+from transformers import AutoTokenizer
 
 router = APIRouter()
 logger = TTLogger()
@@ -36,10 +36,9 @@ def _resolve_model(model: str | None) -> SupportedModels:
 
 @router.post("/tokenize")
 def tokenize(request: TokenizeRequest) -> TokenizeResponse:
-    """ """
     try:
         model = _resolve_model(request.model)
-        tokenizer = get_tokenizer(model)
+        tokenizer = AutoTokenizer.from_pretrained(model.value)
 
         token_ids = tokenizer.encode(
             request.prompt, add_special_tokens=request.add_special_tokens
@@ -60,15 +59,14 @@ def tokenize(request: TokenizeRequest) -> TokenizeResponse:
         raise
     except Exception as e:
         logger.error(f"Error tokenizing text: {e}")
-        raise HTTPException(status_code=500, detail=f"Tokenization failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Tokenization failed")
 
 
 @router.post("/detokenize")
 def detokenize(request: DetokenizeRequest) -> DetokenizeResponse:
-    """ """
     try:
         model = _resolve_model(request.model)
-        tokenizer = get_tokenizer(model)
+        tokenizer = AutoTokenizer.from_pretrained(model.value)
 
         # Detokenize the tokens
         text = tokenizer.decode(request.tokens, skip_special_tokens=False)
@@ -78,4 +76,4 @@ def detokenize(request: DetokenizeRequest) -> DetokenizeResponse:
         raise
     except Exception as e:
         logger.error(f"Error detokenizing tokens: {e}")
-        raise HTTPException(status_code=500, detail=f"Detokenization failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Detokenization failed")

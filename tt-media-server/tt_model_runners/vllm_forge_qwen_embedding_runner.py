@@ -6,9 +6,9 @@ import vllm
 from config.settings import SupportedModels
 from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
+from transformers import AutoTokenizer
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
-from resolver.tokenizer_resolver import get_tokenizer
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
@@ -21,7 +21,10 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
-        self.tokenizer = get_tokenizer(SupportedModels.QWEN_3_EMBEDDING_4B)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            SupportedModels.QWEN_3_EMBEDDING_4B.value
+        )
+
         prompts = [
             "The capital of France is Paris",
         ]
