@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/tenstorrent/tt-inference-server)
+
 # TT-Inference-Server
 
 Tenstorrent Inference Server (`tt-inference-server`) is the repo of available model APIs for deploying on Tenstorrent hardware.
@@ -14,7 +16,7 @@ Note: models with Status [🛠️ Experimental] are under active development. If
 
 ## Model Support
 
-For automated and pre-configured vLLM inference server using Docker please see the [Model Readiness Workflows User Guide](docs/workflows_user_guide.md). The list below shows the default model implementations supported. 
+For automated and pre-configured vLLM inference server using Docker please see the [Model Readiness Workflows User Guide](docs/workflows_user_guide.md). The list below shows the default model implementations supported.
 
 | Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |
 |---------------|----------|--------|-----------------|-------------|--------------|
