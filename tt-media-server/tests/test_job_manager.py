@@ -1056,7 +1056,7 @@ class TestJobManager:
                 assert m2._jobs["job-stuck"].status == JobStatus.FAILED
                 
                 assert "job-stuck2" in m2._jobs
-                assert m2._jobs["job-stuck2"].status == JobStatus.QUEUED
+                assert m2._jobs["job-stuck2"].status == JobStatus.FAILED
 
                 assert "job-aborting" in m2._jobs
                 assert m2._jobs["job-aborting"].status == JobStatus.CANCELLED
