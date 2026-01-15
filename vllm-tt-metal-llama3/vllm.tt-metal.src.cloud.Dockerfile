@@ -189,8 +189,8 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
 
 # Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
 # Make parent directories traversable and uv directory fully accessible
-# COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-# RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
+COPY --from=builder /root/.local/share/uv /root/.local/share/uv
+RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
