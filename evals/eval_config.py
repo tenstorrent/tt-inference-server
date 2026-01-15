@@ -101,6 +101,10 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
+                # Use chat endpoint (/v1/chat/completions). The chat endpoint applies
+                # a chat template by default, so we must not also apply one in lm-eval.
+                use_chat_api=True,
+                apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -121,6 +125,9 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Use chat endpoint (/v1/chat/completions).
+                use_chat_api=True,
+                apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
