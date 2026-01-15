@@ -1356,6 +1356,12 @@ spec_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
