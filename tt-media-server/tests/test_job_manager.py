@@ -891,6 +891,7 @@ class TestJobManager:
         await job_manager.shutdown()
         await asyncio.sleep(0.1)
 
+        # Verify jobs are not in memory but persisted in the database
         assert job_manager.get_job_metadata("job-finished") is None
         assert job_manager.get_job_metadata("job-running") is None
 
