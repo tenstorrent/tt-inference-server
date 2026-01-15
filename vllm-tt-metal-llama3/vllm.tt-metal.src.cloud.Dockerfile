@@ -90,12 +90,13 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
 
 # Build vllm - clone with minimal history and clean
 # Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
+# Use --index-strategy unsafe-best-match to allow uv to find packages across all indexes
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
-    && uv pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
 
 # ==============================================================================

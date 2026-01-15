@@ -103,10 +103,11 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# user setup
+# user setup - ensure user owns both HOME_DIR and the Python venv with proper permissions
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && chmod -R u+rwX ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
