@@ -104,14 +104,10 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# user setup
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+# user setup - create user for ownership but stay as root for remaining build steps
+RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
-
-USER ${CONTAINER_APP_USERNAME}
 
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
@@ -132,8 +128,8 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
+COPY "tt-media-server" "${TT_METAL_HOME}/server"
+COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
@@ -141,9 +137,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-# root user is needed because of some permission issues when installing from a non-root user
-USER root
+COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
