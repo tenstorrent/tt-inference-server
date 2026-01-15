@@ -103,38 +103,29 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# user setup - ensure user owns both HOME_DIR and the Python venv with proper permissions
+# user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && chmod -R u+rwX ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-USER ${CONTAINER_APP_USERNAME}
-
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# install tt-smi
+# install tt-smi (as root for uv permissions)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && . ${HOME_DIR}/.cargo/env \
+    && . /root/.cargo/env \
     && rustup update \
-    && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && uv pip install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
 
-# install inference server requirements
+# install inference server requirements (as root for uv permissions)
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
+COPY "tt-media-server" "${TT_METAL_HOME}/server"
+COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
@@ -142,10 +133,16 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
+
+# Fix ownership after all installs
+RUN chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+
+USER ${CONTAINER_APP_USERNAME}
 
 # Cleanup build-only directories
 USER root

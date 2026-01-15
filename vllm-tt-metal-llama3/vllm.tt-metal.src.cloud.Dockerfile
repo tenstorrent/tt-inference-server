@@ -161,8 +161,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-USER ${CONTAINER_APP_USERNAME}
-
 # Copy complete tt-metal installation including virtual environment
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${TT_METAL_HOME} ${TT_METAL_HOME}
@@ -181,10 +179,14 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Install additional app requirements into the copied venv
+# Install additional app requirements into the copied venv (run as root for uv permissions)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
-    && uv cache clean"
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Switch to non-root user for runtime
+USER ${CONTAINER_APP_USERNAME}
 
 # Set working directory
 WORKDIR "${APP_DIR}/src"
