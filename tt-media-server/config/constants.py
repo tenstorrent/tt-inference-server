@@ -87,7 +87,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
     VIDEO = "video"
     TRAINING = "training"
-    TTS = "tts"
+    TEXT_TO_SPEECH = "text_to_speech"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -125,7 +125,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.TRAINING: {
         ModelRunners.LORA_TRAINER,
     },
-    ModelServices.TTS: {
+    ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
     },
 }

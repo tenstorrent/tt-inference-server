@@ -192,6 +192,18 @@ def handle_secrets(model_spec_json):
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
 
+    # Check if --no-auth was passed via CLI args
+    no_auth = model_spec_json.get("cli_args", {}).get("no_auth", False)
+    if no_auth:
+        # Remove VLLM_API_KEY if present to disable authorization
+        if "VLLM_API_KEY" in os.environ:
+            del os.environ["VLLM_API_KEY"]
+        logger.info(
+            "--no-auth is set: requests to vLLM API will not require authorization. "
+            "HTTP Authorization header will not be checked."
+        )
+        return
+
     # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
     vllm_api_key = os.getenv("VLLM_API_KEY")
     if vllm_api_key:
