@@ -217,10 +217,12 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
     /home/container_app_user ${HOME_DIR}
 
 # Fix venv symlinks after copy (they break when copied between stages)
+# Recreate the venv bin directory symlinks while preserving installed packages in lib/
 RUN cd ${PYTHON_ENV_DIR}/bin \
-    && rm -f python python3 \
+    && rm -f python python3 pip pip3 \
     && ln -s /usr/bin/python3 python3 \
     && ln -s python3 python \
+    && sed -i "s|^VIRTUAL_ENV=.*|VIRTUAL_ENV=\"${PYTHON_ENV_DIR}\"|" activate \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
 
 USER ${CONTAINER_APP_USERNAME}

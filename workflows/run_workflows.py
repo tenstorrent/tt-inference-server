@@ -70,22 +70,29 @@ class WorkflowSetup:
 
         # Step 2: Create a virtual environment
         uv_exec = cls.workflow_setup_venv / "bin" / "uv"
-        if not cls.workflow_setup_venv.exists():
+        pip_exec = cls.workflow_setup_venv / "bin" / "pip"
+
+        # Check if venv needs to be created or recreated (e.g., if pip is missing)
+        needs_venv_creation = not cls.workflow_setup_venv.exists() or not pip_exec.exists()
+
+        if needs_venv_creation:
             logger.info(
                 "Creating virtual environment in '%s'...", cls.workflow_setup_venv
             )
+            # Use --upgrade-deps to ensure pip/setuptools are installed and up-to-date
+            # Use --clear to recreate if venv exists but is missing pip
+            clear_flag = "--clear" if cls.workflow_setup_venv.exists() else ""
             run_command(
-                f"{sys.executable} -m venv {cls.workflow_setup_venv}", logger=logger
+                f"{sys.executable} -m venv {clear_flag} --upgrade-deps {cls.workflow_setup_venv}",
+                logger=logger,
             )
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
-            pip_exec = cls.workflow_setup_venv / "bin" / "pip"
-
             logger.info("Installing 'uv' using pip...")
             run_command(f"{pip_exec} install uv", logger=logger)
 
-            logger.info("uv bootsrap installation complete.")
+            logger.info("uv bootstrap installation complete.")
             # check version
             run_command(f"{str(uv_exec)} --version", logger=logger)
 
