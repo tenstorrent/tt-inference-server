@@ -5,6 +5,7 @@
 from typing import Optional, Union
 
 import numpy as np
+from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
@@ -30,6 +31,10 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Response format and streaming
+    response_format: str = ResponseFormat.VERBOSE_JSON.value  # ResponseFormat.AUDIO for WAV bytes, ResponseFormat.VERBOSE_JSON or ResponseFormat.JSON for JSON
+    stream: bool = False  # Whether to stream audio generation
+    
     # Private fields for internal processing
     _speaker_embedding_array: Optional[np.ndarray] = PrivateAttr(default=None)
     _estimated_duration: Optional[float] = PrivateAttr(default=None)
