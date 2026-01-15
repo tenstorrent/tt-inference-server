@@ -78,10 +78,11 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     rm cmake.sh && \
     cmake --version
 
-# build tt-metal
-RUN pip3 install --upgrade setuptools wheel \
-    && pip3 install cmake \
-    && pip3 install cmake --upgrade \
+# Install uv if not available, then install build dependencies
+RUN command -v uv >/dev/null 2>&1 || python3 -m pip install --no-cache-dir uv
+RUN uv pip install --system --upgrade setuptools wheel \
+    && uv pip install --system cmake \
+    && uv pip install --system cmake --upgrade \
     && hash -r
 
 # user setup
@@ -99,7 +100,7 @@ RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && uv pip install --system git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
 
