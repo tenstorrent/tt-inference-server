@@ -61,7 +61,6 @@ RUN apt-get update && apt-get install -y \
     acl \
     jq \
     vim \
-    python3-pip \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
@@ -81,6 +80,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
+# Install uv for faster package management (replaces pip)
+RUN python3 -m pip install --no-cache-dir uv
+
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
@@ -98,28 +100,29 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
-    && uv pip install cmake \
-    && uv pip install cmake --upgrade \
+    && uv pip install --upgrade cmake \
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# user setup
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
+RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# install tt-smi (as root for uv permissions)
+RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+
+# install tt-smi
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --upgrade pip \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && . /root/.cargo/env \
+    && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && uv pip install git+https://github.com/tenstorrent/tt-smi"
+    && uv pip install git+https://github.com/tenstorrent/tt-smi \
+    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
 
 WORKDIR ${HOME_DIR}
 
-# install inference server requirements (as root for uv permissions)
+# install inference server requirements
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
@@ -138,14 +141,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
-# Fix ownership after all installs
-RUN chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-USER ${CONTAINER_APP_USERNAME}
-
 # Cleanup build-only directories
-USER root
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache \
@@ -216,14 +212,13 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Fix venv symlinks after copy (they break when copied between stages)
-# Recreate the venv bin directory symlinks while preserving installed packages in lib/
-RUN cd ${PYTHON_ENV_DIR}/bin \
-    && rm -f python python3 pip pip3 \
-    && ln -s /usr/bin/python3 python3 \
-    && ln -s python3 python \
-    && sed -i "s|^VIRTUAL_ENV=.*|VIRTUAL_ENV=\"${PYTHON_ENV_DIR}\"|" activate \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
+# Make parent directories traversable and uv directory fully accessible
+COPY --from=builder /root/.local/share/uv /root/.local/share/uv
+RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
+
+# Fix venv permissions (COPY --chown can break symlink permissions)
+RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
