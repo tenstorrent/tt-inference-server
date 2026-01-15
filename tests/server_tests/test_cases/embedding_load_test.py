@@ -9,18 +9,11 @@ import time
 import aiohttp
 from server_tests.base_test import BaseTest
 
-# Import the dataset from the Python file
-from utils.test_payloads.audio_payload_30s import dataset as dataset30s
-from utils.test_payloads.audio_payload_60s import dataset as dataset60s
-
-# Set up logging
 logger = logging.getLogger(__name__)
 
 payload = {
-    "file": dataset30s["file"],
-    "stream": False,
-    "is_preprocessing_enabled": True,
-    "prompt": "",
+    "input": "The quick brown fox jumps over the lazy dog",
+    "model": "test-model",
 }
 
 headers = {
@@ -30,37 +23,36 @@ headers = {
 }
 
 
-class AudioTranscriptionLoadTest(BaseTest):
+class EmbeddingLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/audio/transcriptions"
-        print(self.targets)
+        self.url = f"http://localhost:{self.service_port}/v1/embeddings"
+        logger.info(self.targets)
         devices = self.targets.get("num_of_devices", 1)
-        audio_transcription_time = self.targets.get(
-            "audio_transcription_time", 9
-        )  # in seconds
-        dataset_name = self.targets.get("dataset", "30s")  # in seconds
+        embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
+        dimensions = self.targets.get("dimensions", None)
+        model = self.config.get("model", "test-model")
 
-        if dataset_name == "60s":
-            payload["file"] = dataset60s["file"]
+        payload["model"] = model
+
+        if dimensions is not None:
+            payload["dimensions"] = dimensions
 
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_audio_transcription(batch_size=devices)
-
-        self.test_payloads_path = "utils/test_payloads"
+        ) = await self.test_concurrent_embedding(batch_size=devices)
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
-            "target_time": audio_transcription_time,
+            "target_time": embedding_target_time,
             "devices": devices,
-            "success": average_duration <= audio_transcription_time,
+            "success": requests_duration <= embedding_target_time,
         }
 
-    async def test_concurrent_audio_transcription(self, batch_size):
+    async def test_concurrent_embedding(self, batch_size):
         async def timed_request(session, index):
-            print(f"Starting request {index}")
+            logger.info(f"Starting request {index}")
             try:
                 start = time.perf_counter()
                 async with session.post(
@@ -71,14 +63,14 @@ class AudioTranscriptionLoadTest(BaseTest):
                         await response.json()
                     else:
                         raise Exception(f"Status {response.status} {response.reason}")
-                    print(
+                    logger.info(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
                     return duration
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
         # First iteration is warmup, second is measured (original behavior)
@@ -94,13 +86,15 @@ class AudioTranscriptionLoadTest(BaseTest):
                 avg_duration = total_duration / batch_size
                 return requests_duration, avg_duration
             if iteration == 0:
-                print("🔥 Warm up run done.")
+                logger.info("🔥 Warm up run done.")
 
-        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
-        print(
+        logger.info(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        logger.info(
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
-        print(
+        logger.info(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+        logger.info(
+            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+        )

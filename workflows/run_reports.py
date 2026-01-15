@@ -2696,7 +2696,11 @@ def calculate_target_metrics(metrics_config):
         is_ascending_metric = config.get("is_ascending_metric", False)
 
         for level, multiplier in target_multipliers.items():
-            level_metric = target_metric * multiplier
+            if is_ascending_metric:
+                level_metric = target_metric / multiplier
+            else:
+                level_metric = target_metric * multiplier
+
             ratio, check = get_metric_ratio_and_check(
                 avg_metric, level_metric, is_ascending_metric
             )
