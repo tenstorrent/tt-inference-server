@@ -30,6 +30,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid, num_threads: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid, num_threads),
+    ModelRunners.TT_QWEN_IMAGE: lambda wid, num_threads: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTQwenImageRunner"]
+    ).TTQwenImageRunner(wid, num_threads),
     ModelRunners.TT_MOCHI_1: lambda wid, num_threads: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid, num_threads),

@@ -2185,6 +2185,34 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen-Image"],
+        tt_metal_commit="be88351",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.CNN,
+        display_name="qwen-image",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
         tt_metal_commit="c180ef7",
         impl=tt_transformers_impl,

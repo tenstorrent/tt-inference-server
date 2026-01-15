@@ -17,6 +17,9 @@ from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipel
 from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
     StableDiffusion3Pipeline,
 )
+from models.experimental.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+    QwenImagePipeline,
+)
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -29,6 +32,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
 }
 
 
@@ -72,8 +76,9 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def load_weights(self):
-        self.create_pipeline()
-        return True
+        return False
+        #self.create_pipeline()
+        #return True
 
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
@@ -200,6 +205,20 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 31000000}
+
+
+class TTQwenImageRunner(TTDiTRunner):
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
+
+    def create_pipeline(self):
+        return QwenImagePipeline.create_pipeline(
+            mesh_device=self.ttnn_device,
+            checkpoint_name=SupportedModels.QWEN_IMAGE.value,
+        )
+
+    def get_pipeline_device_params(self):
+        return {"l1_small_size": 32768, "trace_region_size": 47000000}
 
 
 class TTMochi1Runner(TTDiTRunner):

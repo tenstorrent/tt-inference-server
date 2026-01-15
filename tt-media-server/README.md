@@ -10,9 +10,10 @@ This server is built to serve non-LLM models. Currently supported models:
 6. Mochi1
 7. Wan2.2
 8. Motif-Image-6B-Preview
-9. Whisper
-10. Microsoft Resnet (Forge)
-11. VLLM with TT Plugin
+9. Qwen-Image
+10. Whisper
+11. Microsoft Resnet (Forge)
+12. VLLM with TT Plugin
 
 # Repo structure
 
@@ -96,23 +97,24 @@ source run_uvicorn.sh
 - Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only T3K and 6u galaxy are supported.
 
 ## Supported DiT models
 The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
 | MODEL | Supported device options|
 |-------|--------|
+| stable-diffusion-3.5-large | galaxy, t3k |
 | flux.1-dev | galaxy, t3k, p300, qbge |
 | flux.1-schnell | galaxy, t3k, p300, qbge |
 | motif-image-6b-preview | galaxy, t3k |
+| qwen-image | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
 For example, to run flux.1-dev on t3k
-1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
-2. Set device special env variable ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
+2. Set device special env variable e.g ```export DEVICE=t3k```.
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
 ## VLLM with TT Plugin Setup
 
