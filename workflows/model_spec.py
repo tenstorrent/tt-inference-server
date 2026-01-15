@@ -1351,8 +1351,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1616,8 +1616,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1650,8 +1650,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1852,8 +1852,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1877,8 +1877,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1889,7 +1889,7 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 42000000,
                 },
             ),
         ],
@@ -1908,8 +1908,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
