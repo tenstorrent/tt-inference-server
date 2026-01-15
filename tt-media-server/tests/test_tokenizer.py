@@ -26,7 +26,6 @@ mock_vllm_settings_class.model = mock_model
 sys.modules["config.vllm_settings"] = MagicMock()
 sys.modules["config.vllm_settings"].VLLMSettings = mock_vllm_settings_class
 
-from config.vllm_settings import VLLMSettings
 from domain.detokenize_request import DetokenizeRequest
 from domain.tokenize_request import TokenizeCompletionRequest
 from open_ai_api.tokenizer import _resolve_model, detokenize, tokenize

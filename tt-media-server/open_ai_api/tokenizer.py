@@ -2,9 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-from typing import Any
-
-from config.constants import ModelNames, SupportedModels
+from config.constants import SupportedModels
 from domain.detokenize_request import DetokenizeRequest
 from domain.detokenize_response import DetokenizeResponse
 from domain.tokenize_request import TokenizeRequest
@@ -59,7 +57,7 @@ def tokenize(request: TokenizeRequest) -> TokenizeResponse:
         raise
     except Exception as e:
         logger.error(f"Error tokenizing text: {e}")
-        raise HTTPException(status_code=500, detail=f"Tokenization failed")
+        raise HTTPException(status_code=500, detail="Tokenization failed")
 
 
 @router.post("/detokenize")
@@ -76,4 +74,4 @@ def detokenize(request: DetokenizeRequest) -> DetokenizeResponse:
         raise
     except Exception as e:
         logger.error(f"Error detokenizing tokens: {e}")
-        raise HTTPException(status_code=500, detail=f"Detokenization failed")
+        raise HTTPException(status_code=500, detail="Detokenization failed")
