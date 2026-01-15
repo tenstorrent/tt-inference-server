@@ -7,7 +7,7 @@
 Basic example of using the SpeechT5 TTS API for text-to-speech generation.
 
 This script demonstrates:
-- Non-streaming TTS generation
+- TTS generation
 - Saving audio to WAV file
 - Error handling
 
@@ -18,11 +18,10 @@ Usage:
 """
 
 import argparse
-import requests
 import sys
 
+import requests
 from utils.logger import TTLogger
-
 
 logger = TTLogger(__name__)
 
@@ -59,7 +58,7 @@ def generate_speech(
     # Prepare request
     url = f"{base_url}/tts/tts"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {"text": text, "stream": False, "speaker_id": speaker_id}
+    payload = {"text": text, "speaker_id": speaker_id}
 
     try:
         # Send request
@@ -110,7 +109,7 @@ Examples:
   python tts_basic_example.py "Hello world"
   python tts_basic_example.py "Good morning" --output morning.wav
   python tts_basic_example.py "Different voice" --speaker-id 500
-  
+
 Notes:
   - Make sure the TTS server is running on port 8000
   - Speaker IDs range from 0 to 7456 (CMU ARCTIC dataset)

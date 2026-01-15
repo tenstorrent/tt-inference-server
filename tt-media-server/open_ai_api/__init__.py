@@ -15,6 +15,7 @@ from open_ai_api import (
     image,
     llm,
     tokenizer,
+    text_to_speech,
     tt_maintenance_api,
     video,
 )
@@ -28,6 +29,10 @@ elif settings.model_service == ModelServices.CNN.value:
     api_router.include_router(cnn.router, prefix="/cnn", tags=["CNN processing"])
 elif settings.model_service == ModelServices.AUDIO.value:
     api_router.include_router(audio.router, prefix="/audio", tags=["Audio processing"])
+elif settings.model_service == ModelServices.TEXT_TO_SPEECH.value:
+    api_router.include_router(
+        text_to_speech.router, prefix="/audio", tags=["Text to speech processing"]
+    )
 elif settings.model_service == ModelServices.VIDEO.value:
     api_router.include_router(video.router, prefix="/video", tags=["Video processing"])
 elif settings.model_service == ModelServices.TRAINING.value:
