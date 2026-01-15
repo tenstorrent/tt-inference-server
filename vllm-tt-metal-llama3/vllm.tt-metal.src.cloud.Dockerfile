@@ -75,19 +75,15 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && rustup update"
 
 # Build tt-metal - clone with minimal history, build, and clean
-# NOTE: Skip qwen25_vl requirements - not needed for Mistral 24B and causes numpy version conflicts
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"
-
-# Fix python_env permissions (as root) to allow pip to freely modify packages during vLLM installation
-USER root
-RUN chmod -R 777 ${PYTHON_ENV_DIR}
-USER ${CONTAINER_APP_USERNAME}
 
 # Build vllm - clone with minimal history and clean
 # Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
