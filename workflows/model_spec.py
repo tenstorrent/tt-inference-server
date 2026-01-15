@@ -1093,7 +1093,6 @@ spec_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "num_scheduler_steps": 1,
                     "data_parallel_size": 4,
-                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1101,7 +1100,7 @@ spec_templates = [
                     "trace_region_size": 49544000,
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
-                    "enable_model_warmup": False,
+                    "trace_mode": "none"
                 },
             ),
         ],
