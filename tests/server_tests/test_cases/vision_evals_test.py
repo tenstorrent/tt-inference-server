@@ -17,7 +17,6 @@ import requests
 from datasets import DownloadConfig, Image, load_dataset
 
 from tests.server_tests.base_test import BaseTest
-from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
@@ -139,45 +138,55 @@ class VisionEvalsTest(BaseTest):
 
         return metadata
 
-    def _wait_for_server_ready(self, service_port: int = 8000) -> bool:
-        """Wait for server to be ready using DeviceLivenessTest.
+    def _wait_for_server_ready(
+        self,
+        service_port: int = 8000,
+        max_attempts: int = 230,
+        retry_delay: int = 10,
+    ) -> bool:
+        """Wait for server to be ready using simple HTTP health check.
 
         Args:
             service_port: Port where the server is running.
+            max_attempts: Maximum number of retry attempts.
+            retry_delay: Seconds to wait between retries.
 
         Returns:
             bool: True if server is ready, False otherwise.
         """
-        logger.info("Waiting for server to be ready using DeviceLivenessTest...")
+        logger.info("Waiting for server to be ready...")
+        health_url = f"http://localhost:{service_port}/tt-liveness"
+        logger.info("Health URL: %s", health_url)
 
-        test_config = TestConfig(
-            {
-                "test_timeout": 1200,  # 20 minutes
-                "retry_attempts": 229,  # 230 total attempts
-                "retry_delay": 10,  # 10 seconds between attempts
-                "break_on_failure": False,
-            }
-        )
-
-        liveness_test = DeviceLivenessTest(test_config, targets={})
-        liveness_test.service_port = service_port
-
-        try:
-            test_result = liveness_test.run_tests()
-
-            if isinstance(test_result, dict) and test_result.get("success"):
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.get(health_url, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "alive" and data.get("model_ready"):
+                        logger.info(
+                            "Server is ready after %s attempt(s)",
+                            attempt,
+                        )
+                        return True
                 logger.info(
-                    "Server is ready after %s attempt(s)",
-                    test_result.get("attempts", 1),
+                    "Server not ready (attempt %s/%s), retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    retry_delay,
                 )
-                return True
-            else:
-                logger.error("Server health check failed after all retry attempts")
-                return False
+            except requests.exceptions.RequestException as e:
+                logger.info(
+                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    e,
+                    retry_delay,
+                )
+            time.sleep(retry_delay)
 
-        except Exception as e:
-            logger.error("Server health check failed: %s", e)
-            return False
+        logger.error("Server health check failed after %s attempts", max_attempts)
+        return False
 
     def _replay_samples(
         self,
