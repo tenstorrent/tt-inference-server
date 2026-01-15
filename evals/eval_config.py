@@ -76,9 +76,9 @@ class EvalTask:
                 raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
 
     def validate_data(self):
-        assert not (self.use_chat_api and self.apply_chat_template), (
-            "Chat API applies chat template."
-        )
+        assert not (
+            self.use_chat_api and self.apply_chat_template
+        ), "Chat API applies chat template."
 
 
 @dataclass(frozen=True)
