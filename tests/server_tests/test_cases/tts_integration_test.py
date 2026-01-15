@@ -7,11 +7,10 @@ Integration tests for SpeechT5 TTS API endpoint on N150 hardware.
 
 These tests verify:
 1. Server startup and health check
-2. Non-streaming TTS generation
-3. Streaming TTS generation
-4. Error handling for invalid inputs
-5. Audio output validation (WAV format, sample rate, duration)
-6. API authentication
+2. TS generation
+3. Error handling for invalid inputs
+4. Audio output validation (WAV format, sample rate, duration)
+5. API authentication
 
 To run these tests:
     cd tt-inference-server/tt-media-server
@@ -33,11 +32,13 @@ To run these tests:
 """
 
 import io
-import wave
 import time
+import wave
+
 import pytest
 import requests
 
+from tests.server_tests.base_test import BaseTest
 
 # Test configuration
 BASE_URL = "http://localhost:8000"
@@ -50,7 +51,7 @@ EXPECTED_CHANNELS = 1
 EXPECTED_BIT_DEPTH = 16
 
 
-class TestTTSServerHealth:
+class TestTTSServerHealth(BaseTest):
     """Test server health and availability"""
 
     def test_server_is_running(self):
@@ -74,14 +75,12 @@ class TestTTSServerHealth:
         assert "python_info" in response.text
 
 
-class TestTTSAuthentication:
+class TestTTSAuthentication(BaseTest):
     """Test API authentication"""
 
     def test_missing_auth_token(self):
         """Request without auth token should fail"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts", json={"text": "Test", "stream": False}
-        )
+        response = requests.post(f"{BASE_URL}/tts/tts", json={"text": "Test"})
         assert response.status_code == 401 or response.status_code == 403
 
     def test_invalid_auth_token(self):
@@ -93,7 +92,7 @@ class TestTTSAuthentication:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=headers,
-            json={"text": "Test", "stream": False},
+            json={"text": "Test"},
         )
         assert response.status_code == 401 or response.status_code == 403
 
@@ -102,14 +101,14 @@ class TestTTSAuthentication:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": "Test", "stream": False},
+            json={"text": "Test"},
         )
         # Should get 200 or a processing error, not auth error
         assert response.status_code not in [401, 403]
 
 
-class TestTTSNonStreaming:
-    """Test non-streaming TTS generation"""
+class TestTTS(BaseTest):
+    """Test TTS generation"""
 
     def test_simple_text_generation(self):
         """Generate speech from simple text"""
@@ -117,7 +116,7 @@ class TestTTSNonStreaming:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=30,
         )
 
@@ -152,7 +151,7 @@ class TestTTSNonStreaming:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=60,
         )
 
@@ -171,7 +170,7 @@ class TestTTSNonStreaming:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=30,
         )
 
@@ -186,7 +185,7 @@ class TestTTSNonStreaming:
             response = requests.post(
                 f"{BASE_URL}/tts/tts",
                 headers=HEADERS,
-                json={"text": text, "stream": False, "speaker_id": speaker_id},
+                json={"text": text, "speaker_id": speaker_id},
                 timeout=30,
             )
 
@@ -194,57 +193,20 @@ class TestTTSNonStreaming:
             assert len(response.content) > 0
 
 
-class TestTTSStreaming:
-    """Test streaming TTS generation"""
-
-    def test_streaming_generation(self):
-        """Test streaming audio generation"""
-        text = "This is a streaming test"
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text, "stream": True},
-            stream=True,
-            timeout=30,
-        )
-
-        assert response.status_code == 200
-
-        # Collect streaming chunks
-        chunks = []
-        for chunk in response.iter_content(chunk_size=1024):
-            if chunk:
-                chunks.append(chunk)
-
-        # Should receive multiple chunks
-        assert len(chunks) > 0, "No streaming chunks received"
-
-        # Combine chunks and validate final audio
-        audio_data = b"".join(chunks)
-        assert len(audio_data) > 0
-
-        # Validate it's proper WAV
-        with wave.open(io.BytesIO(audio_data)) as wav:
-            assert wav.getframerate() == EXPECTED_SAMPLE_RATE
-            assert wav.getnchannels() == EXPECTED_CHANNELS
-
-
-class TestTTSErrorHandling:
+class TestTTSErrorHandling(BaseTest):
     """Test error handling for invalid inputs"""
 
     def test_empty_text(self):
         """Empty text should return error"""
         response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, json={"text": "", "stream": False}
+            f"{BASE_URL}/tts/tts", headers=HEADERS, json={"text": ""}
         )
         # Should fail validation
         assert response.status_code in [400, 422]
 
     def test_missing_text_field(self):
         """Missing required text field should return error"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, json={"stream": False}
-        )
+        response = requests.post(f"{BASE_URL}/tts/tts", headers=HEADERS, json={})
         assert response.status_code in [400, 422]
 
     def test_invalid_json(self):
@@ -260,7 +222,7 @@ class TestTTSErrorHandling:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=120,
         )
         # Should either succeed or return clear error (not timeout/crash)
@@ -271,13 +233,13 @@ class TestTTSErrorHandling:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": "Test", "stream": False, "speaker_id": -1},
+            json={"text": "Test", "speaker_id": -1},
         )
         # Should either accept and use default or return validation error
         assert response.status_code in [200, 400, 422]
 
 
-class TestTTSPerformance:
+class TestTTSPerformance(BaseTest):
     """Test performance characteristics"""
 
     def test_generation_latency(self):
@@ -288,7 +250,7 @@ class TestTTSPerformance:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=30,
         )
         end_time = time.time()
@@ -309,7 +271,7 @@ class TestTTSPerformance:
             response = requests.post(
                 f"{BASE_URL}/tts/tts",
                 headers=HEADERS,
-                json={"text": f"{text} {i}", "stream": False},
+                json={"text": f"{text} {i}"},
                 timeout=60,
             )
             responses.append(response)
@@ -319,7 +281,7 @@ class TestTTSPerformance:
             assert response.status_code == 200
 
 
-class TestTTSAudioQuality:
+class TestTTSAudioQuality(BaseTest):
     """Test audio output quality characteristics"""
 
     def test_audio_not_silent(self):
@@ -328,7 +290,7 @@ class TestTTSAudioQuality:
         response = requests.post(
             f"{BASE_URL}/tts/tts",
             headers=HEADERS,
-            json={"text": text, "stream": False},
+            json={"text": text},
             timeout=30,
         )
 
@@ -355,7 +317,7 @@ class TestTTSAudioQuality:
             response = requests.post(
                 f"{BASE_URL}/tts/tts",
                 headers=HEADERS,
-                json={"text": f"Test {i}", "stream": False},
+                json={"text": f"Test {i}"},
                 timeout=30,
             )
 
@@ -372,8 +334,3 @@ class TestTTSAudioQuality:
 
         # All formats should be identical
         assert all(f == formats[0] for f in formats), "Inconsistent audio formats"
-
-
-if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v", "--tb=short"])

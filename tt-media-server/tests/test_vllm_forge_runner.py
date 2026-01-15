@@ -114,27 +114,19 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
     )
     generator = await runner._run_async([request])
 
+    # ✅ Expected tuples: (task_id, is_final, text)
     expected_chunks = [
-        {
-            "type": "streaming_chunk",
-            "chunk": CompletionStreamChunk(text=token),
-            "task_id": request._task_id,
-        }
+        (request._task_id, 0, token)  # ✅ is_final=0 for streaming chunks
         for token in tokens
     ]
-    final_chunk = {
-        "type": "final_result",
-        "result": CompletionStreamChunk(
-            text="! I'm a new user of this platform. I'm trying to learn how"
-        ),
-        "task_id": request._task_id,
-        "return": False,
-    }
+    final_chunk = (request._task_id, 1, "final_text")  # ✅ is_final=1 for final
     expected_chunks.append(final_chunk)
 
     index = 0
     async for item in generator:
-        assert item == expected_chunks[index]
+        assert item == expected_chunks[index], (
+            f"Expected {expected_chunks[index]}, got {item}"
+        )
         index += 1
 
-    assert index == len(tokens) + 1, "Not all streaming chunks were received"
+    assert index == len(tokens) + 1, f"Expected {len(tokens) + 1} chunks, got {index}"

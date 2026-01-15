@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..base_test import BaseTest
+from tests.server_tests.base_test import BaseTest
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)

@@ -9,20 +9,37 @@ from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
 )
+from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_queue import TTQueue
+from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 
 
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue: Queue,
+    result_queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
+    result_queue_name: str = None,
 ):
     setup_worker_environment(worker_id, "16", 16)
     logger = TTLogger()
 
+    # attach to queue if it's provided
+    if result_queue_name is not None:
+        result_queue = SharedMemoryChunkQueue(name=result_queue_name, create=False)
+        logger.info(
+            f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
+        )
+
+    # Create a single event loop for this worker process
+    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
+    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    device_runner: BaseDeviceRunner = None
     try:
         device_runner, loop = initialize_device_worker(worker_id, logger, 16)
         if not device_runner:
@@ -47,15 +64,13 @@ def device_worker(
 
     # Define streaming handler
     async def handle_streaming(request):
-        base_key = request._task_id
-
         try:
             result_generator = await device_runner._run_async([request])
 
             logger.info("Starting streaming")
 
-            async for chunk in result_generator:
-                result_queue.put((worker_id, base_key, chunk))
+            async for task_id, is_final, text in result_generator:
+                result_queue.put(task_id, is_final, text)
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"

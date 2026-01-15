@@ -16,6 +16,9 @@ from .base_strategy_interface import BaseMediaStrategy
 
 logger = logging.getLogger(__name__)
 
+# Constants
+CNN_MOBILENETV2_RUNNER = "tt-xla-mobilenetv2"
+
 
 class CnnClientStrategy(BaseMediaStrategy):
     """Strategy for cnn models (RESNET, etc)."""
@@ -36,20 +39,21 @@ class CnnClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            # 2026-01-11 11:05:48,031 - utils.media_clients.cnn_client - INFO - Runner in use: tt-xla-mobilenetv2
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
-            status_list = self._run_image_analysis_benchmark(num_calls)
+            eval_result = None
+            if runner_in_use == CNN_MOBILENETV2_RUNNER:
+                eval_result = self._run_mobilenetv2_eval()
+            else:
+                status_list = self._run_image_analysis_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
         benchmark_data = {}
-
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
 
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name.lower()
@@ -59,13 +63,26 @@ class CnnClientStrategy(BaseMediaStrategy):
         benchmark_data["task_type"] = "cnn"
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
+
+        if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
+            logger.info("Adding eval results from eval spec test to benchmark data")
+            benchmark_data["accuracy"] = eval_result["accuracy"]
+            benchmark_data["correct"] = eval_result["correct"]
+            benchmark_data["total"] = eval_result["total"]
+            benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
+        else:
+            logger.info("No eval results from eval spec test to add to benchmark data")
+            # Calculate TTFT
+            ttft_value = self._calculate_ttft_value(status_list)
+            logger.info(f"Extracted TTFT value: {ttft_value}")
+
+            benchmark_data["published_score"] = self.all_params.tasks[
+                0
+            ].score.published_score
+            benchmark_data["score"] = ttft_value
+            benchmark_data["published_score_ref"] = self.all_params.tasks[
+                0
+            ].score.published_score_ref
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -202,3 +219,52 @@ class CnnClientStrategy(BaseMediaStrategy):
             if status_list
             else 0
         )
+
+    def _run_mobilenetv2_eval(self) -> dict:
+        """Run mobilenetv2 eval.
+
+        Returns:
+            dict: eval_results with structure:
+                {
+                    "tt-xla-mobilenetv2": {
+                        "accuracy": 0.36,
+                        "correct": 36,
+                        "total": 100,
+                        "mismatches_count": 64
+                    }
+                }
+        """
+        # Lazy import to avoid loading 'datasets' library at module import time
+        from tests.server_tests.test_cases.vision_evals_test import (
+            VisionEvalsTest,
+            VisionEvalsTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
+        logger.info("Running mobilenetv2 eval.")
+
+        request = VisionEvalsTestRequest(
+            action="measure_accuracy",
+            mode="device",
+            models=[CNN_MOBILENETV2_RUNNER],
+            server_url=f"{self.base_url}/cnn/search-image",
+        )
+        logger.info(f"Running VisionEvalsTest with request: {request}")
+
+        config = TestConfig.create_default()
+        targets = {"request": request}
+        test = VisionEvalsTest(config, targets)
+
+        logger.info("Starting VisionEvalsTest")
+        result = test.run_tests()
+
+        # Extract eval_results from nested structure: {model: {cpu: {...}, device: {...}}}
+        eval_results = result.get("result", {}).get("eval_results", {})
+        model_results = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
+        logger.info(f"VisionEvalsTest model results: {model_results}")
+
+        # Get device mode results for benchmark comparison
+        device_result = model_results.get("device", {})
+        logger.info(f"VisionEvalsTest device eval_results: {device_result}")
+
+        return device_result

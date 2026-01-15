@@ -13524,7 +13524,7 @@
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13619,7 +13619,7 @@
     "version": "0.7.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13634,7 +13634,7 @@
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13731,7 +13731,7 @@
     "version": "0.7.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13746,7 +13746,7 @@
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13843,7 +13843,7 @@
     "version": "0.7.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13858,7 +13858,7 @@
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13953,7 +13953,7 @@
     "version": "0.7.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"

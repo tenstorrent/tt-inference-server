@@ -56,6 +56,7 @@ class TestConfig:
                 "max_retries": 3,  # 3 retry attempts
                 "retry_delay": 5,  # 5 seconds between retries
                 "break_on_failure": True,
+                "retry_attempts": 10,
             }
         )
 

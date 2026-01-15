@@ -198,6 +198,11 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
     )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help="Disable vLLM API key authorization in the server (skips JWT_SECRET requirement)",
+    )
 
     args = parser.parse_args()
 
@@ -218,6 +223,8 @@ def handle_secrets(model_spec):
     jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
     # if interactive, user can enter secrets manually or it should not be a production deployment
     jwt_secret_required = jwt_secret_required and not args.interactive
+    # --no-auth disables authorization, so JWT_SECRET is not required
+    jwt_secret_required = jwt_secret_required and not args.no_auth
 
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
@@ -316,6 +323,7 @@ def format_cli_args_summary(args, model_spec):
         f"  dev_mode:                   {args.dev_mode}",
         f"  docker_server:              {args.docker_server}",
         f"  local_server:               {args.local_server}",
+        f"  no_auth:                    {args.no_auth}",
         f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
         f"  service_port:               {args.service_port}",
         f"  docker_override_image:      {args.override_docker_image}",

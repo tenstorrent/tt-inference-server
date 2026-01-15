@@ -8,7 +8,17 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-# Import real settings early so runner_fabric gets the real object before test files mock it
+# CRITICAL: Import and setup REAL numpy FIRST before anything else
+# This ensures that when memory_queue.py imports numpy, it gets the real one
+import numpy as np
+
+sys.modules["numpy"] = np
+if hasattr(np, "core"):
+    sys.modules["numpy.core"] = np.core
+if hasattr(np, "_core"):
+    sys.modules["numpy._core"] = np._core
+
+# Only then import pytest
 import pytest
 
 # Mock modules that are not available in test environment
@@ -19,14 +29,13 @@ mock_modules = [
     "PIL",
     "diffusers",
     "torchvision",
-    "numpy",
+    # "numpy",  # REMOVED - we use real numpy now
     "cv2",
     "pyarrow",
     "vllm",
     "torch_xla",
     "datasets",
     "pytorchcv",
-    "pydantic_settings",
 ]
 
 # Add mocks to sys.modules before any imports
@@ -161,18 +170,6 @@ for module in mock_modules:
             mock.ops = ops_module
             mock.models = MagicMock()
             mock.datasets = MagicMock()
-        elif module == "numpy":
-            mock.array = MagicMock()
-            mock.zeros = MagicMock()
-            mock.ones = MagicMock()
-            mock.ndarray = MagicMock()
-            mock.float32 = MagicMock()
-            mock.int32 = MagicMock()
-            mock.uint8 = MagicMock()
-            mock._core = MagicMock()
-            mock._core.multiarray = MagicMock()
-            mock.core = MagicMock()
-            mock.core.multiarray = MagicMock()
         elif module == "pytorchcv":
             mock.model_provider = MagicMock()
             # Create a mock model that looks like a PyTorch model
@@ -241,16 +238,10 @@ submodules = {
     "ttnn.utils_for_testing": sys.modules["ttnn"].utils_for_testing
     if "ttnn" in sys.modules
     else MagicMock(),
-    "numpy.core": sys.modules["numpy"]._core if "numpy" in sys.modules else MagicMock(),
-    "numpy.core.multiarray": sys.modules["numpy"].core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core": sys.modules["numpy"]._core
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core.multiarray": sys.modules["numpy"]._core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
+    "numpy.core": sys.modules.get("numpy.core", MagicMock()),
+    "numpy.core.multiarray": sys.modules.get("numpy.core", MagicMock()),
+    "numpy._core": sys.modules.get("numpy._core", MagicMock()),
+    "numpy._core.multiarray": sys.modules.get("numpy._core", MagicMock()),
     "diffusers.image_processor": sys.modules["diffusers"].image_processor
     if "diffusers" in sys.modules
     else MagicMock(),
@@ -478,6 +469,29 @@ if "models" not in sys.modules:
     sys.modules["models.demos.whisper.tt.whisper_generator"] = (
         whisper_tt_mock.whisper_generator
     )
+
+
+# Mock logger - BEFORE anything else
+class MockLogger:
+    """Proper mock logger that doesn't interfere with other operations"""
+
+    def info(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
+    def debug(self, msg):
+        pass
+
+
+mock_logger = MockLogger()
+mock_logger_module = type("module", (), {})()
+mock_logger_module.TTLogger = lambda: mock_logger
+sys.modules["utils.logger"] = mock_logger_module
 
 
 # Create mock runner classes with proper names BEFORE any imports

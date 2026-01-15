@@ -253,7 +253,7 @@ forge_vllm_plugin_impl = ImplSpec(
 tt_vllm_plugin_impl = ImplSpec(
     impl_id="tt_vllm_plugin",
     impl_name="tt-vllm-plugin",
-    repo_url="https://github.com/dmadicTT/tt-vllm-plugin",
+    repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
 

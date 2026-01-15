@@ -2,8 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 # Self-contained mock classes for testing TTS functionality
@@ -20,13 +21,11 @@ class MockTextToSpeechRequest:
                 raise ValueError("speaker_embedding must be str or bytes")
 
         self.text = kwargs.get("text", "Hello world")
-        self.stream = kwargs.get("stream", False)
         self.speaker_id = kwargs.get("speaker_id", None)
-        self.response_format = kwargs.get("response_format", "verbose_json")
         self.speaker_embedding = speaker_embedding
 
 
-class MockAudioResponseFormat:
+class MockResponseFormat:
     TEXT = "text"
     VERBOSE_JSON = "verbose_json"
 
@@ -48,12 +47,6 @@ class MockHTTPException(Exception):
         self.detail = detail
 
 
-class MockStreamingResponse:
-    def __init__(self, content, media_type=None):
-        self.content = content
-        self.media_type = media_type
-
-
 def mock_get_dict_response(obj):
     """Mock implementation of get_dict_response"""
     if hasattr(obj, "to_dict"):
@@ -63,10 +56,9 @@ def mock_get_dict_response(obj):
 
 # Use mock classes
 TextToSpeechRequest = MockTextToSpeechRequest
-AudioResponseFormat = MockAudioResponseFormat
+ResponseFormat = MockResponseFormat
 Request = MockRequest
 HTTPException = MockHTTPException
-StreamingResponse = MockStreamingResponse
 get_dict_response = mock_get_dict_response
 
 
@@ -78,22 +70,16 @@ class TestTTSParsing:
         # Basic request
         request = TextToSpeechRequest(text="Hello world")
         assert request.text == "Hello world"
-        assert request.stream is False
-        assert request.response_format == "verbose_json"
         assert request.speaker_id is None
         assert request.speaker_embedding is None
 
         # Request with all parameters
         request = TextToSpeechRequest(
             text="Hello world",
-            stream=True,
-            response_format="text",
             speaker_id="speaker_1",
             speaker_embedding="base64_data",
         )
         assert request.text == "Hello world"
-        assert request.stream is True
-        assert request.response_format == "text"
         assert request.speaker_id == "speaker_1"
         assert request.speaker_embedding == "base64_data"
 
