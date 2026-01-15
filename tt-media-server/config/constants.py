@@ -68,7 +68,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
-    LORA_TRAINER = "lora_trainer"
+    TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
     TEST = "test"
 
@@ -115,7 +115,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2,
     },
     ModelServices.TRAINING: {
-        ModelRunners.LORA_TRAINER,
+        ModelRunners.TRAINING_GEMMA_LORA,
     },
 }
 
@@ -181,6 +181,8 @@ class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
 
+class DatasetLoaders(Enum):
+    SST2 = "sst2"
 
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
