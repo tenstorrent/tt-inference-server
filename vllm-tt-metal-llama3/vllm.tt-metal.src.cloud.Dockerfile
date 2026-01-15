@@ -86,6 +86,11 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && rm -rf ${TT_METAL_HOME}/.git"
 
+# Fix python_env permissions to allow pip to modify packages during vLLM installation
+USER root
+RUN chmod -R 777 ${PYTHON_ENV_DIR}
+USER ${CONTAINER_APP_USERNAME}
+
 # Build vllm - clone with minimal history and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
