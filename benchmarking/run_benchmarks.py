@@ -132,7 +132,9 @@ def build_benchmark_command(
     # fmt: off
     cmd = [
         str(task_venv_config.venv_python), str(benchmark_script),
-        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        # "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        "--backend", "openai-chat",
+        "--endpoint", "/v1/chat/completions",
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", "cleaned-random",
