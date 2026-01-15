@@ -70,7 +70,8 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
-USER ${CONTAINER_APP_USERNAME}
+# NOTE: Intentionally NOT switching to USER here - build steps need root
+# to properly manage pip packages in the base image's Python environment
 
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
@@ -84,17 +85,17 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && bash ./build_metal.sh \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && chmod -R u+rwX ${PYTHON_ENV_DIR} \
+    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"
 
 # Build vllm - clone with minimal history and clean
+# Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && uv pip install --upgrade pip \
+    && uv pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
 
 # ==============================================================================
@@ -181,8 +182,8 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 
 # Install additional app requirements into the copied venv
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --no-cache-dir --default-timeout=240 -r ${APP_DIR}/requirements.txt \
-    && pip cache purge"
+    && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
+    && uv cache clean"
 
 # Set working directory
 WORKDIR "${APP_DIR}/src"
