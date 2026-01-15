@@ -1357,7 +1357,7 @@ def genai_perf_benchmark_generate_report(
             x["isl"],
             x["osl"],
             x["concurrency"],
-            x["images"],
+            x["images_per_prompt"],
             x["image_height"],
             x["image_width"],
         )
