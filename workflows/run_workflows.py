@@ -71,6 +71,7 @@ class WorkflowSetup:
         # Step 2: Create a virtual environment
         uv_exec = cls.workflow_setup_venv / "bin" / "uv"
         pip_exec = cls.workflow_setup_venv / "bin" / "pip"
+        venv_python = cls.workflow_setup_venv / "bin" / "python"
 
         # Check if venv needs to be created or recreated (e.g., if pip is missing)
         needs_venv_creation = not cls.workflow_setup_venv.exists() or not pip_exec.exists()
@@ -79,13 +80,25 @@ class WorkflowSetup:
             logger.info(
                 "Creating virtual environment in '%s'...", cls.workflow_setup_venv
             )
-            # Use --upgrade-deps to ensure pip/setuptools are installed and up-to-date
-            # Use --clear to recreate if venv exists but is missing pip
-            clear_flag = "--clear" if cls.workflow_setup_venv.exists() else ""
+            # Clear existing venv if it exists but is broken (missing pip)
+            if cls.workflow_setup_venv.exists():
+                import shutil
+                shutil.rmtree(cls.workflow_setup_venv)
+
+            # Create venv - some systems (PEP 668 externally-managed) may not include pip
             run_command(
-                f"{sys.executable} -m venv {clear_flag} --upgrade-deps {cls.workflow_setup_venv}",
+                f"{sys.executable} -m venv {cls.workflow_setup_venv}",
                 logger=logger,
             )
+
+            # Ensure pip is installed using ensurepip (works even on externally-managed Python)
+            if not pip_exec.exists():
+                logger.info("Installing pip using ensurepip...")
+                run_command(
+                    f"{venv_python} -m ensurepip --upgrade",
+                    logger=logger,
+                )
+
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
