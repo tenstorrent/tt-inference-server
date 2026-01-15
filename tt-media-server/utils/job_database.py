@@ -8,13 +8,11 @@ from pathlib import Path
 import sqlite3
 import json
 
-DEFAULT_DB_PATH = Path("./jobs.db")
-
 
 class JobDatabase:
     """Database interface for persistent job storage."""
 
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: Path):
         self.db_path = db_path
         # Ensure the directory exists
         if self.db_path.parent != Path("."):
@@ -23,7 +21,7 @@ class JobDatabase:
 
     def _get_connection(self) -> sqlite3.Connection:
         """Creates a fresh database connection for each operation."""
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
         return conn
 
@@ -38,9 +36,10 @@ class JobDatabase:
                 model TEXT NOT NULL,
                 request_parameters TEXT,
                 status TEXT NOT NULL,
-                created_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                error_message TEXT
+                created_at INTEGER NOT NULL,
+                completed_at INTEGER,
+                error_message TEXT,
+                result_path TEXT
             );
         """)
         conn.commit()
@@ -63,7 +62,14 @@ class JobDatabase:
             """
             INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (job_id, job_type, model, status, json.dumps(request_parameters), created_at),
+            (
+                job_id,
+                job_type,
+                model,
+                status,
+                json.dumps(request_parameters),
+                created_at,
+            ),
         )
         conn.commit()
         conn.close()
@@ -73,7 +79,8 @@ class JobDatabase:
         job_id: str,
         status: str,
         completed_at: Optional[int] = None,
-        error_message: Optional[dict] = None,
+        result_path: Optional[str] = None,
+        error_message: Optional[dict[str, str]] = None,
     ) -> None:
         """Update job status and optional fields."""
         conn = self._get_connection()
@@ -89,6 +96,10 @@ class JobDatabase:
         if error_message is not None:
             updates.append("error_message = ?")
             params.append(json.dumps(error_message))
+
+        if result_path is not None:
+            updates.append("result_path = ?")
+            params.append(result_path)
 
         query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"
         params.append(job_id)
@@ -107,6 +118,30 @@ class JobDatabase:
         conn.commit()
         conn.close()
 
+    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific job from the database by its ID."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            job_dict = dict(row)
+
+            if job_dict.get("request_parameters"):
+                job_dict["request_parameters"] = json.loads(
+                    job_dict["request_parameters"]
+                )
+
+            if job_dict.get("error_message"):
+                job_dict["error_message"] = json.loads(job_dict["error_message"])
+
+            return job_dict
+
+        return None
+
     def get_all_jobs(self) -> List[Dict[str, Any]]:
         """Retrieve all jobs from the database."""
         conn = self._get_connection()
@@ -122,7 +157,9 @@ class JobDatabase:
             # Convert row to dict and parse the JSON strings back to Python objects
             job_dict = dict(row)
             if job_dict.get("request_parameters"):
-                job_dict["request_parameters"] = json.loads(job_dict["request_parameters"])
+                job_dict["request_parameters"] = json.loads(
+                    job_dict["request_parameters"]
+                )
             if job_dict.get("error_message"):
                 job_dict["error_message"] = json.loads(job_dict["error_message"])
             jobs.append(job_dict)

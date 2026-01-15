@@ -16,7 +16,6 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
-    DatasetLoaders,
     SupportedModels,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -47,9 +46,6 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
 
-    # Dataset settings
-    dataset_loader: str = DatasetLoaders.SST2.value
-
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
@@ -73,6 +69,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
+    job_database_path: str = "./jobs.db"
 
     # Text processing settings
     min_context_length: int = 32
@@ -134,9 +131,9 @@ class Settings(BaseSettings):
                 # Get first model name from the set
                 model_name = list(model_names_set)[0]
                 if model_name:
-                    self.model_weights_path = getattr(
-                        SupportedModels, model_name.name
-                    ).value
+                    supported_model = getattr(SupportedModels, model_name.name, None)
+                    if supported_model:
+                        self.model_weights_path = supported_model.value
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()

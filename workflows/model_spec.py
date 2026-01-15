@@ -1900,7 +1900,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                     "data_parallel": 4,
-                    "sample_on_device_mode": "decode_only",
+                    "sample_on_device_mode": "all",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
