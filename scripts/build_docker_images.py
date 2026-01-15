@@ -946,6 +946,44 @@ def push_image(image_tag, logger):
     logger.info(f"Successfully pushed image: {image_tag}")
 
 
+def list_image_combinations(model_configs, build_metal_commit=None):
+    """
+    Get unique Docker image commit combinations that would be built.
+    
+    Args:
+        model_configs: Dictionary of model configurations
+        build_metal_commit: Only return combinations with this exact tt-metal commit
+        
+    Returns:
+        Set of tuples (tt_metal_commit, vllm_commit) representing unique combinations
+    """
+    unique_sha_combinations = {
+        (config.tt_metal_commit, config.vllm_commit)
+        for config in model_configs.values()
+        if config.vllm_commit is not None
+    }
+
+    skipped_count = sum(
+        1 for config in model_configs.values() if config.vllm_commit is None
+    )
+
+    if skipped_count > 0:
+        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
+
+    if build_metal_commit:
+        unique_sha_combinations = {
+            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
+        }
+
+    if not unique_sha_combinations:
+        logger.warning(
+            f"No configurations found with tt_metal_commit={build_metal_commit}"
+        )
+        return set()
+
+    return unique_sha_combinations
+
+
 def build_docker_images(
     model_configs,
     force_build=False,
@@ -977,30 +1015,18 @@ def build_docker_images(
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
 
-    # Filter combinations if build_metal_commit is specified
-    unique_sha_combinations = {
-        (config.tt_metal_commit, config.vllm_commit)
-        for config in model_configs.values()
-        if config.vllm_commit is not None
-    }
-
-    skipped_count = sum(
-        1 for config in model_configs.values() if config.vllm_commit is None
+    # Get unique combinations using the shared function
+    unique_sha_combinations = list_image_combinations(
+        model_configs,
+        build_metal_commit=build_metal_commit,
     )
-
-    if skipped_count > 0:
-        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
-
-    if build_metal_commit:
-        unique_sha_combinations = {
-            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
-        }
 
     if not unique_sha_combinations:
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
         return
+
     unique_sha_combinations_str = "\n".join(
         [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
     )
