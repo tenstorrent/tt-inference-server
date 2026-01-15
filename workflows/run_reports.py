@@ -369,17 +369,32 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def aiperf_release_markdown(release_raw):
+def aiperf_release_markdown(release_raw, is_image_benchmark=False):
     """Generate markdown table for AIPerf benchmarks with detailed metrics.
 
     This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
     for each key metric category.
+    
+    Args:
+        release_raw: Raw benchmark data
+        is_image_benchmark: If True, includes image dimension columns (height, width, images per prompt)
     """
     # Define display columns mapping - NVIDIA style with detailed percentiles
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("concurrency", "Concur"),
+    ]
+    
+    # Add image-specific columns for image benchmarks
+    if is_image_benchmark:
+        display_cols.extend([
+            ("image_height", "Image Height"),
+            ("image_width", "Image Width"),
+            ("images_per_prompt", "Images per Prompt"),
+        ])
+    
+    display_cols.extend([
         ("num_requests", "N"),
         # TTFT metrics
         ("mean_ttft_ms", "TTFT Avg (ms)"),
@@ -396,7 +411,7 @@ def aiperf_release_markdown(release_raw):
         # Throughput
         ("output_token_throughput", "Tok/s"),
         ("request_throughput", "Req/s"),
-    ]
+    ])
 
     NOT_MEASURED_STR = "N/A"
     display_dicts = []
@@ -1087,7 +1102,7 @@ def aiperf_benchmark_generate_report(
         )
 
         # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
+        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results, is_image_benchmark=True)
         release_str += nvidia_markdown_str
         release_str += "\n\n"
 
@@ -1367,7 +1382,7 @@ def genai_perf_benchmark_generate_report(
         release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
         # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(genai_image_results)
+        nvidia_markdown_str = aiperf_release_markdown(genai_image_results, is_image_benchmark=True)
         release_str += nvidia_markdown_str
         release_str += "\n\n"
 
