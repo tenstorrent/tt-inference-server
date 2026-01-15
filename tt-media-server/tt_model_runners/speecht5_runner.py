@@ -28,6 +28,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_decoder import (
     TTNNSpeechT5Decoder,
     TTNNDecoderConfig,
     preprocess_decoder_parameters,
+    init_kv_cache,
 )
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     TTNNSpeechT5SpeechDecoderPostnet,
@@ -52,12 +53,14 @@ from utils.decorators import log_execution_time
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
+    MAX_STEPS = 950  # Maximum generation steps for long text
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
+    NUM_MEL_BINS = 80
     STREAMING_CHUNK_SIZE = 20  # Generate audio chunks every 20 mel frames
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
+    MIN_STEPS_FOR_STOP_CHECK = 10  # Don't stop too early
 
 
 class SpeechT5ModelError(Exception):
@@ -119,6 +122,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.ttnn_postnet = None
         self.generator = None  # For trace execution
         self.speaker_manager = None
+        self.decoder_config = None  # Store for KV cache initialization
 
         # Limit threading for stability during inference
         setup_cpu_threading_limits("1")
@@ -128,7 +132,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             os.environ["TT_METAL_FABRIC_DISABLE"] = "1"
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
+        """Device parameters optimized for SpeechT5 with 2CQ support."""
+        device_params = {
+            "l1_small_size": 300000,  # Increased for KV cache
+            "trace_region_size": 10000000,
+            "num_command_queues": 2,  # Enable 2CQ for async overlap
+        }
         return device_params
 
     def _initialize_models(self):
@@ -159,7 +168,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 layer_norm_eps=model.config.layer_norm_eps,
             )
 
-            decoder_config = TTNNDecoderConfig(
+            self.decoder_config = TTNNDecoderConfig(
                 hidden_size=model.config.hidden_size,
                 num_layers=model.config.decoder_layers,
                 num_heads=model.config.decoder_attention_heads,
@@ -213,11 +222,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 self.ttnn_device,
                 preprocess_decoder_parameters(
                     model.speecht5.decoder,
-                    decoder_config,
+                    self.decoder_config,
                     self.ttnn_device,
                     default_speaker_embedding,
                 ),
-                decoder_config,
+                self.decoder_config,
                 max_sequence_length=SpeechT5Constants.MAX_STEPS,
             )
 
@@ -230,14 +239,18 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 postnet_config,
             )
 
-            # Optional: Initialize trace generator for faster inference
+            # Initialize trace generator for faster inference
             try:
+                self.logger.info(f"Device {self.device_id}: Creating trace generator")
                 self.generator = SpeechT5Generator(
-                    self.ttnn_encoder,
-                    self.ttnn_decoder,
-                    self.ttnn_postnet,
-                    self.ttnn_device,
-                    default_speaker_embedding,
+                    encoder=self.ttnn_encoder,
+                    decoder=self.ttnn_decoder,
+                    postnet=self.ttnn_postnet,
+                    device=self.ttnn_device,
+                    decoder_config=self.decoder_config,
+                    max_steps=SpeechT5Constants.MAX_STEPS,
+                    max_batch_size=1,
+                    encoder_seq_len=128,
                 )
                 self.logger.info(
                     f"Device {self.device_id}: Trace generator initialized"
@@ -258,6 +271,41 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             )
             raise SpeechT5ModelError(f"Model initialization failed: {str(e)}") from e
 
+    def _warmup_models(self):
+        """Warmup models by pre-compiling kernels and capturing traces."""
+        try:
+            self.logger.info(f"Device {self.device_id}: Pre-compiling postnet kernels")
+
+            # Pre-compile postnet kernels BEFORE any trace capture
+            dummy_decoder_output = ttnn.from_torch(
+                torch.randn(1, 1, 1, self.decoder_config.hidden_size),
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=self.ttnn_device,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
+            )
+            _ = self.ttnn_postnet(dummy_decoder_output)
+            ttnn.deallocate(dummy_decoder_output)
+            self.logger.info(f"Device {self.device_id}: Postnet kernels compiled")
+
+            # Capture traces for all supported encoder sizes
+            if self.generator is not None:
+                self.logger.info(
+                    f"Device {self.device_id}: Capturing traces for all encoder sizes"
+                )
+                self.generator.capture_all_traces(self.processor, batch_size=1)
+
+                # Reset KV caches after warmup to clear stale values
+                self.generator._reset_kv_caches()
+                self.logger.info(
+                    f"Device {self.device_id}: Traces captured and KV caches reset"
+                )
+
+        except Exception as e:
+            self.logger.warning(
+                f"Device {self.device_id}: Warmup failed (will compile on first request): {e}"
+            )
+
     @log_execution_time(
         "SpeechT5 model load",
         TelemetryEvent.DEVICE_WARMUP,
@@ -274,9 +322,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     "Device not initialized. Call set_device() first."
                 )
 
-            # Enable program cache for faster inference (already done in set_device)
-            # self.ttnn_device.enable_program_cache()
-
             # Initialize models
             try:
                 await asyncio.to_thread(self._initialize_models)
@@ -289,11 +334,14 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
                 raise
 
-            # Skip warmup for now to avoid kernel compilation issues
-            # Kernels will be compiled on first inference request
-            self.logger.info(
-                f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
-            )
+            # Warmup: pre-compile kernels and capture traces
+            try:
+                await asyncio.to_thread(self._warmup_models)
+                self.logger.info(f"Device {device_id_int}: Warmup completed")
+            except Exception as e:
+                self.logger.warning(
+                    f"Device {device_id_int}: Warmup failed, will compile on first request: {e}"
+                )
 
             return True
 
@@ -334,15 +382,34 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self, text: str, speaker_embedding: torch.Tensor, task_id: str
     ):
         """Streaming audio generation with task ID"""
-        async for result in self._generate_audio_sync(text, speaker_embedding, True):
+        async for result in self._generate_audio_optimized(text, speaker_embedding, True):
             result["task_id"] = task_id
             yield result
 
-    async def _generate_audio_sync(
+    async def _generate_audio_optimized(
         self, text: str, speaker_embedding: torch.Tensor, stream: bool = False
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Synchronous audio generation that can yield streaming chunks"""
+        """
+        Optimized audio generation with KV cache, trace execution, and 2CQ overlap.
+
+        This implementation follows the optimized pattern from demo_ttnn.py:
+        - KV cache for O(1) per-step complexity
+        - Trace execution for faster decoder inference
+        - 2CQ event synchronization for overlapping position updates with CPU work
+        - CPU accumulation of mel frames to avoid device allocations during trace
+        """
+        import time
+
         try:
+            device = self.ttnn_device
+            batch_size = 1
+            num_mel_bins = SpeechT5Constants.NUM_MEL_BINS
+            max_steps = SpeechT5Constants.MAX_STEPS
+
+            # Performance tracking
+            generation_start = time.time()
+            ttft = None  # Time To First Token/Frame
+
             # Process input text
             inputs = self.processor(text=text, return_tensors="pt")
             token_ids = inputs["input_ids"]
@@ -352,107 +419,282 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 token_ids,
                 dtype=ttnn.uint32,
                 layout=ttnn.ROW_MAJOR_LAYOUT,
-                device=self.ttnn_device,
+                device=device,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
             ttnn_speaker_embeddings = ttnn.from_torch(
                 speaker_embedding,
                 dtype=ttnn.bfloat16,
                 layout=ttnn.TILE_LAYOUT,
-                device=self.ttnn_device,
+                device=device,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
 
-            # Initialize decoder sequence
-            batch_size = token_ids.shape[0]
-            num_mel_bins = 80  # Standard for SpeechT5
+            # Determine if trace and KV cache are available
+            use_kv_cache = self.generator is not None and self.decoder_config is not None
+            enable_trace = use_kv_cache
+
+            # Encoder forward pass (runs only once)
+            encoder_start = time.time()
+            encoder_output = self.ttnn_encoder(ttnn_input_ids)[0]
+            encoder_time = time.time() - encoder_start
+
+            # Setup for trace mode
+            if enable_trace:
+                self.generator.copy_encoder_output(encoder_output)
+                encoder_output_for_decoder = self.generator.encoder_hidden_states
+                kv_cache = self.generator.kv_cache
+                cross_attn_cache = self.generator.cross_attn_cache
+                self.generator._invalidate_cross_attn_cache()
+            else:
+                encoder_output_for_decoder = encoder_output
+                kv_cache = None
+                cross_attn_cache = None
+                if use_kv_cache:
+                    encoder_seq_len = encoder_output.shape[1]
+                    kv_cache, cross_attn_cache = init_kv_cache(
+                        self.decoder_config,
+                        device,
+                        max_batch_size=batch_size,
+                        max_seq_len=max_steps + 10,
+                        encoder_seq_len=encoder_seq_len,
+                    )
+
+            # Initial mel frame (zeros)
             output_sequence_ttnn = ttnn.from_torch(
                 torch.zeros(batch_size, 1, num_mel_bins),
                 dtype=ttnn.bfloat16,
                 layout=ttnn.TILE_LAYOUT,
-                device=self.ttnn_device,
+                device=device,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
 
-            spectrogram_ttnn = None  # Will be built incrementally on device
+            # For trace mode: accumulate mel frames on CPU to avoid device allocations
+            spectrogram_frames_cpu = []
+            spectrogram_ttnn = None
             steps_completed = 0
+            current_input_ttnn = output_sequence_ttnn
+
+            # 2CQ: Events for overlapping position updates with CPU work
+            use_2cq = enable_trace and self.generator is not None
+            op_event = None
+            pos_event = None
 
             # Autoregressive generation loop
-            for step in range(SpeechT5Constants.MAX_STEPS):
-                # Decoder inference
-                decoder_hidden_states = self.ttnn_decoder(
-                    decoder_input_values=output_sequence_ttnn,
-                    encoder_hidden_states=self.ttnn_encoder(ttnn_input_ids)[0],
-                    speaker_embeddings=ttnn_speaker_embeddings,
-                )
+            decoder_loop_start = time.time()
+            for step in range(max_steps):
+                # Log progress every 50 steps
+                if step > 0 and step % 50 == 0:
+                    elapsed = time.time() - decoder_loop_start
+                    current_rate = step / elapsed if elapsed > 0 else 0
+                    self.logger.debug(
+                        f"Device {self.device_id}: Step {step}/{max_steps}, "
+                        f"Rate: {current_rate:.1f} tokens/s"
+                    )
+
+                if use_kv_cache and kv_cache is not None:
+                    # KV cache mode: pass only the current frame (seq_len=1 after step 0)
+
+                    if enable_trace and self.generator is not None:
+                        # 2CQ: Wait for async position update from previous iteration
+                        if use_2cq and pos_event is not None:
+                            ttnn.wait_for_event(0, pos_event)  # CQ0 waits for CQ1
+                            pos_event = None
+                        else:
+                            # Step 0 or non-2CQ: update position synchronously
+                            self.generator._reset_decode_pos(step, batch_size)
+
+                        # Preprocess: run prenet + PE addition OUTSIDE trace
+                        preprocessed_hidden_states = self.ttnn_decoder.preprocess_decoder_inputs(
+                            decoder_input_values=current_input_ttnn,
+                            position_offset=step,
+                        )
+
+                        if step == 0:
+                            # First iteration: non-traced to populate cross-attention cache
+                            decoder_hidden_states = self.ttnn_decoder(
+                                decoder_input_values=None,
+                                encoder_hidden_states=encoder_output_for_decoder,
+                                speaker_embeddings=None,
+                                kv_cache=kv_cache,
+                                cross_attn_cache=cross_attn_cache,
+                                cross_attn_cache_valid=False,
+                                current_decode_pos=self.generator.current_decode_pos,
+                                preprocessed_hidden_states=preprocessed_hidden_states,
+                                encoder_attention_mask=self.generator.encoder_attention_mask,
+                            )
+                            self.generator.cross_attn_cache_valid = True
+
+                            # Capture trace after first iteration
+                            if not self.generator.trace_compiled:
+                                self.generator._capture_decoder_trace(preprocessed_hidden_states)
+                        else:
+                            # Step 1+: Execute trace (non-blocking for 2CQ overlap)
+                            decoder_hidden_states = self.generator._execute_decoder_trace(
+                                preprocessed_hidden_states, blocking=False
+                            )
+                            # Sync: create a copy to ensure trace output is ready for postnet
+                            decoder_hidden_states = ttnn.to_memory_config(
+                                decoder_hidden_states,
+                                ttnn.L1_MEMORY_CONFIG,
+                            )
+                    else:
+                        # KV cache without trace
+                        current_pos = ttnn.from_torch(
+                            torch.tensor([step], dtype=torch.int32),
+                            dtype=ttnn.int32,
+                            layout=ttnn.ROW_MAJOR_LAYOUT,
+                            device=device,
+                            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                        )
+
+                        decoder_hidden_states = self.ttnn_decoder(
+                            decoder_input_values=current_input_ttnn,
+                            encoder_hidden_states=encoder_output_for_decoder,
+                            speaker_embeddings=ttnn_speaker_embeddings,
+                            kv_cache=kv_cache,
+                            cross_attn_cache=cross_attn_cache,
+                            cross_attn_cache_valid=(step > 0),
+                            current_decode_pos=current_pos,
+                            position_offset=step,
+                        )
+                else:
+                    # Standard mode: pass full sequence (slow, no KV cache)
+                    decoder_hidden_states = self.ttnn_decoder(
+                        decoder_input_values=output_sequence_ttnn,
+                        encoder_hidden_states=encoder_output_for_decoder,
+                        speaker_embeddings=ttnn_speaker_embeddings,
+                    )
 
                 # Postnet inference
-                mel_before, mel_after, stop_logits = self.ttnn_postnet(
-                    decoder_hidden_states
-                )
+                mel_before, mel_after, stop_logits = self.ttnn_postnet(decoder_hidden_states)
+
+                # Capture TTFT after step 0's postnet (first mel frame produced)
+                if step == 0 and ttft is None:
+                    ttft = time.time() - generation_start
+
+                # 2CQ: Start async position update for next iteration on CQ1
+                if use_2cq and step < max_steps - 1:
+                    op_event = ttnn.record_event(device, 0)  # Record on CQ0
+                    ttnn.wait_for_event(1, op_event)  # CQ1 waits for CQ0
+                    self.generator._reset_decode_pos(step + 1, batch_size, cq_id=1)
+                    pos_event = ttnn.record_event(device, 1)  # Record on CQ1
 
                 # Check stopping condition
-                sigmoid_logits = ttnn.sigmoid(
-                    stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                sum_prob = ttnn.sum(
-                    sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                should_stop = ttnn.ge(
-                    sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                any_stop_scalar = ttnn.sum(should_stop)
-                if ttnn.to_torch(any_stop_scalar).item() > 0:
-                    break
+                if step >= SpeechT5Constants.MIN_STEPS_FOR_STOP_CHECK:
+                    if use_kv_cache and kv_cache is not None:
+                        current_stop_logits = stop_logits
+                    else:
+                        reduction_factor = SpeechT5Constants.REDUCTION_FACTOR
+                        stop_logits_shape = stop_logits.shape
+                        total_mel_frames = stop_logits_shape[-1]
+                        current_stop_logits = ttnn.slice(
+                            stop_logits,
+                            [0, total_mel_frames - reduction_factor],
+                            [batch_size, total_mel_frames],
+                            memory_config=ttnn.L1_MEMORY_CONFIG,
+                        )
+
+                    sigmoid_logits = ttnn.sigmoid(
+                        current_stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG
+                    )
+                    sum_prob = ttnn.sum(
+                        sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG
+                    )
+                    should_stop = ttnn.ge(
+                        sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG
+                    )
+                    any_stop_scalar = ttnn.sum(should_stop)
+                    if ttnn.to_torch(any_stop_scalar).item() > 0:
+                        break
 
                 # Extract new mel frames
-                current_seq_len = output_sequence_ttnn.shape[1]
-                start_idx = (current_seq_len - 1) * SpeechT5Constants.REDUCTION_FACTOR
-                end_idx = start_idx + SpeechT5Constants.REDUCTION_FACTOR
+                if use_kv_cache and kv_cache is not None:
+                    # KV cache mode: mel_after has shape [batch, reduction_factor, mel_bins]
+                    mel_after_shape = mel_after.shape
+                    if len(mel_after_shape) == 4:
+                        mel_frames = mel_after_shape[2]
+                    else:
+                        mel_frames = mel_after_shape[1]
 
-                # Slice the new frames from mel_after
-                new_frames_ttnn = ttnn.slice(
-                    mel_after,
-                    [0, start_idx, 0],  # start indices [batch, seq, mel_bins]
-                    [batch_size, end_idx, num_mel_bins],  # end indices
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
+                    new_frames_ttnn = mel_after
+                    if len(mel_after_shape) == 4:
+                        new_frames_ttnn = ttnn.reshape(
+                            mel_after, [batch_size, mel_frames, num_mel_bins]
+                        )
 
-                # Build spectrogram incrementally
-                if spectrogram_ttnn is None:
-                    spectrogram_ttnn = new_frames_ttnn
+                    # CPU accumulation for trace mode
+                    if enable_trace and self.generator is not None:
+                        spectrogram_frames_cpu.append(
+                            ttnn.to_torch(new_frames_ttnn).clone()
+                        )
+                    else:
+                        if spectrogram_ttnn is None:
+                            spectrogram_ttnn = new_frames_ttnn
+                        else:
+                            spectrogram_ttnn = ttnn.concat(
+                                [spectrogram_ttnn, new_frames_ttnn],
+                                dim=1,
+                                memory_config=ttnn.L1_MEMORY_CONFIG,
+                            )
+
+                    # Get last frame for next iteration input
+                    last_frame_ttnn = ttnn.slice(
+                        new_frames_ttnn,
+                        [0, mel_frames - 1, 0],
+                        [batch_size, mel_frames, num_mel_bins],
+                        memory_config=ttnn.L1_MEMORY_CONFIG,
+                    )
+                    current_input_ttnn = last_frame_ttnn
                 else:
-                    spectrogram_ttnn = ttnn.concat(
-                        [spectrogram_ttnn, new_frames_ttnn],
+                    # Standard mode: extract frames from full mel_after
+                    current_seq_len = output_sequence_ttnn.shape[1]
+                    start_idx = (current_seq_len - 1) * SpeechT5Constants.REDUCTION_FACTOR
+                    end_idx = start_idx + SpeechT5Constants.REDUCTION_FACTOR
+
+                    new_frames_ttnn = ttnn.slice(
+                        mel_after,
+                        [0, start_idx, 0],
+                        [batch_size, end_idx, num_mel_bins],
+                        memory_config=ttnn.L1_MEMORY_CONFIG,
+                    )
+
+                    if spectrogram_ttnn is None:
+                        spectrogram_ttnn = new_frames_ttnn
+                    else:
+                        spectrogram_ttnn = ttnn.concat(
+                            [spectrogram_ttnn, new_frames_ttnn],
+                            dim=1,
+                            memory_config=ttnn.L1_MEMORY_CONFIG,
+                        )
+
+                    # Extend sequence with last frame
+                    last_frame_idx = start_idx + 1
+                    last_frame_ttnn = ttnn.slice(
+                        mel_after,
+                        [0, last_frame_idx, 0],
+                        [batch_size, last_frame_idx + 1, num_mel_bins],
+                        memory_config=ttnn.L1_MEMORY_CONFIG,
+                    )
+                    output_sequence_ttnn = ttnn.concat(
+                        [output_sequence_ttnn, last_frame_ttnn],
                         dim=1,
                         memory_config=ttnn.L1_MEMORY_CONFIG,
                     )
 
-                # Extend sequence with last frame
-                last_frame_idx = start_idx + 1
-                last_frame_ttnn = ttnn.slice(
-                    mel_after,
-                    [0, last_frame_idx, 0],
-                    [batch_size, last_frame_idx + 1, num_mel_bins],
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
-                output_sequence_ttnn = ttnn.concat(
-                    [output_sequence_ttnn, last_frame_ttnn],
-                    dim=1,
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
-
                 steps_completed += 1
 
                 # Streaming: yield audio chunks periodically
-                if (
-                    stream
-                    and steps_completed % SpeechT5Constants.STREAMING_CHUNK_SIZE == 0
-                ):
-                    partial_spectrogram = ttnn.to_torch(spectrogram_ttnn)
+                if stream and steps_completed % SpeechT5Constants.STREAMING_CHUNK_SIZE == 0:
+                    if enable_trace and spectrogram_frames_cpu:
+                        partial_spectrogram = torch.cat(spectrogram_frames_cpu, dim=1)
+                    elif spectrogram_ttnn is not None:
+                        partial_spectrogram = ttnn.to_torch(spectrogram_ttnn)
+                    else:
+                        continue
+
                     partial_audio = self.vocoder(partial_spectrogram)
 
-                    # Convert to base64
                     audio_buffer = io.BytesIO()
                     sf.write(
                         audio_buffer,
@@ -468,16 +710,35 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                         "type": "streaming_chunk",
                         "chunk": PartialStreamingAudioResponse(
                             audio_chunk=audio_base64,
-                            chunk_id=steps_completed
-                            // SpeechT5Constants.STREAMING_CHUNK_SIZE,
+                            chunk_id=steps_completed // SpeechT5Constants.STREAMING_CHUNK_SIZE,
                             format="wav",
                             sample_rate=SpeechT5Constants.SAMPLE_RATE,
                         ),
-                        "task_id": None,  # Will be set by caller
+                        "task_id": None,
                     }
 
-            # Transfer final spectrogram from device to host
-            if spectrogram_ttnn is not None:
+            # End decoder loop timing
+            decoder_loop_time = time.time() - decoder_loop_start
+
+            # Calculate and log performance metrics
+            if ttft is None:
+                ttft = encoder_time  # Fallback if no steps completed
+            avg_token_time = decoder_loop_time / max(steps_completed, 1)
+            tokens_per_sec = 1.0 / avg_token_time if avg_token_time > 0 else 0
+
+            self.logger.info(
+                f"Device {self.device_id}: Generation completed - "
+                f"Steps: {steps_completed}, "
+                f"TTFT: {ttft*1000:.1f}ms, "
+                f"Token/s: {tokens_per_sec:.2f}, "
+                f"Encoder: {encoder_time*1000:.1f}ms, "
+                f"Decoder loop: {decoder_loop_time:.3f}s"
+            )
+
+            # Build final spectrogram
+            if enable_trace and spectrogram_frames_cpu:
+                final_spectrogram = torch.cat(spectrogram_frames_cpu, dim=1)
+            elif spectrogram_ttnn is not None:
                 final_spectrogram = ttnn.to_torch(spectrogram_ttnn)
             else:
                 final_spectrogram = torch.zeros(batch_size, 1, num_mel_bins)
@@ -498,6 +759,24 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Calculate duration
             duration = len(final_audio.squeeze()) / SpeechT5Constants.SAMPLE_RATE
 
+            # Log final summary with audio duration
+            total_time = time.time() - generation_start
+            rtf = total_time / duration if duration > 0 else 0  # Real-time factor
+            self.logger.info(
+                f"Device {self.device_id}: Audio generated - "
+                f"Duration: {duration:.2f}s, "
+                f"Total time: {total_time:.2f}s, "
+                f"RTF: {rtf:.2f}x"
+            )
+
+            # Cleanup TTNN tensors
+            ttnn.deallocate(ttnn_input_ids)
+            ttnn.deallocate(ttnn_speaker_embeddings)
+            ttnn.deallocate(encoder_output)
+            ttnn.deallocate(output_sequence_ttnn)
+            if spectrogram_ttnn is not None:
+                ttnn.deallocate(spectrogram_ttnn)
+
             yield {
                 "type": "final_result",
                 "result": TextToSpeechResponse(
@@ -506,7 +785,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     sample_rate=SpeechT5Constants.SAMPLE_RATE,
                     format="wav",
                 ),
-                "task_id": None,  # Will be set by caller
+                "task_id": None,
             }
 
         except Exception as e:
@@ -545,6 +824,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             speaker_embedding = self._prepare_speaker_embedding(request)
             request._speaker_embedding_array = speaker_embedding.detach().numpy()
 
+            # Reset KV caches before each generation for clean state
+            if self.generator is not None:
+                self.generator._reset_kv_caches()
+
             # Return appropriate result based on streaming
             if request.stream:
                 # For streaming, return the async generator
@@ -554,7 +837,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             else:
                 # For non-streaming, collect and return final result
                 final_result = None
-                async for result in self._generate_audio_sync(
+                async for result in self._generate_audio_optimized(
                     request.text, speaker_embedding, False
                 ):
                     result["task_id"] = request._task_id
