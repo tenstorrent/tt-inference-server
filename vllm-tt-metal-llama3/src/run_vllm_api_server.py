@@ -41,23 +41,23 @@ def handle_code_versions(model_spec_json):
     logger.info(f"commit SHA: {vllm_sha}")
 
 
-def _get_impl_id_from_model_spec():
-    """Read impl_id from ModelSpec JSON file if available.
+def _load_model_spec_json():
+    """Load ModelSpec JSON from TT_MODEL_SPEC_JSON_PATH.
 
     Returns:
-        str or None: The impl_id from the ModelSpec JSON, or None if unavailable.
+        dict: The loaded ModelSpec JSON.
+
+    Raises:
+        RuntimeError: If TT_MODEL_SPEC_JSON_PATH environment variable is not set.
+        FileNotFoundError: If the specified file does not exist.
+        JSONDecodeError: If the file contains invalid JSON.
     """
     model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
-    if model_spec_path:
-        try:
-            spec_path = Path(model_spec_path)
-            if spec_path.exists():
-                with open(spec_path, "r") as f:
-                    model_spec = json.load(f)
-                    return model_spec.get("impl", {}).get("impl_id")
-        except Exception as e:
-            logging.warning(f"Failed to read impl_id from ModelSpec: {e}")
-    return None
+    if model_spec_path is None:
+        raise RuntimeError("TT_MODEL_SPEC_JSON_PATH environment variable is not set")
+
+    with open(model_spec_path, "r") as f:
+        return json.load(f)
 
 
 def register_tt_models(impl_id=None):
@@ -131,11 +131,13 @@ def register_tt_models(impl_id=None):
     )
 
 
-_impl_id = _get_impl_id_from_model_spec()
-register_tt_models(_impl_id)
+# Load model spec at import time for vLLM model registration
+_MODEL_SPEC = _load_model_spec_json()
+_IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
+register_tt_models(_IMPL_ID)
 
 
-def model_setup(model_spec_json):
+def model_setup(model_spec_json, impl_id):
     # step 1: validate env vars passed in
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
@@ -168,7 +170,6 @@ def model_setup(model_spec_json):
     model_env_vars["HF_MODEL"] = hf_dir
     logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
-    impl_id = model_spec_json["impl"]["impl_id"]
     if impl_id == "subdevices":
         model_env_vars["LLAMA_VERSION"] = "subdevices"
     elif impl_id == "llama2-t3000":
@@ -233,12 +234,12 @@ def handle_secrets(model_spec_json):
         )
 
 
-def runtime_settings(model_spec_json):
+def runtime_settings(model_spec_json, impl_id):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(model_spec_json)
 
     # TODO: check HF repo access with HF_TOKEN supplied
-    model_setup(model_spec_json)
+    model_setup(model_spec_json, impl_id)
 
 
 def set_runtime_env_vars(model_spec_json):
@@ -310,21 +311,16 @@ def start_trace_capture(model_spec_json):
 
 
 def main():
-    # use raw model_spec_json to demonstrate interoperability
-    # avoids importing full Python dependency tree which may not be usable in 3rd party systems
-    with open(os.getenv("TT_MODEL_SPEC_JSON_PATH"), "r") as f:
-        model_spec_json = json.load(f)
+    set_runtime_env_vars(_MODEL_SPEC)
+    handle_code_versions(_MODEL_SPEC)
 
-    set_runtime_env_vars(model_spec_json)
-    handle_code_versions(model_spec_json)
-
-    runtime_settings(model_spec_json)
-    start_trace_capture(model_spec_json)
+    runtime_settings(_MODEL_SPEC, _IMPL_ID)
+    start_trace_capture(_MODEL_SPEC)
 
     # vLLM CLI arguments
     logger.info("vllm_args:")
-    pprint(model_spec_json["device_model_spec"]["vllm_args"])
-    for key, value in model_spec_json["device_model_spec"]["vllm_args"].items():
+    pprint(_MODEL_SPEC["device_model_spec"]["vllm_args"])
+    for key, value in _MODEL_SPEC["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):
