@@ -14,6 +14,7 @@ class SupportedModels(Enum):
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
+    QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -37,6 +38,7 @@ class ModelNames(Enum):
     FLUX_1_SCHNELL = "flux.1-schnell"
     MOTIF_IMAGE_6B_PREVIEW = "motif-image-6b-preview"
     QWEN_IMAGE = "qwen-image"
+    QWEN_IMAGE_2512 = "qwen-image-2512"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
@@ -64,6 +66,7 @@ class ModelRunners(Enum):
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
+    TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
@@ -103,6 +106,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_1_SCHNELL,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
+        ModelRunners.TT_QWEN_IMAGE_2512,
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
@@ -144,6 +148,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
+    ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
@@ -358,6 +363,18 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,

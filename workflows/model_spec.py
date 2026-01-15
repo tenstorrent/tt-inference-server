@@ -2185,13 +2185,12 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["Qwen/Qwen-Image"],
+        weights=["Qwen/Qwen-Image" , "Qwen/Qwen-Image-2512"],
         tt_metal_commit="be88351",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.CNN,
-        display_name="qwen-image",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
