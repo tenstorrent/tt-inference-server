@@ -199,8 +199,8 @@ def handle_secrets(model_spec_json):
         if "VLLM_API_KEY" in os.environ:
             del os.environ["VLLM_API_KEY"]
         logger.info(
-            "--no-auth is set: requests to vLLM API will not require authorization.",
-            "HTTP Authorization header will not be checked.",
+            "--no-auth is set: requests to vLLM API will not require authorization. "
+            "HTTP Authorization header will not be checked."
         )
         return
 
