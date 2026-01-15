@@ -51,7 +51,7 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir, stdout_only=F
     Set up individual logger for each combination.
     Default: logs to file only.
     With stdout_only=True: logs to stdout only (no file).
-    
+
     Args:
         tt_metal_commit: tt-metal commit hash
         vllm_commit: vllm commit hash
@@ -68,7 +68,9 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir, stdout_only=F
 
     # Create log file path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"build_{timestamp}_{combination_id}.log" if not stdout_only else None
+    log_file = (
+        log_dir / f"build_{timestamp}_{combination_id}.log" if not stdout_only else None
+    )
 
     # Create logger
     process_logger = logging.getLogger(logger_name)
@@ -464,8 +466,7 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
 
         # Check if there's a console handler (stdout-only mode)
         has_console_handler = any(
-            isinstance(handler, logging.StreamHandler)
-            for handler in logger.handlers
+            isinstance(handler, logging.StreamHandler) for handler in logger.handlers
         )
 
         # Read output line by line as it's produced
@@ -946,6 +947,44 @@ def push_image(image_tag, logger):
     logger.info(f"Successfully pushed image: {image_tag}")
 
 
+def list_image_combinations(model_configs, build_metal_commit=None):
+    """
+    Get unique Docker image commit combinations that would be built.
+
+    Args:
+        model_configs: Dictionary of model configurations
+        build_metal_commit: Only return combinations with this exact tt-metal commit
+
+    Returns:
+        Set of tuples (tt_metal_commit, vllm_commit) representing unique combinations
+    """
+    unique_sha_combinations = {
+        (config.tt_metal_commit, config.vllm_commit)
+        for config in model_configs.values()
+        if config.vllm_commit is not None
+    }
+
+    skipped_count = sum(
+        1 for config in model_configs.values() if config.vllm_commit is None
+    )
+
+    if skipped_count > 0:
+        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
+
+    if build_metal_commit:
+        unique_sha_combinations = {
+            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
+        }
+
+    if not unique_sha_combinations:
+        logger.warning(
+            f"No configurations found with tt_metal_commit={build_metal_commit}"
+        )
+        return set()
+
+    return unique_sha_combinations
+
+
 def build_docker_images(
     model_configs,
     force_build=False,
@@ -977,30 +1016,18 @@ def build_docker_images(
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
 
-    # Filter combinations if build_metal_commit is specified
-    unique_sha_combinations = {
-        (config.tt_metal_commit, config.vllm_commit)
-        for config in model_configs.values()
-        if config.vllm_commit is not None
-    }
-
-    skipped_count = sum(
-        1 for config in model_configs.values() if config.vllm_commit is None
+    # Get unique combinations using the shared function
+    unique_sha_combinations = list_image_combinations(
+        model_configs,
+        build_metal_commit=build_metal_commit,
     )
-
-    if skipped_count > 0:
-        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
-
-    if build_metal_commit:
-        unique_sha_combinations = {
-            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
-        }
 
     if not unique_sha_combinations:
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
         return
+
     unique_sha_combinations_str = "\n".join(
         [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
     )
@@ -1066,17 +1093,21 @@ def build_docker_images(
     for result in results:
         if result["success"]:
             success_count += 1
-            log_info = f" - Log: {result['log_file']}" if result.get('log_file') else " (stdout only)"
-            logger.info(
-                f"✅ Success: {result['combination_id']}{log_info}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.info(f"✅ Success: {result['combination_id']}{log_info}")
         else:
             failure_count += 1
             failed_combinations.append(result)
-            log_info = f" - Log: {result['log_file']}" if result.get('log_file') else " (stdout only)"
-            logger.error(
-                f"❌ Failed: {result['combination_id']}{log_info}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.error(f"❌ Failed: {result['combination_id']}{log_info}")
             logger.error(f"   Error: {result['error']}")
 
     logger.info(
@@ -1086,9 +1117,13 @@ def build_docker_images(
     if failed_combinations:
         logger.error("Failed combinations:")
         for failed in failed_combinations:
-            log_info = f" - Log: {failed['log_file']}" if failed.get('log_file') else " (stdout only)"
+            log_info = (
+                f" - Log: {failed['log_file']}"
+                if failed.get("log_file")
+                else " (stdout only)"
+            )
             logger.error(f"  - {failed['combination_id']}{log_info}")
-        if any(f.get('log_file') for f in failed_combinations):
+        if any(f.get("log_file") for f in failed_combinations):
             logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
