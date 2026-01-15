@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import asyncio
 import logging
@@ -9,18 +9,17 @@ import time
 import aiohttp
 from server_tests.base_test import BaseTest
 
-# Import the dataset from the Python file
-from utils.test_payloads.audio_payload_30s import dataset as dataset30s
-from utils.test_payloads.audio_payload_60s import dataset as dataset60s
-
-# Set up logging
 logger = logging.getLogger(__name__)
 
+# Load base64 image payload
+with open("utils/test_payloads/image_client_image_payload", "r") as f:
+    image_payload_base64 = f.read()
+
 payload = {
-    "file": dataset30s["file"],
-    "stream": False,
-    "is_preprocessing_enabled": True,
-    "prompt": "",
+    "prompt": image_payload_base64,
+    "response_format": "json",
+    "top_k": 3,
+    "min_confidence": 70.0,
 }
 
 headers = {
@@ -30,37 +29,36 @@ headers = {
 }
 
 
-class AudioTranscriptionLoadTest(BaseTest):
+class CnnLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/audio/transcriptions"
-        print(self.targets)
+        self.url = f"http://localhost:{self.service_port}/cnn/search-image"
+        logger.info(self.targets)
         devices = self.targets.get("num_of_devices", 1)
-        audio_transcription_time = self.targets.get(
-            "audio_transcription_time", 9
-        )  # in seconds
-        dataset_name = self.targets.get("dataset", "30s")  # in seconds
+        cnn_target_time = self.targets.get("cnn_time", 5)  # in seconds
+        response_format = self.targets.get("response_format", "json")
+        top_k = self.targets.get("top_k", 3)
+        min_confidence = self.targets.get("min_confidence", 70.0)
 
-        if dataset_name == "60s":
-            payload["file"] = dataset60s["file"]
+        payload["response_format"] = response_format
+        payload["top_k"] = top_k
+        payload["min_confidence"] = min_confidence
 
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_audio_transcription(batch_size=devices)
-
-        self.test_payloads_path = "utils/test_payloads"
+        ) = await self.test_concurrent_cnn(batch_size=devices)
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
-            "target_time": audio_transcription_time,
+            "target_time": cnn_target_time,
             "devices": devices,
-            "success": average_duration <= audio_transcription_time,
+            "success": requests_duration <= cnn_target_time,
         }
 
-    async def test_concurrent_audio_transcription(self, batch_size):
+    async def test_concurrent_cnn(self, batch_size):
         async def timed_request(session, index):
-            print(f"Starting request {index}")
+            logger.info(f"Starting request {index}")
             try:
                 start = time.perf_counter()
                 async with session.post(
@@ -71,17 +69,17 @@ class AudioTranscriptionLoadTest(BaseTest):
                         await response.json()
                     else:
                         raise Exception(f"Status {response.status} {response.reason}")
-                    print(
+                    logger.info(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
                     return duration
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
-        # First iteration is warmup, second is measured (original behavior)
+        # First iteration is warmup, second is measured
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -92,15 +90,15 @@ class AudioTranscriptionLoadTest(BaseTest):
                 requests_duration = max(results)
                 total_duration = sum(results)
                 avg_duration = total_duration / batch_size
-                return requests_duration, avg_duration
-            if iteration == 0:
-                print("🔥 Warm up run done.")
+                if iteration == 0:
+                    logger.info("🔥 Warm up run done.")
 
-        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
-        print(
+        logger.info(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        logger.info(
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
-        print(
+        logger.info(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+
+        return requests_duration, avg_duration

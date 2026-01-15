@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # Script to run SpeechT5 TTS server on Tenstorrent N150 hardware
-# 
+#
 # Usage:
 #   ./run_tts_server.sh [port]
 #
@@ -43,7 +43,7 @@ fi
 if [ -z "$TT_METAL_HOME" ]; then
     echo -e "${YELLOW}Warning: TT_METAL_HOME not set${NC}"
     echo "Attempting to auto-detect..."
-    
+
     # Try to find tt-metal in parent directories
     if [ -d "../../tt_metal" ]; then
         export TT_METAL_HOME=$(cd ../.. && pwd)
@@ -60,7 +60,7 @@ fi
 if [ -z "$VIRTUAL_ENV" ]; then
     echo -e "${YELLOW}Warning: No Python virtual environment detected${NC}"
     echo "Attempting to activate tt-metal venv..."
-    
+
     if [ -f "$TT_METAL_HOME/python_env/bin/activate" ]; then
         source "$TT_METAL_HOME/python_env/bin/activate"
         echo -e "${GREEN}Activated Python virtual environment${NC}"
@@ -130,7 +130,7 @@ echo ""
 echo -e "${GREEN}curl -X POST \"http://localhost:$PORT/tts/tts\" \\${NC}"
 echo -e "${GREEN}  -H \"Authorization: Bearer your-secret-key\" \\${NC}"
 echo -e "${GREEN}  -H \"Content-Type: application/json\" \\${NC}"
-echo -e "${GREEN}  -d '{\"text\": \"Hello world\", \"stream\": false}' \\${NC}"
+echo -e "${GREEN}  -d '{\"text\": \"Hello world\"}' \\${NC}"
 echo -e "${GREEN}  -o output.wav${NC}"
 echo ""
 echo "Press Ctrl+C to stop the server"
