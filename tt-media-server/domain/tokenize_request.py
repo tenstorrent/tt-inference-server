@@ -3,13 +3,14 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from typing import TypeAlias
-from pydantic import Field
+
+from config.settings import settings
 from domain.base_request import BaseRequest
-from config.vllm_settings import VLLMSettings
+from pydantic import Field
 
 
 class TokenizeCompletionRequest(BaseRequest):
-    model: str = VLLMSettings.model.value
+    model: str = settings.vllm.model
     prompt: str
 
     add_special_tokens: bool = Field(

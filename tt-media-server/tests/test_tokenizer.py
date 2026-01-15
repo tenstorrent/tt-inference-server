@@ -13,18 +13,16 @@ from fastapi import HTTPException
 # Mock modules before importing
 sys.modules["utils.logger"] = MagicMock()
 
-# Mock VLLMSettings before importing domain classes that use it
-# The domain classes access VLLMSettings.model.value at class definition time
+# Mock settings before importing domain classes that use it
+# The domain classes access settings.vllm.model at class definition time
 from config.constants import SupportedModels
 
-mock_model = MagicMock()
-mock_model.value = SupportedModels.QWEN_3_4B.value
+mock_vllm_settings = MagicMock()
+mock_vllm_settings.model = SupportedModels.QWEN_3_4B.value
+mock_settings_instance = MagicMock()
+mock_settings_instance.vllm = mock_vllm_settings
 
-mock_vllm_settings_class = MagicMock()
-mock_vllm_settings_class.model = mock_model
-
-sys.modules["config.vllm_settings"] = MagicMock()
-sys.modules["config.vllm_settings"].VLLMSettings = mock_vllm_settings_class
+sys.modules["config.settings"].settings = mock_settings_instance
 
 from domain.detokenize_request import DetokenizeRequest
 from domain.tokenize_request import TokenizeCompletionRequest

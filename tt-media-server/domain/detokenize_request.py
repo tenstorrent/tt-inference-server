@@ -2,10 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+from config.settings import settings
 from domain.base_request import BaseRequest
-from config.vllm_settings import VLLMSettings
 
 
 class DetokenizeRequest(BaseRequest):
-    model: str = VLLMSettings.model.value
+    model: str = settings.vllm.model
     tokens: list[int]
