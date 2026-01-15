@@ -2385,7 +2385,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-4B"],
         tt_metal_commit="2496be4",
-        impl=tt_transformers_impl,
+        impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
@@ -2423,7 +2423,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B"],
         tt_metal_commit="2496be4",
-        impl=tt_transformers_impl,
+        impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
