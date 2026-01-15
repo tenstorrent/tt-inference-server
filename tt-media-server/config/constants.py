@@ -189,6 +189,7 @@ class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
+    AUDIO = "audio"
 
 
 class JobTypes(Enum):
