@@ -340,7 +340,10 @@ class JobManager:
         return running_task
 
     def _restore_jobs_from_db(self):
-        """Restore jobs and mark stuck jobs as failed or cancelled."""
+        """
+        Restore all jobs from database on server restart.
+        Mark stuck jobs as failed or cancelled.
+        """
         if not self.db:
             return
 
