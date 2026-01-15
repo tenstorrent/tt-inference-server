@@ -214,8 +214,7 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
     /home/container_app_user ${HOME_DIR}
 
 # Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod -R 755 /root/.local/share/uv
+COPY --from=builder --chmod=755 /root/.local/share/uv /root/.local/share/uv
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
