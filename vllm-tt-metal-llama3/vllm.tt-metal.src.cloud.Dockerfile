@@ -14,6 +14,19 @@ FROM ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.
 # Make parent directories traversable and uv directory fully accessible
 
 FROM ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.7.0-71c4d61619ae884adfd4265b25435bf41bb3febf-a186bf4-60472439244 AS runtime
+
+
+LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
+    org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# IDENTICAL arguments and environment as builder stage
+ARG TT_METAL_COMMIT_SHA_OR_TAG
+ARG CONTAINER_APP_UID=15863
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CONTAINER_APP_USERNAME=container_app_user
+ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+ARG APP_DIR="${HOME_DIR}/app"
+
 COPY --from=builder /root/.local/share/uv /root/.local/share/uv
 RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
