@@ -104,7 +104,6 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# user setup - create user for ownership but stay as root for remaining build steps
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd

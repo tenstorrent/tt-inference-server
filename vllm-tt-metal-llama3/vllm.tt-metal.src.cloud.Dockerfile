@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 # Optimized multi-stage build for significantly smaller runtime images
-ARG TT_METAL_DOCKERFILE_URL=scratch
+ARG TT_METAL_DOCKERFILE_URL
 
 # ==============================================================================
 # BUILDER STAGE - Contains all build dependencies and artifacts
@@ -70,8 +70,7 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
-USER ${CONTAINER_APP_USERNAME}
-
+# Run as root for build stage - uv (used by create_venv.sh) installs Python to /root/.local/share/uv
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
     && rustup update"
@@ -88,8 +87,6 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && rm -rf ${TT_METAL_HOME}/.git"
 
 # Build vllm - clone with minimal history and clean
-# root user is needed because of some permission issues when installing from a non-root user
-USER root
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
