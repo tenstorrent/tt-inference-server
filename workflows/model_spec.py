@@ -2185,7 +2185,7 @@ spec_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["Qwen/Qwen-Image" , "Qwen/Qwen-Image-2512"],
+        weights=["Qwen/Qwen-Image", "Qwen/Qwen-Image-2512"],
         tt_metal_commit="be88351",
         impl=tt_transformers_impl,
         min_disk_gb=15,
