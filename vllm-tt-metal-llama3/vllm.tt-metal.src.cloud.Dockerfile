@@ -12,6 +12,8 @@ FROM ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.
 
 # Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
 # Make parent directories traversable and uv directory fully accessible
+
+FROM ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-cloud-ubuntu-22.04-amd64:0.7.0-71c4d61619ae884adfd4265b25435bf41bb3febf-a186bf4-60472439244 AS runtime
 COPY --from=builder /root/.local/share/uv /root/.local/share/uv
 RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
