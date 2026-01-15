@@ -95,12 +95,17 @@ def setup_evals_common(
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
 <<<<<<< HEAD
+<<<<<<< HEAD
         "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
         "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
 =======
         "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler] "
         "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0 jieba fuzzywuzzy rouge",
 >>>>>>> e91e4885 (added longbench for llama-3.2-1b and reconfigured run_reports for subtasks)
+=======
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench] "
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
+>>>>>>> 357cd27f (revision for comments but didnt find cause for duplicate rows)
         logger=logger,
     )
     setup_succeeded = return_code == 0

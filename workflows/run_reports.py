@@ -2200,6 +2200,10 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             prefix = f"{task.task_name}_"
             subtasks = [k for k in results if k.startswith(prefix)]
             target_keys.extend(sorted(subtasks))
+<<<<<<< HEAD
+=======
+        print(f"Determined target_keys: {target_keys} for task_name: {task.task_name}")
+>>>>>>> 357cd27f (revision for comments but didnt find cause for duplicate rows)
         if target_keys:
             for t_key in target_keys:
                 logger.info(f"eval processing task_name: {t_key}")
@@ -2550,6 +2554,10 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)
         results.update(dict_results)
         meta_data.update(dict_meta_data)
+<<<<<<< HEAD
+=======
+    print(f"Results after dict format processing: {results}")
+>>>>>>> 357cd27f (revision for comments but didnt find cause for duplicate rows)
     if list_format_files:
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
