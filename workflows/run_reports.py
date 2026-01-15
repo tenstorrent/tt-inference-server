@@ -879,7 +879,7 @@ def aiperf_benchmark_generate_report(
                 "osl": osl,
                 "concurrency": concurrency,
                 "num_requests": num_requests,
-                "images": images,
+                "images_per_prompt": images,
                 "image_height": height,
                 "image_width": width,
                 # TTFT metrics
@@ -1310,7 +1310,7 @@ def genai_perf_benchmark_generate_report(
                 "osl": osl,
                 "concurrency": concurrency,
                 "num_requests": num_requests,
-                "images": images,
+                "images_per_prompt": images,
                 "image_height": height,
                 "image_width": width,
                 # TTFT metrics
