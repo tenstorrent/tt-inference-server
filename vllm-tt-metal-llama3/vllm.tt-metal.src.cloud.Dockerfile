@@ -70,9 +70,6 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
-# NOTE: Intentionally NOT switching to USER here - build steps need root
-# to properly manage pip packages in the base image's Python environment
-
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
     && rustup update"
