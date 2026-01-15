@@ -77,8 +77,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     )
     def load_weights(self):
         return False
-        #self.create_pipeline()
-        #return True
+        # self.create_pipeline()
+        # return True
 
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
