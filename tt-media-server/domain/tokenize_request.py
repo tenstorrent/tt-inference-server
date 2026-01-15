@@ -39,4 +39,4 @@ class TokenizeChatRequest(BaseRequest):
         raise NotImplementedError("TokenizeChatRequest is not implemented yet")
 
 
-TokenizeRequest: TypeAlias = TokenizeCompletionRequest | TokenizeChatRequest
+TokenizeRequest: TypeAlias = TokenizeCompletionRequest
