@@ -14,6 +14,7 @@ from open_ai_api import (
     fine_tuning,
     image,
     llm,
+    tokenizer,
     text_to_speech,
     tt_maintenance_api,
     video,
@@ -22,6 +23,7 @@ from open_ai_api import (
 if settings.model_service == ModelServices.IMAGE.value:
     api_router.include_router(image.router, prefix="/image", tags=["Image processing"])
 elif settings.model_service == ModelServices.LLM.value:
+    api_router.include_router(tokenizer.router, prefix="", tags=["Tokenizer"])
     api_router.include_router(llm.router, prefix="/v1", tags=["Text processing"])
 elif settings.model_service == ModelServices.CNN.value:
     api_router.include_router(cnn.router, prefix="/cnn", tags=["CNN processing"])
