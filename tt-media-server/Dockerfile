@@ -216,6 +216,13 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
+# Fix venv symlinks after copy (they break when copied between stages)
+RUN cd ${PYTHON_ENV_DIR}/bin \
+    && rm -f python python3 \
+    && ln -s /usr/bin/python3 python3 \
+    && ln -s python3 python \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
 
