@@ -195,7 +195,11 @@ class TestJobManager:
     # We run all tests twice, once with persistence off and once with persistence on
     @pytest.fixture(params=[False, True], ids=["persistence_off", "persistence_on"])
     async def job_manager(self, request, tmp_path):
-        """Setup a JobManager, toggling persistence based on parametrization."""
+        """
+        Create a fresh JobManager instance for each test
+        toggling persistence based on parametrization.
+        """
+        # Reset singleton
         import utils.job_manager
 
         utils.job_manager._job_manager_instance = None
@@ -203,10 +207,10 @@ class TestJobManager:
         test_db_file = tmp_path / "test_jobs.db"
 
         with patch("utils.job_manager.get_settings") as mock_settings:
-            mock_settings.return_value.max_jobs = 10
             mock_settings.return_value.job_cleanup_interval_seconds = 1
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
+            mock_settings.return_value.max_jobs = 10
 
             mock_settings.return_value.enable_job_persistence = request.param
             mock_settings.return_value.job_database_path = str(test_db_file)
