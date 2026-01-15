@@ -177,12 +177,11 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
 # Fix venv symlinks after copy and install additional app requirements
-# cd ${PYTHON_ENV_DIR}/bin \
-# && rm -f python python3 \
-# && ln -s /usr/bin/python3 python3 \
-# && ln -s python3 python \
-# &&
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+RUN cd ${PYTHON_ENV_DIR}/bin \
+    && rm -f python python3 \
+    && ln -s /usr/bin/python3 python3 \
+    && ln -s python3 python \
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
@@ -190,8 +189,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
 # Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
+# COPY --from=builder /root/.local/share/uv /root/.local/share/uv
+# RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
