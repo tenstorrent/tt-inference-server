@@ -374,7 +374,7 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
 
     This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
     for each key metric category.
-    
+
     Args:
         release_raw: Raw benchmark data
         is_image_benchmark: If True, includes image dimension columns (height, width, images per prompt)
@@ -385,33 +385,37 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
         ("osl", "OSL"),
         ("concurrency", "Concur"),
     ]
-    
+
     # Add image-specific columns for image benchmarks
     if is_image_benchmark:
-        display_cols.extend([
-            ("image_height", "Image Height"),
-            ("image_width", "Image Width"),
-            ("images_per_prompt", "Images per Prompt"),
-        ])
-    
-    display_cols.extend([
-        ("num_requests", "N"),
-        # TTFT metrics
-        ("mean_ttft_ms", "TTFT Avg (ms)"),
-        ("median_ttft_ms", "TTFT P50 (ms)"),
-        ("p99_ttft_ms", "TTFT P99 (ms)"),
-        # TPOT metrics (Time Per Output Token)
-        ("mean_tpot_ms", "TPOT Avg (ms)"),
-        ("median_tpot_ms", "TPOT P50 (ms)"),
-        ("p99_tpot_ms", "TPOT P99 (ms)"),
-        # E2EL metrics (End-to-End Latency)
-        ("mean_e2el_ms", "E2EL Avg (ms)"),
-        ("median_e2el_ms", "E2EL P50 (ms)"),
-        ("p99_e2el_ms", "E2EL P99 (ms)"),
-        # Throughput
-        ("output_token_throughput", "Tok/s"),
-        ("request_throughput", "Req/s"),
-    ])
+        display_cols.extend(
+            [
+                ("image_height", "Image Height"),
+                ("image_width", "Image Width"),
+                ("images_per_prompt", "Images per Prompt"),
+            ]
+        )
+
+    display_cols.extend(
+        [
+            ("num_requests", "N"),
+            # TTFT metrics
+            ("mean_ttft_ms", "TTFT Avg (ms)"),
+            ("median_ttft_ms", "TTFT P50 (ms)"),
+            ("p99_ttft_ms", "TTFT P99 (ms)"),
+            # TPOT metrics (Time Per Output Token)
+            ("mean_tpot_ms", "TPOT Avg (ms)"),
+            ("median_tpot_ms", "TPOT P50 (ms)"),
+            ("p99_tpot_ms", "TPOT P99 (ms)"),
+            # E2EL metrics (End-to-End Latency)
+            ("mean_e2el_ms", "E2EL Avg (ms)"),
+            ("median_e2el_ms", "E2EL P50 (ms)"),
+            ("p99_e2el_ms", "E2EL P99 (ms)"),
+            # Throughput
+            ("output_token_throughput", "Tok/s"),
+            ("request_throughput", "Req/s"),
+        ]
+    )
 
     NOT_MEASURED_STR = "N/A"
     display_dicts = []
@@ -1102,7 +1106,9 @@ def aiperf_benchmark_generate_report(
         )
 
         # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results, is_image_benchmark=True)
+        nvidia_markdown_str = aiperf_release_markdown(
+            aiperf_image_results, is_image_benchmark=True
+        )
         release_str += nvidia_markdown_str
         release_str += "\n\n"
 
@@ -1382,7 +1388,9 @@ def genai_perf_benchmark_generate_report(
         release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
         # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(genai_image_results, is_image_benchmark=True)
+        nvidia_markdown_str = aiperf_release_markdown(
+            genai_image_results, is_image_benchmark=True
+        )
         release_str += nvidia_markdown_str
         release_str += "\n\n"
 
