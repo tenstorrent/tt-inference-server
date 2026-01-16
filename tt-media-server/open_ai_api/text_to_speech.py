@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from config.constants import ResponseFormat
+
 from domain.text_to_speech_request import TextToSpeechRequest
 from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from model_services.base_service import BaseService
