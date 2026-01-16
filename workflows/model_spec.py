@@ -834,6 +834,7 @@ class ModelSpec:
 
         object.__setattr__(self, "system_info", system_info_data)
 
+
 @dataclass(frozen=True)
 class ModelSpecTemplate:
     """
