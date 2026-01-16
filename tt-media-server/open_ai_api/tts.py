@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import json
+import base64
 from typing import Optional
 
 from config.constants import AudioResponseFormat
@@ -80,8 +81,20 @@ async def text_to_speech(
     try:
         if not tts_request.stream:
             result = await service.process_request(tts_request)
-            if tts_request.response_format.lower() == AudioResponseFormat.TEXT.value:
-                return Response(content=result.audio, media_type=MEDIA_TYPE_AUDIO_WAV)
+
+            # Check if result is valid
+            if result is None:
+                raise HTTPException(status_code=500, detail="No result returned from TTS model")
+
+            # Check if result is an error string
+            if isinstance(result, str):
+                raise HTTPException(status_code=500, detail=f"TTS processing error: {result}")
+
+            # Return raw audio file (WAV binary) for TEXT/WAV format
+            if tts_request.response_format.lower() in [AudioResponseFormat.TEXT.value, AudioResponseFormat.WAV.value]:
+                # Decode base64 to binary audio
+                audio_binary = base64.b64decode(result.audio)
+                return Response(content=audio_binary, media_type=MEDIA_TYPE_AUDIO_WAV)
             return get_dict_response(result)
 
         # Streaming path
@@ -90,27 +103,31 @@ async def text_to_speech(
         except Exception:
             raise HTTPException(status_code=405, detail="Model is not ready")
 
-            async def result_stream():
-                async for partial in service.process_streaming_request(tts_request):
-                    if (
-                        tts_request.response_format.lower()
-                        == AudioResponseFormat.TEXT.value
-                    ):
-                        yield partial.audio + "\n"
-                    else:
-                        yield json.dumps(get_dict_response(partial)) + "\n"
-
-            media_type = (
-                MEDIA_TYPE_AUDIO_WAV
+        async def result_stream():
+            async for partial in service.process_streaming_request(tts_request):
                 if (
                     tts_request.response_format.lower()
                     == AudioResponseFormat.TEXT.value
-                )
-                else MEDIA_TYPE_NDJSON
+                ):
+                    yield partial.audio + "\n"
+                else:
+                    yield json.dumps(get_dict_response(partial)) + "\n"
+
+        media_type = (
+            MEDIA_TYPE_AUDIO_WAV
+            if (
+                tts_request.response_format.lower()
+                == AudioResponseFormat.TEXT.value
             )
-            return StreamingResponse(result_stream(), media_type=media_type)
+            else MEDIA_TYPE_NDJSON
+        )
+        return StreamingResponse(result_stream(), media_type=media_type)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"TTS error: {type(e).__name__}: {str(e)}")
 
 
 def get_dict_response(obj):

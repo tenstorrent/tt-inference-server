@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=3e24a97c679eaf257648f8bd88486a7f9c990a6c
 
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
@@ -135,16 +135,21 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${TT_METAL_HOME}/server"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
+    && cd ${TT_METAL_HOME} \
+    && pip install --default-timeout=240 --no-cache-dir uvicorn fastapi pydantic-settings python-multipart colorama prometheus-fastapi-instrumentator \
+    && pip install --default-timeout=240 --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt)"
+    pip install --default-timeout=240 --no-cache-dir -r requirements_no_pyluwen.txt) \
+    && python -c 'import uvicorn; import fastapi; import pydantic_settings; import colorama; import prometheus_fastapi_instrumentator; print(\"Core packages verified\")'"
 
-# Install tt-vllm-plugin
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && pip install ."
+# Skip tt-vllm-plugin installation for media server (TTS/STT models)
+# The vllm plugin is only needed for LLM serving, not for SpeechT5 TTS
+# If you need LLM support, uncomment the following lines:
+# COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+#     && pip install ."
 
 # Cleanup build-only directories
 USER root
@@ -181,7 +186,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=3e24a97c679eaf257648f8bd88486a7f9c990a6c
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}

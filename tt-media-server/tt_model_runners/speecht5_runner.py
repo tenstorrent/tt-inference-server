@@ -37,6 +37,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import (
     SpeechT5Generator,
 )
+from models.experimental.speecht5_tts.demo_ttnn import generate_speech_ttnn
 
 from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.text_to_speech_request import TextToSpeechRequest
@@ -52,12 +53,14 @@ from utils.decorators import log_execution_time
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
+    MAX_STEPS = 768  # Maximum generation steps
+    MIN_STEPS = 10  # Minimum steps before checking stop condition
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
     STREAMING_CHUNK_SIZE = 20  # Generate audio chunks every 20 mel frames
     MAX_CLEANUP_RETRIES = 3
     RETRY_DELAY_SECONDS = 1
+    STOP_THRESHOLD = 0.5  # Stop when sigmoid sum >= threshold
 
 
 class SpeechT5ModelError(Exception):
@@ -117,8 +120,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.ttnn_encoder = None
         self.ttnn_decoder = None
         self.ttnn_postnet = None
-        self.generator = None  # For trace execution
+        self.generator = None  # For trace execution with KV cache
         self.speaker_manager = None
+        self.decoder_config = None  # Store for generator use
+        self.default_speaker_embedding = None
 
         # Limit threading for stability during inference
         setup_cpu_threading_limits("1")
@@ -128,7 +133,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             os.environ["TT_METAL_FABRIC_DISABLE"] = "1"
 
     def get_pipeline_device_params(self):
-        device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
+        # Enable 2 command queues for trace optimization
+        device_params = {
+            "l1_small_size": 300000,
+            "trace_region_size": 10000000,
+            "num_command_queues": 2
+        }
         return device_params
 
     def _initialize_models(self):
@@ -183,6 +193,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 postnet_kernel=model.config.speech_decoder_postnet_kernel,
             )
 
+            # Store decoder_config for generator use
+            self.decoder_config = decoder_config
+
             # Get a default speaker embedding for model initialization
             available_speakers = self.speaker_manager.list_available_speakers()
             if not available_speakers:
@@ -190,13 +203,14 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 self.logger.warning(
                     "No speaker embeddings available, using zero embedding for initialization"
                 )
-                default_speaker_embedding = torch.zeros(
+                self.default_speaker_embedding = torch.zeros(
                     self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
                 ).unsqueeze(0)
             else:
-                default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
+                self.default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
                     available_speakers[0]
                 )
+            default_speaker_embedding = self.default_speaker_embedding
 
             # Create TTNN models
             self.logger.info(f"Device {self.device_id}: Creating TTNN encoder")
@@ -230,17 +244,21 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 postnet_config,
             )
 
-            # Optional: Initialize trace generator for faster inference
+            # Initialize trace generator for faster inference with KV cache
             try:
+                estimated_encoder_seq_len = 128  # Typical text length after tokenization
                 self.generator = SpeechT5Generator(
-                    self.ttnn_encoder,
-                    self.ttnn_decoder,
-                    self.ttnn_postnet,
-                    self.ttnn_device,
-                    default_speaker_embedding,
+                    encoder=self.ttnn_encoder,
+                    decoder=self.ttnn_decoder,
+                    postnet=self.ttnn_postnet,
+                    device=self.ttnn_device,
+                    decoder_config=self.decoder_config,
+                    max_steps=SpeechT5Constants.MAX_STEPS,
+                    max_batch_size=1,
+                    encoder_seq_len=estimated_encoder_seq_len,
                 )
                 self.logger.info(
-                    f"Device {self.device_id}: Trace generator initialized"
+                    f"Device {self.device_id}: Trace generator initialized with KV cache support"
                 )
             except Exception as e:
                 self.logger.warning(
@@ -341,162 +359,39 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     async def _generate_audio_sync(
         self, text: str, speaker_embedding: torch.Tensor, stream: bool = False
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Synchronous audio generation that can yield streaming chunks"""
+        """Audio generation using optimized generate_speech_ttnn with KV cache and trace"""
         try:
-            # Process input text
-            inputs = self.processor(text=text, return_tensors="pt")
-            token_ids = inputs["input_ids"]
-
-            # Convert inputs to TTNN with L1 memory
-            ttnn_input_ids = ttnn.from_torch(
-                token_ids,
-                dtype=ttnn.uint32,
-                layout=ttnn.ROW_MAJOR_LAYOUT,
+            # Use the optimized generate_speech_ttnn from demo_ttnn.py
+            # This uses KV cache and trace for fast inference
+            speech = generate_speech_ttnn(
+                text=text,
+                speaker_embeddings=speaker_embedding,
+                processor=self.processor,
+                vocoder=self.vocoder,
+                ttnn_encoder=self.ttnn_encoder,
+                ttnn_decoder=self.ttnn_decoder,
+                ttnn_postnet=self.ttnn_postnet,
                 device=self.ttnn_device,
-                memory_config=ttnn.L1_MEMORY_CONFIG,
-            )
-            ttnn_speaker_embeddings = ttnn.from_torch(
-                speaker_embedding,
-                dtype=ttnn.bfloat16,
-                layout=ttnn.TILE_LAYOUT,
-                device=self.ttnn_device,
-                memory_config=ttnn.L1_MEMORY_CONFIG,
-            )
-
-            # Initialize decoder sequence
-            batch_size = token_ids.shape[0]
-            num_mel_bins = 80  # Standard for SpeechT5
-            output_sequence_ttnn = ttnn.from_torch(
-                torch.zeros(batch_size, 1, num_mel_bins),
-                dtype=ttnn.bfloat16,
-                layout=ttnn.TILE_LAYOUT,
-                device=self.ttnn_device,
-                memory_config=ttnn.L1_MEMORY_CONFIG,
+                max_steps=SpeechT5Constants.MAX_STEPS,
+                return_stats=False,
+                warmup_mode=False,
+                generator=self.generator,
+                use_kv_cache=True,
+                decoder_config=self.decoder_config,
             )
 
-            spectrogram_ttnn = None  # Will be built incrementally on device
-            steps_completed = 0
-
-            # Autoregressive generation loop
-            for step in range(SpeechT5Constants.MAX_STEPS):
-                # Decoder inference
-                decoder_hidden_states = self.ttnn_decoder(
-                    decoder_input_values=output_sequence_ttnn,
-                    encoder_hidden_states=self.ttnn_encoder(ttnn_input_ids)[0],
-                    speaker_embeddings=ttnn_speaker_embeddings,
-                )
-
-                # Postnet inference
-                mel_before, mel_after, stop_logits = self.ttnn_postnet(
-                    decoder_hidden_states
-                )
-
-                # Check stopping condition
-                sigmoid_logits = ttnn.sigmoid(
-                    stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                sum_prob = ttnn.sum(
-                    sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                should_stop = ttnn.ge(
-                    sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG
-                )
-                any_stop_scalar = ttnn.sum(should_stop)
-                if ttnn.to_torch(any_stop_scalar).item() > 0:
-                    break
-
-                # Extract new mel frames
-                current_seq_len = output_sequence_ttnn.shape[1]
-                start_idx = (current_seq_len - 1) * SpeechT5Constants.REDUCTION_FACTOR
-                end_idx = start_idx + SpeechT5Constants.REDUCTION_FACTOR
-
-                # Slice the new frames from mel_after
-                new_frames_ttnn = ttnn.slice(
-                    mel_after,
-                    [0, start_idx, 0],  # start indices [batch, seq, mel_bins]
-                    [batch_size, end_idx, num_mel_bins],  # end indices
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
-
-                # Build spectrogram incrementally
-                if spectrogram_ttnn is None:
-                    spectrogram_ttnn = new_frames_ttnn
-                else:
-                    spectrogram_ttnn = ttnn.concat(
-                        [spectrogram_ttnn, new_frames_ttnn],
-                        dim=1,
-                        memory_config=ttnn.L1_MEMORY_CONFIG,
-                    )
-
-                # Extend sequence with last frame
-                last_frame_idx = start_idx + 1
-                last_frame_ttnn = ttnn.slice(
-                    mel_after,
-                    [0, last_frame_idx, 0],
-                    [batch_size, last_frame_idx + 1, num_mel_bins],
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
-                output_sequence_ttnn = ttnn.concat(
-                    [output_sequence_ttnn, last_frame_ttnn],
-                    dim=1,
-                    memory_config=ttnn.L1_MEMORY_CONFIG,
-                )
-
-                steps_completed += 1
-
-                # Streaming: yield audio chunks periodically
-                if (
-                    stream
-                    and steps_completed % SpeechT5Constants.STREAMING_CHUNK_SIZE == 0
-                ):
-                    partial_spectrogram = ttnn.to_torch(spectrogram_ttnn)
-                    partial_audio = self.vocoder(partial_spectrogram)
-
-                    # Convert to base64
-                    audio_buffer = io.BytesIO()
-                    sf.write(
-                        audio_buffer,
-                        partial_audio.squeeze().detach().numpy(),
-                        SpeechT5Constants.SAMPLE_RATE,
-                        format="WAV",
-                    )
-                    audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode(
-                        "utf-8"
-                    )
-
-                    yield {
-                        "type": "streaming_chunk",
-                        "chunk": PartialStreamingAudioResponse(
-                            audio_chunk=audio_base64,
-                            chunk_id=steps_completed
-                            // SpeechT5Constants.STREAMING_CHUNK_SIZE,
-                            format="wav",
-                            sample_rate=SpeechT5Constants.SAMPLE_RATE,
-                        ),
-                        "task_id": None,  # Will be set by caller
-                    }
-
-            # Transfer final spectrogram from device to host
-            if spectrogram_ttnn is not None:
-                final_spectrogram = ttnn.to_torch(spectrogram_ttnn)
-            else:
-                final_spectrogram = torch.zeros(batch_size, 1, num_mel_bins)
-
-            # Generate final audio
-            final_audio = self.vocoder(final_spectrogram)
-
-            # Convert to base64
+            # Convert audio to base64
             audio_buffer = io.BytesIO()
             sf.write(
                 audio_buffer,
-                final_audio.squeeze().detach().numpy(),
+                speech.squeeze().detach().numpy(),
                 SpeechT5Constants.SAMPLE_RATE,
                 format="WAV",
             )
             audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
 
             # Calculate duration
-            duration = len(final_audio.squeeze()) / SpeechT5Constants.SAMPLE_RATE
+            duration = len(speech.squeeze()) / SpeechT5Constants.SAMPLE_RATE
 
             yield {
                 "type": "final_result",
@@ -585,3 +480,55 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         result = asyncio.run(self._run_inference_async(requests))
         # Wrap result in list as expected by device_worker
         return [result] if result is not None else []
+
+    def run(self, requests: list[TextToSpeechRequest]):
+        """Implementation of abstract run method from base class"""
+        return self.run_inference(requests)
+
+    async def warmup(self):
+        """Implementation of abstract warmup method from base class"""
+        self.logger.info(f"Device {self.device_id}: Warmup - loading model...")
+        await self.load_model()
+
+        # Pre-compile postnet kernels (critical to avoid hangs during trace)
+        self.logger.info(f"Device {self.device_id}: Pre-compiling postnet kernels...")
+        try:
+            dummy_decoder_output = ttnn.from_torch(
+                torch.randn(1, 1, 1, 768),  # hidden_size=768 for SpeechT5
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=self.ttnn_device,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
+            )
+            _ = self.ttnn_postnet(dummy_decoder_output)
+            ttnn.deallocate(dummy_decoder_output)
+            self.logger.info(f"Device {self.device_id}: Postnet kernels compiled!")
+        except Exception as e:
+            self.logger.warning(f"Device {self.device_id}: Postnet pre-compile failed: {e}")
+
+        # Capture traces for all encoder sizes (like demo_ttnn.py)
+        if self.generator is not None:
+            self.logger.info(f"Device {self.device_id}: Capturing traces for all encoder sizes...")
+            try:
+                self.generator.capture_all_traces(self.processor, batch_size=1)
+                self.logger.info(f"Device {self.device_id}: Traces captured successfully!")
+
+                # Reset KV caches after warmup
+                self.generator._reset_kv_caches()
+                self.logger.info(f"Device {self.device_id}: KV caches reset for fresh inference")
+            except Exception as e:
+                self.logger.warning(f"Device {self.device_id}: Trace capture failed: {e}")
+        else:
+            self.logger.info(f"Device {self.device_id}: No generator available, skipping trace capture")
+
+        self.logger.info(f"Device {self.device_id}: Warmup complete")
+        return True
+
+    def _prepare_speaker_embedding_for_warmup(self) -> torch.Tensor:
+        """Get a speaker embedding for warmup"""
+        if self.speaker_manager:
+            available_speakers = self.speaker_manager.list_available_speakers()
+            if available_speakers:
+                return self.speaker_manager.get_speaker_embedding(available_speakers[0])
+        # Fallback to zero embedding
+        return torch.zeros(512, dtype=torch.float32).unsqueeze(0)
