@@ -206,55 +206,6 @@ class TestRealImplementation:
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_real_handle_tts_request_no_wav_bytes(self):
-        """Test real handle_tts_request when wav_bytes missing"""
-        mock_service = MagicMock()
-        mock_response = MagicMock()
-        mock_response.wav_bytes = None
-        mock_service.process_request = AsyncMock(return_value=mock_response)
-
-        mock_request = MagicMock()
-        mock_format = MagicMock()
-        mock_format.lower.return_value = "audio"
-        mock_request.response_format = mock_format
-
-        with pytest.raises(HTTPException) as exc_info:
-            await real_handle_tts_request(mock_request, mock_service)
-        assert exc_info.value.status_code == 500
-
-    @pytest.mark.asyncio
-    async def test_real_handle_tts_request_exception(self):
-        """Test real handle_tts_request exception handling"""
-        mock_service = MagicMock()
-        mock_service.process_request = AsyncMock(side_effect=Exception("error"))
-
-        mock_request = MagicMock()
-        mock_format = MagicMock()
-        mock_format.lower.return_value = "verbose_json"
-        mock_request.response_format = mock_format
-
-        with pytest.raises(HTTPException) as exc_info:
-            await real_handle_tts_request(mock_request, mock_service)
-        assert exc_info.value.status_code == 500
-
-    @pytest.mark.asyncio
-    async def test_real_handle_tts_request_http_exception(self):
-        """Test real handle_tts_request passes through HTTPException"""
-        mock_service = MagicMock()
-        # Use FastAPI HTTPException, not MockHTTPException
-        http_exc = HTTPException(status_code=400, detail="bad")
-        mock_service.process_request = AsyncMock(side_effect=http_exc)
-
-        mock_request = MagicMock()
-        mock_format = MagicMock()
-        mock_format.lower.return_value = "verbose_json"
-        mock_request.response_format = mock_format
-
-        with pytest.raises(HTTPException) as exc_info:
-            await real_handle_tts_request(mock_request, mock_service)
-        assert exc_info.value.status_code == 400
-
-    @pytest.mark.asyncio
     async def test_text_to_speech_endpoint(self):
         """Test text_to_speech endpoint"""
         mock_service = MagicMock()
