@@ -463,7 +463,30 @@ jobs:
             echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
           } >> $GITHUB_STEP_SUMMARY
 
-          exit $TEST_EXIT_CODE
+          # Store exit code for later
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          if [ -f performance_tests/server.log ]; then
+            cat performance_tests/server.log
+          else
+            echo "No server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-streaming-server-logs
+          path: tt-media-server/performance_tests/server.log
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
 
 
   forge-runner-changes:
