@@ -1,5 +1,6 @@
 # These owners will be the default owners for everything in
 # the repo. Unless a later match takes precedence. This will be
 # requested for review when someone opens a pull request.
-*       @tstescoTT @bgoelTT @gtobarTT @stisiTT @anirudTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT @ljovanovicTT
+*       @tenstorrent/tt-inference-server-codeowners
+workflows/run_reports.py @tenstorrent/tt-inference-server-codeowners @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic

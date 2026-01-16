@@ -259,7 +259,7 @@ forge_vllm_plugin_impl = ImplSpec(
 tt_vllm_plugin_impl = ImplSpec(
     impl_id="tt_vllm_plugin",
     impl_name="tt-vllm-plugin",
-    repo_url="https://github.com/dmadicTT/tt-vllm-plugin",
+    repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
 
@@ -385,6 +385,7 @@ class ModelSpec:
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
     display_name: Optional[str] = None
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         default_env_vars = {
@@ -817,6 +818,7 @@ class ModelSpecTemplate:
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (shared across all weights)
     )
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         self._validate_data()
@@ -908,6 +910,7 @@ class ModelSpecTemplate:
                     min_ram_gb=self.min_ram_gb,
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
+                    has_builtin_warmup=self.has_builtin_warmup,
                 )
 
                 specs.append(spec)
@@ -1137,6 +1140,28 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    "TT_MM_THROTTLE_PERF": 5,
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
+                },
+                override_tt_config={
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 21921792,
+                    "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
@@ -1290,6 +1315,9 @@ spec_templates = [
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1344,6 +1372,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1366,6 +1395,9 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
             DeviceModelSpec(
@@ -1483,6 +1515,9 @@ spec_templates = [
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1526,6 +1561,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 30712832,
+                    "fabric_config": "FABRIC_1D",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1604,6 +1640,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1740,6 +1777,9 @@ spec_templates = [
                     "MAX_PREFILL_CHUNK_SIZE": "32",
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -1995,8 +2035,11 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "trace_region_size": 50000000,
-                    "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -2011,6 +2054,7 @@ spec_templates = [
             ),
         ),
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
@@ -2033,6 +2077,9 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
@@ -2316,9 +2363,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2327,9 +2374,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2338,9 +2385,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2349,9 +2396,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "3072",
-                    "MAX_MODEL_LENGTH": "384",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_MODEL_LENGTH": "384",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
                     "TT_METAL_INSPECTOR_RPC": "0",
@@ -2376,9 +2423,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2387,9 +2434,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2398,9 +2445,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
@@ -2409,9 +2456,9 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "MAX_NUM_BATCHED_TOKENS": "1024",
-                    "MAX_MODEL_LENGTH": "1024",
-                    "MIN_MODEL_LENGTH": "32",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
                 },
             ),
         ],
