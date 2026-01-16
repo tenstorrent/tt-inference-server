@@ -129,7 +129,11 @@ def generate_markdown_table(templates_to_use=None, status_filter=None) -> str:
                 continue
 
             # Create Model column with display_name or first weight name, linked to README
-            model_name = spec.display_name if spec.display_name else model_name_from_weight(spec.weights[0])
+            model_name = (
+                spec.display_name
+                if spec.display_name
+                else model_name_from_weight(spec.weights[0])
+            )
             readme_link = INFERENCE_ENGINE_README_LINKS.get(spec.inference_engine, "")
             model_str = f"[{model_name}]({readme_link})" if readme_link else model_name
 
@@ -217,7 +221,9 @@ def _generate_status_section_markdown(
         Markdown string with table wrapped in HTML comment markers, or empty string if no data.
     """
     start_marker, end_marker = _get_status_markers(status)
-    table = generate_markdown_table(templates_to_use=templates_to_use, status_filter=status)
+    table = generate_markdown_table(
+        templates_to_use=templates_to_use, status_filter=status
+    )
 
     if not _table_has_data_rows(table):
         if empty_message:
@@ -698,7 +704,9 @@ def export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
-def _replace_marker_content(content: str, status: ModelStatusTypes, new_section: str) -> str:
+def _replace_marker_content(
+    content: str, status: ModelStatusTypes, new_section: str
+) -> str:
     """
     Replace content between status markers in a document.
 
@@ -762,7 +770,9 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
             include_header=True,
         )
         if new_section:
-            updated_content = _replace_marker_content(updated_content, status, new_section)
+            updated_content = _replace_marker_content(
+                updated_content, status, new_section
+            )
 
     # Write back to file
     with open(readme_file, "w") as f:
