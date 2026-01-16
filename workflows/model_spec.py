@@ -1581,6 +1581,30 @@ spec_templates = [
                     "VLLM_USE_V1": "1",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.DUAL_GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QUAD_GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
         ],
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
