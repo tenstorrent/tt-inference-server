@@ -1565,8 +1565,8 @@ spec_templates = [
             "deepseek-ai/DeepSeek-R1-0528",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="local",
-        vllm_commit="local",
+        tt_metal_commit="e3d97e5",
+        vllm_commit="a186bf4",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
