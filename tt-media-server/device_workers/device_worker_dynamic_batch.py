@@ -13,6 +13,9 @@ from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
+from utils.text_utils import TextUtils
+
+strip_eos = TextUtils.strip_eos
 
 
 def device_worker(
@@ -65,12 +68,32 @@ def device_worker(
     # Define streaming handler
     async def handle_streaming(request):
         try:
+            task_id = request._task_id
             result_generator = await device_runner._run_async([request])
+            current_result_queue = result_queue
+            if request._queue_name is not None:
+                current_result_queue = SharedMemoryChunkQueue(
+                    name=request._queue_name, create=False
+                )
 
-            logger.info("Starting streaming")
+            async for request_output in result_generator:
+                outputs = request_output.outputs
+                if not outputs:
+                    continue
 
-            async for task_id, is_final, text in result_generator:
-                result_queue.put(task_id, is_final, text)
+                for output in outputs:
+                    chunk_text = output.text
+                    if not chunk_text:
+                        continue
+
+                    if chunk_text.endswith(("</s>", "<|endoftext|>", "<|im_end|>")):
+                        chunk_text = strip_eos(chunk_text)
+                        if not chunk_text:
+                            continue
+                    current_result_queue.put(0, chunk_text)
+
+            # do this on purpose to avoid over max decode issues
+            current_result_queue.put(1, "final_text")
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
