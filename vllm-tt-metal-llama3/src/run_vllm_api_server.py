@@ -136,6 +136,7 @@ def register_tt_models(impl_id=None):
         "models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM",
     )
 
+
 # Load model spec at import time for vLLM model registration
 _MODEL_SPEC = _load_model_spec_json()
 _IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
