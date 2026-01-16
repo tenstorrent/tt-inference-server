@@ -74,7 +74,9 @@ class WorkflowSetup:
         venv_python = cls.workflow_setup_venv / "bin" / "python"
 
         # Check if venv needs to be created or recreated (e.g., if pip is missing)
-        needs_venv_creation = not cls.workflow_setup_venv.exists() or not pip_exec.exists()
+        needs_venv_creation = (
+            not cls.workflow_setup_venv.exists() or not pip_exec.exists()
+        )
 
         if needs_venv_creation:
             logger.info(
@@ -83,6 +85,7 @@ class WorkflowSetup:
             # Clear existing venv if it exists but is broken (missing pip)
             if cls.workflow_setup_venv.exists():
                 import shutil
+
                 shutil.rmtree(cls.workflow_setup_venv)
 
             # Create venv - some systems (PEP 668 externally-managed) may not include pip
