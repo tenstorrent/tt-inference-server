@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import threading
 from multiprocessing import Queue
 
@@ -97,7 +96,6 @@ def device_worker(
 
                             chunk_key = request._task_id
                             async for chunk in result_generator:
-                                await asyncio.sleep(0.05)
                                 result_queue.put((worker_id, chunk_key, chunk))
 
                             logger.info(
