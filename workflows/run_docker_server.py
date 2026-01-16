@@ -46,7 +46,7 @@ def get_media_server_docker_env_vars(model_spec):
     """
     env_vars = {
         "MODEL": model_spec.model_name,
-        "DEVICE": model_spec.device_type.name.lower()
+        "DEVICE": model_spec.device_type.name.lower(),
     }
 
     logger.info(
@@ -142,7 +142,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
-    if model_spec.inference_engine == InferenceEngine.FORGE.value or model_spec.inference_engine == InferenceEngine.MEDIA.value:
+    if (
+        model_spec.inference_engine == InferenceEngine.FORGE.value
+        or model_spec.inference_engine == InferenceEngine.MEDIA.value
+    ):
         # Add environment variables for tt-media-server containers (forge and media)
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
 
