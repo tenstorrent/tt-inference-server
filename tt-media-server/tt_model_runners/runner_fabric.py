@@ -51,9 +51,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLMBGELargeEN_V1_5: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_bge_large_en_runner", fromlist=["VLLMBGELargeENRunner"]
     ).VLLMBGELargeENRunner(wid, num_threads),
-    ModelRunners.TEST: lambda wid, num_threads: __import__(
-        "tt_model_runners.test_runner", fromlist=["TestRunner"]
-    ).TestRunner(wid, num_threads),
+    ModelRunners.LLM_TEST: lambda wid, num_threads: __import__(
+        "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
+    ).LLMTestRunner(wid, num_threads),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
@@ -87,7 +87,7 @@ AVAILABLE_RUNNERS = {
     ).MockRunner(wid, num_threads),
     ModelRunners.TT_SPEECHT5_TTS: lambda wid, num_threads: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
-    ).TTSpeechT5Runner(wid),
+    ).TTSpeechT5Runner(wid, num_threads),
 }
 
 

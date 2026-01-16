@@ -82,7 +82,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     LORA_TRAINER = "lora_trainer"
     MOCK = "mock"
-    TEST = "test"
+    LLM_TEST = "llm_test"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
@@ -93,7 +93,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
     VIDEO = "video"
     TRAINING = "training"
-    TTS = "tts"
+    TEXT_TO_SPEECH = "text_to_speech"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -112,7 +112,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLMBGELargeEN_V1_5,
-        ModelRunners.TEST,
+        ModelRunners.LLM_TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -133,7 +133,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.TRAINING: {
         ModelRunners.LORA_TRAINER,
     },
-    ModelServices.TTS: {
+    ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
     },
 }
