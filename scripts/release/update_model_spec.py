@@ -75,6 +75,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
     DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
     DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) (P150X4)",
+    DeviceTypes.P150X8: "[BH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (P150X8)",
 }
 
 
