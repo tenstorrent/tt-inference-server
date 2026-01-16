@@ -59,8 +59,8 @@ def server_process():
     )
 
     # Wait for server to be ready
-    print("Waiting 5 seconds for server to be ready...")
-    time.sleep(5)
+    print("Waiting 20 seconds for server to be ready...")
+    time.sleep(20)
     print("Assuming server is ready!")
 
     yield process

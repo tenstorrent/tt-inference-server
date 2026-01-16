@@ -41,6 +41,22 @@ DEFAULT_MAX_CONCURRENCY_ISL_OSL_PAIRS = [
     (32000, 64),
 ]
 
+# VLM/Image benchmark configurations (ISL, OSL, images, height, width)
+DEFAULT_VLM_BATCH_1_CONFIGS = [
+    (128, 128, 1, 896, 896),  # Large square
+    (128, 128, 1, 512, 512),  # Small square
+    (128, 128, 1, 1024, 1024),  # Extra large square
+    (128, 128, 1, 512, 1024),  # Portrait
+    (128, 128, 1, 1024, 512),  # Landscape
+]
+
+DEFAULT_VLM_MAX_CONCURRENCY_CONFIGS = [
+    (128, 128, 1, 512, 512),  # Small square
+    (128, 128, 1, 1024, 1024),  # Large square
+    (128, 128, 1, 512, 1024),  # Portrait
+    (128, 128, 1, 1024, 512),  # Landscape
+]
+
 DEFAULT_TOKENIZER = "hf-internal-testing/llama-tokenizer"
 
 
@@ -55,6 +71,10 @@ class BenchmarkResult:
     avg_tps: float = 0.0
     p99_latency: float = 0.0
     error: str = ""
+    # VLM/image parameters
+    images: int = 0
+    image_height: int = 0
+    image_width: int = 0
 
 
 class ResultsAggregator:
@@ -303,7 +323,17 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
 
 
 def save_individual_result(
-    metrics, isl, osl, concurrency, num_requests, model_name, model_id, output_dir
+    metrics,
+    isl,
+    osl,
+    concurrency,
+    num_requests,
+    model_name,
+    model_id,
+    output_dir,
+    images=0,
+    image_height=0,
+    image_width=0,
 ):
     """Save individual benchmark result in genai-perf format"""
     from datetime import datetime
@@ -311,7 +341,13 @@ def save_individual_result(
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # Use genai_ prefix to differentiate from vLLM benchmarks
-    filename = f"genai_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
+    if images > 0:
+        # VLM benchmark - include image parameters in filename
+        filename = f"genai_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}_images-{images}_height-{image_height}_width-{image_width}.json"
+    else:
+        # Text-only benchmark
+        filename = f"genai_benchmark_{model_id}_{timestamp}_isl-{isl}_osl-{osl}_maxcon-{concurrency}_n-{num_requests}.json"
+
     filepath = os.path.join(output_dir, filename)
 
     # Build vLLM-compatible JSON structure
@@ -324,6 +360,13 @@ def save_individual_result(
         "max_concurrency": concurrency,
         **metrics,  # All harmonized metrics
     }
+
+    # Add image metadata if this is a VLM benchmark
+    if images > 0:
+        result["images_per_prompt"] = images
+        result["image_height"] = image_height
+        result["image_width"] = image_width
+        result["task_type"] = "image"
 
     with open(filepath, "w") as f:
         json.dump(result, f, indent=2)
@@ -344,30 +387,63 @@ def run_benchmark(
     auth_token,
     artifact_base,
     verbose=False,
+    images=0,
+    image_height=0,
+    image_width=0,
 ):
+    """Run a single GenAI-Perf benchmark.
+
+    Args:
+        images: Number of images per prompt (0 for text-only)
+        image_height: Height of images in pixels
+        image_width: Width of images in pixels
+    """
     num_prompts = get_num_prompts(isl, osl, concurrency)
 
     run_id = f"bench_{isl}_{osl}_{concurrency}"
+    if images > 0:
+        run_id += f"_img{images}_{image_height}x{image_width}"
     artifact_dir = os.path.join(artifact_base, run_id)
 
     if verbose:
         print(f"\n{'=' * 80}")
-        print(
-            f"BENCHMARK: ISL={isl}, OSL={osl}, Concurrency={concurrency}, Requests={num_prompts}"
-        )
+        if images > 0:
+            print(
+                f"BENCHMARK: ISL={isl}, OSL={osl}, Concurrency={concurrency}, Requests={num_prompts}, Images={images}, Size={image_width}x{image_height}"
+            )
+        else:
+            print(
+                f"BENCHMARK: ISL={isl}, OSL={osl}, Concurrency={concurrency}, Requests={num_prompts}"
+            )
         print(f"Artifact Dir: {artifact_dir}")
         print(f"{'=' * 80}")
     else:
-        print(
-            f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency} ... ",
-            end="",
-            flush=True,
-        )
+        if images > 0:
+            print(
+                f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency}, Images={images}, Size={image_width}x{image_height} ... ",
+                end="",
+                flush=True,
+            )
+        else:
+            print(
+                f"\nRunning: ISL={isl}, OSL={osl}, Concur={concurrency} ... ",
+                end="",
+                flush=True,
+            )
 
     if not auth_token:
         print("FAILED (No AUTH_TOKEN)")
         aggregator.add_result(
-            BenchmarkResult(isl, osl, concurrency, num_prompts, error="No Token")
+            BenchmarkResult(
+                isl,
+                osl,
+                concurrency,
+                num_prompts,
+                error="No Token",
+                images=images,
+                image_height=image_height,
+                image_width=image_width,
+            )
         )
         return
 
@@ -377,6 +453,9 @@ def run_benchmark(
 
         shutil.rmtree(artifact_dir)
 
+    # Choose endpoint type based on whether this is VLM or text-only
+    endpoint_type = "vision" if images > 0 else "chat"
+
     cmd = [
         "genai-perf",
         "profile",
@@ -385,7 +464,7 @@ def run_benchmark(
         "--tokenizer",
         tokenizer,
         "--endpoint-type",
-        "chat",
+        endpoint_type,
         "--streaming",
         "--warmup-request-count",
         "0",
@@ -411,14 +490,37 @@ def run_benchmark(
         "temperature:0.0",
         "--extra-inputs",
         "top_p:1.0",
-        "--",
-        "-H",
-        f"Authorization: Bearer {auth_token}",
-        "--stability-percentage",
-        "999",
-        "--max-trials",
-        "1",
     ]
+
+    # Add image parameters for VLM benchmarks
+    if images > 0:
+        cmd.extend(
+            [
+                "--image-width-mean",
+                str(image_width),
+                "--image-width-stddev",
+                "0",
+                "--image-height-mean",
+                str(image_height),
+                "--image-height-stddev",
+                "0",
+                "--image-format",
+                "png",
+            ]
+        )
+
+    # Add auth header
+    cmd.extend(
+        [
+            "--",
+            "-H",
+            f"Authorization: Bearer {auth_token}",
+            "--stability-percentage",
+            "999",
+            "--max-trials",
+            "1",
+        ]
+    )
 
     if verbose:
         print("\nExecuting command:")
@@ -458,6 +560,9 @@ def run_benchmark(
                 model_name,
                 model_id,
                 benchmarks_output_dir,
+                images=images,
+                image_height=image_height,
+                image_width=image_width,
             )
 
             # Still add to aggregator for final summary table
@@ -470,6 +575,9 @@ def run_benchmark(
                 avg_tpot_ms=stats.get("mean_tpot_ms", 0),
                 avg_tps=stats.get("output_token_throughput", 0),
                 p99_latency=stats.get("p99_itl_ms", 0),
+                images=images,
+                image_height=image_height,
+                image_width=image_width,
             )
             aggregator.add_result(bench_res)
             if verbose:
@@ -489,7 +597,14 @@ def run_benchmark(
                 sys.stdout.flush()
             aggregator.add_result(
                 BenchmarkResult(
-                    isl, osl, concurrency, num_prompts, error="Empty Results"
+                    isl,
+                    osl,
+                    concurrency,
+                    num_prompts,
+                    error="Empty Results",
+                    images=images,
+                    image_height=image_height,
+                    image_width=image_width,
                 )
             )
 
@@ -510,7 +625,16 @@ def run_benchmark(
             sys.stdout.flush()
         error_msg = f"Process Error (code {e.returncode})"
         aggregator.add_result(
-            BenchmarkResult(isl, osl, concurrency, num_prompts, error=error_msg)
+            BenchmarkResult(
+                isl,
+                osl,
+                concurrency,
+                num_prompts,
+                error=error_msg,
+                images=images,
+                image_height=image_height,
+                image_width=image_width,
+            )
         )
     except KeyboardInterrupt:
         raise
@@ -583,6 +707,12 @@ def main():
         "max_concurrency_isl_osl_pairs", DEFAULT_MAX_CONCURRENCY_ISL_OSL_PAIRS
     )
 
+    # Use custom VLM configs from config if provided
+    vlm_batch_1_configs = config.get("vlm_batch_1_configs", DEFAULT_VLM_BATCH_1_CONFIGS)
+    vlm_max_concurrency_configs = config.get(
+        "vlm_max_concurrency_configs", DEFAULT_VLM_MAX_CONCURRENCY_CONFIGS
+    )
+
     print(f"Model: {model_name}")
     print(f"URL: {url}")
     print(f"Max Context: {max_context}")
@@ -594,8 +724,8 @@ def main():
         print("DEBUG MODE: Running 2 benchmarks with verbose logging")
         print("=" * 80)
 
-        # Small benchmark
-        print("\n[1/2] Small benchmark: ISL=128, OSL=128, Concurrency=1")
+        # Small text benchmark
+        print("\n[1/2] Small text benchmark: ISL=128, OSL=128, Concurrency=1")
         run_benchmark(
             128,
             128,
@@ -610,8 +740,8 @@ def main():
             verbose=True,
         )
 
-        # Medium benchmark
-        print("\n[2/2] Medium benchmark: ISL=2048, OSL=128")
+        # Medium text benchmark
+        print("\n[2/2] Medium text benchmark: ISL=2048, OSL=128")
         concurrency = get_benchmark_max_concurrency(
             2048, 128, max_context, model_max_concurrency
         )
@@ -633,9 +763,9 @@ def main():
         aggregator.print_summary_table()
 
     else:
-        print("Starting Benchmarks...")
+        print("Starting Text Benchmarks...")
 
-        # 1. Batch 1 Sweeps
+        # 1. Text Batch 1 Sweeps
         for isl, osl in batch_1_pairs:
             run_benchmark(
                 isl,
@@ -650,7 +780,7 @@ def main():
                 artifact_base,
             )
 
-        # 2. Max Concurrency Sweeps
+        # 2. Text Max Concurrency Sweeps
         for isl, osl in max_concurrency_pairs:
             concurrency = get_benchmark_max_concurrency(
                 isl, osl, max_context, model_max_concurrency
@@ -667,6 +797,48 @@ def main():
                     url,
                     auth_token,
                     artifact_base,
+                )
+
+        print("\nStarting VLM/Image Benchmarks...")
+
+        # 3. VLM Batch 1 Sweeps (low concurrency)
+        for isl, osl, images, height, width in vlm_batch_1_configs:
+            run_benchmark(
+                isl,
+                osl,
+                1,  # Always concurrency 1 for VLM batch 1
+                aggregator,
+                model_name,
+                model_id,
+                tokenizer,
+                url,
+                auth_token,
+                artifact_base,
+                images=images,
+                image_height=height,
+                image_width=width,
+            )
+
+        # 4. VLM Max Concurrency Sweeps
+        for isl, osl, images, height, width in vlm_max_concurrency_configs:
+            concurrency = get_benchmark_max_concurrency(
+                isl, osl, max_context, model_max_concurrency
+            )
+            if concurrency > 1:
+                run_benchmark(
+                    isl,
+                    osl,
+                    concurrency,
+                    aggregator,
+                    model_name,
+                    model_id,
+                    tokenizer,
+                    url,
+                    auth_token,
+                    artifact_base,
+                    images=images,
+                    image_height=height,
+                    image_width=width,
                 )
 
         aggregator.print_summary_table()
