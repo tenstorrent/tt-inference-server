@@ -177,6 +177,13 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
+# Fix venv Python symlinks (original symlinks point to builder paths that don't exist in runtime)
+# and ensure bin scripts are executable
+RUN rm -f ${PYTHON_ENV_DIR}/bin/python ${PYTHON_ENV_DIR}/bin/python3 \
+    && ln -s /usr/bin/python3 ${PYTHON_ENV_DIR}/bin/python3 \
+    && ln -s python3 ${PYTHON_ENV_DIR}/bin/python \
+    && chmod -R +x ${PYTHON_ENV_DIR}/bin
+
 # Install additional app requirements into the copied venv
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && pip install --no-cache-dir --default-timeout=240 -r ${APP_DIR}/requirements.txt \
