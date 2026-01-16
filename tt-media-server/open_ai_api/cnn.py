@@ -82,10 +82,8 @@ async def searchImage(
     """
     try:
         result = await service.process_request(image_search_request)
-        logger.info("✅ Successfully finished image search result, result: %s", result)
         # Wrap single result in list to match ImageSearchResponse schema
         image_data = [result] if not isinstance(result, list) else result
         return ImageSearchResponse(image_data=image_data)
     except Exception as e:
-        logger.error("❌ Error processing image search request: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
