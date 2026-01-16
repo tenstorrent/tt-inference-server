@@ -369,34 +369,53 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def aiperf_release_markdown(release_raw):
+def aiperf_release_markdown(release_raw, is_image_benchmark=False):
     """Generate markdown table for AIPerf benchmarks with detailed metrics.
 
     This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
     for each key metric category.
+
+    Args:
+        release_raw: Raw benchmark data
+        is_image_benchmark: If True, includes image dimension columns (height, width, images per prompt)
     """
     # Define display columns mapping - NVIDIA style with detailed percentiles
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
         ("concurrency", "Concur"),
-        ("num_requests", "N"),
-        # TTFT metrics
-        ("mean_ttft_ms", "TTFT Avg (ms)"),
-        ("median_ttft_ms", "TTFT P50 (ms)"),
-        ("p99_ttft_ms", "TTFT P99 (ms)"),
-        # TPOT metrics (Time Per Output Token)
-        ("mean_tpot_ms", "TPOT Avg (ms)"),
-        ("median_tpot_ms", "TPOT P50 (ms)"),
-        ("p99_tpot_ms", "TPOT P99 (ms)"),
-        # E2EL metrics (End-to-End Latency)
-        ("mean_e2el_ms", "E2EL Avg (ms)"),
-        ("median_e2el_ms", "E2EL P50 (ms)"),
-        ("p99_e2el_ms", "E2EL P99 (ms)"),
-        # Throughput
-        ("output_token_throughput", "Tok/s"),
-        ("request_throughput", "Req/s"),
     ]
+
+    # Add image-specific columns for image benchmarks
+    if is_image_benchmark:
+        display_cols.extend(
+            [
+                ("image_height", "Image Height"),
+                ("image_width", "Image Width"),
+                ("images_per_prompt", "Images per Prompt"),
+            ]
+        )
+
+    display_cols.extend(
+        [
+            ("num_requests", "N"),
+            # TTFT metrics
+            ("mean_ttft_ms", "TTFT Avg (ms)"),
+            ("median_ttft_ms", "TTFT P50 (ms)"),
+            ("p99_ttft_ms", "TTFT P99 (ms)"),
+            # TPOT metrics (Time Per Output Token)
+            ("mean_tpot_ms", "TPOT Avg (ms)"),
+            ("median_tpot_ms", "TPOT P50 (ms)"),
+            ("p99_tpot_ms", "TPOT P99 (ms)"),
+            # E2EL metrics (End-to-End Latency)
+            ("mean_e2el_ms", "E2EL Avg (ms)"),
+            ("median_e2el_ms", "E2EL P50 (ms)"),
+            ("p99_e2el_ms", "E2EL P99 (ms)"),
+            # Throughput
+            ("output_token_throughput", "Tok/s"),
+            ("request_throughput", "Req/s"),
+        ]
+    )
 
     NOT_MEASURED_STR = "N/A"
     display_dicts = []
@@ -864,7 +883,7 @@ def aiperf_benchmark_generate_report(
                 "osl": osl,
                 "concurrency": concurrency,
                 "num_requests": num_requests,
-                "images": images,
+                "images_per_prompt": images,
                 "image_height": height,
                 "image_width": width,
                 # TTFT metrics
@@ -1069,7 +1088,7 @@ def aiperf_benchmark_generate_report(
 
     # TEXT BENCHMARKS SECTION
     if aiperf_text_results:
-        release_str += "## AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
         release_str += (
             "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         )
@@ -1081,13 +1100,15 @@ def aiperf_benchmark_generate_report(
 
     # IMAGE BENCHMARKS SECTION
     if aiperf_image_results:
-        release_str += "## AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
         release_str += (
             "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
         )
 
         # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_image_results)
+        nvidia_markdown_str = aiperf_release_markdown(
+            aiperf_image_results, is_image_benchmark=True
+        )
         release_str += nvidia_markdown_str
         release_str += "\n\n"
 
@@ -1140,6 +1161,288 @@ def aiperf_benchmark_generate_report(
     # Return combined results for both text and image
     all_aiperf_results = aiperf_text_results + aiperf_image_results
     return release_str, all_aiperf_results, disp_md_path, text_data_file_path
+
+
+def genai_perf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Generate benchmark report specifically for GenAI-Perf results.
+
+    GenAI-Perf provides detailed metrics similar to AIPerf,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate detailed report following the same format as AIPerf.
+    """
+    # All benchmark tools now use the same output directory
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    # Look for genai-perf benchmark files
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    output_dir = Path(args.output_path) / "benchmarks_genai_perf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("GenAI-Perf Benchmark Summary")
+    logger.info(f"Found {len(genai_files)} GenAI-Perf benchmark files")
+
+    if not genai_files:
+        logger.info("No GenAI-Perf benchmark files found. Skipping GenAI-Perf report.")
+        return "", [], None, None
+
+    # Helper function to keep only the latest file for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, maxcon, n = match.groups()
+                # For image benchmarks, also include image dimensions
+                image_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if image_match:
+                    images, height, width = image_match.groups()
+                    config_key = (isl, osl, maxcon, n, images, height, width)
+                else:
+                    config_key = (isl, osl, maxcon, n)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    genai_files = deduplicate_by_config(genai_files)
+    logger.info(f"After deduplication: {len(genai_files)} GenAI-Perf benchmark files")
+
+    # Separate text-only and image benchmarks
+    genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
+    genai_image_files = [f for f in genai_files if "images" in Path(f).name]
+
+    logger.info(
+        f"GenAI-Perf Text benchmarks: {len(genai_text_only_files)}, Image benchmarks: {len(genai_image_files)}"
+    )
+
+    # Process text-only GenAI-Perf benchmarks
+    genai_text_results = []
+    for filepath in sorted(genai_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf text file {filepath}: {e}")
+            continue
+
+    # Process image GenAI-Perf files
+    genai_image_results = []
+    for filepath in sorted(genai_image_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images_per_prompt": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_image_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf image file {filepath}: {e}")
+            continue
+
+    if not genai_text_results and not genai_image_results:
+        logger.info("No GenAI-Perf results to process.")
+        return "", [], None, None
+
+    # Sort text benchmarks by ISL, OSL, concurrency
+    genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+
+    # Sort image benchmarks by ISL, OSL, concurrency, image dimensions
+    genai_image_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["images_per_prompt"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+
+    # Build the complete report
+    release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+    # TEXT BENCHMARKS SECTION
+    if genai_text_results:
+        release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+
+        # Show GenAI-Perf detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # IMAGE BENCHMARKS SECTION
+    if genai_image_results:
+        release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+
+        # Show GenAI-Perf detailed percentiles (mean, median, P99)
+        nvidia_markdown_str = aiperf_release_markdown(
+            genai_image_results, is_image_benchmark=True
+        )
+        release_str += nvidia_markdown_str
+        release_str += "\n\n"
+
+    # Metric definitions
+    release_str += "**Metric Definitions:**\n"
+    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+    release_str += "> - **N**: Total number of requests\n"
+    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+    release_str += "> - **Tok/s**: Output token throughput\n"
+    release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"GenAI-Perf report saved to: {disp_md_path}")
+
+    # Save CSV data for text benchmarks
+    text_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_text_stats_{report_id}.csv"
+    )
+    text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if genai_text_results:
+        headers = list(genai_text_results[0].keys())
+        with open(text_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_text_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"GenAI-Perf text benchmark data saved to: {text_data_file_path}")
+
+    # Save CSV data for image benchmarks
+    image_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_image_stats_{report_id}.csv"
+    )
+    if genai_image_results:
+        headers = list(genai_image_results[0].keys())
+        with open(image_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_image_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"GenAI-Perf image benchmark data saved to: {image_data_file_path}")
+
+    # Return combined results for both text and image
+    all_genai_results = genai_text_results + genai_image_results
+    return release_str, all_genai_results, disp_md_path, text_data_file_path
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
@@ -2957,6 +3260,16 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate GenAI-Perf benchmarks report (separate detailed report)
+    (
+        genai_perf_release_str,
+        genai_perf_release_data,
+        genai_perf_disp_md_path,
+        genai_perf_data_file_path,
+    ) = genai_perf_benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
     # generate evals report
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
@@ -3006,6 +3319,8 @@ def main():
         all_benchmarks_str += benchmarks_release_str + "\n\n"
     if aiperf_release_str:
         all_benchmarks_str += aiperf_release_str + "\n\n"
+    if genai_perf_release_str:
+        all_benchmarks_str += genai_perf_release_str + "\n\n"
 
     release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
     print(release_str)
