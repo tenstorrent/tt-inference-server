@@ -72,7 +72,6 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def load_weights(self):
-        self.create_pipeline()
         return True
 
     async def warmup(self) -> bool:
