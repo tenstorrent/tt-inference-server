@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 class BaseTestStatus(ABC):
     """Base class for all test status objects."""
 
-    def __init__(self, status: bool, elapsed: float): 
+    def __init__(self, status: bool, elapsed: float):
         self.status = status
         self.elapsed = elapsed
 

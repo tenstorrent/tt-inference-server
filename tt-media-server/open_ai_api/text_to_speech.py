@@ -15,7 +15,7 @@ router = APIRouter()
 async def handle_tts_request(tts_request, service):
     """
     Handle TTS request with different response formats.
-    
+
     Returns:
         If response_format is "audio" or "wav", returns WAV bytes directly.
         Otherwise, returns JSON with base64-encoded audio.
@@ -26,9 +26,7 @@ async def handle_tts_request(tts_request, service):
             if tts_request.response_format.lower() in ("audio", "wav"):
                 # Return WAV bytes directly
                 if hasattr(result, "_wav_bytes") and result._wav_bytes:
-                    return Response(
-                        content=result._wav_bytes, media_type="audio/wav"
-                    )
+                    return Response(content=result._wav_bytes, media_type="audio/wav")
                 else:
                     raise HTTPException(
                         status_code=500,
@@ -41,8 +39,8 @@ async def handle_tts_request(tts_request, service):
                 service.scheduler.check_is_model_ready()
             except Exception:
                 raise HTTPException(status_code=405, detail="Model is not ready")
-            
-            # Implement streaming in future if needed 
+
+            # Implement streaming in future if needed
             raise HTTPException(
                 status_code=501, detail="Streaming not yet implemented for TTS"
             )
@@ -50,8 +48,6 @@ async def handle_tts_request(tts_request, service):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 @router.post("/speech")
