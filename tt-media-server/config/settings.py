@@ -183,6 +183,8 @@ class Settings(BaseSettings):
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
+        self.vllm.model = model_to_run
+
         model_name_enum = ModelNames(model_to_run)
 
         # Find the appropriate model runner for this model name
