@@ -16,12 +16,12 @@ def tts_worker_function(worker_context, base64_audio: str, response_format: str 
     """
     Worker function for TTS post-processing.
     Decodes base64 audio to WAV bytes if response_format is "audio" or "wav".
-    
+
     Args:
         worker_context: Worker context (None for TTS, not used)
         base64_audio: Base64-encoded audio string
         response_format: Response format ("audio" or "wav" for WAV bytes, otherwise None)
-    
+
     Returns:
         WAV bytes if response_format is "audio" or "wav", otherwise None
     """
@@ -37,8 +37,10 @@ class TextToSpeechService(BaseService):
         # Isolates CPU operations in separate processes and enables batch processing
         # Create minimal valid base64 WAV for warmup (44 bytes WAV header + minimal data)
         # This is a minimal valid WAV file: RIFF header + minimal PCM data
-        minimal_wav_base64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
-        
+        minimal_wav_base64 = (
+            "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+        )
+
         self._cpu_workload_handler = CpuWorkloadHandler(
             name="TTSPostprocessing",
             worker_count=self.scheduler.get_worker_count(),
@@ -58,7 +60,7 @@ class TextToSpeechService(BaseService):
         Post-process TTS response using CPU workload handler.
         If response_format is "audio" or "wav", decode base64 audio to WAV bytes.
         Otherwise, return response as-is with base64 audio.
-        
+
         Uses CPU workers for consistency with ImageService and AudioService,
         and to enable future batch processing capabilities.
         """
