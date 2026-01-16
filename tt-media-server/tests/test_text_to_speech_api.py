@@ -2,9 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from unittest.mock import MagicMock
+"""Tests for Text-to-Speech API endpoints."""
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException, Response
+
+from open_ai_api.text_to_speech import (
+    get_dict_response as real_get_dict_response,
+    handle_tts_request as real_handle_tts_request,
+    text_to_speech,
+)
 
 
 # Self-contained mock classes for testing TTS functionality
@@ -127,3 +136,133 @@ class TestTTSRouterIntegration:
         mock_router.routes = []
         assert mock_router is not None
         assert hasattr(mock_router, "routes")
+
+
+class TestRealImplementation:
+    """Test actual text_to_speech.py implementation"""
+
+    def test_real_get_dict_response(self):
+        """Test real get_dict_response function"""
+        mock_obj = MagicMock()
+        mock_obj.to_dict = MagicMock(return_value={"key": "value"})
+        result = real_get_dict_response(mock_obj)
+        assert result == {"key": "value"}
+
+        mock_obj2 = MagicMock()
+        del mock_obj2.to_dict
+        with pytest.raises(ValueError):
+            real_get_dict_response(mock_obj2)
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_audio(self):
+        """Test real handle_tts_request with audio format"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.wav_bytes = b"test_wav"
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "audio"
+        mock_request.response_format = mock_format
+
+        result = await real_handle_tts_request(mock_request, mock_service)
+        assert isinstance(result, Response)
+        assert result.body == b"test_wav"
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_wav(self):
+        """Test real handle_tts_request with wav format"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.wav_bytes = b"test_wav"
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "wav"
+        mock_request.response_format = mock_format
+
+        result = await real_handle_tts_request(mock_request, mock_service)
+        assert isinstance(result, Response)
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_json(self):
+        """Test real handle_tts_request with json format"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.to_dict = MagicMock(return_value={"audio": "test"})
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "verbose_json"
+        mock_request.response_format = mock_format
+
+        result = await real_handle_tts_request(mock_request, mock_service)
+        assert isinstance(result, dict)
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_no_wav_bytes(self):
+        """Test real handle_tts_request when wav_bytes missing"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.wav_bytes = None
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "audio"
+        mock_request.response_format = mock_format
+
+        with pytest.raises(HTTPException) as exc_info:
+            await real_handle_tts_request(mock_request, mock_service)
+        assert exc_info.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_exception(self):
+        """Test real handle_tts_request exception handling"""
+        mock_service = MagicMock()
+        mock_service.process_request = AsyncMock(side_effect=Exception("error"))
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "verbose_json"
+        mock_request.response_format = mock_format
+
+        with pytest.raises(HTTPException) as exc_info:
+            await real_handle_tts_request(mock_request, mock_service)
+        assert exc_info.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_http_exception(self):
+        """Test real handle_tts_request passes through HTTPException"""
+        mock_service = MagicMock()
+        # Use FastAPI HTTPException, not MockHTTPException
+        http_exc = HTTPException(status_code=400, detail="bad")
+        mock_service.process_request = AsyncMock(side_effect=http_exc)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "verbose_json"
+        mock_request.response_format = mock_format
+
+        with pytest.raises(HTTPException) as exc_info:
+            await real_handle_tts_request(mock_request, mock_service)
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_text_to_speech_endpoint(self):
+        """Test text_to_speech endpoint"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.wav_bytes = b"test"
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "audio"
+        mock_request.response_format = mock_format
+
+        result = await text_to_speech(mock_request, mock_service, "key")
+        assert isinstance(result, Response)
