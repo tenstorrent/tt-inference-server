@@ -30,7 +30,9 @@ class SystemResourceService:
     """Service for monitoring system resources and TT device telemetry"""
 
     @staticmethod
-    def _run_smi_command(executable_path_prefix: str, executable_name: str, timeout: int = 10):
+    def _run_smi_command(
+        executable_path_prefix: str, executable_name: str, timeout: int = 10
+    ):
         """
         Run a tt-smi style command and return parsed JSON data.
 
@@ -76,7 +78,9 @@ class SystemResourceService:
                     )
 
             except subprocess.TimeoutExpired:
-                logger.error(f"{executable_name} -s command timed out after {timeout} seconds")
+                logger.error(
+                    f"{executable_name} -s command timed out after {timeout} seconds"
+                )
                 # Kill the process group to ensure cleanup
                 try:
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -89,7 +93,9 @@ class SystemResourceService:
                 return None
 
         except FileNotFoundError:
-            raise RuntimeError(f"{executable_name} command not found at {executable_path}")
+            raise RuntimeError(
+                f"{executable_name} command not found at {executable_path}"
+            )
         except Exception as e:
             raise RuntimeError(f"Error getting {executable_name} data: {str(e)}")
 
@@ -101,7 +107,9 @@ class SystemResourceService:
     @staticmethod
     def get_tt_smi_metal_data(timeout: int = 10):
         """Get raw tt-smi-metal data with timeout handling"""
-        return SystemResourceService._run_smi_command("/usr/local", "tt-smi-metal", timeout)
+        return SystemResourceService._run_smi_command(
+            "/usr/local", "tt-smi-metal", timeout
+        )
 
     @staticmethod
     def get_tt_topology_data(timeout=10):
