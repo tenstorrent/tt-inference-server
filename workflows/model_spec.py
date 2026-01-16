@@ -1101,6 +1101,7 @@ spec_templates = [
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                     #"trace_mode": "none"
+                    "enable_model_warmup": False,
                 },
             ),
         ],
