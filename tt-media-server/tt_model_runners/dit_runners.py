@@ -163,14 +163,14 @@ class TTSD35Runner(TTDiTRunner):
         return {"l1_small_size": 32768, "trace_region_size": 25000000}
 
 
-# Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determined the model
+# Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
-            checkpoint_name=get_settings().model_weights_path,  # or SupportedModels.FLUX_1_DEV.value,
+            checkpoint_name=self.settings.model_weights_path,
             mesh_device=self.ttnn_device,
         )
 
@@ -192,7 +192,7 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
         return {"l1_small_size": 32768, "trace_region_size": 31000000}
 
 
-# Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determined the model
+# Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
 class TTQwenImageRunner(TTDiTRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
@@ -200,7 +200,7 @@ class TTQwenImageRunner(TTDiTRunner):
     def create_pipeline(self):
         return QwenImagePipeline.create_pipeline(
             mesh_device=self.ttnn_device,
-            checkpoint_name=get_settings().model_weights_path,
+            checkpoint_name=self.settings.model_weights_path,
         )
 
     def get_pipeline_device_params(self):
