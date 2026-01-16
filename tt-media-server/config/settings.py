@@ -183,7 +183,12 @@ class Settings(BaseSettings):
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
-        self.vllm.model = model_to_run
+        for model in SupportedModels:
+            if model_to_run in model.value:
+                self.vllm.model = model.value
+                break
+        else:
+            raise ValueError(f"Model {model_to_run} not found in SupportedModels")
 
         model_name_enum = ModelNames(model_to_run)
 
