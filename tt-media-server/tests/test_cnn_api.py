@@ -5,14 +5,9 @@
 """Tests for CNN API endpoints."""
 
 import base64
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-# Mock modules before importing the module under test
-sys.modules["PIL"] = MagicMock()
-sys.modules["PIL.Image"] = MagicMock()
 
 
 class TestParseCNNRequest:

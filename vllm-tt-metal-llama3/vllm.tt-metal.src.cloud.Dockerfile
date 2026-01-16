@@ -70,8 +70,6 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
-USER ${CONTAINER_APP_USERNAME}
-
 RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${CARGO_HOME}/env \
     && rustup update"
@@ -84,16 +82,18 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && bash ./build_metal.sh \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then pip install -r models/demos/qwen25_vl/requirements.txt; fi \
+    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"
 
 # Build vllm - clone with minimal history and clean
+# Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
+# Use --index-strategy unsafe-best-match to allow uv to find packages across all indexes
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --upgrade pip \
-    && pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && uv pip install --upgrade pip \
+    && uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
 
 # ==============================================================================
@@ -158,8 +158,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-USER ${CONTAINER_APP_USERNAME}
-
 # Copy complete tt-metal installation including virtual environment
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${TT_METAL_HOME} ${TT_METAL_HOME}
@@ -178,10 +176,16 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Install additional app requirements into the copied venv
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && pip install --no-cache-dir --default-timeout=240 -r ${APP_DIR}/requirements.txt \
-    && pip cache purge"
+    && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Fix venv permissions (COPY --chown can break symlink permissions)
+RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# Switch to non-root user for runtime
+USER ${CONTAINER_APP_USERNAME}
 
 # Set working directory
 WORKDIR "${APP_DIR}/src"

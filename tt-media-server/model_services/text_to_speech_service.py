@@ -5,6 +5,6 @@
 from model_services.base_service import BaseService
 
 
-class TTSService(BaseService):
+class TextToSpeechService(BaseService):
     def __init__(self):
         super().__init__()
