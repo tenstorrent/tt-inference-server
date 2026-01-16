@@ -176,7 +176,12 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+# Fix venv symlinks after copy and install additional app requirements
+RUN cd ${PYTHON_ENV_DIR}/bin \
+    && rm -f python python3 \
+    && ln -s /usr/bin/python3 python3 \
+    && ln -s python3 python \
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
