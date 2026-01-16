@@ -76,7 +76,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     LORA_TRAINER = "lora_trainer"
     MOCK = "mock"
-    TEST = "test"
+    LLM_TEST = "llm_test"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
@@ -104,7 +104,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLMBGELargeEN_V1_5,
-        ModelRunners.TEST,
+        ModelRunners.LLM_TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
