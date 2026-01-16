@@ -159,7 +159,7 @@ def generate_markdown_table(templates_to_use=None, status_filter=None) -> str:
 
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
-            docker_image_str = f"[{ghcr_tag}](https://{docker_image_full})"
+            docker_image_str = f"[{ghcr_tag[:21]}](https://{docker_image_full})"
             row = f"| {model_str} | {hardware} | {model_weights_str} | {tt_metal_commit} | {docker_image_str} |"
             row_data.append((sort_key, row))
         except Exception as e:
