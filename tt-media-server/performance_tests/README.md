@@ -13,7 +13,7 @@ sequenceDiagram
     participant Worker as DeviceWorker
     participant Runner as LLMTestRunner
 
-    Test->>Server: Start server (MODEL_RUNNER=test)
+    Test->>Server: Start server (MODEL_RUNNER=llm_test)
     Note over Server,Runner: Server uses LLMTestRunner instead of real model
 
     Test->>Client: make_streaming_request(token_count=2048)
@@ -69,7 +69,7 @@ Collects timing samples and computes:
 ### Test (`test_llm_streaming.py`)
 
 The main performance test that:
-1. Starts the server with `MODEL_RUNNER=test`
+1. Starts the server with `MODEL_RUNNER=llm_test`
 2. Sends a streaming request for N tokens
 3. Measures timing overhead
 4. Fails if overhead exceeds threshold

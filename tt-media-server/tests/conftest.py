@@ -542,7 +542,7 @@ runner_mocks = {
         "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
     },
     "tt_model_runners.llm_test_runner": {
-        "LLMTestRunner": create_mock_runner_class("LLMTestRunner")
+        "LLMTestRunner": create_mock_runner_class("LLMTestRunner"),
     },
     "tt_model_runners.vllm_forge_qwen_embedding_runner": {
         "VLLMForgeEmbeddingQwenRunner": create_mock_runner_class(

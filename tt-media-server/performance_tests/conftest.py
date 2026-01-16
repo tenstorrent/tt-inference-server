@@ -58,7 +58,7 @@ def server_process():
 
     # Build environment for server process
     env = os.environ.copy()
-    env["MODEL_RUNNER"] = "test"
+    env["MODEL_RUNNER"] = "llm_test"
     env["TEST_RUNNER_FREQUENCY_MS"] = str(TEST_RUNNER_FREQUENCY_MS)
     env["DEVICE_IDS"] = str(DEVICE_IDS)
     env["IS_GALAXY"] = str(IS_GALAXY)
