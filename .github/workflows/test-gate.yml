@@ -482,7 +482,7 @@ jobs:
         with:
           name: llm-streaming-server-logs
           path: tt-media-server/performance_tests/server.log
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: warn
 
       - name: Check test result
