@@ -238,6 +238,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+deepseek_r1_galaxy_impl = ImplSpec(
+    impl_id="deepseek_r1_galaxy",
+    impl_name="deepseek-r1-galaxy",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/deepseek_v3",
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -1559,6 +1565,57 @@ spec_templates = [
         ),
         status=ModelStatusTypes.COMPLETE,
         has_builtin_warmup=True,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "deepseek-ai/DeepSeek-R1-0528",
+        ],
+        impl=deepseek_r1_galaxy_impl,
+        tt_metal_commit="e3d97e5",
+        vllm_commit="a186bf4",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.DUAL_GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QUAD_GALAXY,
+                max_concurrency=32 * 8,
+                max_context=64 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                },
+            ),
+        ],
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=[

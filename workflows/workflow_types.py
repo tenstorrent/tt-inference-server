@@ -64,6 +64,8 @@ class DeviceTypes(IntEnum):
     T3K = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
+    DUAL_GALAXY = auto()
+    QUAD_GALAXY = auto()
     GPU = auto()
 
     @classmethod
@@ -87,6 +89,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
+            DeviceTypes.DUAL_GALAXY: "DUAL",
+            DeviceTypes.QUAD_GALAXY: "QUAD",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -107,6 +111,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
             DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
+            DeviceTypes.DUAL_GALAXY: "Dual Tenstorrent Galaxy",
+            DeviceTypes.QUAD_GALAXY: "Quad Tenstorrent Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
