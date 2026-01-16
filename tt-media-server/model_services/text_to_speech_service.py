@@ -70,7 +70,7 @@ class TextToSpeechService(BaseService):
                     result.audio, input_request.response_format
                 )
 
-                result._wav_bytes = wav_bytes
+                result.wav_bytes = wav_bytes
                 self.logger.debug(
                     f"Decoded base64 audio to WAV bytes: {len(wav_bytes)} bytes"
                 )

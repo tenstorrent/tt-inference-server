@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel
 
 
 class TextToSpeechResponse(BaseModel):
@@ -16,8 +16,8 @@ class TextToSpeechResponse(BaseModel):
     format: str = "wav"  # Audio format
     speaker_id: Optional[str] = None  # Speaker ID used (if any)
 
-    # Private field for storing decoded WAV bytes (used when response_format="text")
-    _wav_bytes: Optional[bytes] = PrivateAttr(default=None)
+    # Field for storing decoded WAV bytes (used when response_format is "audio" or "wav")
+    wav_bytes: Optional[bytes] = None
 
     def to_dict(self):
         return {

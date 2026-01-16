@@ -31,9 +31,8 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
-    # Response format and streaming
+    # Response format
     response_format: str = ResponseFormat.AUDIO.value  # ResponseFormat.AUDIO for WAV bytes, ResponseFormat.VERBOSE_JSON or ResponseFormat.JSON for JSON
-    stream: bool = False  # Whether to stream audio generation
 
     # Private fields for internal processing
     _speaker_embedding_array: Optional[np.ndarray] = PrivateAttr(default=None)

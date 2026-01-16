@@ -44,7 +44,7 @@ from utils.speaker_embeddings import SpeakerEmbeddingsManager
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
+    MAX_STEPS = 768  # Current optimal value
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
 
