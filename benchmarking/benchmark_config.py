@@ -15,8 +15,7 @@ from workflows.workflow_types import BenchmarkTaskType, DeviceTypes, WorkflowVen
 class BenchmarkTask:
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VLLM_API
-    # TODO: Unify vLLM benchmark venv between HTTP_CLIENT_VLLM_API and BENCHMARKS_EMBEDDING
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_EMBEDDING
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
 
 
 @dataclass(frozen=True)
@@ -31,8 +30,8 @@ class BenchmarkTaskCNN(BenchmarkTask):
 @dataclass(frozen=True)
 class BenchmarkTaskEmbedding(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_EMBEDDING
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VLLM_API
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
 
 
 @dataclass(frozen=True)
