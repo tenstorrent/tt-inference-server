@@ -363,4 +363,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
         atexit.register(exit_log_messages)
 
-    return
+    return {
+        "container_name": container_name,
+        "container_id": container_id,
+        "docker_log_file_path": str(docker_log_file_path),
+        "service_port": args.service_port,
+    }
