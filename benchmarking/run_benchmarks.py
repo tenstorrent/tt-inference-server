@@ -142,8 +142,6 @@ def build_benchmark_command(
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
         "--random-output-len", str(osl),
-        # TODO: Might need to `--extra-body` here for truncate-prompt-tokens
-        "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
