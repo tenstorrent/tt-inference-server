@@ -116,6 +116,18 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
+    )
     ret_args = parser.parse_args()
     return ret_args
 
