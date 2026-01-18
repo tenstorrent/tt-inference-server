@@ -2,12 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-#FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
 
-# Build stage
+# ==============================================================================
+# BUILDER STAGE
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS builder
+
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-# connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -20,7 +21,6 @@ ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV ENVIRONMENT=development
-ENV MODEL_RUNNER=${MODEL_RUNNER}
 
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
@@ -48,7 +48,6 @@ RUN apt-get update && apt-get install -y \
     jq \
     vim \
     python3-pip \
-    # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
     libffi-dev \
@@ -72,12 +71,6 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y python3.11 python3.11-dev python3.11-venv python3.11-distutils
 
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
-    chmod +x cmake.sh && \
-    ./cmake.sh --skip-license --prefix=/usr/local && \
-    rm cmake.sh && \
-    cmake --version
-
 # build tt-metal
 RUN pip3 install --upgrade setuptools wheel \
     && pip3 install cmake \
@@ -93,13 +86,13 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 
 USER ${CONTAINER_APP_USERNAME}
 
-# install tt-smi
+RUN pip3 install tomli
 RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && pip3 install --no-build-isolation git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
 
@@ -111,7 +104,54 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal"
 
-# spinup inference server
-WORKDIR "${APP_DIR}"
+# Clear pip cache to reduce image size
+RUN rm -rf ${HOME_DIR}/.cache/pip
+
+# ==============================================================================
+# RUNTIME STAGE - final lightweight image
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS runner
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CONTAINER_APP_UID=1000
+ARG HOME_DIR=/home/container_app_user
+
+ENV LOG_LEVEL=INFO
+ENV ENVIRONMENT=development
+ENV SHELL=/bin/bash
+ENV CONTAINER_APP_USERNAME=container_app_user
+ENV CONFIG=Release
+ENV LOGURU_LEVEL=INFO
+
+# System deps (runtime only)
+RUN apt-get update && apt-get install -y \
+    libsndfile1 \
+    python3-yaml \
+    git \
+    python3.11 \
+    python3.11-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# User setup
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR} \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd \
+    && git config --global --add safe.directory '*'
+
+RUN apt-get update && apt-get install -y libnuma1 libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
+
+USER ${CONTAINER_APP_USERNAME}
+
+# Copy app from builder
+ARG APP_DIR="${HOME_DIR}/app"
+ENV APP_DIR=${APP_DIR}
+WORKDIR ${APP_DIR}
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${APP_DIR}/server ${APP_DIR}/server
+
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh"]
