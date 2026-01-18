@@ -128,7 +128,6 @@ def build_benchmark_command(
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     # fmt: off
     cmd = [
         str(benchmark_script),
