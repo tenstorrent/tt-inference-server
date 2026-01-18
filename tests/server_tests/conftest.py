@@ -32,10 +32,10 @@ def pytest_addoption(parser):
         help="Name of the model being tested",
     )
     parser.addoption(
-        "--model-backend",
+        "--model-impl",
         action="store",
-        default="unknown-backend",
-        help="Backend serving the model (e.g., vLLM, TGI, Pytorch)",
+        default="unknown-impl",
+        help="Implementation serving the model (e.g., tt-transformers)",
     )
 
 
@@ -60,9 +60,8 @@ def results_report(request, output_path):
     report_data = {
         "endpoint_url": request.config.getoption("--endpoint-url"),
         "model_name": request.config.getoption("--model-name"),
-        "model_backend": request.config.getoption("--model-backend"),
-        "test_run_timestamp_utc": datetime.utcnow().isoformat(),
-        "parameter_support": {},
+        "model_impl": request.config.getoption("--model-impl"),
+        "results": {},
     }
     yield report_data
 
