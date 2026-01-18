@@ -5487,9 +5487,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 46500,
+                        "tput_prefill": 46500,
+                        "e2el_ms": 4000
                     }
                 }
             }
@@ -5500,9 +5500,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 46500,
+                        "tput_prefill": 46500,
+                        "e2el_ms": 4000
                     }
                 }
             }
@@ -5513,9 +5513,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 46500,
+                        "tput_prefill": 46500,
+                        "e2el_ms": 4000
                     }
                 }
             }
@@ -5526,9 +5526,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 46500,
+                        "tput_prefill": 46500,
+                        "e2el_ms": 4000
                     }
                 }
             }
