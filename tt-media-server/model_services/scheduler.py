@@ -107,7 +107,7 @@ class Scheduler:
     @log_execution_time("Scheduler - starting workers")
     def start_workers(self):
         # keep result listener in the main event loop
-        self.listener_task_ref = asyncio.create_task(self.result_listener())
+        # self.listener_task_ref = asyncio.create_task(self.result_listener())
 
         # keep device warmup listener in the main event loop, it'll close soon
         self.device_warmup_listener_ref = asyncio.create_task(
