@@ -128,19 +128,19 @@ def build_benchmark_command(
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     # fmt: off
     cmd = [
-        str(task_venv_config.venv_python), str(benchmark_script),
+        str(benchmark_script),
+        "bench",
+        "serve",
         "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
-        "--dataset-name", "cleaned-random",
+        "--dataset-name", "random",
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
         "--random-output-len", str(osl),
-        "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
@@ -296,7 +296,7 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
-        benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
+        benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
             context_lens = [(params.isl, params.osl) for params in params_list]
