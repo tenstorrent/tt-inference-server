@@ -2230,6 +2230,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=0,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                },
                 score=EvalTaskScore(
                     published_score=80.9,
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
