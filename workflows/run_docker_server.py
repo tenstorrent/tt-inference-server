@@ -14,8 +14,6 @@ from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
     ModelSource,
     ModelType,
-    llama3_70b_galaxy_impl,
-    qwen3_32b_galaxy_impl,
 )
 from workflows.utils import (
     default_dotenv_path,
@@ -212,18 +210,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     # TT_CACHE_PATH has host path
     # TT_MODEL_SPEC_JSON_PATH has dynamic path
     # MODEL_WEIGHTS_PATH has dynamic path
-    # TT_LLAMA_TEXT_VER must be set BEFORE import time of run_vllm_api_server.py for vLLM registry
-    model_env_var = None
-    if model_spec.impl == qwen3_32b_galaxy_impl:
-        model_env_var = {"TT_QWEN3_TEXT_VER": model_spec.impl.impl_id}
-    elif model_spec.impl == llama3_70b_galaxy_impl:
-        model_env_var = {"TT_LLAMA_TEXT_VER": model_spec.impl.impl_id}
-    # TODO: Remove all of this model env var setting https://github.com/tenstorrent/tt-inference-server/issues/1346
     docker_env_vars = {
         "CACHE_ROOT": setup_config.cache_root,
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        **(model_env_var if model_env_var is not None else {}),
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
@@ -373,4 +363,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
         atexit.register(exit_log_messages)
 
-    return
+    return {
+        "container_name": container_name,
+        "container_id": container_id,
+        "docker_log_file_path": str(docker_log_file_path),
+        "service_port": args.service_port,
+    }
