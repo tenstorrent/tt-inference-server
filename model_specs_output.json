@@ -54,8 +54,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-ae65ee5-35f023f",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-ae65ee5-35f023f",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/ae65ee5/models/tt_transformers",
     "override_tt_config": {},
@@ -65,7 +65,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_AFM-4.5B_t3k": {
     "model_id": "id_tt-transformers_AFM-4.5B_t3k",
@@ -122,8 +123,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-ae65ee5-35f023f",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-ae65ee5-35f023f",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/ae65ee5/models/tt_transformers",
     "override_tt_config": {},
@@ -133,7 +134,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_gemma-3-1b-it_n150": {
     "model_id": "id_tt-transformers_gemma-3-1b-it_n150",
@@ -194,8 +196,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -210,7 +212,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_gemma-3-4b-it_n150": {
     "model_id": "id_tt-transformers_gemma-3-4b-it_n150",
@@ -311,8 +314,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -328,7 +331,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_gemma-3-4b-it_n300": {
     "model_id": "id_tt-transformers_gemma-3-4b-it_n300",
@@ -431,8 +435,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -448,7 +452,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_medgemma-4b-it_n150": {
     "model_id": "id_tt-transformers_medgemma-4b-it_n150",
@@ -549,8 +554,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -566,7 +571,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_medgemma-4b-it_n300": {
     "model_id": "id_tt-transformers_medgemma-4b-it_n300",
@@ -669,8 +675,8 @@
     "min_ram_gb": 16,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -686,7 +692,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_gemma-3-27b-it_t3k": {
     "model_id": "id_tt-transformers_gemma-3-27b-it_t3k",
@@ -790,8 +797,8 @@
     "min_ram_gb": 108,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -808,7 +815,96 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_gemma-3-27b-it_galaxy_t3k": {
+    "model_id": "id_tt-transformers_gemma-3-27b-it_galaxy_t3k",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "google/gemma-3-27b-it",
+    "model_name": "gemma-3-27b-it",
+    "inference_engine": "vLLM",
+    "device_type": "GALAXY_T3K",
+    "tt_metal_commit": "c254ee3",
+    "device_model_spec": {
+      "device": "GALAXY_T3K",
+      "max_concurrency": 32,
+      "max_context": 131072,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "google/gemma-3-27b-it",
+        "block_size": "64",
+        "max_model_len": "131072",
+        "max_num_seqs": "32",
+        "max_num_batched_tokens": "131072",
+        "num_scheduler_steps": 1,
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21921792, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+        "limit-mm-per-prompt": "{\"image\": 10}"
+      },
+      "override_tt_config": {
+        "l1_small_size": 24576,
+        "worker_l1_size": 1344544,
+        "trace_region_size": 21921792,
+        "fabric_config": "FABRIC_1D",
+        "sample_on_device_mode": "decode_only"
+      },
+      "env_vars": {
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "MESH_DEVICE": "T3K",
+        "ARCH_NAME": "wormhole_b0",
+        "VLLM_USE_V1": "1",
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+      "MESH_DEVICE": "T3K",
+      "ARCH_NAME": "wormhole_b0",
+      "VLLM_USE_V1": "1",
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+    },
+    "vllm_commit": "c4f2327",
+    "hf_weights_repo": "google/gemma-3-27b-it",
+    "param_count": 27,
+    "min_disk_gb": 74,
+    "min_ram_gb": 108,
+    "model_type": "LLM",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
+    "status": "EXPERIMENTAL",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
+    "override_tt_config": {
+      "l1_small_size": 24576,
+      "worker_l1_size": 1344544,
+      "trace_region_size": 21921792,
+      "fabric_config": "FABRIC_1D",
+      "sample_on_device_mode": "decode_only"
+    },
+    "supported_modalities": [
+      "text",
+      "image"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_medgemma-27b-it_t3k": {
     "model_id": "id_tt-transformers_medgemma-27b-it_t3k",
@@ -912,8 +1008,8 @@
     "min_ram_gb": 108,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c254ee3-c4f2327",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
     "override_tt_config": {
@@ -930,7 +1026,96 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_medgemma-27b-it_galaxy_t3k": {
+    "model_id": "id_tt-transformers_medgemma-27b-it_galaxy_t3k",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "google/medgemma-27b-it",
+    "model_name": "medgemma-27b-it",
+    "inference_engine": "vLLM",
+    "device_type": "GALAXY_T3K",
+    "tt_metal_commit": "c254ee3",
+    "device_model_spec": {
+      "device": "GALAXY_T3K",
+      "max_concurrency": 32,
+      "max_context": 131072,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "google/medgemma-27b-it",
+        "block_size": "64",
+        "max_model_len": "131072",
+        "max_num_seqs": "32",
+        "max_num_batched_tokens": "131072",
+        "num_scheduler_steps": 1,
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21921792, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+        "limit-mm-per-prompt": "{\"image\": 10}"
+      },
+      "override_tt_config": {
+        "l1_small_size": 24576,
+        "worker_l1_size": 1344544,
+        "trace_region_size": 21921792,
+        "fabric_config": "FABRIC_1D",
+        "sample_on_device_mode": "decode_only"
+      },
+      "env_vars": {
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "MESH_DEVICE": "T3K",
+        "ARCH_NAME": "wormhole_b0",
+        "VLLM_USE_V1": "1",
+        "TT_MM_THROTTLE_PERF": 5,
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+      "MESH_DEVICE": "T3K",
+      "ARCH_NAME": "wormhole_b0",
+      "VLLM_USE_V1": "1",
+      "TT_MM_THROTTLE_PERF": 5,
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+    },
+    "vllm_commit": "c4f2327",
+    "hf_weights_repo": "google/medgemma-27b-it",
+    "param_count": 27,
+    "min_disk_gb": 74,
+    "min_ram_gb": 108,
+    "model_type": "LLM",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c254ee3-c4f2327",
+    "status": "EXPERIMENTAL",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
+    "override_tt_config": {
+      "l1_small_size": 24576,
+      "worker_l1_size": 1344544,
+      "trace_region_size": 21921792,
+      "fabric_config": "FABRIC_1D",
+      "sample_on_device_mode": "decode_only"
+    },
+    "supported_modalities": [
+      "text",
+      "image"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-3B-Instruct_n150": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-3B-Instruct_n150",
@@ -1024,8 +1209,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1036,7 +1221,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-3B-Instruct_n300": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-3B-Instruct_n300",
@@ -1132,8 +1318,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1144,7 +1330,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-3B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-3B-Instruct_t3k",
@@ -1240,8 +1427,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1252,7 +1439,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-7B-Instruct_n150": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-7B-Instruct_n150",
@@ -1346,8 +1534,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1358,7 +1546,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-7B-Instruct_n300": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-7B-Instruct_n300",
@@ -1454,8 +1643,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1466,7 +1655,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-7B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-7B-Instruct_t3k",
@@ -1562,8 +1752,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1574,7 +1764,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-32B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-32B-Instruct_t3k",
@@ -1670,8 +1861,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {},
@@ -1682,7 +1873,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-VL-72B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-VL-72B-Instruct_t3k",
@@ -1780,8 +1972,8 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-c18569e-b2894d3",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-c18569e-b2894d3",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers",
     "override_tt_config": {
@@ -1794,7 +1986,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-8B_n150": {
     "model_id": "id_tt-transformers_Qwen3-8B_n150",
@@ -1887,8 +2080,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {},
@@ -1898,7 +2091,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-8B_n300": {
     "model_id": "id_tt-transformers_Qwen3-8B_n300",
@@ -1993,8 +2187,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {},
@@ -2004,7 +2198,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-8B_t3k": {
     "model_id": "id_tt-transformers_Qwen3-8B_t3k",
@@ -2099,8 +2294,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {},
@@ -2110,7 +2305,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-8B_galaxy_t3k": {
     "model_id": "id_tt-transformers_Qwen3-8B_galaxy_t3k",
@@ -2141,9 +2337,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -2170,18 +2368,21 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-8B_galaxy": {
     "model_id": "id_tt-transformers_Qwen3-8B_galaxy",
@@ -2278,8 +2479,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {
@@ -2291,7 +2492,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_qwen3-32b-galaxy_Qwen3-32B_galaxy": {
     "model_id": "id_qwen3-32b-galaxy_Qwen3-32B_galaxy",
@@ -2305,7 +2507,7 @@
     "model_name": "Qwen3-32B",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -2393,17 +2595,17 @@
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0"
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "Qwen/Qwen3-32B",
     "param_count": 32,
     "min_disk_gb": 84,
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/llama3_70b_galaxy",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/llama3_70b_galaxy",
     "override_tt_config": {
       "dispatch_core_axis": "col",
       "sample_on_device_mode": "all",
@@ -2417,7 +2619,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Qwen3-32B_t3k": {
     "model_id": "id_tt-transformers_Qwen3-32B_t3k",
@@ -2513,8 +2716,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {},
@@ -2524,7 +2727,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-32B_galaxy_t3k": {
     "model_id": "id_tt-transformers_Qwen3-32B_galaxy_t3k",
@@ -2555,9 +2759,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -2585,18 +2791,21 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-32B_galaxy": {
     "model_id": "id_tt-transformers_Qwen3-32B_galaxy",
@@ -2696,8 +2905,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {
@@ -2711,7 +2920,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen3-32B_p150x8": {
     "model_id": "id_tt-transformers_Qwen3-32B_p150x8",
@@ -2775,8 +2985,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -2786,7 +2996,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150": {
     "model_id": "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150",
@@ -2880,8 +3091,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -2891,7 +3102,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Mistral-7B-Instruct-v0.3_n300": {
     "model_id": "id_tt-transformers_Mistral-7B-Instruct-v0.3_n300",
@@ -2948,8 +3160,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -2959,7 +3171,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Mistral-7B-Instruct-v0.3_t3k": {
     "model_id": "id_tt-transformers_Mistral-7B-Instruct-v0.3_t3k",
@@ -3016,8 +3229,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -3027,7 +3240,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_QwQ-32B_t3k": {
     "model_id": "id_tt-transformers_QwQ-32B_t3k",
@@ -3123,8 +3337,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {},
@@ -3134,7 +3348,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_QwQ-32B_galaxy": {
     "model_id": "id_tt-transformers_QwQ-32B_galaxy",
@@ -3233,8 +3448,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
     "override_tt_config": {
@@ -3247,7 +3462,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_QwQ-32B_galaxy_t3k": {
     "model_id": "id_tt-transformers_QwQ-32B_galaxy_t3k",
@@ -3278,9 +3494,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -3308,18 +3526,21 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-e95ffa5-48eba14",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-e95ffa5-48eba14",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-72B_t3k",
@@ -3456,8 +3677,8 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
@@ -3469,7 +3690,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B_galaxy": {
     "model_id": "id_tt-transformers_Qwen2.5-72B_galaxy",
@@ -3607,8 +3829,8 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
@@ -3621,7 +3843,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B_galaxy_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-72B_galaxy_t3k",
@@ -3652,10 +3875,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30712832}"
+        "override_tt_config": "{\"trace_region_size\": 30712832, \"fabric_config\": \"FABRIC_1D\"}"
       },
       "override_tt_config": {
-        "trace_region_size": 30712832
+        "trace_region_size": 30712832,
+        "fabric_config": "FABRIC_1D"
       },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
@@ -3685,12 +3909,13 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30712832
+      "trace_region_size": 30712832,
+      "fabric_config": "FABRIC_1D"
     },
     "supported_modalities": [
       "text"
@@ -3698,7 +3923,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-72B-Instruct_t3k",
@@ -3835,8 +4061,8 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
@@ -3848,7 +4074,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B-Instruct_galaxy": {
     "model_id": "id_tt-transformers_Qwen2.5-72B-Instruct_galaxy",
@@ -3986,8 +4213,8 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
@@ -4000,7 +4227,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-72B-Instruct_galaxy_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-72B-Instruct_galaxy_t3k",
@@ -4031,10 +4259,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30712832}"
+        "override_tt_config": "{\"trace_region_size\": 30712832, \"fabric_config\": \"FABRIC_1D\"}"
       },
       "override_tt_config": {
-        "trace_region_size": 30712832
+        "trace_region_size": 30712832,
+        "fabric_config": "FABRIC_1D"
       },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
@@ -4064,12 +4293,13 @@
     "min_ram_gb": 288,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-13f44c5-0edd242",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30712832
+      "trace_region_size": 30712832,
+      "fabric_config": "FABRIC_1D"
     },
     "supported_modalities": [
       "text"
@@ -4077,7 +4307,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-7B_n300": {
     "model_id": "id_tt-transformers_Qwen2.5-7B_n300",
@@ -4173,8 +4404,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5b5db8a-e771fff",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-5b5db8a-e771fff",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/5b5db8a/models/tt_transformers",
     "override_tt_config": {},
@@ -4184,7 +4415,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-7B_n150x4": {
     "model_id": "id_tt-transformers_Qwen2.5-7B_n150x4",
@@ -4239,8 +4471,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5b5db8a-e771fff",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-5b5db8a-e771fff",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/5b5db8a/models/tt_transformers",
     "override_tt_config": {},
@@ -4250,7 +4482,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-7B-Instruct_n300": {
     "model_id": "id_tt-transformers_Qwen2.5-7B-Instruct_n300",
@@ -4346,8 +4579,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5b5db8a-e771fff",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-5b5db8a-e771fff",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/5b5db8a/models/tt_transformers",
     "override_tt_config": {},
@@ -4357,7 +4590,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-7B-Instruct_n150x4": {
     "model_id": "id_tt-transformers_Qwen2.5-7B-Instruct_n150x4",
@@ -4412,8 +4646,8 @@
     "min_ram_gb": 28,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5b5db8a-e771fff",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-5b5db8a-e771fff",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/5b5db8a/models/tt_transformers",
     "override_tt_config": {},
@@ -4423,7 +4657,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_llama3-70b-galaxy_Llama-3.3-70B-Instruct_galaxy": {
     "model_id": "id_llama3-70b-galaxy_Llama-3.3-70B-Instruct_galaxy",
@@ -4437,7 +4672,7 @@
     "model_name": "Llama-3.3-70B-Instruct",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -4562,17 +4797,17 @@
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0"
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
     "param_count": 70,
     "min_disk_gb": 160,
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/llama3_70b_galaxy",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/llama3_70b_galaxy",
     "override_tt_config": {
       "dispatch_core_axis": "col",
       "sample_on_device_mode": "all",
@@ -4586,7 +4821,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_llama3-70b-galaxy_Llama-3.1-70B_galaxy": {
     "model_id": "id_llama3-70b-galaxy_Llama-3.1-70B_galaxy",
@@ -4600,7 +4836,7 @@
     "model_name": "Llama-3.1-70B",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -4725,17 +4961,17 @@
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0"
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-70B",
     "param_count": 70,
     "min_disk_gb": 160,
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/llama3_70b_galaxy",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/llama3_70b_galaxy",
     "override_tt_config": {
       "dispatch_core_axis": "col",
       "sample_on_device_mode": "all",
@@ -4749,7 +4985,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_llama3-70b-galaxy_Llama-3.1-70B-Instruct_galaxy": {
     "model_id": "id_llama3-70b-galaxy_Llama-3.1-70B-Instruct_galaxy",
@@ -4763,7 +5000,7 @@
     "model_name": "Llama-3.1-70B-Instruct",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -4888,17 +5125,17 @@
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0"
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
     "param_count": 70,
     "min_disk_gb": 160,
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/llama3_70b_galaxy",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/llama3_70b_galaxy",
     "override_tt_config": {
       "dispatch_core_axis": "col",
       "sample_on_device_mode": "all",
@@ -4912,7 +5149,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_llama3-70b-galaxy_DeepSeek-R1-Distill-Llama-70B_galaxy": {
     "model_id": "id_llama3-70b-galaxy_DeepSeek-R1-Distill-Llama-70B_galaxy",
@@ -4926,7 +5164,7 @@
     "model_name": "DeepSeek-R1-Distill-Llama-70B",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -5051,17 +5289,17 @@
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0"
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
     "param_count": 70,
     "min_disk_gb": 160,
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/llama3_70b_galaxy",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/llama3_70b_galaxy",
     "override_tt_config": {
       "dispatch_core_axis": "col",
       "sample_on_device_mode": "all",
@@ -5075,7 +5313,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Llama-3.3-70B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.3-70B-Instruct_t3k",
@@ -5185,8 +5424,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {
@@ -5198,7 +5437,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-70B_t3k",
@@ -5308,8 +5548,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {
@@ -5321,7 +5561,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-70B-Instruct_t3k",
@@ -5431,8 +5672,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {
@@ -5444,7 +5685,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_t3k": {
     "model_id": "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_t3k",
@@ -5554,8 +5796,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {
@@ -5567,7 +5809,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.3-70B-Instruct_p150x4": {
     "model_id": "id_tt-transformers_Llama-3.3-70B-Instruct_p150x4",
@@ -5671,8 +5914,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -5684,7 +5927,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B_p150x4": {
     "model_id": "id_tt-transformers_Llama-3.1-70B_p150x4",
@@ -5788,8 +6032,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -5801,7 +6045,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B-Instruct_p150x4": {
     "model_id": "id_tt-transformers_Llama-3.1-70B-Instruct_p150x4",
@@ -5905,8 +6150,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -5918,7 +6163,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_p150x4": {
     "model_id": "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_p150x4",
@@ -6022,8 +6268,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -6035,7 +6281,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.3-70B-Instruct_p150x8": {
     "model_id": "id_tt-transformers_Llama-3.3-70B-Instruct_p150x8",
@@ -6137,8 +6384,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -6148,7 +6395,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B_p150x8": {
     "model_id": "id_tt-transformers_Llama-3.1-70B_p150x8",
@@ -6250,8 +6498,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -6261,7 +6509,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B-Instruct_p150x8": {
     "model_id": "id_tt-transformers_Llama-3.1-70B-Instruct_p150x8",
@@ -6363,8 +6612,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -6374,7 +6623,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_p150x8": {
     "model_id": "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_p150x8",
@@ -6476,8 +6726,8 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -6487,7 +6737,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.3-70B-Instruct_galaxy_t3k": {
     "model_id": "id_tt-transformers_Llama-3.3-70B-Instruct_galaxy_t3k",
@@ -6518,9 +6769,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -6560,18 +6813,21 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.62.0-rc33-e7c329b",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.62.0-rc33-e7c329b",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.62.0-rc33/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B_galaxy_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-70B_galaxy_t3k",
@@ -6602,9 +6858,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -6644,18 +6902,21 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.62.0-rc33-e7c329b",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.62.0-rc33-e7c329b",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.62.0-rc33/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-70B-Instruct_galaxy_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-70B-Instruct_galaxy_t3k",
@@ -6686,9 +6947,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -6728,18 +6991,21 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.62.0-rc33-e7c329b",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.62.0-rc33-e7c329b",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.62.0-rc33/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_galaxy_t3k": {
     "model_id": "id_tt-transformers_DeepSeek-R1-Distill-Llama-70B_galaxy_t3k",
@@ -6770,9 +7036,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -6812,18 +7080,21 @@
     "min_ram_gb": 280,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.62.0-rc33-e7c329b",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.62.0-rc33-e7c329b",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.62.0-rc33/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-11B-Vision_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-11B-Vision_n300",
@@ -6918,8 +7189,8 @@
     "min_ram_gb": 44,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -6930,7 +7201,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-11B-Vision_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-11B-Vision_t3k",
@@ -7025,8 +7297,8 @@
     "min_ram_gb": 44,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -7037,7 +7309,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-11B-Vision-Instruct_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-11B-Vision-Instruct_n300",
@@ -7132,8 +7405,8 @@
     "min_ram_gb": 44,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -7144,7 +7417,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-11B-Vision-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-11B-Vision-Instruct_t3k",
@@ -7239,8 +7513,8 @@
     "min_ram_gb": 44,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -7251,7 +7525,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-90B-Vision_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-90B-Vision_t3k",
@@ -7348,8 +7623,8 @@
     "min_ram_gb": 360,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -7360,7 +7635,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-90B-Vision-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-90B-Vision-Instruct_t3k",
@@ -7457,8 +7733,8 @@
     "min_ram_gb": 360,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-v0.61.1-rc1-5cbc982",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-v0.61.1-rc1-5cbc982",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/v0.61.1-rc1/models/tt_transformers",
     "override_tt_config": {},
@@ -7469,7 +7745,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B_n150": {
     "model_id": "id_tt-transformers_Llama-3.2-1B_n150",
@@ -7563,8 +7840,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -7574,7 +7851,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-1B_n300",
@@ -7670,8 +7948,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -7681,7 +7959,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-1B_t3k",
@@ -7777,8 +8056,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -7788,7 +8067,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B-Instruct_n150": {
     "model_id": "id_tt-transformers_Llama-3.2-1B-Instruct_n150",
@@ -7882,8 +8162,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -7893,7 +8173,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B-Instruct_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-1B-Instruct_n300",
@@ -7989,8 +8270,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -8000,7 +8281,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-1B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-1B-Instruct_t3k",
@@ -8096,8 +8378,8 @@
     "min_ram_gb": 4,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-9b67e09-a91b644",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-9b67e09-a91b644",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers",
     "override_tt_config": {},
@@ -8107,7 +8389,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B_n150": {
     "model_id": "id_tt-transformers_Llama-3.2-3B_n150",
@@ -8200,8 +8483,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8211,7 +8494,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-3B_n300",
@@ -8306,8 +8590,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8317,7 +8601,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-3B_t3k",
@@ -8412,8 +8697,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8423,7 +8708,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B-Instruct_n150": {
     "model_id": "id_tt-transformers_Llama-3.2-3B-Instruct_n150",
@@ -8516,8 +8802,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8527,7 +8813,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B-Instruct_n300": {
     "model_id": "id_tt-transformers_Llama-3.2-3B-Instruct_n300",
@@ -8622,8 +8909,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8633,7 +8920,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.2-3B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.2-3B-Instruct_t3k",
@@ -8728,8 +9016,8 @@
     "min_ram_gb": 12,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-20edc39-03cb300",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-20edc39-03cb300",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/20edc39/models/tt_transformers",
     "override_tt_config": {},
@@ -8739,7 +9027,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_n150": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_n150",
@@ -8832,8 +9121,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {},
@@ -8843,7 +9132,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_n300": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_n300",
@@ -8940,8 +9230,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {
@@ -8953,7 +9243,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_t3k",
@@ -9088,8 +9379,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {
@@ -9101,7 +9392,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_gpu": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_gpu",
@@ -9153,8 +9445,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {},
@@ -9164,7 +9456,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_n150": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_n150",
@@ -9257,8 +9550,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {},
@@ -9268,7 +9561,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_n300": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_n300",
@@ -9365,8 +9659,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {
@@ -9378,7 +9672,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_t3k",
@@ -9513,8 +9808,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {
@@ -9526,7 +9821,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_gpu": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_gpu",
@@ -9578,8 +9874,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-25305db-6e67d2d",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers",
     "override_tt_config": {},
@@ -9589,7 +9885,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_p100": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_p100",
@@ -9684,8 +9981,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -9697,7 +9994,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_p150": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_p150",
@@ -9790,8 +10088,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -9801,7 +10099,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_p100": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_p100",
@@ -9896,8 +10195,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -9909,7 +10208,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_p150": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_p150",
@@ -10002,8 +10302,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {},
@@ -10013,7 +10313,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_p150x4": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_p150x4",
@@ -10110,8 +10411,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -10125,7 +10426,8 @@
     "subdevice_type": "P150",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_p150x4": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_p150x4",
@@ -10222,8 +10524,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -10237,7 +10539,8 @@
     "subdevice_type": "P150",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_p150x8": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_p150x8",
@@ -10342,8 +10645,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -10356,7 +10659,8 @@
     "subdevice_type": "P150",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_p150x8": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_p150x8",
@@ -10461,8 +10765,8 @@
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-55fd115-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
@@ -10475,7 +10779,8 @@
     "subdevice_type": "P150",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Llama-3.1-8B_galaxy": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_galaxy",
@@ -10489,7 +10794,7 @@
     "model_name": "Llama-3.1-8B",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 128,
@@ -10614,17 +10919,17 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-8B",
     "param_count": 8,
     "min_disk_gb": 36,
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "FUNCTIONAL",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {
       "trace_region_size": 50000000,
       "data_parallel": 4,
@@ -10636,7 +10941,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Llama-3.1-8B_galaxy_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-8B_galaxy_t3k",
@@ -10650,7 +10956,7 @@
     "model_name": "Llama-3.1-8B",
     "inference_engine": "vLLM",
     "device_type": "GALAXY_T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY_T3K",
       "max_concurrency": 32,
@@ -10667,16 +10973,18 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
         "trace_region_size": 50000000,
-        "TT_MM_THROTTLE_PERF": 5,
-        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+        "TT_MM_THROTTLE_PERF": 5
       }
     },
     "system_requirements": {
@@ -10697,28 +11005,31 @@
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
       "trace_region_size": 50000000,
-      "TT_MM_THROTTLE_PERF": 5,
-      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+      "TT_MM_THROTTLE_PERF": 5
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-8B",
     "param_count": 8,
     "min_disk_gb": 36,
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "FUNCTIONAL",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
-    "override_tt_config": {},
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy",
@@ -10732,7 +11043,7 @@
     "model_name": "Llama-3.1-8B-Instruct",
     "inference_engine": "vLLM",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 128,
@@ -10857,17 +11168,17 @@
       "ARCH_NAME": "wormhole_b0",
       "TT_MM_THROTTLE_PERF": 5
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
     "param_count": 8,
     "min_disk_gb": 36,
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "FUNCTIONAL",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {
       "trace_region_size": 50000000,
       "data_parallel": 4,
@@ -10879,7 +11190,8 @@
     "subdevice_type": "T3K",
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_t3k": {
     "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_t3k",
@@ -10893,7 +11205,7 @@
     "model_name": "Llama-3.1-8B-Instruct",
     "inference_engine": "vLLM",
     "device_type": "GALAXY_T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY_T3K",
       "max_concurrency": 32,
@@ -10910,16 +11222,18 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
         "trace_region_size": 50000000,
-        "TT_MM_THROTTLE_PERF": 5,
-        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+        "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+        "TT_MM_THROTTLE_PERF": 5
       }
     },
     "system_requirements": {
@@ -10940,28 +11254,31 @@
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
       "trace_region_size": 50000000,
-      "TT_MM_THROTTLE_PERF": 5,
-      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+      "TT_MM_THROTTLE_PERF": 5
     },
-    "vllm_commit": "f49265a",
+    "vllm_commit": "a186bf4",
     "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
     "param_count": 8,
     "min_disk_gb": 36,
     "min_ram_gb": 32,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-5491d3c-f49265a",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4",
     "status": "FUNCTIONAL",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
-    "override_tt_config": {},
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": true
   },
   "id_tt-transformers_Qwen2.5-Coder-32B-Instruct_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-Coder-32B-Instruct_t3k",
@@ -11057,8 +11374,8 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-17a5973-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-17a5973-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/17a5973/models/tt_transformers",
     "override_tt_config": {},
@@ -11068,7 +11385,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Qwen2.5-Coder-32B-Instruct_galaxy_t3k": {
     "model_id": "id_tt-transformers_Qwen2.5-Coder-32B-Instruct_galaxy_t3k",
@@ -11099,9 +11417,11 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\"}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "fabric_config": "FABRIC_1D"
+      },
       "env_vars": {
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
@@ -11129,18 +11449,21 @@
     "min_ram_gb": 128,
     "model_type": "LLM",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.7.0-17a5973-aa4ae1e",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-17a5973-aa4ae1e",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/17a5973/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "fabric_config": "FABRIC_1D"
+    },
     "supported_modalities": [
       "text"
     ],
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0_n150": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0_n150",
@@ -11154,7 +11477,7 @@
     "model_name": "stable-diffusion-xl-base-1.0",
     "inference_engine": "media",
     "device_type": "N150",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N150",
       "max_concurrency": 1,
@@ -11233,10 +11556,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11244,7 +11567,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0_n300": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0_n300",
@@ -11258,7 +11582,7 @@
     "model_name": "stable-diffusion-xl-base-1.0",
     "inference_engine": "media",
     "device_type": "N300",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N300",
       "max_concurrency": 1,
@@ -11339,10 +11663,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11350,7 +11674,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0_t3k": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0_t3k",
@@ -11364,7 +11689,7 @@
     "model_name": "stable-diffusion-xl-base-1.0",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 4,
@@ -11445,10 +11770,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11456,7 +11781,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0_galaxy": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0_galaxy",
@@ -11470,7 +11796,7 @@
     "model_name": "stable-diffusion-xl-base-1.0",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -11549,10 +11875,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11560,7 +11886,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_n150": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_n150",
@@ -11574,7 +11901,7 @@
     "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
     "inference_engine": "media",
     "device_type": "N150",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N150",
       "max_concurrency": 1,
@@ -11653,10 +11980,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11664,7 +11991,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_n300": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_n300",
@@ -11678,7 +12006,7 @@
     "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
     "inference_engine": "media",
     "device_type": "N300",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N300",
       "max_concurrency": 1,
@@ -11759,10 +12087,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11770,7 +12098,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_t3k": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_t3k",
@@ -11784,7 +12113,7 @@
     "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 4,
@@ -11865,10 +12194,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11876,7 +12205,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_galaxy": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-base-1.0-img-2-img_galaxy",
@@ -11890,7 +12220,7 @@
     "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -11969,10 +12299,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -11980,7 +12310,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-3.5-large_t3k": {
     "model_id": "id_tt-transformers_stable-diffusion-3.5-large_t3k",
@@ -11994,7 +12325,7 @@
     "model_name": "stable-diffusion-3.5-large",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 1,
@@ -12075,10 +12406,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12086,7 +12417,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-3.5-large_galaxy": {
     "model_id": "id_tt-transformers_stable-diffusion-3.5-large_galaxy",
@@ -12100,7 +12432,7 @@
     "model_name": "stable-diffusion-3.5-large",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 1,
@@ -12179,10 +12511,10 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12190,7 +12522,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_n150": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_n150",
@@ -12283,7 +12616,7 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -12294,7 +12627,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_n300": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_n300",
@@ -12350,7 +12684,7 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -12361,7 +12695,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_t3k": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_t3k",
@@ -12417,7 +12752,7 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -12428,7 +12763,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_galaxy": {
     "model_id": "id_tt-transformers_stable-diffusion-xl-1.0-inpainting-0.1_galaxy",
@@ -12482,7 +12818,7 @@
     "min_ram_gb": 6,
     "model_type": "IMAGE",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
     "status": "COMPLETE",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -12493,7 +12829,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_FLUX.1-dev_t3k": {
     "model_id": "id_tt-transformers_FLUX.1-dev_t3k",
@@ -12507,7 +12844,7 @@
     "model_name": "FLUX.1-dev",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 1,
@@ -12549,10 +12886,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12560,7 +12897,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_FLUX.1-dev_galaxy": {
     "model_id": "id_tt-transformers_FLUX.1-dev_galaxy",
@@ -12574,7 +12912,7 @@
     "model_name": "FLUX.1-dev",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 1,
@@ -12614,10 +12952,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12625,7 +12963,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_FLUX.1-schnell_t3k": {
     "model_id": "id_tt-transformers_FLUX.1-schnell_t3k",
@@ -12639,7 +12978,7 @@
     "model_name": "FLUX.1-schnell",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 1,
@@ -12681,10 +13020,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12692,7 +13031,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_FLUX.1-schnell_galaxy": {
     "model_id": "id_tt-transformers_FLUX.1-schnell_galaxy",
@@ -12706,7 +13046,7 @@
     "model_name": "FLUX.1-schnell",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "e95ffa5",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 1,
@@ -12746,10 +13086,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12757,7 +13097,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Motif-Image-6B-Preview_t3k": {
     "model_id": "id_tt-transformers_Motif-Image-6B-Preview_t3k",
@@ -12771,7 +13112,7 @@
     "model_name": "Motif-Image-6B-Preview",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "32812e9",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 1,
@@ -12813,10 +13154,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/32812e9/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12824,7 +13165,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_Motif-Image-6B-Preview_galaxy": {
     "model_id": "id_tt-transformers_Motif-Image-6B-Preview_galaxy",
@@ -12838,7 +13180,7 @@
     "model_name": "Motif-Image-6B-Preview",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "32812e9",
+    "tt_metal_commit": "c180ef7",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 1,
@@ -12878,10 +13220,10 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/32812e9/models/tt_transformers",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12889,7 +13231,276 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_mochi-1-preview_t3k": {
+    "model_id": "id_tt-transformers_mochi-1-preview_t3k",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "genmo/mochi-1-preview",
+    "model_name": "mochi-1-preview",
+    "inference_engine": "media",
+    "device_type": "T3K",
+    "tt_metal_commit": "c180ef7",
+    "device_model_spec": {
+      "device": "T3K",
+      "max_concurrency": 1,
+      "max_context": 65536,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "genmo/mochi-1-preview",
+        "block_size": "64",
+        "max_model_len": "65536",
+        "max_num_seqs": "1",
+        "max_num_batched_tokens": "65536",
+        "num_scheduler_steps": "10",
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{}"
+      },
+      "override_tt_config": {},
+      "env_vars": {
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "MESH_DEVICE": "T3K",
+        "ARCH_NAME": "wormhole_b0"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+      "MESH_DEVICE": "T3K",
+      "ARCH_NAME": "wormhole_b0"
+    },
+    "vllm_commit": null,
+    "hf_weights_repo": "genmo/mochi-1-preview",
+    "param_count": null,
+    "min_disk_gb": 60,
+    "min_ram_gb": 32,
+    "model_type": "CNN",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
+    "status": "COMPLETE",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
+    "override_tt_config": {},
+    "supported_modalities": [
+      "text"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_mochi-1-preview_galaxy": {
+    "model_id": "id_tt-transformers_mochi-1-preview_galaxy",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "genmo/mochi-1-preview",
+    "model_name": "mochi-1-preview",
+    "inference_engine": "media",
+    "device_type": "GALAXY",
+    "tt_metal_commit": "c180ef7",
+    "device_model_spec": {
+      "device": "GALAXY",
+      "max_concurrency": 1,
+      "max_context": 65536,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "genmo/mochi-1-preview",
+        "block_size": "64",
+        "max_model_len": "65536",
+        "max_num_seqs": "1",
+        "max_num_batched_tokens": "65536",
+        "num_scheduler_steps": "10",
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{}"
+      },
+      "override_tt_config": {},
+      "env_vars": {
+        "MESH_DEVICE": "TG",
+        "ARCH_NAME": "wormhole_b0"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "MESH_DEVICE": "TG",
+      "ARCH_NAME": "wormhole_b0"
+    },
+    "vllm_commit": null,
+    "hf_weights_repo": "genmo/mochi-1-preview",
+    "param_count": null,
+    "min_disk_gb": 60,
+    "min_ram_gb": 32,
+    "model_type": "CNN",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
+    "status": "COMPLETE",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
+    "override_tt_config": {},
+    "supported_modalities": [
+      "text"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_Wan2.2-T2V-A14B-Diffusers_t3k": {
+    "model_id": "id_tt-transformers_Wan2.2-T2V-A14B-Diffusers_t3k",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+    "model_name": "Wan2.2-T2V-A14B-Diffusers",
+    "inference_engine": "media",
+    "device_type": "T3K",
+    "tt_metal_commit": "c180ef7",
+    "device_model_spec": {
+      "device": "T3K",
+      "max_concurrency": 1,
+      "max_context": 65536,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "block_size": "64",
+        "max_model_len": "65536",
+        "max_num_seqs": "1",
+        "max_num_batched_tokens": "65536",
+        "num_scheduler_steps": "10",
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{}"
+      },
+      "override_tt_config": {},
+      "env_vars": {
+        "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+        "MESH_DEVICE": "T3K",
+        "ARCH_NAME": "wormhole_b0"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+      "MESH_DEVICE": "T3K",
+      "ARCH_NAME": "wormhole_b0"
+    },
+    "vllm_commit": null,
+    "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+    "param_count": 14,
+    "min_disk_gb": 60,
+    "min_ram_gb": 32,
+    "model_type": "CNN",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
+    "status": "COMPLETE",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
+    "override_tt_config": {},
+    "supported_modalities": [
+      "text"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
+  "id_tt-transformers_Wan2.2-T2V-A14B-Diffusers_galaxy": {
+    "model_id": "id_tt-transformers_Wan2.2-T2V-A14B-Diffusers_galaxy",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+    "model_name": "Wan2.2-T2V-A14B-Diffusers",
+    "inference_engine": "media",
+    "device_type": "GALAXY",
+    "tt_metal_commit": "c180ef7",
+    "device_model_spec": {
+      "device": "GALAXY",
+      "max_concurrency": 1,
+      "max_context": 65536,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "block_size": "64",
+        "max_model_len": "65536",
+        "max_num_seqs": "1",
+        "max_num_batched_tokens": "65536",
+        "num_scheduler_steps": "10",
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{}"
+      },
+      "override_tt_config": {},
+      "env_vars": {
+        "MESH_DEVICE": "TG",
+        "ARCH_NAME": "wormhole_b0"
+      }
+    },
+    "system_requirements": null,
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "MESH_DEVICE": "TG",
+      "ARCH_NAME": "wormhole_b0"
+    },
+    "vllm_commit": null,
+    "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+    "param_count": 14,
+    "min_disk_gb": 60,
+    "min_ram_gb": 32,
+    "model_type": "CNN",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-c180ef7",
+    "status": "COMPLETE",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/c180ef7/models/tt_transformers",
+    "override_tt_config": {},
+    "supported_modalities": [
+      "text"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_whisper-large-v3_n150": {
     "model_id": "id_whisper_whisper-large-v3_n150",
@@ -12903,7 +13514,7 @@
     "model_name": "whisper-large-v3",
     "inference_engine": "media",
     "device_type": "N150",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N150",
       "max_concurrency": 1,
@@ -12982,10 +13593,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -12993,7 +13604,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_whisper-large-v3_galaxy": {
     "model_id": "id_whisper_whisper-large-v3_galaxy",
@@ -13007,7 +13619,7 @@
     "model_name": "whisper-large-v3",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -13086,10 +13698,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13097,7 +13709,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_whisper-large-v3_t3k": {
     "model_id": "id_whisper_whisper-large-v3_t3k",
@@ -13111,7 +13724,7 @@
     "model_name": "whisper-large-v3",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 4,
@@ -13192,10 +13805,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13203,7 +13816,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_distil-large-v3_n150": {
     "model_id": "id_whisper_distil-large-v3_n150",
@@ -13217,7 +13831,7 @@
     "model_name": "distil-large-v3",
     "inference_engine": "media",
     "device_type": "N150",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "N150",
       "max_concurrency": 1,
@@ -13296,10 +13910,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13307,7 +13921,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_distil-large-v3_galaxy": {
     "model_id": "id_whisper_distil-large-v3_galaxy",
@@ -13321,7 +13936,7 @@
     "model_name": "distil-large-v3",
     "inference_engine": "media",
     "device_type": "GALAXY",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "GALAXY",
       "max_concurrency": 32,
@@ -13400,10 +14015,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13411,7 +14026,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_whisper_distil-large-v3_t3k": {
     "model_id": "id_whisper_distil-large-v3_t3k",
@@ -13425,7 +14041,7 @@
     "model_name": "distil-large-v3",
     "inference_engine": "media",
     "device_type": "T3K",
-    "tt_metal_commit": "5491d3c",
+    "tt_metal_commit": "a9b09e0",
     "device_model_spec": {
       "device": "T3K",
       "max_concurrency": 4,
@@ -13506,10 +14122,10 @@
     "min_ram_gb": 6,
     "model_type": "AUDIO",
     "repacked": 0,
-    "version": "0.7.0",
-    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.7.0-5491d3c",
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.8.0-a9b09e0",
     "status": "COMPLETE",
-    "code_link": "https://github.com/tenstorrent/tt-metal/tree/5491d3c/models/demos/whisper",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/demos/whisper",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13517,14 +14133,15 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-vllm-plugin_bge-large-en-v1.5_n150": {
     "model_id": "id_tt-vllm-plugin_bge-large-en-v1.5_n150",
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13593,9 +14210,9 @@
       "env_vars": {
         "MESH_DEVICE": "N150",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "3072",
-        "MAX_MODEL_LENGTH": "384",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+        "VLLM__MAX_MODEL_LENGTH": "384",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -13605,9 +14222,9 @@
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "N150",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "3072",
-      "MAX_MODEL_LENGTH": "384",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+      "VLLM__MAX_MODEL_LENGTH": "384",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "BAAI/bge-large-en-v1.5",
@@ -13616,10 +14233,10 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13627,14 +14244,15 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-vllm-plugin_bge-large-en-v1.5_n300": {
     "model_id": "id_tt-vllm-plugin_bge-large-en-v1.5_n300",
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13704,9 +14322,9 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "N300",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "3072",
-        "MAX_MODEL_LENGTH": "384",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+        "VLLM__MAX_MODEL_LENGTH": "384",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -13717,9 +14335,9 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "N300",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "3072",
-      "MAX_MODEL_LENGTH": "384",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+      "VLLM__MAX_MODEL_LENGTH": "384",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "BAAI/bge-large-en-v1.5",
@@ -13728,10 +14346,10 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13739,14 +14357,15 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-vllm-plugin_bge-large-en-v1.5_t3k": {
     "model_id": "id_tt-vllm-plugin_bge-large-en-v1.5_t3k",
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13816,9 +14435,9 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "3072",
-        "MAX_MODEL_LENGTH": "384",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+        "VLLM__MAX_MODEL_LENGTH": "384",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -13829,9 +14448,9 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "3072",
-      "MAX_MODEL_LENGTH": "384",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+      "VLLM__MAX_MODEL_LENGTH": "384",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "BAAI/bge-large-en-v1.5",
@@ -13840,10 +14459,10 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13851,14 +14470,15 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-vllm-plugin_bge-large-en-v1.5_galaxy": {
     "model_id": "id_tt-vllm-plugin_bge-large-en-v1.5_galaxy",
     "impl": {
       "impl_id": "tt_vllm_plugin",
       "impl_name": "tt-vllm-plugin",
-      "repo_url": "https://github.com/dmadicTT/tt-vllm-plugin",
+      "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
       "code_path": "tt_vllm_plugin"
     },
     "hf_model_repo": "BAAI/bge-large-en-v1.5",
@@ -13927,9 +14547,10 @@
       "env_vars": {
         "MESH_DEVICE": "TG",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "3072",
-        "MAX_MODEL_LENGTH": "384",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+        "VLLM__MAX_MODEL_LENGTH": "384",
+        "VLLM__MIN_CONTEXT_LENGTH": "32",
+        "TT_METAL_INSPECTOR_RPC": "0"
       }
     },
     "system_requirements": null,
@@ -13939,9 +14560,10 @@
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "3072",
-      "MAX_MODEL_LENGTH": "384",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+      "VLLM__MAX_MODEL_LENGTH": "384",
+      "VLLM__MIN_CONTEXT_LENGTH": "32",
+      "TT_METAL_INSPECTOR_RPC": "0"
     },
     "vllm_commit": null,
     "hf_weights_repo": "BAAI/bge-large-en-v1.5",
@@ -13950,10 +14572,10 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
-    "code_link": "https://github.com/dmadicTT/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
+    "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/2496be4/tt_vllm_plugin",
     "override_tt_config": {},
     "supported_modalities": [
       "text"
@@ -13961,7 +14583,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_forge-vllm-plugin_Qwen3-Embedding-4B_n150": {
     "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-4B_n150",
@@ -14037,9 +14660,9 @@
       "env_vars": {
         "MESH_DEVICE": "N150",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "1024",
-        "MAX_MODEL_LENGTH": "1024",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+        "VLLM__MAX_MODEL_LENGTH": "1024",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -14049,9 +14672,9 @@
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "N150",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "1024",
-      "MAX_MODEL_LENGTH": "1024",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+      "VLLM__MAX_MODEL_LENGTH": "1024",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
@@ -14060,7 +14683,7 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -14071,7 +14694,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_forge-vllm-plugin_Qwen3-Embedding-4B_n300": {
     "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-4B_n300",
@@ -14148,9 +14772,9 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "N300",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "1024",
-        "MAX_MODEL_LENGTH": "1024",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+        "VLLM__MAX_MODEL_LENGTH": "1024",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -14161,9 +14785,9 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "N300",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "1024",
-      "MAX_MODEL_LENGTH": "1024",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+      "VLLM__MAX_MODEL_LENGTH": "1024",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
@@ -14172,7 +14796,7 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -14183,7 +14807,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_forge-vllm-plugin_Qwen3-Embedding-4B_t3k": {
     "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-4B_t3k",
@@ -14260,9 +14885,9 @@
         "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
         "MESH_DEVICE": "T3K",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "1024",
-        "MAX_MODEL_LENGTH": "1024",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+        "VLLM__MAX_MODEL_LENGTH": "1024",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -14273,9 +14898,9 @@
       "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
       "MESH_DEVICE": "T3K",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "1024",
-      "MAX_MODEL_LENGTH": "1024",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+      "VLLM__MAX_MODEL_LENGTH": "1024",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
@@ -14284,7 +14909,7 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -14295,7 +14920,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_forge-vllm-plugin_Qwen3-Embedding-4B_galaxy": {
     "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-4B_galaxy",
@@ -14371,9 +14997,9 @@
       "env_vars": {
         "MESH_DEVICE": "TG",
         "ARCH_NAME": "wormhole_b0",
-        "MAX_NUM_BATCHED_TOKENS": "1024",
-        "MAX_MODEL_LENGTH": "1024",
-        "MIN_MODEL_LENGTH": "32"
+        "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+        "VLLM__MAX_MODEL_LENGTH": "1024",
+        "VLLM__MIN_CONTEXT_LENGTH": "32"
       }
     },
     "system_requirements": null,
@@ -14383,9 +15009,9 @@
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "TG",
       "ARCH_NAME": "wormhole_b0",
-      "MAX_NUM_BATCHED_TOKENS": "1024",
-      "MAX_MODEL_LENGTH": "1024",
-      "MIN_MODEL_LENGTH": "32"
+      "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+      "VLLM__MAX_MODEL_LENGTH": "1024",
+      "VLLM__MIN_CONTEXT_LENGTH": "32"
     },
     "vllm_commit": null,
     "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
@@ -14394,7 +15020,7 @@
     "min_ram_gb": 6,
     "model_type": "EMBEDDING",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -14405,7 +15031,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_resnet-50_n150": {
     "model_id": "id_tt-transformers_resnet-50_n150",
@@ -14498,7 +15125,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -14509,7 +15136,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_resnet-50_n300": {
     "model_id": "id_tt-transformers_resnet-50_n300",
@@ -14604,7 +15232,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -14615,7 +15243,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_vovnet_n150": {
     "model_id": "id_tt-transformers_vovnet_n150",
@@ -14708,7 +15337,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -14719,7 +15348,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_vovnet_n300": {
     "model_id": "id_tt-transformers_vovnet_n300",
@@ -14814,7 +15444,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -14825,7 +15455,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_mobilenetv2_n150": {
     "model_id": "id_tt-transformers_mobilenetv2_n150",
@@ -14860,19 +15491,19 @@
           "theoretical_tput_user": null,
           "targets": {
             "functional": {
-              "ttft_ms": 500.0,
+              "ttft_ms": 6000.0,
               "tput_user": 2.0,
               "tput": null,
               "tolerance": 0.0
             },
             "complete": {
-              "ttft_ms": 100.0,
+              "ttft_ms": 1200.0,
               "tput_user": 10.0,
               "tput": null,
               "tolerance": 0.0
             },
             "target": {
-              "ttft_ms": 50.0,
+              "ttft_ms": 600.0,
               "tput_user": 20.0,
               "tput": null,
               "tolerance": 0.0
@@ -14918,7 +15549,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -14929,7 +15560,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_mobilenetv2_n300": {
     "model_id": "id_tt-transformers_mobilenetv2_n300",
@@ -15024,7 +15656,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15035,7 +15667,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_efficientnet_n150": {
     "model_id": "id_tt-transformers_efficientnet_n150",
@@ -15128,7 +15761,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15139,7 +15772,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_efficientnet_n300": {
     "model_id": "id_tt-transformers_efficientnet_n300",
@@ -15234,7 +15868,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15245,7 +15879,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_segformer_n150": {
     "model_id": "id_tt-transformers_segformer_n150",
@@ -15338,7 +15973,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15349,7 +15984,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_segformer_n300": {
     "model_id": "id_tt-transformers_segformer_n300",
@@ -15444,7 +16080,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15455,7 +16091,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_vit_n150": {
     "model_id": "id_tt-transformers_vit_n150",
@@ -15548,7 +16185,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15559,7 +16196,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_vit_n300": {
     "model_id": "id_tt-transformers_vit_n300",
@@ -15654,7 +16292,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15665,7 +16303,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_unet_n150": {
     "model_id": "id_tt-transformers_unet_n150",
@@ -15758,7 +16397,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15769,7 +16408,8 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   },
   "id_tt-transformers_unet_n300": {
     "model_id": "id_tt-transformers_unet_n300",
@@ -15864,7 +16504,7 @@
     "min_ram_gb": 6,
     "model_type": "CNN",
     "repacked": 0,
-    "version": "0.7.0",
+    "version": "0.8.0",
     "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
     "status": "EXPERIMENTAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -15875,6 +16515,7 @@
     "subdevice_type": null,
     "uses_tensor_model_cache": true,
     "cli_args": {},
-    "display_name": null
+    "display_name": null,
+    "has_builtin_warmup": false
   }
 }

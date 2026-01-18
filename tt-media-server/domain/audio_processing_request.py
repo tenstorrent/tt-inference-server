@@ -5,7 +5,7 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from config.constants import AudioResponseFormat
+from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
@@ -16,7 +16,7 @@ class AudioProcessingRequest(BaseRequest):
 
     # Custom fields for our implementation
     stream: bool = False
-    response_format: str = AudioResponseFormat.VERBOSE_JSON.value
+    response_format: str = ResponseFormat.VERBOSE_JSON.value
     is_preprocessing_enabled: bool = (
         True  # Enable VAD and diarization for specific request
     )
