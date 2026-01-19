@@ -142,7 +142,9 @@ class Settings(BaseSettings):
             self._calculate_audio_chunk_duration()
 
         if self.max_batch_size < self.vllm.max_num_seqs:
-            logger.warning(f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}")
+            logger.warning(
+                f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
+            )
 
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
