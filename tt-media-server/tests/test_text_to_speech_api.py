@@ -7,7 +7,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException, Response
+from fastapi import Response
 from open_ai_api.text_to_speech import (
     get_dict_response as real_get_dict_response,
 )
