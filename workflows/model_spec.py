@@ -1026,8 +1026,9 @@ spec_templates = [
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "trace_region_size": 0,
                     "fabric_config": "FABRIC_1D",
+                    "trace_mode" : "none",
                 },
             ),
         ],
@@ -1646,6 +1647,7 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 71045120,
+                    
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
