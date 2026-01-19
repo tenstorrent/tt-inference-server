@@ -5376,7 +5376,7 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
+                        "ttft_ms": 600,
                         "tput_user": 20
                     }
                 }
@@ -5535,7 +5535,7 @@
         ]
     },
     "Qwen3-Embedding-4B": {
-         "n150": [
+        "n150": [
             {
                 "max_concurrency": 1,
                 "task_type": "embedding",

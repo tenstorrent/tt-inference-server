@@ -3,24 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from typing import Optional
+
 from pydantic import BaseModel
-
-
-class PartialStreamingAudioResponse(BaseModel):
-    """Response for streaming audio chunks"""
-
-    audio_chunk: str  # Base64-encoded audio chunk
-    chunk_id: int  # Sequential chunk identifier
-    format: str = "wav"  # Audio format (wav, mp3, etc.)
-    sample_rate: int = 16000  # Sample rate in Hz
-
-    def to_dict(self):
-        return {
-            "audio_chunk": self.audio_chunk,
-            "chunk_id": self.chunk_id,
-            "format": self.format,
-            "sample_rate": self.sample_rate,
-        }
 
 
 class TextToSpeechResponse(BaseModel):

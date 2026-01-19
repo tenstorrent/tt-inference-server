@@ -166,9 +166,6 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     """
 
     # Try image pattern
-    logger.info(
-        f"Extracting params from filename: {filename}. First trying image benchmark pattern."
-    )
     match = re.search(image_pattern, filename, re.VERBOSE)
     if match:
         logger.info(f"Found image benchmark pattern in filename: {filename}")
@@ -188,9 +185,6 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
-    logger.info(
-        f"No image benchmark pattern found in filename: {filename}. Trying text benchmark pattern."
-    )
     # Fall back to text benchmark pattern
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
@@ -219,9 +213,6 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "task_type": "text",
         }
 
-    logger.info(
-        f"No text benchmark pattern found in filename: {filename}. Trying CNN benchmark pattern."
-    )
     # Try CNN benchmark pattern (for SDXL and similar models)
     # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
     cnn_pattern = r"""
