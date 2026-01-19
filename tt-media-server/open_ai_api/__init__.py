@@ -16,7 +16,6 @@ from open_ai_api import (
     llm,
     text_to_speech,
     tokenizer,
-    tts,
     tt_maintenance_api,
     video,
 )
@@ -40,8 +39,6 @@ elif settings.model_service == ModelServices.TRAINING.value:
     api_router.include_router(
         fine_tuning.router, prefix="/fine_tuning", tags=["Fine-tuning"]
     )
-elif settings.model_service == ModelServices.TTS.value:
-    api_router.include_router(tts.router, prefix="/v1/audio", tags=["Text-to-Speech"])
 
 # Maintenance endpoints are always included
 api_router.include_router(tt_maintenance_api.router, prefix="", tags=["Maintenance"])

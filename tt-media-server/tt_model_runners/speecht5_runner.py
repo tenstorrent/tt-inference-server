@@ -31,6 +31,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_encoder import (
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import (
     SpeechT5Generator,
 )
+from models.experimental.speecht5_tts.demo_ttnn import generate_speech_ttnn
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     TTNNPostNetConfig,
     TTNNSpeechT5SpeechDecoderPostnet,
@@ -71,7 +72,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             os.environ["TT_METAL_FABRIC_DISABLE"] = "1"
 
     def get_pipeline_device_params(self):
-        # Enable 2 command queues for trace optimization
+        # Enable 2 command queues (required by the generator)
         device_params = {
             "l1_small_size": 300000,
             "trace_region_size": 10000000,
@@ -82,6 +83,16 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:
+            # Get actual device from mesh device (like demo_ttnn.py does)
+            if hasattr(self.ttnn_device, "get_devices"):
+                actual_device = self.ttnn_device.get_devices()[0]
+                self.logger.info(f"Device {self.device_id}: Using actual device from mesh")
+            else:
+                actual_device = self.ttnn_device
+
+            # Store for later use
+            self._actual_device = actual_device
+
             # Load HuggingFace models
             model_name = SupportedModels.SPEECHT5_TTS.value
             self.logger.info(
@@ -150,7 +161,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
             default_speaker_embedding = self.default_speaker_embedding
 
-            # Create TTNN models
+            # Create TTNN models (matching demo_ttnn.py pattern:
+            # encoder uses self.ttnn_device, decoder/postnet/generator use actual_device)
             self.logger.info(f"Device {self.device_id}: Creating TTNN encoder")
             self.ttnn_encoder = TTNNSpeechT5Encoder(
                 self.ttnn_device,
@@ -162,11 +174,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             self.logger.info(f"Device {self.device_id}: Creating TTNN decoder")
             self.ttnn_decoder = TTNNSpeechT5Decoder(
-                self.ttnn_device,
+                actual_device,
                 preprocess_decoder_parameters(
                     model.speecht5.decoder,
                     decoder_config,
-                    self.ttnn_device,
+                    actual_device,
                     default_speaker_embedding,
                 ),
                 decoder_config,
@@ -175,27 +187,38 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             self.logger.info(f"Device {self.device_id}: Creating TTNN postnet")
             self.ttnn_postnet = TTNNSpeechT5SpeechDecoderPostnet(
-                self.ttnn_device,
+                actual_device,
                 preprocess_postnet_parameters(
-                    model.speech_decoder_postnet, postnet_config, self.ttnn_device
+                    model.speech_decoder_postnet, postnet_config, actual_device
                 ),
                 postnet_config,
             )
 
+            # CRITICAL: Pre-compile postnet kernels BEFORE any trace capture
+            # This prevents conv2d kernel recompilation while trace is active (causes hangs)
+            self.logger.info(f"Device {self.device_id}: Pre-compiling postnet kernels...")
+            dummy_decoder_output = ttnn.from_torch(
+                torch.randn(1, 1, 1, decoder_config.hidden_size),
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=actual_device,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
+            )
+            _ = self.ttnn_postnet(dummy_decoder_output)
+            ttnn.deallocate(dummy_decoder_output)
+            self.logger.info(f"Device {self.device_id}: Postnet kernels pre-compiled!")
+
             # Initialize trace generator for faster inference with KV cache
             try:
-                estimated_encoder_seq_len = (
-                    128  # Typical text length after tokenization
-                )
                 self.generator = SpeechT5Generator(
                     encoder=self.ttnn_encoder,
                     decoder=self.ttnn_decoder,
                     postnet=self.ttnn_postnet,
-                    device=self.ttnn_device,
-                    decoder_config=self.decoder_config,
+                    device=actual_device,
+                    decoder_config=decoder_config,
                     max_steps=SpeechT5Constants.MAX_STEPS,
                     max_batch_size=1,
-                    encoder_seq_len=estimated_encoder_seq_len,
+                    encoder_seq_len=128,
                 )
                 self.logger.info(
                     f"Device {self.device_id}: Trace generator initialized with KV cache support"
@@ -209,6 +232,49 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: All SpeechT5 models initialized successfully"
             )
+
+            # Warmup pattern (following demo_ttnn.py):
+            # Run synchronously in this thread to match demo behavior
+            if self.generator is not None:
+                self.logger.info(f"Device {self.device_id}: Running warmup inference...")
+
+                # Get a speaker embedding for warmup
+                available_speakers = self.speaker_manager.list_available_speakers()
+                if available_speakers:
+                    warmup_speaker = self.speaker_manager.get_speaker_embedding(available_speakers[0])
+                else:
+                    warmup_speaker = torch.zeros(512, dtype=torch.float32).unsqueeze(0)
+
+                # Warmup inference
+                _ = generate_speech_ttnn(
+                    text="Hello world, this is a warmup test.",
+                    speaker_embeddings=warmup_speaker,
+                    processor=self.processor,
+                    vocoder=self.vocoder,
+                    ttnn_encoder=self.ttnn_encoder,
+                    ttnn_decoder=self.ttnn_decoder,
+                    ttnn_postnet=self.ttnn_postnet,
+                    device=actual_device,
+                    max_steps=SpeechT5Constants.MAX_STEPS,
+                    warmup_mode=True,
+                    generator=self.generator,
+                    use_kv_cache=True,
+                    decoder_config=self.decoder_config,
+                )
+                self.logger.info(f"Device {self.device_id}: Warmup inference completed")
+
+                # Capture all traces
+                self.logger.info(f"Device {self.device_id}: Capturing traces for all encoder sizes...")
+                self.generator.capture_all_traces(self.processor, batch_size=1)
+                self.logger.info(f"Device {self.device_id}: All traces captured")
+
+                # Reset KV caches
+                self.generator._reset_kv_caches()
+                self.logger.info(f"Device {self.device_id}: KV caches reset - ready for inference")
+            else:
+                self.logger.warning(
+                    f"Device {self.device_id}: No generator available, running without trace optimization"
+                )
 
         except Exception as e:
             self.logger.error(
@@ -245,12 +311,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
                 raise
 
-            # Skip warmup for now to avoid kernel compilation issues
-            # Kernels will be compiled on first inference request
-            self.logger.info(
-                f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
-            )
-
+            # Warmup is done in _initialize_models (runs in thread)
+            self.logger.info(f"Device {device_id_int}: Warmup complete")
             return True
 
         except Exception as e:
@@ -289,7 +351,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         text: str,
         speaker_embedding: torch.Tensor,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Audio generation using optimized generate_speech_ttnn with KV cache and trace"""
+        """Audio generation using optimized generate_speech_ttnn with trace"""
         try:
             # Use the optimized generate_speech_ttnn from demo_ttnn.py
             # This uses KV cache and trace for fast inference
