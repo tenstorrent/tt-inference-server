@@ -84,14 +84,21 @@ async def text_to_speech(
 
             # Check if result is valid
             if result is None:
-                raise HTTPException(status_code=500, detail="No result returned from TTS model")
+                raise HTTPException(
+                    status_code=500, detail="No result returned from TTS model"
+                )
 
             # Check if result is an error string
             if isinstance(result, str):
-                raise HTTPException(status_code=500, detail=f"TTS processing error: {result}")
+                raise HTTPException(
+                    status_code=500, detail=f"TTS processing error: {result}"
+                )
 
             # Return raw audio file (WAV binary) for TEXT/WAV format
-            if tts_request.response_format.lower() in [AudioResponseFormat.TEXT.value, AudioResponseFormat.WAV.value]:
+            if tts_request.response_format.lower() in [
+                AudioResponseFormat.TEXT.value,
+                AudioResponseFormat.WAV.value,
+            ]:
                 # Decode base64 to binary audio
                 audio_binary = base64.b64decode(result.audio)
                 return Response(content=audio_binary, media_type=MEDIA_TYPE_AUDIO_WAV)
@@ -115,10 +122,7 @@ async def text_to_speech(
 
         media_type = (
             MEDIA_TYPE_AUDIO_WAV
-            if (
-                tts_request.response_format.lower()
-                == AudioResponseFormat.TEXT.value
-            )
+            if (tts_request.response_format.lower() == AudioResponseFormat.TEXT.value)
             else MEDIA_TYPE_NDJSON
         )
         return StreamingResponse(result_stream(), media_type=media_type)
@@ -126,8 +130,11 @@ async def text_to_speech(
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"TTS error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"TTS error: {type(e).__name__}: {str(e)}"
+        )
 
 
 def get_dict_response(obj):

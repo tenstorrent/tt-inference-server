@@ -75,7 +75,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         device_params = {
             "l1_small_size": 300000,
             "trace_region_size": 10000000,
-            "num_command_queues": 2
+            "num_command_queues": 2,
         }
         return device_params
 
@@ -145,8 +145,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
                 ).unsqueeze(0)
             else:
-                self.default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
-                    available_speakers[0]
+                self.default_speaker_embedding = (
+                    self.speaker_manager.get_speaker_embedding(available_speakers[0])
                 )
             default_speaker_embedding = self.default_speaker_embedding
 
@@ -184,7 +184,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             # Initialize trace generator for faster inference with KV cache
             try:
-                estimated_encoder_seq_len = 128  # Typical text length after tokenization
+                estimated_encoder_seq_len = (
+                    128  # Typical text length after tokenization
+                )
                 self.generator = SpeechT5Generator(
                     encoder=self.ttnn_encoder,
                     decoder=self.ttnn_decoder,
