@@ -338,11 +338,11 @@ def main():
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
-    if model_spec.model_name not in EVAL_CONFIGS:
+    if model_spec.model_id not in EVAL_CONFIGS:
         raise ValueError(
-            f"No evaluation tasks defined for model: {model_spec.model_name}"
+            f"No evaluation tasks defined for model: {model_spec.model_id}"
         )
-    eval_config = EVAL_CONFIGS[model_spec.model_name]
+    eval_config = EVAL_CONFIGS[model_spec.model_id]
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import

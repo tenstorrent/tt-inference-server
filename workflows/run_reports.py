@@ -2167,7 +2167,7 @@ def extract_eval_results(files):
 
 
 def evals_release_report_data(args, results, meta_data, model_spec):
-    eval_config = EVAL_CONFIGS[model_spec.model_name]
+    eval_config = EVAL_CONFIGS[model_spec.model_id]
 
     report_rows = []
 

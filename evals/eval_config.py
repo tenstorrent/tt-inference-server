@@ -2332,7 +2332,7 @@ _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
 EVAL_CONFIGS = {
-    model_spec.model_name: _eval_config_map[model_spec.hf_model_repo]
+    model_spec.model_id: _eval_config_map[model_spec.hf_model_repo]
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }

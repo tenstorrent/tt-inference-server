@@ -360,8 +360,8 @@ def validate_runtime_args(model_spec):
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.model_id in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_id} not found in EVAL_CONFIGS"
         )
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
@@ -401,11 +401,11 @@ def validate_runtime_args(model_spec):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.model_id in EVAL_CONFIGS, (
+            f"Model:={model_spec.model_id} not found in EVAL_CONFIGS"
         )
         assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+            f"Model:={model_spec.model_id} not found in BENCHMARKS_CONFIGS"
         )
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:

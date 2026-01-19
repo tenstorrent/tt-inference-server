@@ -56,7 +56,7 @@ def filter_models(device_str, evals_only):
             continue
 
         # Filter by evals availability if requested
-        if evals_only and model_spec.model_name not in EVAL_CONFIGS:
+        if evals_only and model_spec.model_id not in EVAL_CONFIGS:
             continue
 
         filtered_models.append(model_spec)

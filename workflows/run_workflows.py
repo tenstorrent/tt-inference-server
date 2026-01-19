@@ -44,7 +44,7 @@ class WorkflowSetup:
 
         self.config = None
         _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
+            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_id, {}),
             WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
                 self.model_spec.model_id, {}
             ),
