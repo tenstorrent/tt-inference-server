@@ -18,8 +18,7 @@ class BdistWheel(bdist_wheel):
 
     - Marks the wheel as non-pure (`root_is_pure = False`) to ensure proper installation
       of native binaries.
-    - Overrides the tag to be Python 3.11-specific (`cp311-cp311`) while preserving
-      platform specificity.
+     - Uses the actual Python version from the build environment (supports Python 3.10 and 3.11).
     """
 
     user_options = bdist_wheel.user_options + [
@@ -38,10 +37,9 @@ class BdistWheel(bdist_wheel):
         self.root_is_pure = False
 
     def get_tag(self):
-        python, abi, plat = bdist_wheel.get_tag(self)
-        # Force specific Python 3.11 ABI format for the wheel
-        python, abi = "cp311", "cp311"
-        return python, abi, plat
+        # Use the actual Python version from the environment instead of hardcoding
+        return bdist_wheel.get_tag(self)
+
 
 
 setup(
