@@ -197,14 +197,12 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
             assert report_data[key] == value
 
         # Compare benchmarks structure
-        expected_benchmarks = {
-            "num_requests": 2,
-            "num_inference_steps": 20,
-            "ttft": 70.0,  # (60.0 + 80.0) / 2
-            "inference_steps_per_second": 0.29,  # (0.33 + 0.25) / 2
-        }
-        for key, value in expected_benchmarks.items():
-            assert report_data["benchmarks"][key] == value
+        assert report_data["benchmarks"]["num_requests"] == 2
+        assert report_data["benchmarks"]["num_inference_steps"] == 20
+        assert report_data["benchmarks"]["ttft"] == pytest.approx(70.0)
+        assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
+            0.29
+        )
 
     @patch.object(VideoClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
@@ -401,8 +399,17 @@ class TestVideoClientStrategyPollVideoCompletion(unittest.TestCase):
     def test_poll_video_completion_timeout(self, mock_time, mock_sleep, mock_get):
         strategy = self._create_strategy()
 
-        # Mock timeout scenario
-        mock_time.side_effect = [0, 0, 5, 11]  # Simulates timeout after 11 seconds
+        # Mock timeout scenario - provide enough values for the while loop iterations
+        mock_time.side_effect = [
+            0,
+            0,
+            5,
+            5,
+            11,
+            11,
+            12,
+            12,
+        ]  # Simulates timeout after 11 seconds
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "processing"}
@@ -606,13 +613,11 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
         # Compare expected values
         assert report_data["model"] == "test_model"
         assert report_data["task_type"] == "video"
-        expected_benchmarks = {
-            "num_requests": 2,
-            "ttft": 70.0,  # (60.0 + 80.0) / 2
-            "inference_steps_per_second": 0.29,  # (0.33 + 0.25) / 2
-        }
-        for key, value in expected_benchmarks.items():
-            assert report_data["benchmarks"][key] == value
+        assert report_data["benchmarks"]["num_requests"] == 2
+        assert report_data["benchmarks"]["ttft"] == pytest.approx(70.0)
+        assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
+            0.29
+        )
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -788,7 +793,20 @@ def test_poll_video_various_statuses(
 
     # Simulate timeout for processing status
     if video_status == "processing":
-        mock_time.side_effect = [0, 0, 11]  # Exceeds 10 second timeout
+        # Provide enough time values for the while loop iterations
+        mock_time.side_effect = [
+            0,
+            0,
+            5,
+            5,
+            11,
+            11,
+            12,
+            12,
+        ]  # Exceeds 10 second timeout
+    else:
+        # For non-processing statuses, provide normal time progression
+        mock_time.side_effect = [0, 0, 1, 1, 2, 2]
 
     if expected_result:
         with patch.object(strategy, "_download_video", return_value="/tmp/video.mp4"):
