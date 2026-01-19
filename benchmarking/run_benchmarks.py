@@ -54,6 +54,7 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.CNN,
     ModelType.AUDIO,
     ModelType.EMBEDDING,
+    ModelType.VIDEO,
 ]
 
 
@@ -354,8 +355,7 @@ def main():
 
 def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
-    Run benchmarks for the given model and device. Here we are running IMAGE, CNN
-    and AUDIO benchmarks.
+    Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
     logger.info(
         f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"
