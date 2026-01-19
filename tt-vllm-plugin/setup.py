@@ -41,7 +41,6 @@ class BdistWheel(bdist_wheel):
         return bdist_wheel.get_tag(self)
 
 
-
 setup(
     cmdclass={
         "bdist_wheel": BdistWheel,
