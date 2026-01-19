@@ -485,7 +485,7 @@ class ModelSpec:
         # infer changes to vllm_args based on env_vars
         if "VLLM_USE_V1" in self.env_vars:
             # remove args that are not supported by V1
-            self.device_model_spec.vllm_args.pop('num_scheduler_steps', None)
+            self.device_model_spec.vllm_args.pop("num_scheduler_steps", None)
 
     def _validate_data(self):
         """Validate that required specification is present."""
@@ -979,7 +979,6 @@ spec_templates = [
                     "max_num_seqs": "1",
                     "num_scheduler_steps": "1",
                 },
-
                 env_vars={
                     "VLLM_USE_V1": "0",
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid that worked on bare metal
