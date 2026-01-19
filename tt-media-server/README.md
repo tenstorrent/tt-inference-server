@@ -362,16 +362,6 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -o partial_output.mp4
-```
-This will download only the first 1 MB (bytes 0–1048575) of the video file.
-
 ## Cancel video job and assets
 
 ```bash

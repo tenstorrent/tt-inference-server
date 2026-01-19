@@ -75,12 +75,10 @@ def download_video_content(
     Download the generated video file as an attachment.
 
     Returns:
-        FileResponse: Streams the full video file (MP4) if no Range header is present.
-        StreamingResponse: Streams a partial video file (MP4) with HTTP 206 if Range header is present.
+        FileResponse: Streams the full video file (MP4)
 
     Raises:
         HTTPException: If video not found, not completed, or failed.
-        HTTPException: If Range header is invalid (416).
     """
     file_path = service.get_job_result(job_id)
     if (
@@ -98,8 +96,6 @@ def download_video_content(
         serve_path = faststart_path
     except Exception:
         serve_path = file_path
-
-    file_size = os.path.getsize(serve_path)
 
     return FileResponse(
         serve_path,

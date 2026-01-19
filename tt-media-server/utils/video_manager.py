@@ -117,23 +117,6 @@ class VideoManager:
         return frame_list
 
     @staticmethod
-    def file_iterator(path, start, end):
-        """
-        Generator that yields chunks of bytes from a file within a specified byte range.
-        """
-        with open(path, "rb") as f:
-            f.seek(start)
-            remaining = end - start + 1
-            chunk = 8192
-            while remaining > 0:
-                read_size = min(chunk, remaining)
-                data = f.read(read_size)
-                if not data:
-                    break
-                yield data
-                remaining -= len(data)
-
-    @staticmethod
     def ensure_faststart(input_path, output_path):
         """
         Rewrites the MP4 file with -movflags faststart using ffmpeg.
