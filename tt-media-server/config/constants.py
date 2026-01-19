@@ -201,6 +201,18 @@ class ResponseFormat(Enum):
     TEXT = "text"
 
 
+class AudioResponseFormat(Enum):
+    MP3 = "mp3"
+    WAV = "wav"
+    OPUS = "opus"
+    AAC = "aac"
+    FLAC = "flac"
+    PCM = "pcm"
+    JSON = "json"
+    VERBOSE_JSON = "verbose_json"
+    TEXT = "text"
+
+
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
@@ -481,6 +493,31 @@ ModelConfigs = {
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 256,
+    },
+    # SpeechT5 TTS configurations
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
     },
 }
 

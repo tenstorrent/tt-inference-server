@@ -14,8 +14,8 @@ from open_ai_api import (
     fine_tuning,
     image,
     llm,
-    tokenizer,
     text_to_speech,
+    tokenizer,
     tt_maintenance_api,
     video,
 )
