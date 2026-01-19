@@ -1301,7 +1301,7 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 184915840,
                 },
-                ci_schedule={"nightly": True},
+                ci_schedule={"nightly": True, "release": True},
             ),
         ],
         system_requirements=SystemRequirements(
@@ -1577,7 +1577,7 @@ spec_templates = [
                     "worker_l1_size": 1344544,
                     "trace_region_size": 184915840,
                 },
-                ci_schedule={"nightly": True},
+                ci_schedule={"nightly": True, "release": True},
             ),
         ],
         system_requirements=SystemRequirements(
@@ -2146,7 +2146,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
-                ci_schedule={"nightly": True},
+                ci_schedule={"nightly": True, "release": True},
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2365,7 +2365,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
-                ci_schedule={"nightly": True},
+                ci_schedule={"nightly": True, "release": True},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
