@@ -54,36 +54,40 @@ class VideoGenerationLoadTest(BaseTest):
     async def poll_video_status(self, session, job_id, timeout=700):
         """
         Poll the video generation job status until it's completed or failed.
-        
+
         Args:
             session: aiohttp client session
             job_id: The video job ID to poll
             timeout: Maximum time to wait in seconds (default 9 minutes)
-            
+
         Returns:
             dict: Final job status response
-            
+
         Raises:
             Exception: If job fails or times out
         """
         status_url = f"{self.url}/{job_id}"
         start_time = time.perf_counter()
         poll_interval = 5  # Poll every 5 seconds
-        
+
         while True:
             elapsed = time.perf_counter() - start_time
             if elapsed > timeout:
-                raise Exception(f"Video generation timed out after {timeout}s for job {job_id}")
-            
+                raise Exception(
+                    f"Video generation timed out after {timeout}s for job {job_id}"
+                )
+
             async with session.get(status_url, headers=headers) as response:
                 if response.status != 200:
-                    raise Exception(f"Failed to get job status: {response.status} {response.reason}")
-                
+                    raise Exception(
+                        f"Failed to get job status: {response.status} {response.reason}"
+                    )
+
                 data = await response.json()
                 status = data.get("status")
-                
+
                 print(f"Job {job_id}: status={status}, elapsed={elapsed:.1f}s")
-                
+
                 if status == "completed":
                     return data
                 elif status == "failed":
@@ -98,25 +102,29 @@ class VideoGenerationLoadTest(BaseTest):
             print(f"Starting request {index}")
             try:
                 start = time.perf_counter()
-                
+
                 # Step 1: Submit video generation job
                 async with session.post(
                     self.url, json=payload, headers=headers
                 ) as response:
                     if response.status != 202:
-                        raise Exception(f"Failed to submit job: {response.status} {response.reason}")
-                    
+                        raise Exception(
+                            f"Failed to submit job: {response.status} {response.reason}"
+                        )
+
                     job_data = await response.json()
                     job_id = job_data.get("id")
-                    
+
                     if not job_id:
                         raise Exception(f"No job ID returned: {job_data}")
-                    
-                    print(f"[{index}] Job submitted: {job_id}, Status: {job_data.get('status')}")
-                
+
+                    print(
+                        f"[{index}] Job submitted: {job_id}, Status: {job_data.get('status')}"
+                    )
+
                 # Step 2: Poll until completion
                 await self.poll_video_status(session, job_id, timeout=700)
-                
+
                 duration = time.perf_counter() - start
                 print(f"[{index}] Completed in {duration:.2f}s")
                 return duration
@@ -127,7 +135,9 @@ class VideoGenerationLoadTest(BaseTest):
                 raise
 
         # Single run (no warmup)
-        session_timeout = aiohttp.ClientTimeout(total=800)  # ~13 minute timeout for session
+        session_timeout = aiohttp.ClientTimeout(
+            total=800
+        )  # ~13 minute timeout for session
         async with aiohttp.ClientSession(
             headers=headers, timeout=session_timeout
         ) as session:
@@ -142,5 +152,5 @@ class VideoGenerationLoadTest(BaseTest):
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
         print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
-        
+
         return requests_duration, avg_duration
