@@ -295,6 +295,9 @@ class DeviceModelSpec:
     vllm_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    # CI schedule configuration: {"nightly": True, "weekly": False, "bi_weekly": False, "release": False}
+    # Also supports status filtering: {"nightly": {"enabled": True, "min_status": "FUNCTIONAL"}}
+    ci_schedule: Dict[str, Union[bool, Dict]] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -874,6 +877,7 @@ class ModelSpecTemplate:
                     vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
+                    ci_schedule=device_model_spec.ci_schedule,
                 )
 
                 spec = ModelSpec(
@@ -1878,6 +1882,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                ci_schedule={"nightly": True, "weekly": False},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1887,6 +1892,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 33000000,
                 },
+                ci_schedule={"nightly": True, "weekly": False},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1896,6 +1902,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 50000000,
                 },
+                ci_schedule={"nightly": True, "weekly": False},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GPU,
@@ -1921,6 +1928,7 @@ spec_templates = [
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
+                ci_schedule={"nightly": True},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150,
@@ -1948,6 +1956,7 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 33000000,
                 },
+                ci_schedule={"nightly": True},
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2002,6 +2011,7 @@ spec_templates = [
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                 },
+                ci_schedule={"nightly": True, "release": True, "weekly": True},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
