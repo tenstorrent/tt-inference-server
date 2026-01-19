@@ -545,7 +545,7 @@ ModelConfigs = {
     (ModelRunners.VLLMForge, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
     },
     (ModelRunners.VLLMForge, DeviceTypes.N300): {
@@ -557,13 +557,13 @@ ModelConfigs = {
     (ModelRunners.VLLMForge, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 32,
     },
     (ModelRunners.VLLMForge, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 256,
     },
 }
