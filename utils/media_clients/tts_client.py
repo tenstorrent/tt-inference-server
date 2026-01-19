@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-# Standard library imports
+
 import asyncio
 import json
 import logging
@@ -12,11 +12,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
-# Third-party imports
+
 import aiohttp
 from transformers import AutoTokenizer
 
-# Local imports
+
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import TtsTestStatus
 
@@ -30,7 +30,7 @@ from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
-# Default text for TTS testing
+# Default text for TTS testing (going to be changed with dataset)
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 
 
@@ -50,40 +50,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                 f"⚠️ Could not load tokenizer for {model_spec.hf_model_repo}: {e}"
             )
             logger.info("📝 Falling back to word-based token counting")
-
-    def _get_tts_num_calls(self, is_eval: bool = False) -> int:
-        """Get number of calls for TTS with TTS-specific defaults.
-
-        TTS requires more samples for statistical validity:
-        - BENCHMARK: 25 calls (for reliable P90/P95 tail latency)
-        - EVAL: 12 calls (for valid WER, without too many ASR calls)
-
-        Args:
-            is_eval: True for EVAL workflow, False for BENCHMARK workflow
-
-        Returns:
-            Number of calls to make, respecting num_eval_runs if specified
-        """
-        base_num_calls = get_num_calls(self)
-
-        # If base_num_calls is the default (2), override with TTS-specific defaults
-        # Otherwise, respect the configured value
-        if base_num_calls == 2:
-            if is_eval:
-                tts_default = 12
-                logger.info(
-                    f"Using TTS-specific eval default: {tts_default} calls (was {base_num_calls})"
-                )
-                return tts_default
-            else:
-                tts_default = 25
-                logger.info(
-                    f"Using TTS-specific benchmark default: {tts_default} calls (was {base_num_calls})"
-                )
-                return tts_default
-
-        logger.info(f"Using configured num_eval_runs: {base_num_calls} calls")
-        return base_num_calls
 
     def run_eval(self) -> None:
         """Run evaluations for the TTS model."""
@@ -119,7 +85,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         rtr_value = self._calculate_rtr_value(status_list)
         logger.info(f"Extracted RTR value: {rtr_value:.2f}")
 
-        # Calculate WER (Word Error Rate) - only for eval
+        # Calculate WER (Word Error Rate)
         wer_value = self._calculate_wer_value(status_list)
         if wer_value is not None:
             logger.info(f"Extracted WER value: {wer_value:.4f}")
@@ -136,7 +102,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             "%Y-%m-%d %H:%M:%S", time.localtime()
         )
         benchmark_data["task_type"] = "text_to_speech"
-        # For eval workflow, all_params is always an object with tasks attribute
+        # all_params is always an object with tasks attribute
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
         benchmark_data["published_score"] = self.all_params.tasks[
@@ -199,6 +165,34 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
+    def _get_tts_num_calls(self, is_eval: bool = False) -> int:
+        """Get number of calls for TTS with TTS-specific defaults.
+
+        TTS requires more samples for statistical validity:
+        - BENCHMARK: 25 calls (for reliable P90/P95 tail latency)
+        - EVAL: 12 calls (for valid WER, without too many ASR calls)
+
+        Args:
+            is_eval: True for EVAL workflow, False for BENCHMARK workflow
+
+        Returns:
+            Number of calls to make, respecting num_eval_runs if specified
+        """
+        base_num_calls = get_num_calls(self)
+
+        # If base_num_calls is not the default (2), respect the configured value
+        if base_num_calls != 2:
+            logger.info(f"Using configured num_eval_runs: {base_num_calls} calls")
+            return base_num_calls
+
+        # Override default (2) with TTS-specific defaults
+        tts_default = 12 if is_eval else 25
+        workflow_type = "eval" if is_eval else "benchmark"
+        logger.info(
+            f"Using TTS-specific {workflow_type} default: {tts_default} calls (was {base_num_calls})"
+        )
+        return tts_default
+
     def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -245,28 +239,6 @@ class TtsClientStrategy(BaseMediaStrategy):
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
 
-        logger.info("\n--- TTS Benchmark Summary ---")
-        logger.info(f"Total Requests: {len(status_list)}")
-        logger.info(f"Average TTFT: {ttft_value:.2f} ms")
-        if p90_ttft:
-            logger.info(f"TTFT P90: {p90_ttft:.2f} ms")
-        if p95_ttft:
-            logger.info(f"TTFT P95: {p95_ttft:.2f} ms")
-        logger.info(f"Average RTR: {rtr_value:.2f}")
-        if wer_value is not None:
-            logger.info(f"Average WER: {wer_value:.4f}")
-        accuracy_status = (
-            "UNDEFINED"
-            if accuracy_check == 0
-            else "PASS"
-            if accuracy_check == 2
-            else "FAIL"
-            if accuracy_check == 3
-            else "UNDEFINED"
-        )
-        logger.info(f"Accuracy Check: {accuracy_check} ({accuracy_status})")
-        logger.info("---------------------------\n")
-
         logger.info(f"Report generated: {result_filename}")
 
     def _run_tts_benchmark(
@@ -288,10 +260,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 test_text = self.all_params.tasks[0].task_name
 
         for i in range(num_calls):
-            if (i + 1) % 5 == 0 or i == 0 or i == num_calls - 1:
-                logger.info(f"Generating speech {i + 1}/{num_calls}...")
-            else:
-                logger.debug(f"Generating speech {i + 1}/{num_calls}...")
+            logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
             status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer = (
                 asyncio.run(self._generate_speech(calculate_wer=calculate_wer))
@@ -340,6 +309,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 - wer: Word Error Rate (if calculate_wer=True)
         """
         logger.info("🔊 Calling TTS /audio/speech endpoint")
+        logger.info(f"calculate_wer: {calculate_wer}")
 
         # For eval workflow, all_params is an object with tasks attribute
         # For benchmark workflow, all_params is a list, so use default text
