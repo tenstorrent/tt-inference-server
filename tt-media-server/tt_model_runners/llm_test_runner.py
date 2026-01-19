@@ -16,17 +16,24 @@ from domain.completion_response import (
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
-class TestRunner(BaseDeviceRunner):
+class LLMTestRunner(BaseDeviceRunner):
+    """Test runner for LLM streaming performance tests.
+
+    Generates fake tokens at a configurable frequency to test the streaming
+    infrastructure without requiring actual model inference.
+    """
+
     MILLISECONDS_PER_SECOND = 1000
 
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
         self.num_torch_threads = num_torch_threads
-        # use float to allow fractional values
+        # Frequency is set via TEST_RUNNER_FREQUENCY_MS env var, configured in
+        # performance_tests/conftest.py which is the single source of truth
         self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
 
         self.logger.info(
-            f"TestRunner initialized for device {self.device_id}: "
+            f"LLMTestRunner initialized for device {self.device_id}: "
             f"frequency={self.streaming_frequency_ms}ms, "
         )
 
@@ -43,7 +50,7 @@ class TestRunner(BaseDeviceRunner):
         self, request: CompletionRequest
     ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
         frequency_seconds = (
-            self.streaming_frequency_ms / TestRunner.MILLISECONDS_PER_SECOND
+            self.streaming_frequency_ms / LLMTestRunner.MILLISECONDS_PER_SECOND
         )
         task_id = request._task_id
 
