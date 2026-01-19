@@ -1149,7 +1149,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                ci_schedule={"nightly": True},
+                # Note: Qwen2.5-VL-7B only supports 2+ devices (N300, N150x4)
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1163,7 +1163,6 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                ci_schedule={"nightly": True},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
