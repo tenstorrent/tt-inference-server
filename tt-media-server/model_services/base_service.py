@@ -9,7 +9,7 @@ from typing import Any, Optional
 from config.constants import JobTypes
 from config.settings import settings
 from domain.base_request import BaseRequest
-from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.memory_queue import SlotManager
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
@@ -25,6 +25,7 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
         self._job_manager = get_job_manager()
+        self.slot_manager = SlotManager(self.scheduler.result_queues_by_worker[0])
         if settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
 
@@ -133,18 +134,16 @@ class BaseService(ABC):
         "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process(self, request):
-        queue = SharedMemoryChunkQueue(
-            name=f"chunk_queue_{request._task_id}", create=True
-        )
-        self.scheduler.result_queues[request._task_id] = queue
+        slot_id = self.slot_manager.reserve_slot(request._task_id)
 
-        request._queue_name = queue.name
+        request._queue_name = slot_id
 
         self.scheduler.process_request(request)
 
         try:
             result = await asyncio.wait_for(
-                queue.get(), timeout=settings.request_processing_timeout_seconds
+                self.scheduler.result_queues_by_worker[0].get(slot_id),
+                timeout=settings.request_processing_timeout_seconds,
             )
             return result
         except asyncio.TimeoutError:
@@ -156,7 +155,7 @@ class BaseService(ABC):
             self.logger.error(f"Error processing request: {e}")
             raise e
         finally:
-            queue.close()
+            self.slot_manager.release_slot(slot_id)
             self.scheduler.result_queues.pop(request._task_id, None)
 
     @log_execution_time(
@@ -165,11 +164,13 @@ class BaseService(ABC):
     async def process_streaming(self, request):
         task_id = request._task_id
 
-        queue = SharedMemoryChunkQueue(name=f"chunk_queue_{task_id}", create=True)
-        self.scheduler.result_queues[task_id] = queue
-        request._queue_name = queue.name
+        slot_id = self.slot_manager.reserve_slot(request._task_id)
+        request._queue_name = slot_id
 
         self.scheduler.process_request(request)
+
+        # Import once outside the loop
+        from domain.completion_response import CompletionStreamChunk
 
         try:
             dynamic_timeout = settings.request_processing_timeout_seconds
@@ -177,38 +178,54 @@ class BaseService(ABC):
                 dynamic_timeout += min(request._duration * 0.2, 300)
 
             start_time = asyncio.get_event_loop().time()
-            empty_count = 0
+            empty_iterations = 0
+            result_queue = self.scheduler.result_queues_by_worker[0]
 
             while True:
-                # ✅ Direct non-blocking read - no thread pool!
-                result = queue.get_nowait_raw()
+                # Batch read for better performance
+                batch = result_queue.read_batch(slot_id, max_items=5000)
 
-                if result is None:
-                    empty_count += 1
+                if not batch:
+                    empty_iterations += 1
 
-                    # Check timeout periodically (not every iteration)
-                    if empty_count % 1000 == 0:
+                    # Check timeout less frequently
+                    if empty_iterations >= 1000:
                         elapsed = asyncio.get_event_loop().time() - start_time
                         if elapsed > dynamic_timeout:
                             raise asyncio.TimeoutError(
                                 f"Streaming timed out after {dynamic_timeout}s"
                             )
+                        empty_iterations = 0
 
-                    # ✅ Just yield to event loop - no sleep delay, no thread pool
+                    # Tight spin for a bit before yielding - reduces context switch overhead
+                    if empty_iterations < 100:
+                        continue  # Tight spin, no yield
+
+                    # Yield to event loop occasionally
                     await asyncio.sleep(0)
                     continue
 
-                empty_count = 0
-                is_final, text = result
+                # Reset on data received
+                empty_iterations = 0
                 start_time = asyncio.get_event_loop().time()
 
-                if is_final:
-                    break
+                # Collect texts and check for final in one pass
+                texts = []
+                is_done = False
 
-                if text:
-                    from domain.completion_response import CompletionStreamChunk
+                for is_final, text in batch:
+                    if is_final:
+                        is_done = True
+                        break
+                    if text:
+                        texts.append(text)
 
-                    yield CompletionStreamChunk(text=text)
+                # Yield batched text as single chunk - HUGE performance gain
+                if texts:
+                    yield CompletionStreamChunk(text="".join(texts))
+
+                if is_done:
+                    return
 
         except asyncio.TimeoutError:
             self.logger.error(f"Streaming timed out for task {task_id}")
@@ -217,9 +234,7 @@ class BaseService(ABC):
             self.logger.error(f"Streaming failed for task {task_id}: {e}")
             raise
         finally:
-            self.scheduler.result_queues.pop(task_id, None)
-            queue.close()
-            queue.unlink()
+            self.slot_manager.release_slot(slot_id)
 
     async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
         return await self._job_manager.create_job(

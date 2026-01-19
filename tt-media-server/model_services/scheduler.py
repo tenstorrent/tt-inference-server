@@ -46,7 +46,7 @@ class Scheduler:
                 )
         else:
             self.result_queues_by_worker[0] = (
-                SharedMemoryChunkQueue(name="chunk_queue_0", create=True)
+                SharedMemoryChunkQueue(4000, 100, name="chunk_queue_0", create=True)
                 if self.settings.use_memory_queue
                 else Queue()
             )
@@ -161,7 +161,7 @@ class Scheduler:
             args=(
                 worker_id,
                 self.task_queue,
-                result_queue,
+                result_queue if not self.settings.use_memory_queue else None,
                 self.warmup_signals_queue,
                 self.error_queue,
                 result_queue.name if self.settings.use_memory_queue else None,
@@ -253,6 +253,82 @@ class Scheduler:
                 self.logger.error(f"Error in result_listener: {e}")
 
         self.logger.info("Result listener stopped")
+
+    async def demux_result_listener(self, slot_manager):
+        """
+        Demultiplexed result listener that batch reads from all active slots
+        and distributes results to appropriate result queues.
+
+        Uses read_all_slots_batch for efficient batch reading from SharedMemoryChunkQueue.
+
+        Args:
+            slot_manager: SlotManager instance for slot_id -> task_id mapping
+        """
+        self.logger.info("Demux result listener started")
+
+        # Local cache for slot_id -> task_id mapping (for slots not in slot_manager)
+        local_slot_mapping: dict[int, str] = {}
+
+        while self.listener_running:
+            try:
+                result_found = False
+
+                # Batch read from all worker queues
+                for worker_index, result_queue in self.result_queues_by_worker.items():
+                    # Batch read from all active slots
+                    all_slot_data = result_queue.read_all_active_slots_batch()
+
+                    if not all_slot_data:
+                        continue
+
+                    result_found = True
+
+                    # Process each slot's data
+                    for slot_id, chunks in all_slot_data.items():
+                        # Get task_id from slot_manager first
+                        task_id = slot_manager.get_request_by_slot(slot_id)
+
+                        # Fall back to local mapping if not found
+                        if task_id is None:
+                            continue
+
+                        # Get the result queue for this task
+                        queue_obj = self.result_queues.get(task_id)
+
+                        if queue_obj is None:
+                            self.logger.warning(
+                                f"[DemuxListener] No result queue for task {task_id} "
+                                f"(slot {slot_id}), skipping {len(chunks)} chunks"
+                            )
+                            continue
+
+                        # Distribute all chunks to the result queue
+                        for is_final, text in chunks:
+                            try:
+                                queue_obj.put_nowait(text)
+
+                                # If final chunk, clean up mapping
+                                if is_final:
+                                    local_slot_mapping.pop(slot_id, None)
+                                    self.logger.debug(
+                                        f"[DemuxListener] Final chunk for slot {slot_id}, "
+                                        f"task {task_id}"
+                                    )
+                            except Exception as e:
+                                self.logger.error(
+                                    f"[DemuxListener] Error putting to queue for "
+                                    f"task {task_id}: {e}"
+                                )
+
+                # Yield to event loop if no results found
+                if not result_found:
+                    await asyncio.sleep(0)
+
+            except Exception as e:
+                self.logger.error(f"Error in demux_result_listener: {e}", exc_info=True)
+                await asyncio.sleep(0.001)
+
+        self.logger.info("Demux result listener stopped")
 
     async def error_listener(self):
         while self.listener_running:

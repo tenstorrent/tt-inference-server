@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import time
 from multiprocessing import Queue
 
 from device_workers.worker_utils import (
@@ -26,7 +27,7 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: str = None,
 ):
-    setup_worker_environment(worker_id, "16", 16)
+    setup_worker_environment(worker_id, "1", 1)
     logger = TTLogger()
 
     # attach to queue if it's provided
@@ -44,7 +45,7 @@ def device_worker(
 
     device_runner: BaseDeviceRunner = None
     try:
-        device_runner, loop = initialize_device_worker(worker_id, logger, 16)
+        device_runner, loop = initialize_device_worker(worker_id, logger, 1)
         if not device_runner:
             return
     except Exception as e:
@@ -70,31 +71,19 @@ def device_worker(
         try:
             task_id = request._task_id
             result_generator = await device_runner._run_async([request])
-            current_result_queue = result_queue
-            if request._queue_name is not None:
-                current_result_queue = SharedMemoryChunkQueue(
-                    name=request._queue_name, create=False
-                )
-
-            async for request_output in result_generator:
-                outputs = request_output.outputs
-                if not outputs:
-                    continue
-
-                for output in outputs:
-                    chunk_text = output.text
-                    if not chunk_text:
-                        continue
-
-                    if chunk_text.endswith(("</s>", "<|endoftext|>", "<|im_end|>")):
-                        chunk_text = strip_eos(chunk_text)
-                        if not chunk_text:
-                            continue
-                    current_result_queue.put(0, chunk_text)
-
-            # do this on purpose to avoid over max decode issues
-            current_result_queue.put(1, "final_text")
-
+            slot_id = request._queue_name
+            ### REMOVE THIS!!!
+            token_count = 0
+            start_time = None
+            ### REMOVE THIS!!!
+            async for task_id, is_final, text in result_generator:
+                if token_count == 0:
+                    start_time = time.perf_counter()
+                token_count += 1
+                result_queue.put(is_final, text, slot_id)
+            elapsed = time.perf_counter() - start_time
+            rate = token_count / elapsed
+            logger.info(f"rate={rate:.0f} tok/s")
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
             )
