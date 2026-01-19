@@ -63,6 +63,24 @@ def get_video_metadata(
     return JSONResponse(content=job_data)
 
 
+@router.get("/jobs")
+def get_jobs_metadata(
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Get all jobs metadata
+
+    Returns:
+        JSONResponse: Array of video job objects with current status and metadata.
+    """
+    job_data = service.get_all_jobs_metadata()
+    if job_data is None:
+        raise HTTPException(status_code=404, detail="Job metadata not found")
+
+    return JSONResponse(content=job_data)
+
+
 @log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 @router.get("/generations/{job_id}/download")
 def download_video_content(
