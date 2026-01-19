@@ -64,6 +64,7 @@ RUN apt-get update && apt-get install -y \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
+    python3-pip \
     libffi-dev \
     libssl-dev \
     protobuf-compiler \
@@ -80,8 +81,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Install uv for faster package management (replaces pip)
-RUN python3 -m pip install --no-cache-dir uv
+# # Install uv for faster package management (replaces pip)
+# RUN python3 -m pip install --no-cache-dir uv
+# Use the absolute path to the system python to ensure we use the pip we just installed
+RUN /usr/bin/python3 -m pip install --no-cache-dir uv
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
@@ -96,7 +99,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 VENV_PYTHON_VERSION=3.10 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
