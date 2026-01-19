@@ -230,11 +230,14 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        os.environ["API_KEY"] = encoded_jwt
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
+    os.environ["OPENAI_API_KEY"] = "your-secret-key"
+    os.environ["VLLM_API_KEY"] = "your-secret-key"
+    logger.info(f"OPENAI_API_KEY: {os.environ['OPENAI_API_KEY']}")
+    logger.info(f"VLLM_API_KEY: {os.environ['VLLM_API_KEY']}")
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.

@@ -105,7 +105,6 @@ def _setup_openai_api_key(args, logger):
     """
     api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
     os.environ["OPENAI_API_KEY"] = api_key
-    os.environ["API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
@@ -332,11 +331,12 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
-        os.environ["API_KEY"] = encoded_jwt
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
+    os.environ["OPENAI_API_KEY"] = "your-secret-key"
+    os.environ["VLLM_API_KEY"] = "your-secret-key"
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
