@@ -812,13 +812,6 @@ class ModelSpec:
                     )
                 system_info_data["devices"] = devices
 
-                # Extract KMD version from host_info
-                driver_str = tt_smi_data.get("host_info", {}).get("Driver", "")
-                if driver_str:
-                    parts = driver_str.split(" ")
-                    system_info_data["kmd_version"] = (
-                        parts[-1] if len(parts) > 1 else driver_str
-                    )
         except Exception as e:
             print(f"WARNING: Failed to collect tt-smi data: {e}")
 
