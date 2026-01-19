@@ -74,6 +74,8 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return "image"
     if model_type == ModelType.EMBEDDING:
         return "embedding"
+    if model_type == ModelType.TEXT_TO_SPEECH:
+        return "text_to_speech"
 
 
 def _get_task_type(model_id: str) -> str | None:
@@ -387,6 +389,36 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             }
             return format_metrics(metrics)
 
+    if params.get("task_type") == "text_to_speech" or params.get("task_type") == "tts":
+        logger.info(f"Processing TTS benchmark file: {filename}")
+        # For TTS benchmarks, extract data from JSON content
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "text_to_speech",
+            "device": params["device"],
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is in seconds, convert to ms
+            "filename": filename,
+            "task_type": "tts",
+            "accuracy_check": benchmarks_data.get("benchmarks").get(
+                "accuracy_check", 0
+            ),
+            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
+            "ttft_p90": benchmarks_data.get("benchmarks").get("ttft_p90", 0) * 1000
+            if benchmarks_data.get("benchmarks").get("ttft_p90")
+            else None,
+            "ttft_p95": benchmarks_data.get("benchmarks").get("ttft_p95", 0) * 1000
+            if benchmarks_data.get("benchmarks").get("ttft_p95")
+            else None,
+            "wer": benchmarks_data.get("benchmarks").get("wer", None),
+        }
+        return format_metrics(metrics)
+
     if params.get("task_type") == "audio":
         logger.info(f"Processing AUDIO benchmark file: {filename}")
         # For audio benchmarks, extract data from JSON content
@@ -646,6 +678,32 @@ def create_audio_display_dict(
             display_dict[display_header] = whisper_config_values[col_name]
             continue
 
+        # Get value from result
+        value = result.get(col_name, NOT_MEASURED_STR)
+        # Format backend value for display
+        if col_name == "backend":
+            value = format_backend_value(value)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
+def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    """Create display dictionary for TTS benchmarks."""
+    # Column definitions
+    display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
+        ("num_requests", "Num Requests"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("rtr", "RTR"),
+        ("p90_ttft", "P90 TTFT (ms)"),
+        ("p95_ttft", "P95 TTFT (ms)"),
+        ("accuracy_check", "Accuracy Check"),
+    ]
+
+    display_dict = {}
+
+    for col_name, display_header in display_cols:
         # Get value from result
         value = result.get(col_name, NOT_MEASURED_STR)
         # Format backend value for display
@@ -940,6 +998,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
+    tts_results = [r for r in results if r.get("task_type") == "tts"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
 
@@ -984,6 +1043,13 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         audio_markdown_str = get_markdown_table(audio_display_results)
         audio_section = f"#### Audio Benchmark Sweeps for {model_name} on {device}\n\n{audio_markdown_str}"
         markdown_sections.append(audio_section)
+
+    # Generate TTS benchmarks section if any exist
+    if tts_results:
+        tts_display_results = [create_tts_display_dict(res) for res in tts_results]
+        tts_markdown_str = get_markdown_table(tts_display_results)
+        tts_section = f"#### Text-to-Speech Benchmark Sweeps for {model_name} on {device}\n\n{tts_markdown_str}"
+        markdown_sections.append(tts_section)
 
     # Generate embedding benchmarks section if any exist
     if embedding_results:

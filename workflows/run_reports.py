@@ -1532,10 +1532,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         save_markdown_table,
     )
 
-    # Process all tools and collect results by type (text/image/audio/embedding/cnn)
+    # Process all tools and collect results by type (text/image/audio/tts/embedding/cnn)
     text_sections = []
     image_sections = []
     audio_sections = []
+    tts_sections = []
     embedding_sections = []
     cnn_sections = []
 
@@ -1546,10 +1547,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for vLLM
+        # Separate text, image, audio, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
+        vllm_tts = [
+            r for r in vllm_release_raw if r.get("task_type") == "text_to_speech"
+        ]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
@@ -1576,6 +1580,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_audio_md = get_markdown_table(vllm_audio_display)
             audio_sections.append(
                 f"#### vLLM Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_audio_md}"
+            )
+
+        if vllm_tts:
+            from benchmarking.summary_report import create_tts_display_dict
+
+            vllm_tts_display = [create_tts_display_dict(r) for r in vllm_tts]
+            vllm_tts_md = get_markdown_table(vllm_tts_display)
+            tts_sections.append(
+                f"#### vLLM Text-to-Speech Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_tts_md}"
             )
 
         if vllm_embedding:
@@ -1727,6 +1740,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         text_sections
         + image_sections
         + audio_sections
+        + tts_sections
         + embedding_sections
         + cnn_sections
     )
@@ -3119,6 +3133,13 @@ def calculate_target_metrics(metrics_config):
         field_name = config["field_name"]
         is_ascending_metric = config.get("is_ascending_metric", False)
 
+        # Skip if target_metric is None (e.g., for TTS when target_rtr is not set)
+        if target_metric is None:
+            logger.warning(
+                f"Skipping metric calculation for {field_name}: target_metric is None"
+            )
+            continue
+
         for level, multiplier in target_multipliers.items():
             if is_ascending_metric:
                 level_metric = target_metric / multiplier
@@ -3157,6 +3178,37 @@ def add_target_checks_audio(metrics):
             "ttft": metrics["target_ttft"],
             "ttft_ratio": metrics["target_ttft_ratio"],
             "ttft_check": metrics["target_ttft_check"],
+            "tput_check": tput_check,
+        },
+    }
+
+    return target_checks
+
+
+def add_target_checks_tts(metrics):
+    logger.info("Adding target_checks to TTS benchmark release data")
+    # tput_check is always 1 for now (no tput target)
+    tput_check = 1
+    target_checks = {
+        "functional": {
+            "ttft": metrics.get("functional_ttft"),
+            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("functional_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "complete": {
+            "ttft": metrics.get("complete_ttft"),
+            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("complete_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "target": {
+            "ttft": metrics.get("target_ttft"),
+            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("target_rtr_check", 1),
             "tput_check": tput_check,
         },
     }
@@ -3353,6 +3405,7 @@ def main():
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -3366,6 +3419,7 @@ def main():
 
             # extract targets for functional, complete, target and calculate them
             target_ttft = targets.ttft_ms
+            target_rtr = targets.rtr if hasattr(targets, "rtr") else None
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -3373,9 +3427,13 @@ def main():
             # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
             total_ttft = 0.0
             total_tput = 0.0
+            total_rtr = 0.0
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
+                # Aggregate RTR for TTS models
+                if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                    total_rtr += benchmark.get("rtr", 0)
                 benchmark_summary_data["num_requests"] = benchmark.get(
                     "num_requests", 0
                 )
@@ -3396,18 +3454,42 @@ def main():
                 else 0
             )
 
+            # For TTS, also calculate average RTR
+            avg_rtr = None
+            if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                avg_rtr = (
+                    total_rtr / len(benchmarks_release_data)
+                    if len(benchmarks_release_data) > 0
+                    else 0
+                )
+
             # Calculate all target metrics using centralized function
             # TTFT: lower is better, so is_ascending_metric=False
-            metrics = calculate_target_metrics(
-                [
+            metrics_config = [
+                {
+                    "avg_metric": avg_ttft,
+                    "target_metric": target_ttft,
+                    "field_name": "ttft",
+                    "is_ascending_metric": False,
+                },
+            ]
+
+            # For TTS, also calculate RTR metrics if target is available
+            if (
+                model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
+                and target_rtr is not None
+                and avg_rtr is not None
+            ):
+                metrics_config.append(
                     {
-                        "avg_metric": avg_ttft,
-                        "target_metric": target_ttft,
-                        "field_name": "ttft",
-                        "is_ascending_metric": False,
-                    },
-                ]
-            )
+                        "avg_metric": avg_rtr,
+                        "target_metric": target_rtr,
+                        "field_name": "rtr",
+                        "is_ascending_metric": True,  # RTR: higher is better
+                    }
+                )
+
+            metrics = calculate_target_metrics(metrics_config)
 
             target_checks = {}
             if (
@@ -3423,8 +3505,14 @@ def main():
                     benchmark_summary_data,
                     metrics,
                 )
-            else:
+            elif model_spec.model_type.name == ModelType.AUDIO.name:
                 logger.info("Adding target_checks for Audio benchmark release data")
+                target_checks = add_target_checks_audio(metrics)
+            elif model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                logger.info("Adding target_checks for TTS benchmark release data")
+                target_checks = add_target_checks_tts(metrics)
+            else:
+                logger.warning(f"Unknown model type: {model_spec.model_type.name}")
                 target_checks = add_target_checks_audio(metrics)
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
