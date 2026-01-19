@@ -395,29 +395,28 @@ class TestVideoClientStrategyPollVideoCompletion(unittest.TestCase):
 
     @patch("utils.media_clients.video_client.requests.get")
     @patch("utils.media_clients.video_client.time.sleep")
-    @patch("utils.media_clients.video_client.time.time")
-    def test_poll_video_completion_timeout(self, mock_time, mock_sleep, mock_get):
+    def test_poll_video_completion_timeout(self, mock_sleep, mock_get):
         strategy = self._create_strategy()
 
-        # Mock timeout scenario - provide enough values for the while loop iterations
-        mock_time.side_effect = [
-            0,
-            0,
-            5,
-            5,
-            11,
-            11,
-            12,
-            12,
-        ]  # Simulates timeout after 11 seconds
+        # Mock timeout scenario - use a class to track time
+        class TimeTracker:
+            def __init__(self):
+                self.current = 0
+
+            def __call__(self):
+                result = self.current
+                self.current += 6  # Increment by 6 seconds each call
+                return result
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "processing"}
         mock_get.return_value = mock_response
 
-        video_path = strategy._poll_video_completion(
-            "job123", {}, polling_interval=1, timeout=10
-        )
+        with patch("utils.media_clients.video_client.time.time", TimeTracker()):
+            video_path = strategy._poll_video_completion(
+                "job123", {}, polling_interval=1, timeout=10
+            )
 
         assert video_path == ""
 
@@ -775,9 +774,8 @@ def test_generate_video_various_status_codes(mock_post, status_code, expected_st
 )
 @patch("utils.media_clients.video_client.requests.get")
 @patch("utils.media_clients.video_client.time.sleep")
-@patch("utils.media_clients.video_client.time.time")
 def test_poll_video_various_statuses(
-    mock_time, mock_sleep, mock_get, video_status, expected_result
+    mock_sleep, mock_get, video_status, expected_result
 ):
     """Test _poll_video_completion handles various job statuses correctly."""
     model_spec = MagicMock()
@@ -791,31 +789,36 @@ def test_poll_video_various_statuses(
     mock_response.json.return_value = {"status": video_status}
     mock_get.return_value = mock_response
 
-    # Simulate timeout for processing status
-    if video_status == "processing":
-        # Provide enough time values for the while loop iterations
-        mock_time.side_effect = [
-            0,
-            0,
-            5,
-            5,
-            11,
-            11,
-            12,
-            12,
-        ]  # Exceeds 10 second timeout
-    else:
-        # For non-processing statuses, provide normal time progression
-        mock_time.side_effect = [0, 0, 1, 1, 2, 2]
+    # Use a class to track time that works for all status types
+    class TimeTracker:
+        def __init__(self, increment):
+            self.current = 0
+            self.increment = increment
+
+        def __call__(self):
+            result = self.current
+            self.current += self.increment
+            return result
+
+    # For processing, increment enough to timeout; for others, small increment
+    time_increment = 6 if video_status == "processing" else 0.1
 
     if expected_result:
-        with patch.object(strategy, "_download_video", return_value="/tmp/video.mp4"):
+        with patch(
+            "utils.media_clients.video_client.time.time", TimeTracker(time_increment)
+        ):
+            with patch.object(
+                strategy, "_download_video", return_value="/tmp/video.mp4"
+            ):
+                video_path = strategy._poll_video_completion(
+                    "job123", {}, polling_interval=1, timeout=10
+                )
+                assert video_path == "/tmp/video.mp4"
+    else:
+        with patch(
+            "utils.media_clients.video_client.time.time", TimeTracker(time_increment)
+        ):
             video_path = strategy._poll_video_completion(
                 "job123", {}, polling_interval=1, timeout=10
             )
-            assert video_path == "/tmp/video.mp4"
-    else:
-        video_path = strategy._poll_video_completion(
-            "job123", {}, polling_interval=1, timeout=10
-        )
-        assert video_path == ""
+            assert video_path == ""
