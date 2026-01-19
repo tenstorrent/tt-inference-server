@@ -80,21 +80,20 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Install uv for faster package management (replaces pip)
-RUN python3 -m pip install --no-cache-dir uv
-
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
     ./cmake.sh --skip-license --prefix=/usr/local && \
     rm cmake.sh && \
     cmake --version
 
-# build tt-metal
+# install uv and build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
+    && chmod +x scripts/install-uv.sh \
+    && ./scripts/install-uv.sh --system \
     && ./install_dependencies.sh --docker \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
