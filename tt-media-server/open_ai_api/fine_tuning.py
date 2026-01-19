@@ -28,11 +28,7 @@ async def submit_fine_tuning_request(
 
     Raises:
         HTTPException: If fine tuning job submission fails.
-    """
-    try:
-        service.scheduler.check_is_model_ready()
-    except Exception:
-        raise HTTPException(status_code=405, detail="Model is not ready")      
+    """     
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request)
         return JSONResponse(content=job_data, status_code=201)
