@@ -51,6 +51,10 @@ async def list_fine_tuning_jobs(
         HTTPException: If listing jobs fails.
     """
     try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
+    try:
         jobs = service.get_all_jobs_metadata(JobTypes.TRAINING)
         return JSONResponse(content={"object": "list", "data": jobs, "has_more": False})
     except Exception as e:
