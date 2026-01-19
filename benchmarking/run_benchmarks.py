@@ -230,6 +230,7 @@ def main():
         )
         encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
         os.environ["OPENAI_API_KEY"] = encoded_jwt
+        os.environ["API_KEY"] = encoded_jwt
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )

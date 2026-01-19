@@ -104,3 +104,34 @@ pip install pytest
 pip install pytest-asyncio
 tt-inference-server/tt-media-server$ pytest tt_model_runners/forge_runners/test_forge_models.py
 ```
+
+## Onboard a New Forge LLM Model to TT-Inference-Server
+
+### Repository Changes
+
+#### tt-media-server
+- Add the new model to `ModelNames` and `SupportedModels` enums if they don't already exist there
+
+#### tt-inference-server
+- Add new model spec with forge vllm plugin implementation (model_spec.py)
+- Add eval config(eval_config.py) -> only if it should differ from the existing one, or if it doesnt exist at all
+
+#### tt-shield
+- Add model names in `on-dispatch.yml` dropdown when selecting models
+- Add to on-nightly forge media server model matrix
+
+### Local Testing
+
+Model should first be tested locally:
+
+1. In tt-media-server, in `config/vllm_settings`, choose the desired model from the `SupportedModels` enum
+2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLMForge.value`
+3. Create a python3.11 venv with the forge vllm plugin and activate
+4. Do a `pip install -r` in both tt-inference-server and tt-media-server
+5. Do `export VLLM_TARGET_DEVICE="empty"`
+6. Run the tt-media-server with python3.11 venv (exec the `run_uvicorn.sh`)
+7. You can send completion requests via `localhost:8000/docs` page
+
+### CI
+
+To run the forge model, select the `forge-vllm-plugin` implementation when running the dispatch workflow in tt-shield. This will trigger the building of a tt-media-server container running the forge vllm plugin.
