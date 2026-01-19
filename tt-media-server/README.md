@@ -353,8 +353,7 @@ curl -X 'GET' \
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
-The example below downloads the full file unless a `Range` header is specified.
+The `/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
@@ -369,7 +368,6 @@ To download only a portion of the video (e.g., the first 1 MB), use the `Range` 
 curl -X 'GET' \
   'http://127.0.0.1:8000/video/generations/{video_id}/download' \
   -H 'Authorization: Bearer your-secret-key' \
-  -H 'Range: bytes=0-1048575' \
   -o partial_output.mp4
 ```
 This will download only the first 1 MB (bytes 0–1048575) of the video file.

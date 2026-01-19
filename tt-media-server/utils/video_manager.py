@@ -117,23 +117,6 @@ class VideoManager:
         return frame_list
 
     @staticmethod
-    def parse_range_header(range_header, file_size):
-        """
-        Parse a Range header and return (start, end) byte positions.
-        Raises ValueError if invalid.
-        """
-        range_value = range_header.strip().lower()
-        if not range_value.startswith("bytes="):
-            raise ValueError
-        range_value = range_value.replace("bytes=", "")
-        start_str, end_str = range_value.split("-")
-        start = int(start_str) if start_str else 0
-        end = int(end_str) if end_str else file_size - 1
-        if start > end or end >= file_size:
-            raise ValueError
-        return start, end
-
-    @staticmethod
     def file_iterator(path, start, end):
         """
         Generator that yields chunks of bytes from a file within a specified byte range.

@@ -8,7 +8,7 @@ import tempfile
 from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -100,36 +100,14 @@ def download_video_content(
         serve_path = file_path
 
     file_size = os.path.getsize(serve_path)
-    range_header = request.headers.get("range")
-    if not range_header:
-        return FileResponse(
-            serve_path,
-            media_type="video/mp4",
-            filename=os.path.basename(file_path),
-            headers={
-                "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
-            },
-        )
 
-    # Parse Range header and stream partial content
-    try:
-        start, end = VideoManager.parse_range_header(range_header, file_size)
-    except Exception:
-        raise HTTPException(status_code=416, detail="Invalid Range header")
-
-    chunk_size = end - start + 1
-    content_range = f"bytes {start}-{end}/{file_size}"
-    headers = {
-        "Content-Range": content_range,
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(chunk_size),
-        "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}",
-    }
-    return StreamingResponse(
-        VideoManager.file_iterator(serve_path, start, end),
-        status_code=206,
+    return FileResponse(
+        serve_path,
         media_type="video/mp4",
-        headers=headers,
+        filename=os.path.basename(file_path),
+        headers={
+            "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
+        },
     )
 
 
