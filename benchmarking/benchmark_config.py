@@ -37,6 +37,13 @@ class BenchmarkTaskEmbedding(BenchmarkTask):
 
 
 @dataclass(frozen=True)
+class BenchmarkTaskVideo(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VIDEO_API
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VIDEO
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     model_id: str
     tasks: List[BenchmarkTask]
@@ -292,6 +299,11 @@ else:
                 param_map={_device: capped_perf_reference}
             )
 
+        if model_spec.model_type == ModelType.VIDEO:
+            perf_ref_task = BenchmarkTaskVideo(
+                param_map={_device: capped_perf_reference}
+            )
+
         # get (isl, osl, max_concurrency) from capped perf_ref_task
         perf_ref_task_runs = {
             _device: [
@@ -305,7 +317,7 @@ else:
                 )
                 if params.task_type == "image"
                 else (params.num_inference_steps,)
-                if params.task_type == "cnn"
+                if params.task_type in ["cnn", "video"]
                 else (params.isl, params.osl, params.max_concurrency)
                 for params in capped_perf_reference
             ]
@@ -322,6 +334,10 @@ else:
             )
         elif model_spec.model_type == ModelType.EMBEDDING:
             benchmark_task_runs = BenchmarkTaskEmbedding(
+                param_map={_device: [BenchmarkTaskParams()]}
+            )
+        elif model_spec.model_type == ModelType.VIDEO:
+            benchmark_task_runs = BenchmarkTaskVideo(
                 param_map={_device: [BenchmarkTaskParams()]}
             )
         else:
