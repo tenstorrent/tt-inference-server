@@ -2283,6 +2283,23 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="microsoft/speecht5_tts",
+        tasks=[
+            EvalTask(
+                task_name="tts_generation",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path=None,
+                max_concurrent=32,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2110.07205",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
 ]
 
 

@@ -53,6 +53,7 @@ EVAL_TASK_TYPES = [
     ModelType.CNN,
     ModelType.AUDIO,
     ModelType.EMBEDDING,
+    ModelType.TEXT_TO_SPEECH,
 ]
 
 
@@ -364,6 +365,7 @@ def main():
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
         or model_spec.model_type == ModelType.EMBEDDING
+        or model_spec.model_type == ModelType.TEXT_TO_SPEECH
     ):
         return run_media_evals(
             eval_config,

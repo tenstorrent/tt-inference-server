@@ -198,6 +198,7 @@ class ModelType(IntEnum):
     AUDIO = auto()
     IMAGE = auto()
     EMBEDDING = auto()
+    TEXT_TO_SPEECH = auto()
 
 
 @dataclass(frozen=True)
@@ -249,6 +250,12 @@ whisper_impl = ImplSpec(
     impl_name="whisper",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
+)
+speecht5_impl = ImplSpec(
+    impl_id="speecht5_tts",
+    impl_name="speecht5-tts",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/speecht5_tts",
 )
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
@@ -2614,6 +2621,30 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
+    ),
+    ModelSpecTemplate(
+        weights=["microsoft/speecht5_tts"],
+        tt_metal_commit="a9b09e0",
+        impl=speecht5_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TEXT_TO_SPEECH,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
     ),
 ]
 
