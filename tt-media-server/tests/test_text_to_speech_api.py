@@ -75,7 +75,16 @@ get_dict_response = mock_get_dict_response
 
 
 class TestTTSParsing:
-    """Test TTS request parsing from form data and JSON"""
+    """
+    Test TTS request parsing from form data and JSON
+
+    This test suite validates the TextToSpeechRequest class for various input scenarios.
+    It covers:
+    - Basic request creation
+    - Request with all parameters
+    - Validation of required fields
+    - Validation of speaker_embedding type
+    """
 
     def test_text_to_speech_request_creation(self):
         """Test TextToSpeechRequest creation with various parameters"""
