@@ -234,6 +234,8 @@ def main():
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
     # copy env vars to pass to subprocesses
+    os.environ["OPENAI_API_KEY"] = "your-secret-key"
+    os.environ["VLLM_API_KEY"] = "your-secret-key"
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
