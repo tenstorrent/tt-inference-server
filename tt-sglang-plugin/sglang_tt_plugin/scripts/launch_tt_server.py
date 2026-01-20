@@ -25,6 +25,15 @@ def setup_tt_environment():
 
 def main():
     """Main entry point for TT server launch."""
+    # Force fork mode FIRST - before any multiprocessing imports
+    # This makes child processes inherit the patched ModelRegistry
+    import multiprocessing
+    try:
+        multiprocessing.set_start_method("fork", force=True)
+        print("[TT-Plugin] Set multiprocessing start method to 'fork'", file=sys.stderr, flush=True)
+    except RuntimeError as e:
+        print(f"[TT-Plugin] Could not set fork mode: {e}", file=sys.stderr, flush=True)
+    
     # Setup TT environment FIRST (before any imports)
     setup_tt_environment()
     
@@ -47,15 +56,24 @@ def main():
     sglang_tt_plugin.register_tt_models()
     
     # Parse arguments - pass through to SGLang with TT defaults
+    # These mirror vLLM's LLM() constructor params for consistency
     parser = argparse.ArgumentParser(description="Launch SGLang server with TT-Metal support")
-    parser.add_argument("--model-path", required=True, help="Model path")
+    parser.add_argument("--model-path", required=True, help="Model path (vLLM: model)")
     parser.add_argument("--host", default="0.0.0.0", help="Host address")
     parser.add_argument("--port", type=int, default=30000, help="Port number")
-    parser.add_argument("--page-size", type=int, default=128, help="Page size")
-    parser.add_argument("--max-running-requests", type=int, default=1, help="Max running requests")
+    
+    # KV cache / memory management (critical for TT-Metal)
+    parser.add_argument("--page-size", type=int, default=64, help="Block size for KV cache")
+    parser.add_argument("--max-running-requests", type=int, default=32, help="Max batch size")
+    parser.add_argument("--context-length", type=int, default=65536, help="Max sequence length")
+    
+    # TT-Metal specific settings
+    parser.add_argument("--optimizations", default="performance", choices=["performance", "accuracy"],
+                        help="TT-Metal optimization mode: 'performance' (fastest) or 'accuracy' (more precise)")
+    
+    # Other settings
     parser.add_argument("--log-level", default="info", help="Log level")
     parser.add_argument("--device", default="cpu", help="Device type (always cpu for TT)")
-    parser.add_argument("--context-length", type=int, default=65536, help="Context length (max 65536 for N150)")
     parser.add_argument("--trust-remote-code", action="store_true", default=True, help="Trust remote code")
     parser.add_argument("--disable-overlap-schedule", action="store_true", default=True, help="Disable overlap schedule")
     
@@ -70,6 +88,7 @@ def main():
         "--max-running-requests", str(args.max_running_requests),
         "--log-level", args.log_level,
         "--context-length", str(args.context_length),
+        "--device", args.device,
     ]
     
     if args.trust_remote_code:
@@ -79,7 +98,11 @@ def main():
     
     sglang_args.extend(remaining_args)
     
+    # Set TT-Metal specific config via environment (not part of SGLang's server_args)
+    os.environ["TT_METAL_OPTIMIZATIONS"] = args.optimizations
+    
     print(f"[TT-Plugin] Starting server with args: {sglang_args}", file=sys.stderr, flush=True)
+    print(f"[TT-Plugin] TT-Metal optimizations: {args.optimizations}", file=sys.stderr, flush=True)
     
     server_args = prepare_server_args(sglang_args)
     run_server(server_args)

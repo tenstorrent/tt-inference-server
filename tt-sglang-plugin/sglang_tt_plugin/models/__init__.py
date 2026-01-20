@@ -1,5 +1,19 @@
 """TT model implementations for SGLang."""
 
-from .tt_llama import TTLlamaForCausalLM, TTModels
+from .tt_llm import (
+    TTModels,
+    TTLlamaForCausalLM,
+    TTQwenForCausalLM,
+    TTMistralForCausalLM,
+    TTGptOssForCausalLM,
+    EntryClass,
+)
 
-__all__ = ["TTLlamaForCausalLM", "TTModels"]
+__all__ = [
+    "TTModels",
+    "TTLlamaForCausalLM",
+    "TTQwenForCausalLM",
+    "TTMistralForCausalLM",
+    "TTGptOssForCausalLM",
+    "EntryClass",
+]

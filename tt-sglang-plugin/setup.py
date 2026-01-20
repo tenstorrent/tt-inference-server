@@ -10,24 +10,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="sglang-tt-plugin",
     version="0.1.0",
-    author="TT-Metal Integration Team",
-    author_email="your-email@example.com",
-    description="Tenstorrent TT plugin for SGLang",
+    description="Tenstorrent plugin for SGLang",
     long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/your-username/sglang-tt-plugin",
     packages=find_packages(),
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Developers",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    ],
+    classifiers=[""],
     python_requires=">=3.8",
     install_requires=[
         # NOTE: torch is NOT included here - user must install CPU PyTorch FIRST
@@ -46,7 +32,10 @@ setup(
             "sglang-tt-server = sglang_tt_plugin.scripts.launch_tt_server:main",
         ],
         "sglang.models": [
-            "tt_llama = sglang_tt_plugin.models.tt_llama:TTLlamaForCausalLM",
+            "tt_llama = sglang_tt_plugin.models.tt_llm:TTLlamaForCausalLM",
+            "tt_qwen = sglang_tt_plugin.models.tt_llm:TTQwenForCausalLM",
+            "tt_mistral = sglang_tt_plugin.models.tt_llm:TTMistralForCausalLM",
+            "tt_gptoss = sglang_tt_plugin.models.tt_llm:TTGptOssForCausalLM",
         ],
     },
     package_data={

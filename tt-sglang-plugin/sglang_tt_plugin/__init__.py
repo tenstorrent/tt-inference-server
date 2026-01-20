@@ -25,49 +25,48 @@ def register_tt_models():
         import ttnn
         logger.info("[TT-Plugin] TT-Metal (ttnn) is available")
         
-        # CRITICAL: Import and patch BEFORE SGLang can load its own modules
-        # This must happen before any SGLang imports
+        # Import all TT model classes
+        from .models.tt_llm import (
+            TTLlamaForCausalLM,
+            TTQwenForCausalLM,
+            TTMistralForCausalLM,
+            TTGptOssForCausalLM,
+        )
         
-        # Method 1: Preemptively patch sys.modules
-        from .models.tt_llama import TTLlamaForCausalLM
+        # Mapping from HuggingFace architecture names to TT model classes
+        TT_MODEL_REGISTRY = {
+            "LlamaForCausalLM": TTLlamaForCausalLM,      # Llama-3.1-8B, Llama-3.1-70B, etc.
+            "Qwen2ForCausalLM": TTQwenForCausalLM,       # Qwen2.5-7B, Qwen2.5-14B, etc.
+            "MistralForCausalLM": TTMistralForCausalLM,  # Mistral-7B
+            "GptOssForCausalLM": TTGptOssForCausalLM,    # GPT-OSS
+        }
         
-        # Create a module object that SGLang will import
-        import types
-        fake_tt_module = types.ModuleType('tt_llama')
-        fake_tt_module.TTLlamaForCausalLM = TTLlamaForCausalLM
-        fake_tt_module.LlamaForCausalLM = TTLlamaForCausalLM  # Override both
-        fake_tt_module.EntryClass = [TTLlamaForCausalLM]  # Match SGLang's pattern
-        
-        # Patch all possible module paths BEFORE SGLang loads them
-        module_paths = [
-            'sglang.srt.models.tt_llama',
-            'tt_llama',
-        ]
-        
-        for module_path in module_paths:
-            sys.modules[module_path] = fake_tt_module
-            logger.info(f"[TT-Plugin] Pre-patched {module_path}")
-        
-        # Method 2: Hook the model loader directly
+        # CRITICAL: Directly patch SGLang's ModelRegistry
         try:
-            # This will run when SGLang tries to load models
-            import importlib.util
-            original_find_spec = importlib.util.find_spec
+            from sglang.srt.models.registry import ModelRegistry
             
-            def patched_find_spec(name, package=None):
-                if name == 'sglang.srt.models.tt_llama' or name.endswith('.tt_llama'):
-                    logger.info(f"[TT-Plugin] INTERCEPTED find_spec for {name}")
-                    # Return our fake module spec
-                    spec = importlib.util.spec_from_loader(name, loader=None)
-                    return spec
-                return original_find_spec(name, package)
+            # Override all supported architectures in the registry
+            for arch_name, tt_class in TT_MODEL_REGISTRY.items():
+                ModelRegistry.models[arch_name] = tt_class
+                logger.info(f"[TT-Plugin] Registered {arch_name} -> {tt_class.__name__}")
             
-            importlib.util.find_spec = patched_find_spec
+            # Also patch _try_load_model_cls to intercept model loading
+            original_try_load = ModelRegistry._try_load_model_cls
             
-        except Exception as e:
-            logger.warning(f"[TT-Plugin] Could not patch importlib: {e}")
-        
-        logger.info("[TT-Plugin] Successfully pre-registered TT-Metal models")
+            @staticmethod
+            def patched_try_load_model_cls(architectures):
+                for arch in architectures:
+                    if arch in TT_MODEL_REGISTRY:
+                        tt_class = TT_MODEL_REGISTRY[arch]
+                        logger.info(f"[TT-Plugin] Intercepted load for {arch}, returning {tt_class.__name__}")
+                        return tt_class
+                return original_try_load(architectures)
+            
+            ModelRegistry._try_load_model_cls = patched_try_load_model_cls
+            logger.info(f"[TT-Plugin] ✓ Successfully patched ModelRegistry with {len(TT_MODEL_REGISTRY)} TT models")
+            
+        except ImportError as e:
+            logger.warning(f"[TT-Plugin] Could not import ModelRegistry: {e}")
         
     except ImportError as e:
         logger.warning(f"[TT-Plugin] TT-Metal not available: {e}")
@@ -77,12 +76,21 @@ def register_tt_models():
 # CRITICAL: Register IMMEDIATELY on import, before SGLang can load anything
 register_tt_models()
 
-from .models.tt_llama import TTLlamaForCausalLM, TTModels
+from .models.tt_llm import (
+    TTModels,
+    TTLlamaForCausalLM,
+    TTQwenForCausalLM,
+    TTMistralForCausalLM,
+    TTGptOssForCausalLM,
+)
 from .utils.tt_utils import open_mesh_device
 
 __all__ = [
-    "TTLlamaForCausalLM",
     "TTModels",
+    "TTLlamaForCausalLM",
+    "TTQwenForCausalLM",
+    "TTMistralForCausalLM",
+    "TTGptOssForCausalLM",
     "open_mesh_device", 
     "register_tt_models",
     "__version__",
