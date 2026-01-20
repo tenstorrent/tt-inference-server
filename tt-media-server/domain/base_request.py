@@ -10,3 +10,4 @@ from pydantic import BaseModel, PrivateAttr
 
 class BaseRequest(BaseModel, ABC):
     _task_id: str = PrivateAttr(default_factory=lambda: str(uuid4()))
+    _queue_name: str = PrivateAttr(default_factory=lambda: "")
