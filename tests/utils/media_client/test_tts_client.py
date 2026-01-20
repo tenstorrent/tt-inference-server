@@ -702,9 +702,9 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
             "published_score",
             "score",
             "published_score_ref",
-            "accuracy_check",
             "rtr",
-            "wer",
+            "p90_ttft",
+            "p95_ttft",
         ]
         for key in required_keys:
             assert key in eval_result, f"Missing required key: {key}"
@@ -712,7 +712,7 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         # Verify calculated averages
         assert eval_result["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
         assert abs(eval_result["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
-        assert abs(eval_result["wer"] - 0.15) < 0.001  # (0.1 + 0.2) / 2
+        # WER is not calculated in run_eval (calculate_wer=False)
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -795,7 +795,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         assert benchmarks["rtr"] == 2.5  # (2.0 + 3.0) / 2
         assert "ttft_p90" in benchmarks
         assert "ttft_p95" in benchmarks
-        assert "accuracy_check" in benchmarks
+        # accuracy_check is calculated in run_reports.py, not in tts_client.py
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
@@ -865,7 +865,7 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         assert benchmarks["rtr"] == 2.0
         assert "ttft_p90" in benchmarks
         assert "ttft_p95" in benchmarks
-        assert "accuracy_check" in benchmarks
+        # accuracy_check is calculated in run_reports.py, not in tts_client.py
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
