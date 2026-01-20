@@ -109,11 +109,8 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
-        # Calculate accuracy check (convert ttft_value from ms to seconds for comparison)
-        accuracy_check = self._calculate_accuracy_check(
-            ttft_value / 1000, rtr_value, None
-        )
-        benchmark_data["accuracy_check"] = accuracy_check
+        # Accuracy check is calculated in evals_release_report_data() in run_reports.py
+        # Similar to how image and audio pipelines work
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -203,10 +200,6 @@ class TtsClientStrategy(BaseMediaStrategy):
         # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
-        # Calculate accuracy check (ttft_value is in ms, convert to seconds)
-        accuracy_check = self._calculate_accuracy_check(
-            ttft_value / 1000, rtr_value, None
-        )
 
         # Convert TtsTestStatus objects to dictionaries for JSON serialization
         report_data = {
@@ -216,7 +209,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                 "rtr": rtr_value,
                 "ttft_p90": p90_ttft / 1000 if p90_ttft else None,
                 "ttft_p95": p95_ttft / 1000 if p95_ttft else None,
-                "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -383,7 +375,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             rtr_str = f"{rtr:.2f}" if rtr is not None else "N/A"
             logger.info(
-                f"\n✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str}"
+                f"✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str}"
             )
 
             return True, total_duration, ttft_ms, rtr, text, audio_duration, wer
