@@ -81,7 +81,9 @@ RUN apt-get update && apt-get install -y \
     && protoc --version
 
 # Install uv for faster package management (replaces pip)
-RUN python3 -m pip install --no-cache-dir uv
+# Use system python since base image /opt/venv doesn't have pip
+# tt-metal will create its own venv at ${PYTHON_ENV_DIR} later
+RUN /usr/bin/python3 -m pip install --no-cache-dir uv
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
@@ -136,10 +138,10 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
-COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+#COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+#RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
+#    && uv pip install ."
 
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \

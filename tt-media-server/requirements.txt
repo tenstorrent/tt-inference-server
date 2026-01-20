@@ -22,3 +22,4 @@ transformers
 uvicorn
 whisperx
 soundfile
+datasets
