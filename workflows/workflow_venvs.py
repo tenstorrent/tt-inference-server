@@ -273,6 +273,19 @@ def setup_evals_embedding(
     return True
 
 
+def setup_evals_video(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """
+    Setup video evaluation environment on HOST.
+    Video models typically need basic dependencies for server interaction.
+    """
+    logger.info("Installing dependencies for video evaluation...")
+    return setup_venv(venv_config)
+
+
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -497,6 +510,9 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_EMBEDDING,
         setup_function=setup_evals_embedding,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_VIDEO, setup_function=setup_evals_video
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
