@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: © 2025 Tenstorrent Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rank Binding for 2x N300 devices on T3K (wh-qb)
+#
+# Process 0 (rank=0): mesh_id=0 (first N300 board)
+# Process 1 (rank=1): mesh_id=1 (second N300 board)
+# Each N300 has 2 chips (1x2 mesh topology)
+#
+# For N300, setting TT_VISIBLE_DEVICES="0" or "1" exposes both chips (PCIe + remote)
+# So we only need a single device ID per rank.
+
+rank_bindings:
+  - rank: 0
+    mesh_id: 0
+    mesh_host_rank: 0
+    env_overrides:
+      TT_VISIBLE_DEVICES: "0"  # First N300 device (exposes both chips)
+
+  - rank: 1
+    mesh_id: 1
+    mesh_host_rank: 0
+    env_overrides:
+      TT_VISIBLE_DEVICES: "1"  # Second N300 device (exposes both chips)
+
+mesh_graph_desc_path: "/localdev/ztorlak/tt-metal/tests/tt_metal/tt_fabric/custom_mesh_descriptors/n300_dual_mesh_graph_descriptor.textproto"
