@@ -8,7 +8,7 @@
 # Note: Dependencies installed in this stage are NOT included in the final image.
 # Only the built artifacts and files are copied to the runtime stage.
 # Runtime dependencies must be installed separately in the runtime stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -18,7 +18,6 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
-
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
@@ -49,7 +48,7 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
 
-# extra system deps
+# These packages are required during the application build stage - they are not included in the runtime image
 RUN apt-get update && apt-get install -y \
     # required
     gosu \
@@ -165,7 +164,7 @@ RUN rm -rf ${HOME_DIR}/.rustup \
 # ==============================================================================
 # This is the final image that will be used. Only the built artifacts from the builder stage
 # are copied here. Any runtime dependencies needed by the application must be installed in this stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-basic-dev-amd64:latest AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
@@ -196,6 +195,10 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    libsndfile1 \
+    libgl1 \
+    python3-yaml \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -203,7 +206,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
-    && chmod 755 /run/sshd
+    && chmod 755 /run/sshd \
+    && git config --global --add safe.directory '*'
 
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
