@@ -181,7 +181,8 @@ class SharedMemoryChunkQueue:
 
     def _set_write_idx(self, slot_id: int, val: int):
         base = self._get_slot_header_offset(slot_id)
-        struct.pack_into("Q", self.shm.buf, base, val % self.capacity_per_slot)
+        # Store raw value, NOT modulo - we need to track total writes
+        struct.pack_into("Q", self.shm.buf, base, val)
 
     def _get_read_idx(self, slot_id: int) -> int:
         base = self._get_slot_header_offset(slot_id)
@@ -189,7 +190,8 @@ class SharedMemoryChunkQueue:
 
     def _set_read_idx(self, slot_id: int, val: int):
         base = self._get_slot_header_offset(slot_id)
-        struct.pack_into("Q", self.shm.buf, base + 8, val % self.capacity_per_slot)
+        # Store raw value, NOT modulo - we need to track total reads
+        struct.pack_into("Q", self.shm.buf, base + 8, val)
 
     def _get_slot_in_use(self, slot_id: int) -> bool:
         base = self._get_slot_header_offset(slot_id)
@@ -199,8 +201,22 @@ class SharedMemoryChunkQueue:
         base = self._get_slot_header_offset(slot_id)
         struct.pack_into("I", self.shm.buf, base + 16, 1 if in_use else 0)
 
-    def _get_chunk_index(self, slot_id: int, local_idx: int) -> int:
-        """Convert slot-local index to global buffer index."""
+    def _get_available_to_read(self, slot_id: int) -> int:
+        """Get number of items available to read."""
+        write_idx = self._get_write_idx(slot_id)
+        read_idx = self._get_read_idx(slot_id)
+        # Simple subtraction works because we store raw indices
+        return write_idx - read_idx
+
+    def _get_available_to_write(self, slot_id: int) -> int:
+        """Get number of slots available for writing."""
+        # Leave 1 slot empty to distinguish full from empty
+        available_to_read = self._get_available_to_read(slot_id)
+        return self.capacity_per_slot - 1 - available_to_read
+
+    def _get_chunk_index(self, slot_id: int, raw_idx: int) -> int:
+        """Convert raw index to global buffer index (applies modulo here)."""
+        local_idx = raw_idx % self.capacity_per_slot
         return self._get_slot_data_offset(slot_id) + local_idx
 
     # Write operations (for workers)
@@ -220,32 +236,59 @@ class SharedMemoryChunkQueue:
         if slot is None:
             raise ValueError("No slot_id specified for write operation")
 
-        write_idx = self._get_write_idx(slot)
-        read_idx = self._get_read_idx(slot)
-
-        # Calculate current size
-        if write_idx >= read_idx:
-            size = write_idx - read_idx
-        else:
-            size = (self.capacity_per_slot - read_idx) + write_idx
-
-        # Check if full (leave some buffer)
-        if size >= self.capacity_per_slot - 2:
+        # Check if there's room to write
+        if self._get_available_to_write(slot) < 1:
             return False
+
+        write_idx = self._get_write_idx(slot)
 
         # Truncate text if needed
         if len(text) > MAX_TEXT_LEN:
             text = text[:MAX_TEXT_LEN]
 
-        # Write to buffer
+        # Write to buffer - modulo applied in _get_chunk_index
         chunk_idx = self._get_chunk_index(slot, write_idx)
         self.buffer[chunk_idx]["text"] = text
         self.buffer[chunk_idx]["is_final"] = is_final
         self.buffer[chunk_idx]["item_available"] = 1
 
-        # Advance write index
+        # Advance write index (raw, no modulo)
         self._set_write_idx(slot, write_idx + 1)
         return True
+
+    def put_blocking(
+        self,
+        is_final: int,
+        text: str,
+        slot_id: Optional[int] = None,
+        timeout: float = 1.0,
+    ) -> bool:
+        """
+        Write a chunk to a slot, blocking until space is available.
+
+        Args:
+            is_final: 1 if this is the final chunk, 0 otherwise
+            text: Text content to write
+            slot_id: Slot to write to (uses self.slot_id if not provided)
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if successful, False on timeout
+        """
+        deadline = time.perf_counter() + timeout
+        spin_count = 0
+
+        while True:
+            if self.put(is_final, text, slot_id):
+                return True
+
+            if time.perf_counter() >= deadline:
+                return False
+
+            spin_count += 1
+            if spin_count > 100:
+                time.sleep(0.0001)  # 100μs backoff
+                spin_count = 0
 
     # Read operations (for consumers)
     def get_nowait(self, slot_id: int) -> Optional[tuple]:
@@ -258,12 +301,12 @@ class SharedMemoryChunkQueue:
         Returns:
             (is_final, text) tuple or None if no data available
         """
-        read_idx = self._get_read_idx(slot_id)
-        write_idx = self._get_write_idx(slot_id)
-
-        if read_idx == write_idx:
+        if self._get_available_to_read(slot_id) == 0:
             return None
 
+        read_idx = self._get_read_idx(slot_id)
+
+        # Modulo applied in _get_chunk_index
         chunk_idx = self._get_chunk_index(slot_id, read_idx)
 
         if self.buffer[chunk_idx]["item_available"] == 0:
@@ -276,7 +319,7 @@ class SharedMemoryChunkQueue:
         is_final = int(self.buffer[chunk_idx]["is_final"])
         text = str(self.buffer[chunk_idx]["text"]).rstrip("\x00")
 
-        # Advance read index
+        # Advance read index (raw, no modulo)
         self._set_read_idx(slot_id, read_idx + 1)
 
         return (is_final, text)
@@ -284,50 +327,46 @@ class SharedMemoryChunkQueue:
     def read_batch(self, slot_id: int, max_items: int = 1000) -> list:
         """
         Read all available data from a slot (batch read).
-
-        Args:
-            slot_id: Slot to read from
-            max_items: Maximum number of items to read in one batch
-
-        Returns:
-            List of (is_final, text) tuples
         """
-        results = []
-
-        read_idx = self._get_read_idx(slot_id)
-        write_idx = self._get_write_idx(slot_id)
+        available = self._get_available_to_read(slot_id)
 
         # Nothing to read
-        if read_idx == write_idx:
-            return results  # Return empty list, not None
+        if available == 0:
+            return []
 
-        for _ in range(max_items):
-            if read_idx == write_idx:
-                break  # No more data
+        results = []
+        read_idx = self._get_read_idx(slot_id)
+        items_to_read = min(max_items, available)
+        slot_offset = self._get_slot_data_offset(slot_id)
+        capacity = self.capacity_per_slot
+        buffer = self.buffer  # Local reference for speed
 
-            chunk_idx = self._get_chunk_index(slot_id, read_idx)
+        for _ in range(items_to_read):
+            # Calculate chunk index with wraparound (modulo applied here)
+            local_idx = read_idx % capacity
+            chunk_idx = slot_offset + local_idx
 
-            if self.buffer[chunk_idx]["item_available"] == 0:
+            if buffer[chunk_idx]["item_available"] == 0:
                 break
 
             # Mark as read
-            self.buffer[chunk_idx]["item_available"] = 0
+            buffer[chunk_idx]["item_available"] = 0
 
             # Read data
-            is_final = int(self.buffer[chunk_idx]["is_final"])
-            text = str(self.buffer[chunk_idx]["text"]).rstrip("\x00")
+            is_final = int(buffer[chunk_idx]["is_final"])
+            text = str(buffer[chunk_idx]["text"]).rstrip("\x00")
 
-            # Advance read index
+            # Advance read index (raw, no modulo)
             read_idx += 1
 
-            # Add to results (including final chunk!)
+            # Add to results
             results.append((is_final, text))
 
             # Stop after final chunk
             if is_final == 1:
                 break
 
-        # Update read index after all reads
+        # Update read index (raw value)
         self._set_read_idx(slot_id, read_idx)
 
         return results
@@ -343,7 +382,7 @@ class SharedMemoryChunkQueue:
 
         Args:
             slot_ids: List of slot IDs to read from
-            max_items_per_slot: Maximum items to read per slot
+            max_items_per_slot: Maximum number of items to read in one batch
 
         Returns:
             Dictionary mapping slot_id -> list of (is_final, text) tuples.
@@ -449,17 +488,11 @@ class SharedMemoryChunkQueue:
 
     def get_slot_size(self, slot_id: int) -> int:
         """Get the number of unread items in a slot."""
-        write_idx = self._get_write_idx(slot_id)
-        read_idx = self._get_read_idx(slot_id)
-
-        if write_idx >= read_idx:
-            return write_idx - read_idx
-        else:
-            return (self.capacity_per_slot - read_idx) + write_idx
+        return self._get_available_to_read(slot_id)
 
     def is_slot_empty(self, slot_id: int) -> bool:
         """Check if a slot has no unread data."""
-        return self._get_read_idx(slot_id) == self._get_write_idx(slot_id)
+        return self._get_available_to_read(slot_id) == 0
 
     def close(self):
         """Close the shared memory (does not unlink)."""

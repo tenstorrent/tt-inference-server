@@ -22,12 +22,22 @@ class TestRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
         self.num_torch_threads = num_torch_threads
-        # use float to allow fractional values
-        self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.streaming_frequency_ms = float(
+            os.getenv("TEST_RUNNER_FREQUENCY_MS", "0.01")
+        )
 
+        # Pre-cache tokens for zero-allocation streaming
+        self._token_cache = [f"tok{i} " for i in range(1000)]
+
+        target_rate = (
+            1000 / self.streaming_frequency_ms
+            if self.streaming_frequency_ms > 0
+            else float("inf")
+        )
         self.logger.info(
             f"TestRunner initialized for device {self.device_id}: "
             f"frequency={self.streaming_frequency_ms}ms, "
+            f"target_rate={target_rate:.0f} tokens/sec"
         )
 
     async def warmup(self) -> bool:
@@ -42,46 +52,87 @@ class TestRunner(BaseDeviceRunner):
     async def _generate_streaming(
         self, request: CompletionRequest
     ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
-        frequency_seconds = (
-            self.streaming_frequency_ms / TestRunner.MILLISECONDS_PER_SECOND
-        )
         task_id = request._task_id
+        max_tokens = request.max_tokens
+        use_memory_queue = self.settings.use_memory_queue
 
-        if self.settings.use_memory_queue:
-            # Memory queue format: (task_id, is_final, text)
-            streaming_chunks = [
-                (task_id, 0, f"token_{i}") for i in range(request.max_tokens)
-            ]
-        else:
-            # StreamingChunkOutput format
-            streaming_chunks = [
-                StreamingChunkOutput(
-                    type="streaming_chunk",
-                    chunk=CompletionStreamChunk(
-                        text=f"token_{i}",
-                        index=i,
-                        finish_reason=None,
-                    ),
-                    task_id=task_id,
-                )
-                for i in range(request.max_tokens)
-            ]
+        # Log start
+        target_rate = (
+            1000 / self.streaming_frequency_ms
+            if self.streaming_frequency_ms > 0
+            else float("inf")
+        )
+        expected_time_ms = (
+            max_tokens / target_rate * 1000 if target_rate != float("inf") else 0
+        )
+        self.logger.info(
+            f"[TestRunner] Starting generation: {max_tokens} tokens, "
+            f"target_rate={target_rate:.0f} tok/s, "
+            f"expected_time={expected_time_ms:.1f}ms"
+        )
 
         start_time = time.perf_counter()
+        last_log_time = start_time
+        last_log_tokens = 0
+        log_interval = max(1000, max_tokens // 10)  # Log ~10 times or every 1000 tokens
 
-        for i, chunk in enumerate(streaming_chunks):
-            # Calculate exact target time for this token
-            target_time = start_time + (i * frequency_seconds)
-            current_time = time.perf_counter()
+        # Batch size for yielding control - larger batch = higher throughput
+        batch_size = 100
 
-            # Only sleep if we're running ahead of schedule
-            sleep_time = target_time - current_time
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+        tokens_generated = 0
 
-            yield chunk
+        while tokens_generated < max_tokens:
+            batch_end = min(tokens_generated + batch_size, max_tokens)
 
-        if self.settings.use_memory_queue:
+            # Generate batch without any sleeps
+            for i in range(tokens_generated, batch_end):
+                token_text = self._token_cache[i % 1000]
+
+                if use_memory_queue:
+                    yield (task_id, 0, token_text)
+                else:
+                    yield StreamingChunkOutput(
+                        type="streaming_chunk",
+                        chunk=CompletionStreamChunk(
+                            text=token_text,
+                            index=i,
+                            finish_reason=None,
+                        ),
+                        task_id=task_id,
+                    )
+
+            tokens_generated = batch_end
+
+            # Log progress
+            if tokens_generated - last_log_tokens >= log_interval:
+                now = time.perf_counter()
+                elapsed = now - start_time
+                rate = tokens_generated / elapsed if elapsed > 0 else 0
+                self.logger.info(
+                    f"[TestRunner] Progress: {tokens_generated}/{max_tokens} tokens, "
+                    f"elapsed={elapsed * 1000:.1f}ms, rate={rate:.0f} tok/s"
+                )
+                last_log_time = now
+                last_log_tokens = tokens_generated
+
+            # Yield control to event loop after each batch
+            await asyncio.sleep(0)
+
+        # Final stats
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        actual_rate = max_tokens / total_time if total_time > 0 else 0
+
+        self.logger.info(
+            f"[TestRunner] === COMPLETE ===\n"
+            f"  Tokens: {max_tokens}\n"
+            f"  Time: {total_time * 1000:.2f}ms\n"
+            f"  Rate: {actual_rate:.0f} tokens/sec\n"
+            f"  Target: {target_rate:.0f} tokens/sec"
+        )
+
+        # Yield final marker
+        if use_memory_queue:
             yield (task_id, 1, "[DONE]")
         else:
             yield FinalResultOutput(
