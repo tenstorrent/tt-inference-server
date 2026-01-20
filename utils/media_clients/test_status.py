@@ -124,3 +124,38 @@ class EmbeddingTestStatus(BaseTestStatus):
 
     def to_dict(self) -> Dict[str, Any]:
         return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}
+
+
+class TtsTestStatus(BaseTestStatus):
+    """Test status for text-to-speech models."""
+
+    def __init__(
+        self,
+        status: bool,
+        elapsed: float,
+        ttft_ms: Optional[float] = None,
+        rtr: Optional[float] = None,
+        text: Optional[str] = None,
+        audio_duration: Optional[float] = None,
+        wer: Optional[float] = None,
+        reference_text: Optional[str] = None,
+    ):
+        super().__init__(status, elapsed)
+        self.ttft_ms = ttft_ms
+        self.rtr = rtr
+        self.text = text
+        self.audio_duration = audio_duration
+        self.wer = wer
+        self.reference_text = reference_text
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "elapsed": self.elapsed,
+            "ttft_ms": self.ttft_ms,
+            "rtr": self.rtr,
+            "text": self.text,
+            "audio_duration": self.audio_duration,
+            "wer": self.wer,
+            "reference_text": self.reference_text,
+        }
