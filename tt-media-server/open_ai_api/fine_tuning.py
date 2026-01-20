@@ -83,7 +83,7 @@ async def get_fine_tuning_job_metadata(
     return JSONResponse(content=job_data)
 
 
-@router.delete("/jobs/{job_id}/cancel")
+@router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
     service: BaseService = Depends(service_resolver),
@@ -108,7 +108,7 @@ async def cancel_fine_tuning_job(
         content={
             "id": job_id,
             "object": JobTypes.TRAINING.value,
-            "deleted": True,
+            "cancelled": True,
         }
     )
 
