@@ -2328,7 +2328,7 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                 },
                 score=EvalTaskScore(
-                    published_score=74.2,  # GPQA Diamond score
+                    published_score=71.5,  # GPQA Diamond score
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -2395,7 +2395,7 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                 },
                 score=EvalTaskScore(
-                    published_score=80.9,  # GPQA Diamond score
+                    published_score=80.1,  # GPQA Diamond score
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
