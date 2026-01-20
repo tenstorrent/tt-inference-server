@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 
 completions_router = APIRouter()
 

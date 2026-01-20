@@ -26,36 +26,35 @@ sys.modules["config.settings"].settings = mock_settings_instance
 
 from domain.detokenize_request import DetokenizeRequest
 from domain.tokenize_request import TokenizeCompletionRequest
-from open_ai_api.tokenizer import _resolve_model, detokenize, tokenize
+from open_ai_api.tokenizer import detokenize, tokenize
+from utils.tokenizer_utils import resolve_model
 
 
 class TestResolveModel:
-    """Tests for _resolve_model function."""
+    """Tests for resolve_model function."""
 
     def test_resolve_model_with_valid_model_string(self):
         """Test that valid model string resolves to SupportedModels enum."""
         model_str = SupportedModels.LLAMA_3_2_3B.value
-        result = _resolve_model(model_str)
+        result = resolve_model(model_str)
         assert result == SupportedModels.LLAMA_3_2_3B
 
     def test_resolve_model_with_none_raises_exception(self):
-        """Test that None model raises HTTPException."""
-        with pytest.raises(HTTPException) as exc_info:
-            _resolve_model(None)
-        assert exc_info.value.status_code == 400
-        assert "Model is required" in exc_info.value.detail
+        """Test that None model raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_model(None)
+        assert "Model is required" in str(exc_info.value)
 
     def test_resolve_model_with_unsupported_model_raises_exception(self):
-        """Test that unsupported model string raises HTTPException."""
-        with pytest.raises(HTTPException) as exc_info:
-            _resolve_model("unsupported/model")
-        assert exc_info.value.status_code == 400
-        assert "Unsupported model" in exc_info.value.detail
+        """Test that unsupported model string raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_model("unsupported/model")
+        assert "Unsupported model" in str(exc_info.value)
 
     def test_resolve_model_with_qwen_model(self):
         """Test resolving Qwen model."""
         model_str = SupportedModels.QWEN_3_4B.value
-        result = _resolve_model(model_str)
+        result = resolve_model(model_str)
         assert result == SupportedModels.QWEN_3_4B
 
 
@@ -101,7 +100,7 @@ class TestTokenizeEndpoint:
                 return mock_qwen_tokenizer
             return mock_llama_tokenizer  # default
 
-        with patch("open_ai_api.tokenizer.AutoTokenizer") as mock_auto:
+        with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = from_pretrained_side_effect
             yield mock_auto
 
@@ -213,7 +212,7 @@ class TestTokenizeEndpoint:
 
     def test_tokenize_with_tokenizer_loading_error_raises_exception(self):
         """Test that tokenizer loading errors are handled properly."""
-        with patch("open_ai_api.tokenizer.AutoTokenizer") as mock_auto:
+        with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = Exception("Loading failed")
             request = TokenizeCompletionRequest(
                 model=SupportedModels.LLAMA_3_2_3B.value,
@@ -273,7 +272,7 @@ class TestDetokenizeEndpoint:
                 return mock_qwen_tokenizer
             return mock_llama_tokenizer  # default
 
-        with patch("open_ai_api.tokenizer.AutoTokenizer") as mock_auto:
+        with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = from_pretrained_side_effect
             yield mock_auto
 
@@ -359,7 +358,7 @@ class TestDetokenizeEndpoint:
 
     def test_detokenize_with_tokenizer_loading_error_raises_exception(self):
         """Test that tokenizer loading errors are handled properly."""
-        with patch("open_ai_api.tokenizer.AutoTokenizer") as mock_auto:
+        with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = Exception("Loading failed")
             request = DetokenizeRequest(
                 model=SupportedModels.LLAMA_3_2_3B.value,

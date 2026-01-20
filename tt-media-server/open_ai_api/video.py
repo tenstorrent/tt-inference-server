@@ -9,9 +9,9 @@ from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.video_manager import VideoManager
@@ -22,7 +22,7 @@ router = APIRouter()
 @router.post("/generations")
 async def submit_generate_video_request(
     request: VideoGenerateRequest,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -44,7 +44,7 @@ async def submit_generate_video_request(
 @router.get("/generations/{job_id}")
 def get_video_metadata(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -68,7 +68,7 @@ def get_video_metadata(
 def download_video_content(
     job_id: str,
     request: Request,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -136,7 +136,7 @@ def download_video_content(
 @router.delete("/generations/{job_id}")
 def cancel_video_job(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
