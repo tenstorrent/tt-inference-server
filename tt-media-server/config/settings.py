@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import logging
 import os
 from functools import lru_cache
 from typing import Optional
@@ -22,11 +21,11 @@ from config.constants import (
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
-
-logger = logging.getLogger(__name__)
+from utils.logger import TTLogger
 
 
 class Settings(BaseSettings):
+    logger = TTLogger()
     # General settings
     environment: str = "development"
     device: Optional[str] = None
