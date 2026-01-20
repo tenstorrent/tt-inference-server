@@ -8,7 +8,7 @@ import tempfile
 from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
@@ -34,6 +34,10 @@ async def submit_generate_video_request(
     Raises:
         HTTPException: If video generation job submission fails.
     """
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
     try:
         job_data = await service.create_job(JobTypes.VIDEO, request)
         return JSONResponse(content=job_data, status_code=202)
@@ -63,6 +67,24 @@ def get_video_metadata(
     return JSONResponse(content=job_data)
 
 
+@router.get("/jobs")
+def get_jobs_metadata(
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Get all jobs metadata
+
+    Returns:
+        JSONResponse: Array of video job objects with current status and metadata.
+    """
+    job_data = service.get_all_jobs_metadata()
+    if job_data is None:
+        raise HTTPException(status_code=404, detail="Job metadata not found")
+
+    return JSONResponse(content=job_data)
+
+
 @log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 @router.get("/generations/{job_id}/download")
 def download_video_content(
@@ -75,12 +97,10 @@ def download_video_content(
     Download the generated video file as an attachment.
 
     Returns:
-        FileResponse: Streams the full video file (MP4) if no Range header is present.
-        StreamingResponse: Streams a partial video file (MP4) with HTTP 206 if Range header is present.
+        FileResponse: Streams the full video file (MP4)
 
     Raises:
         HTTPException: If video not found, not completed, or failed.
-        HTTPException: If Range header is invalid (416).
     """
     file_path = service.get_job_result(job_id)
     if (
@@ -99,37 +119,13 @@ def download_video_content(
     except Exception:
         serve_path = file_path
 
-    file_size = os.path.getsize(serve_path)
-    range_header = request.headers.get("range")
-    if not range_header:
-        return FileResponse(
-            serve_path,
-            media_type="video/mp4",
-            filename=os.path.basename(file_path),
-            headers={
-                "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
-            },
-        )
-
-    # Parse Range header and stream partial content
-    try:
-        start, end = VideoManager.parse_range_header(range_header, file_size)
-    except Exception:
-        raise HTTPException(status_code=416, detail="Invalid Range header")
-
-    chunk_size = end - start + 1
-    content_range = f"bytes {start}-{end}/{file_size}"
-    headers = {
-        "Content-Range": content_range,
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(chunk_size),
-        "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}",
-    }
-    return StreamingResponse(
-        VideoManager.file_iterator(serve_path, start, end),
-        status_code=206,
+    return FileResponse(
+        serve_path,
         media_type="video/mp4",
-        headers=headers,
+        filename=os.path.basename(file_path),
+        headers={
+            "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
+        },
     )
 
 
