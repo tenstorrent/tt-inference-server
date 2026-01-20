@@ -228,6 +228,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif model_spec.model_type == ModelType.EMBEDDING:
         docker_env_vars.update(get_embedding_docker_env_vars(model_spec, args))
 
+    # Pass device_model_spec.env_vars to Docker (e.g., INFERENCE_BACKEND for XLA models)
+    if model_spec.device_model_spec.env_vars:
+        docker_env_vars.update(model_spec.device_model_spec.env_vars)
+
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [

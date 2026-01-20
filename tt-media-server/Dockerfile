@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=6223e8c20a04e771b5c44616a406aecd39d9f1fd
 
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
@@ -138,6 +138,52 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
+# Install Python 3.11 for tt-xla (wheels are built for cp311)
+USER root
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y python3.11 python3.11-venv python3.11-dev \
+    && rm -rf /var/lib/apt/lists/*
+USER ${CONTAINER_APP_USERNAME}
+
+# Create xla_venv for tt-xla vLLM plugin
+# Version can be "latest" for latest stable, or a specific version like "0.7.0" or "0.8.0.dev20251229"
+ARG TT_XLA_VERSION="latest"
+ENV XLA_PYTHON_ENV_DIR=${TT_METAL_HOME}/xla_venv
+RUN python3.11 -m venv ${XLA_PYTHON_ENV_DIR}
+
+# Install media server requirements into xla_venv
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install --default-timeout=240 --no-cache-dir -r ${TT_METAL_HOME}/server/requirements.txt"
+
+# Install tt-xla vLLM plugin (pjrt-plugin-tt and vllm-tt) from Tenstorrent PyPI
+# https://github.com/tenstorrent/tt-xla
+# VLLM_TARGET_DEVICE=empty skips CUDA requirements for Tenstorrent hardware
+# --no-build-isolation ensures env vars are passed to the build process
+ENV VLLM_TARGET_DEVICE=empty
+# Install build dependencies required for vllm when using --no-build-isolation
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && pip install --no-cache-dir setuptools_scm cmake ninja packaging"
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && if [ \"${TT_XLA_VERSION}\" = \"latest\" ]; then \
+        pip install --no-cache-dir pjrt-plugin-tt vllm-tt --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
+    else \
+        pip install --no-cache-dir pjrt-plugin-tt==${TT_XLA_VERSION} vllm-tt==${TT_XLA_VERSION} --no-build-isolation --extra-index-url https://pypi.eng.aws.tenstorrent.com/; \
+    fi"
+
+# Cleanup xla_venv build artifacts and cache to reduce image size
+# Remove build-only packages and pip cache after installation is complete
+RUN /bin/bash -c "source ${XLA_PYTHON_ENV_DIR}/bin/activate \
+    && pip uninstall -y setuptools_scm cmake ninja 2>/dev/null || true \
+    && pip cache purge 2>/dev/null || true \
+    && rm -rf ${XLA_PYTHON_ENV_DIR}/lib/python3.11/site-packages/pip/_vendor/cachecontrol \
+    && find ${XLA_PYTHON_ENV_DIR} -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find ${XLA_PYTHON_ENV_DIR} -name '*.pyc' -delete 2>/dev/null || true \
+    && find ${XLA_PYTHON_ENV_DIR} -name '*.pyo' -delete 2>/dev/null || true"
+
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
@@ -172,11 +218,14 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ARG TT_METAL_COMMIT_SHA_OR_TAG=6223e8c20a04e771b5c44616a406aecd39d9f1fd
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
+# Note: LD_LIBRARY_PATH is set conditionally in docker-entrypoint.sh based on INFERENCE_BACKEND
+# - Metal backend requires tt-metal build libraries (LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib)
+# - XLA backend bundles its own compatible tt-metal runtime in pjrt-plugin-tt (no LD_LIBRARY_PATH needed)
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     ENVIRONMENT=development \
     TT_MM_THROTTLE_PERF=5 \
@@ -188,14 +237,21 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
+    XLA_PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/xla_venv \
     VLLM_USE_V1=1 \
+    INFERENCE_BACKEND=metal \
+    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
+# Python 3.11 + libpython3.11 is required for xla_venv (tt-xla wheels are built for cp311)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y python3.11 libpython3.11 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -224,4 +280,8 @@ WORKDIR ${HOME_DIR}/tt-metal
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+
+# Runtime backend selection via INFERENCE_BACKEND environment variable:
+# - INFERENCE_BACKEND=metal (default): Uses python_env with tt-metal handcrafted models
+# - INFERENCE_BACKEND=xla: Uses xla_venv with tt-xla compiled models
+CMD /bin/bash ${TT_METAL_HOME}/server/docker-entrypoint.sh

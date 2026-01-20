@@ -350,6 +350,7 @@ else:
                         )
                         for isl, osl in BATCH_1_BENCHMARK_COMMON_ISL_OSL_PAIRS
                         if (isl, osl, 1) not in perf_ref_task_runs.get(_device, [])
+                        and isl + osl <= _max_context
                     ]
                     + [
                         BenchmarkTaskParams(
@@ -375,6 +376,7 @@ else:
                             ),
                         )
                         not in perf_ref_task_runs.get(_device, [])
+                        and isl + osl <= _max_context
                     ]
                     + (
                         [

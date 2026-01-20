@@ -2441,6 +2441,83 @@ spec_templates = [
             ),
         ],
     ),
+    # XLA-based LLM models using tt-xla backend (INFERENCE_BACKEND=xla)
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-4B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=8,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.LLM,
+        display_name="Qwen3-4B",
+        inference_engine=InferenceEngine.MEDIA.value,
+        uses_tensor_model_cache=False,  # XLA models don't use tt-metal tensor cache
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "2048",
+                    "MAX_MODEL_LENGTH": "2048",
+                    "MIN_MODEL_LENGTH": "32",
+                    "INFERENCE_BACKEND": "xla",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "2048",
+                    "MAX_MODEL_LENGTH": "2048",
+                    "MIN_MODEL_LENGTH": "32",
+                    "INFERENCE_BACKEND": "xla",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.2-3B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=8,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.LLM,
+        display_name="Llama-3.2-3B",
+        inference_engine=InferenceEngine.MEDIA.value,
+        uses_tensor_model_cache=False,  # XLA models don't use tt-metal tensor cache
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "2048",
+                    "MAX_MODEL_LENGTH": "2048",
+                    "MIN_MODEL_LENGTH": "32",
+                    "INFERENCE_BACKEND": "xla",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "MAX_NUM_BATCHED_TOKENS": "2048",
+                    "MAX_MODEL_LENGTH": "2048",
+                    "MIN_MODEL_LENGTH": "32",
+                    "INFERENCE_BACKEND": "xla",
+                },
+            ),
+        ],
+    ),
     ModelSpecTemplate(
         weights=["resnet-50"],
         tt_metal_commit="2496be4",

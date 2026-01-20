@@ -28,6 +28,30 @@ def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]
         raise HTTPException(status_code=500, detail=f"Liveness check failed: {e}")
 
 
+@router.get("/health")
+def health(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
+    """
+    OpenAI-compatible health check endpoint.
+
+    Returns 200 OK when service and model are ready, compatible with vLLM health endpoint.
+
+    Returns:
+        dict: Empty dict when healthy (matches vLLM behavior).
+
+    Raises:
+        HTTPException: If service is unavailable or model is not ready.
+    """
+    try:
+        status = service.check_is_model_ready()
+        if not status.get("model_ready", False):
+            raise HTTPException(status_code=503, detail="Model not ready")
+        return {}  # Match vLLM's empty response on success
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
+
+
 @router.post("/tt-deep-reset")
 async def deep_reset(
     service: BaseService = Depends(service_resolver),

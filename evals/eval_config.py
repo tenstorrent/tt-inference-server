@@ -2317,6 +2317,49 @@ _eval_config_list = [
             ),
         ],
     ),
+    # XLA-based LLM models (using INFERENCE_BACKEND=xla in media-inference-server)
+    EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.2-3B",
+        tasks=[
+            EvalTask(
+                task_name="hellaswag",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path="work_dir",
+                max_concurrent=1,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=69.2,
+                    published_score_ref="https://huggingface.co/meta-llama/Llama-3.2-3B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc_norm,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B",
+        tasks=[
+            EvalTask(
+                task_name="hellaswag",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path="work_dir",
+                max_concurrent=1,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=75.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc_norm,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
 ]
 
 
