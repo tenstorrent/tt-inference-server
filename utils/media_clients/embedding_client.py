@@ -100,7 +100,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         """Run embedding transcription benchmark."""
 
         # Use the venv's python and vllm executable directly
-        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_EMBEDDING)
+        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
         vllm_exec = venv_config.venv_path / "bin" / "vllm"
 
         os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY

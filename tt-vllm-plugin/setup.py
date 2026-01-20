@@ -18,7 +18,7 @@ class BdistWheel(bdist_wheel):
 
     - Marks the wheel as non-pure (`root_is_pure = False`) to ensure proper installation
       of native binaries.
-     - Uses the actual Python version from the build environment (supports Python 3.10 and 3.11).
+    - Uses the actual Python version from the build environment (supports Python 3.10 and 3.11).
     """
 
     user_options = bdist_wheel.user_options + [

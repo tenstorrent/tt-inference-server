@@ -44,7 +44,7 @@ from utils.speaker_embeddings import SpeakerEmbeddingsManager
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 10  # Reduced from 100 to avoid kernel compilation issues during warmup
+    MAX_STEPS = 768  # Current optimal value
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
 
@@ -231,6 +231,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Kernels will be compiled on first inference request
             self.logger.info(
                 f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
+            )
+
+            # do a warmup run
+            await self._run_async(
+                [
+                    TextToSpeechRequest.model_construct(
+                        text="Hello world", response_format="audio"
+                    )
+                ]
             )
 
             return True

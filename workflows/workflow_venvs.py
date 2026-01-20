@@ -203,70 +203,24 @@ def setup_evals_meta(
     return True
 
 
-def setup_benchmarks_embedding(
+def setup_benchmarks_vllm(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
     uv_exec: Path,
 ) -> bool:
-    logger.info("running setup_benchmarks_embedding() ...")
+    logger.info("running setup_benchmarks_vllm() ...")
     work_dir = venv_config.venv_path / "work_dir"
     if not work_dir.exists():
         logger.info(f"Creating work_dir for generic server testing: {work_dir}")
         work_dir.mkdir(parents=True, exist_ok=True)
     else:
         logger.info(f"work_dir already exists for generic server testing: {work_dir}")
+    # pin vllm==0.13.0 for reproducibility and potential regressions
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip vllm torch",
+        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip vllm==0.13.0 torch",
         logger=logger,
     )
 
-    return True
-
-
-def setup_benchmarks_http_client_vllm_api(
-    venv_config: VenvConfig,
-    model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
-) -> bool:
-    # use: https://github.com/tenstorrent/vllm/commit/35073ff1e00590bdf88482a94fb0a7d2d409fb26
-    # because of vllm integration not supporting params used in default benchmark script
-    # see issue: https://github.com/tenstorrent/vllm/issues/44
-    logger.info("running setup_benchmarks_http_client_vllm_api() ...")
-    # vllm benchmarking script has fallbacks to importing vllm
-    # see: https://github.com/tenstorrent/vllm/blob/tstesco/benchmark-uplift/benchmarks/benchmark_serving.py#L49
-    # if these cause diverging results may need to enable those imports
-    run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
-        logger=logger,
-    )
-    # install common dependencies for vLLM in case benchmarking script needs them
-    benchmarking_script_dir = venv_config.venv_path / "scripts"
-    benchmarking_script_dir.mkdir(parents=True, exist_ok=True)
-    gh_repo_branch = "tstescoTT/vllm/benchmarking-script-fixes"
-    for req_file in ["common.txt", "benchmark.txt"]:
-        req_fpath = benchmarking_script_dir / f"{req_file}"
-        run_command(
-            f"curl -L -o {req_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/requirements/{req_file}",
-            logger=logger,
-        )
-        run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -r {req_fpath}",
-            logger=logger,
-        )
-
-    # download the raw benchmarking script python file
-    files_to_download = [
-        "benchmark_serving.py",
-        "backend_request_func.py",
-        "benchmark_utils.py",
-        "benchmark_dataset.py",
-    ]
-    for file_name in files_to_download:
-        _fpath = benchmarking_script_dir / file_name
-        run_command(
-            f"curl -L -o {_fpath} https://raw.githubusercontent.com/{gh_repo_branch}/benchmarks/{file_name}",
-            logger=logger,
-        )
     return True
 
 
@@ -545,13 +499,8 @@ _venv_config_list = [
         setup_function=setup_evals_embedding,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API,
-        setup_function=setup_benchmarks_http_client_vllm_api,
-        python_version="3.11",
-    ),
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_EMBEDDING,
-        setup_function=setup_benchmarks_embedding,
+        venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
+        setup_function=setup_benchmarks_vllm,
         python_version="3.11",
     ),
     VenvConfig(
