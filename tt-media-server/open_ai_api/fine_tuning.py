@@ -129,7 +129,8 @@ async def list_fine_tuning_checkpoints(
         HTTPException: If job not found.
     """
     try:
-        # TODO: Implement checkpoint retrieval from database
+        # TODO: Implement file retrieval instead of result path, and discuss if we return
+        # all checkpoints or just the last model weights state which is saved to result_path
         result_path=service.get_job_result_path(job_id)
         return JSONResponse(content={"object": "string", "data": result_path, "has_more": False})
     except Exception as e:
