@@ -70,7 +70,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             num_calls = self._get_tts_num_calls(is_eval=True)
 
-            status_list = self._run_tts_benchmark(num_calls, calculate_wer=True)
+            status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -84,13 +84,6 @@ class TtsClientStrategy(BaseMediaStrategy):
         # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
         logger.info(f"Extracted RTR value: {rtr_value:.2f}")
-
-        # Calculate WER (Word Error Rate)
-        wer_value = self._calculate_wer_value(status_list)
-        if wer_value is not None:
-            logger.info(f"Extracted WER value: {wer_value:.4f}")
-        else:
-            logger.info("WER value not available")
 
         # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
@@ -112,14 +105,13 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
-        benchmark_data["wer"] = wer_value
         benchmark_data["rtr"] = rtr_value
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
         # Calculate accuracy check (convert ttft_value from ms to seconds for comparison)
         accuracy_check = self._calculate_accuracy_check(
-            ttft_value / 1000, rtr_value, wer_value
+            ttft_value / 1000, rtr_value, None
         )
         benchmark_data["accuracy_check"] = accuracy_check
 
@@ -211,12 +203,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
-        # Calculate WER (if available)
-        wer_value = self._calculate_wer_value(status_list)
-
         # Calculate accuracy check (ttft_value is in ms, convert to seconds)
         accuracy_check = self._calculate_accuracy_check(
-            ttft_value / 1000, rtr_value, wer_value
+            ttft_value / 1000, rtr_value, None
         )
 
         # Convert TtsTestStatus objects to dictionaries for JSON serialization
@@ -227,7 +216,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                 "rtr": rtr_value,
                 "ttft_p90": p90_ttft / 1000 if p90_ttft else None,
                 "ttft_p95": p95_ttft / 1000 if p95_ttft else None,
-                "wer": wer_value,
                 "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
@@ -306,10 +294,9 @@ class TtsClientStrategy(BaseMediaStrategy):
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
                 - reference_text: Original text used for TTS
                 - audio_duration: Duration of generated audio in seconds
-                - wer: Word Error Rate (if calculate_wer=True)
+                - wer: Word Error Rate (if calculate_wer=True, !!!NOT_ENABLED!!!->Potential future feature)
         """
         logger.info("🔊 Calling TTS /audio/speech endpoint")
-        logger.info(f"calculate_wer: {calculate_wer}")
 
         # For eval workflow, all_params is an object with tasks attribute
         # For benchmark workflow, all_params is a list, so use default text
@@ -393,13 +380,10 @@ class TtsClientStrategy(BaseMediaStrategy):
             wer = None
             if calculate_wer and audio_base64:
                 wer = await self._transcribe_audio_for_wer(audio_base64, text)
-                if wer is not None:
-                    logger.info(f"Calculated WER: {wer:.4f}")
 
-            wer_str = f"{wer:.4f}" if wer is not None else "N/A"
             rtr_str = f"{rtr:.2f}" if rtr is not None else "N/A"
             logger.info(
-                f"\n✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str} | WER={wer_str}"
+                f"\n✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str}"
             )
 
             return True, total_duration, ttft_ms, rtr, text, audio_duration, wer
@@ -670,9 +654,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                 checks_passed += 1
             else:
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        if wer_value is not None:
-            logger.info(f"📊 WER: {wer_value:.4f} (not checked against target)")
 
         if checks_total == 0:
             logger.warning("No targets available for accuracy check")
