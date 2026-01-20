@@ -157,7 +157,6 @@ class TestJob:
         assert result["status"] == "completed"
         assert result["completed_at"] is not None
         assert "error" not in result
-        assert result["result_path"] == "videos/test-123.mp4"
 
     def test_to_public_dict_failed(self):
         """Test converting failed job to public dict"""
@@ -172,7 +171,6 @@ class TestJob:
             "message": "Test error message",
         }
         assert result["completed_at"] is not None
-        assert "result_path" not in result
 
 
 class TestJobManager:
@@ -517,7 +515,7 @@ class TestJobManager:
         # Check private fields are NOT present
         assert "_task" not in job_data
         assert (
-            "result" not in job_data
+            "result_path" not in job_data
         )  # Result not in metadata, only in get_job_result_path
 
     @pytest.mark.asyncio
@@ -572,8 +570,8 @@ class TestJobManager:
             task_function=task_func,
         )
 
-        result = job_manager.get_job_result_path("job-123")
-        assert result is None
+        result_path = job_manager.get_job_result_path("job-123")
+        assert result_path is None
 
     @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):

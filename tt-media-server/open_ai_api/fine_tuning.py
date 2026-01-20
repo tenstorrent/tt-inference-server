@@ -130,8 +130,8 @@ async def list_fine_tuning_checkpoints(
     """
     try:
         # TODO: Implement checkpoint retrieval from database
-        service.get_job_result_path(job_id)
-        return JSONResponse(content={"object": "list", "data": [], "has_more": False})
+        result_path=service.get_job_result_path(job_id)
+        return JSONResponse(content={"object": "string", "data": result_path, "has_more": False})
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
