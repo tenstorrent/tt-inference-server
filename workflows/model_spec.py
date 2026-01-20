@@ -926,8 +926,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="ddabe8b",
-        vllm_commit="f49265a",
+        tt_metal_commit="",
+        vllm_commit="a9358f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -966,8 +966,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="ddabe8b",
-        vllm_commit="f49265a",
+        tt_metal_commit="7c5bfe3",
+        vllm_commit="a9358f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
