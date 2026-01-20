@@ -1636,7 +1636,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30000000,
+                    "trace_region_size": 71045120,
                 },
             ),
         ],
@@ -1669,6 +1669,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 71045120,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
