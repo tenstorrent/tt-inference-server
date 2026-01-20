@@ -292,7 +292,7 @@ class JobManager:
         self._logger.info("Job cleanup task started")
 
     def _cleanup_old_jobs(self):
-        """Remove old completed, failed and stuck in-progress jobs."""
+        """Remove old completed/failed/cancelled and stuck in-progress jobs."""
         current_time = time.time()
         cutoff_time = current_time - self._settings.job_retention_seconds
         stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
@@ -363,7 +363,7 @@ class JobManager:
                 )
 
                 # If job was stuck, mark it as failed or cancelled and sync to database
-                if original_status not in ["completed", "failed", "cancelled"]:
+                if not job.is_terminal():
                     if original_status == "cancelling":
                         job.mark_cancelled()
                     else:
@@ -371,8 +371,7 @@ class JobManager:
                             "server_restart", "Job interrupted by system restart"
                         )
 
-                    # override the completed_at time, since it was cancelled due to system restart
-                    # here we override it with the creation time, since we don't know the time of the system restart
+                    # we override the completed_at time with the creation time, since we don't know the time of the system restart
                     job.completed_at = db_job["created_at"]
 
                     self._logger.warning(

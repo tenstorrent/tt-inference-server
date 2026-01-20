@@ -82,7 +82,7 @@ def download_video_content(
         HTTPException: If video not found, not completed, or failed.
         HTTPException: If Range header is invalid (416).
     """
-    file_path = service.get_job_result(job_id)
+    file_path = service.get_job_result_path(job_id)
     if (
         file_path is None
         or not isinstance(file_path, str)

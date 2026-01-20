@@ -126,7 +126,7 @@ async def list_fine_tuning_checkpoints(
     """
     try:
         # TODO: Implement checkpoint retrieval from database
-        service.get_job_result(job_id)
+        service.get_job_result_path(job_id)
         return JSONResponse(content={"object": "list", "data": [], "has_more": False})
     except Exception as e:
         raise HTTPException(
