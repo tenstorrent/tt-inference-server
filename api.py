@@ -254,6 +254,15 @@ class RunRequest(BaseModel):
     # Internal flag to track if this is already a retry (to prevent infinite loops)
     is_retry: Optional[bool] = False
 
+
+def normalize_device_alias(device: str) -> str:
+    if not device:
+        return device
+    alias_map = {
+        "p300cx2": "p150x4",
+    }
+    return alias_map.get(device.strip().lower(), device)
+
 def get_fastapi_logs_dir():
     """Get the FastAPI logs directory at repo root"""
     root_log_dir = Path(__file__).parent.parent.resolve()
@@ -523,12 +532,20 @@ async def run_inference(request: RunRequest):
     deployment_log_handler = None
     deployment_log_path = None
     try:
+        original_device = request.device
+        normalized_device = normalize_device_alias(request.device)
+        if normalized_device != original_device:
+            logger.info(
+                "Normalizing device alias from %s to %s",
+                original_device,
+                normalized_device,
+            )
         # Generate a unique job ID for this deployment
         job_id = str(uuid.uuid4())[:8]
         
         # Create per-deployment log file
         deployment_log_handler, deployment_log_path = create_deployment_log_handler(
-            job_id, request.model, request.device
+            job_id, request.model, normalized_device
         )
         
         # Attach deployment log handler to relevant loggers
@@ -606,7 +623,7 @@ async def run_inference(request: RunRequest):
         # Add required arguments
         sys.argv.extend(["--model", request.model])
         sys.argv.extend(["--workflow", request.workflow])
-        sys.argv.extend(["--device", request.device])
+        sys.argv.extend(["--device", normalized_device])
         sys.argv.extend(["--docker-server"])
         # Add dev-mode if requested (used for auto-retry on failure)
         if request.dev_mode:
