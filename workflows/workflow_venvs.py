@@ -253,7 +253,7 @@ def setup_evals_audio(
     )
     run_command(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
-        f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
+        f"'git+https://github.com/bgoelTT/lmms-eval.git#egg=lmms-eval[audio]' "
         f"pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
