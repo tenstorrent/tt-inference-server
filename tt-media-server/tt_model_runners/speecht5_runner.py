@@ -233,6 +233,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
             )
 
+            # do a warmup run
+            await self._run_async(
+                [
+                    TextToSpeechRequest.model_construct(
+                        text="Hello world", response_format="audio"
+                    )
+                ]
+            )
+
             return True
 
         except Exception as e:
