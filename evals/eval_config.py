@@ -2294,7 +2294,7 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                 },
                 score=EvalTaskScore(
-                    published_score=80.9,  # GPQA Diamond score
+                    published_score=74.2,  # GPQA Diamond score
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -2311,7 +2311,7 @@ _eval_config_list = [
                 task_name="mmlu_pro",
                 num_fewshot=5,
                 score=EvalTaskScore(
-                    published_score=90.0,  # MMLU Pro score
+                    published_score=85.3,  # MMLU Pro score
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -2331,7 +2331,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=95.8,  # AIME 2024 score
+                    published_score=92.1,  # AIME 2024 score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -2398,7 +2398,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=95.8,  # AIME 2024 score
+                    published_score=95.8,  # AIME 2024 score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
