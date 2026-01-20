@@ -45,7 +45,9 @@ class BenchmarkTaskVideo(BenchmarkTask):
 class BenchmarkTaskTTS(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API
+    workflow_venv_type: WorkflowVenvType = (
+        WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API
+    )
 
 
 @dataclass(frozen=True)
