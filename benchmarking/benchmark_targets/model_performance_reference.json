@@ -5680,8 +5680,8 @@
                 "task_type": "text_to_speech",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2500,
-                        "rtr": 0.5
+                        "ttft_ms": 166,
+                        "rtr": 1.97
                     }
                 }
             }
@@ -5693,8 +5693,8 @@
                 "task_type": "text_to_speech",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2500,
-                        "rtr": 0.6
+                        "ttft_ms": 180,
+                        "rtr": 1.97
                     }
                 }
             }

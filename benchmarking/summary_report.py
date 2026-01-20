@@ -405,7 +405,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             * 1000,  # ttft is in seconds, convert to ms
             "filename": filename,
             "task_type": "tts",
-            "accuracy_check": benchmarks_data.get("accuracy_check", 0),
             "rtr": benchmarks_data.get("rtr", 0),
             "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
             if benchmarks_data.get("ttft_p90")
@@ -696,7 +695,8 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("rtr", "RTR"),
         ("p90_ttft", "P90 TTFT (ms)"),
         ("p95_ttft", "P95 TTFT (ms)"),
-        ("accuracy_check", "Accuracy Check"),
+        # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
+        # Similar to how image and audio pipelines work
     ]
 
     display_dict = {}
