@@ -31,7 +31,12 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_encoder import (
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_generator import (
     SpeechT5Generator,
 )
-from models.experimental.speecht5_tts.demo_ttnn import generate_speech_ttnn
+from models.experimental.speecht5_tts.demo_ttnn import (
+    generate_speech_ttnn,
+    generate_speech_long_text,
+    chunk_text,
+    DEFAULT_CHUNK_SIZE,
+)
 from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     TTNNPostNetConfig,
     TTNNSpeechT5SpeechDecoderPostnet,
@@ -351,11 +356,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         text: str,
         speaker_embedding: torch.Tensor,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Audio generation using optimized generate_speech_ttnn with trace"""
+        """Audio generation using optimized generate_speech_long_text with chunking support"""
         try:
-            # Use the optimized generate_speech_ttnn from demo_ttnn.py
-            # This uses KV cache and trace for fast inference
-            speech = generate_speech_ttnn(
+            # Use generate_speech_long_text which handles long texts via chunking
+            # For texts > DEFAULT_CHUNK_SIZE (300 chars), it splits at sentence boundaries,
+            # processes each chunk, concatenates mel spectrograms, then runs vocoder once
+            speech = generate_speech_long_text(
                 text=text,
                 speaker_embeddings=speaker_embedding,
                 processor=self.processor,
@@ -370,6 +376,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 generator=self.generator,
                 use_kv_cache=True,
                 decoder_config=self.decoder_config,
+                max_chunk_size=DEFAULT_CHUNK_SIZE,
             )
 
             # Convert audio to base64
