@@ -45,6 +45,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
+    EVALS_VIDEO = auto()
 
 
 class BenchmarkTaskType(IntEnum):

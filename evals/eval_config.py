@@ -2317,6 +2317,40 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="genmo/mochi-1-preview",
+        tasks=[
+            EvalTask(
+                task_name="video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,  # No standardized benchmark yet
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,  # Placeholder
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        tasks=[
+            EvalTask(
+                task_name="video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,  # No standardized benchmark yet
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,  # Placeholder
+                ),
+            ),
+        ],
+    ),
 ]
 
 
