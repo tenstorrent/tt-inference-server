@@ -200,7 +200,6 @@ class TtsClientStrategy(BaseMediaStrategy):
         # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
-
         # Convert TtsTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
