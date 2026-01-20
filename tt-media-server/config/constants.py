@@ -13,6 +13,8 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
+    QWEN_IMAGE = "Qwen/Qwen-Image"
+    QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -20,6 +22,9 @@ class SupportedModels(Enum):
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    QWEN_3_4B = "Qwen/Qwen3-4B"
+    SPEECHT5_TTS = "microsoft/speecht5_tts"
 
 
 # MODEL environment variable
@@ -32,6 +37,8 @@ class ModelNames(Enum):
     FLUX_1_DEV = "flux.1-dev"
     FLUX_1_SCHNELL = "flux.1-schnell"
     MOTIF_IMAGE_6B_PREVIEW = "motif-image-6b-preview"
+    QWEN_IMAGE = "qwen-image"
+    QWEN_IMAGE_2512 = "qwen-image-2512"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
@@ -45,6 +52,9 @@ class ModelNames(Enum):
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    LLAMA_3_2_3B = "Llama-3.2-3B"
+    QWEN_3_4B = "Qwen3-4B"
+    SPEECHT5_TTS = "speecht5-tts"
 
 
 class ModelRunners(Enum):
@@ -55,6 +65,8 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
+    TT_QWEN_IMAGE = "tt-qwen-image"
+    TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
@@ -70,7 +82,8 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     LORA_TRAINER = "lora_trainer"
     MOCK = "mock"
-    TEST = "test"
+    LLM_TEST = "llm_test"
+    TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
 class ModelServices(Enum):
@@ -80,6 +93,7 @@ class ModelServices(Enum):
     AUDIO = "audio"
     VIDEO = "video"
     TRAINING = "training"
+    TEXT_TO_SPEECH = "text_to_speech"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -91,12 +105,14 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
+        ModelRunners.TT_QWEN_IMAGE,
+        ModelRunners.TT_QWEN_IMAGE_2512,
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLMBGELargeEN_V1_5,
-        ModelRunners.TEST,
+        ModelRunners.LLM_TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -117,6 +133,9 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.TRAINING: {
         ModelRunners.LORA_TRAINER,
     },
+    ModelServices.TEXT_TO_SPEECH: {
+        ModelRunners.TT_SPEECHT5_TTS,
+    },
 }
 
 
@@ -128,6 +147,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
+    ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
+    ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
@@ -143,6 +164,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
 
@@ -172,9 +195,11 @@ class AudioTasks(Enum):
     TRANSLATE = "translate"
 
 
-class AudioResponseFormat(Enum):
+class ResponseFormat(Enum):
+    JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
+    AUDIO = "audio"
 
 
 class JobTypes(Enum):
@@ -263,12 +288,14 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -325,6 +352,30 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN_IMAGE_2512, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,

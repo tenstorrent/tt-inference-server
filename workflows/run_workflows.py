@@ -11,6 +11,7 @@ from tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
+    WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
@@ -26,7 +27,13 @@ class WorkflowSetup:
         self.model_spec = model_spec
         self.model_spec_json_path = json_fpath
         _workflow_type = WorkflowType.from_string(self.model_spec.cli_args.workflow)
-        self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+
+        # Check for --tools argument to select appropriate benchmarking workflow
+        tools = getattr(self.model_spec.cli_args, "tools", "vllm")
+        if _workflow_type == WorkflowType.BENCHMARKS and tools == "aiperf":
+            self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
+        else:
+            self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 
         # only the server workflow does not require a venv
         assert self.workflow_config.workflow_run_script_venv_type is not None
@@ -42,6 +49,7 @@ class WorkflowSetup:
                 self.model_spec.model_id, {}
             ),
             WorkflowType.TESTS: TEST_CONFIGS.get(self.model_spec.model_name, {}),
+            WorkflowType.STRESS_TESTS: {},
         }.get(_workflow_type)
         if _config:
             self.config = _config
@@ -62,22 +70,45 @@ class WorkflowSetup:
 
         # Step 2: Create a virtual environment
         uv_exec = cls.workflow_setup_venv / "bin" / "uv"
-        if not cls.workflow_setup_venv.exists():
+        pip_exec = cls.workflow_setup_venv / "bin" / "pip"
+        venv_python = cls.workflow_setup_venv / "bin" / "python"
+
+        # Check if venv needs to be created or recreated (e.g., if pip is missing)
+        needs_venv_creation = (
+            not cls.workflow_setup_venv.exists() or not pip_exec.exists()
+        )
+
+        if needs_venv_creation:
             logger.info(
                 "Creating virtual environment in '%s'...", cls.workflow_setup_venv
             )
+            # Clear existing venv if it exists but is broken (missing pip)
+            if cls.workflow_setup_venv.exists():
+                import shutil
+
+                shutil.rmtree(cls.workflow_setup_venv)
+
+            # Create venv - some systems (PEP 668 externally-managed) may not include pip
             run_command(
-                f"{sys.executable} -m venv {cls.workflow_setup_venv}", logger=logger
+                f"{sys.executable} -m venv {cls.workflow_setup_venv}",
+                logger=logger,
             )
+
+            # Ensure pip is installed using ensurepip (works even on externally-managed Python)
+            if not pip_exec.exists():
+                logger.info("Installing pip using ensurepip...")
+                run_command(
+                    f"{venv_python} -m ensurepip --upgrade",
+                    logger=logger,
+                )
+
             # Step 3: Install 'uv' using pip
             # Note: Activating the virtual environment in a script doesn't affect the current shell,
             # so we directly use the pip executable from the venv.
-            pip_exec = cls.workflow_setup_venv / "bin" / "pip"
-
             logger.info("Installing 'uv' using pip...")
             run_command(f"{pip_exec} install uv", logger=logger)
 
-            logger.info("uv bootsrap installation complete.")
+            logger.info("uv bootstrap installation complete.")
             # check version
             run_command(f"{str(uv_exec)} --version", logger=logger)
 
@@ -123,6 +154,8 @@ class WorkflowSetup:
         elif self.workflow_config.workflow_type == WorkflowType.TESTS:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
+            pass
+        elif self.workflow_config.workflow_type == WorkflowType.STRESS_TESTS:
             pass
 
     def get_output_path(self):

@@ -8,25 +8,17 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-# Mock settings BEFORE any other imports to prevent device detection during test collection
-# This is needed because utils.decorators imports telemetry which imports settings
-if "config.settings" not in sys.modules:
-    mock_settings = MagicMock()
-    mock_settings.max_batch_size = 4
-    mock_settings.default_throttle_level = "5"
-    mock_settings.enable_telemetry = False
-    mock_settings.is_galaxy = False
-    mock_settings.device_mesh_shape = (1, 1)
-    mock_settings.request_processing_timeout_seconds = 100
-    mock_settings.max_batch_delay_time_ms = 0.01
+# CRITICAL: Import and setup REAL numpy FIRST before anything else
+# This ensures that when memory_queue.py imports numpy, it gets the real one
+import numpy as np
 
-    mock_settings_module = MagicMock()
-    mock_settings_module.settings = mock_settings
-    mock_settings_module.Settings = MagicMock(return_value=mock_settings)
-    mock_settings_module.get_settings = MagicMock(return_value=mock_settings)
-    sys.modules["config.settings"] = mock_settings_module
+sys.modules["numpy"] = np
+if hasattr(np, "core"):
+    sys.modules["numpy.core"] = np.core
+if hasattr(np, "_core"):
+    sys.modules["numpy._core"] = np._core
 
-# Import real settings early so runner_fabric gets the real object before test files mock it
+# Only then import pytest
 import pytest
 
 # Mock modules that are not available in test environment
@@ -37,7 +29,7 @@ mock_modules = [
     "PIL",
     "diffusers",
     "torchvision",
-    "numpy",
+    # "numpy",  # REMOVED - we use real numpy now
     "cv2",
     "pyarrow",
     "vllm",
@@ -178,18 +170,6 @@ for module in mock_modules:
             mock.ops = ops_module
             mock.models = MagicMock()
             mock.datasets = MagicMock()
-        elif module == "numpy":
-            mock.array = MagicMock()
-            mock.zeros = MagicMock()
-            mock.ones = MagicMock()
-            mock.ndarray = MagicMock()
-            mock.float32 = MagicMock()
-            mock.int32 = MagicMock()
-            mock.uint8 = MagicMock()
-            mock._core = MagicMock()
-            mock._core.multiarray = MagicMock()
-            mock.core = MagicMock()
-            mock.core.multiarray = MagicMock()
         elif module == "pytorchcv":
             mock.model_provider = MagicMock()
             # Create a mock model that looks like a PyTorch model
@@ -258,16 +238,10 @@ submodules = {
     "ttnn.utils_for_testing": sys.modules["ttnn"].utils_for_testing
     if "ttnn" in sys.modules
     else MagicMock(),
-    "numpy.core": sys.modules["numpy"]._core if "numpy" in sys.modules else MagicMock(),
-    "numpy.core.multiarray": sys.modules["numpy"].core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core": sys.modules["numpy"]._core
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core.multiarray": sys.modules["numpy"]._core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
+    "numpy.core": sys.modules.get("numpy.core", MagicMock()),
+    "numpy.core.multiarray": sys.modules.get("numpy.core", MagicMock()),
+    "numpy._core": sys.modules.get("numpy._core", MagicMock()),
+    "numpy._core.multiarray": sys.modules.get("numpy._core", MagicMock()),
     "diffusers.image_processor": sys.modules["diffusers"].image_processor
     if "diffusers" in sys.modules
     else MagicMock(),
@@ -331,6 +305,12 @@ submodules = {
 for submodule, mock in submodules.items():
     if submodule not in sys.modules:
         sys.modules[submodule] = mock
+
+# Mock open_ai_api modules that use FastAPI decorators with Pydantic models
+# This prevents import errors when test_device_worker.py mocks domain objects
+mock_open_ai_api_image = MagicMock()
+mock_open_ai_api_image.router = MagicMock()
+sys.modules["open_ai_api.image"] = mock_open_ai_api_image
 
 # Add tests.ttnn as a proper module mock to avoid pytest import issues
 if "tests.ttnn" not in sys.modules:
@@ -491,6 +471,29 @@ if "models" not in sys.modules:
     )
 
 
+# Mock logger - BEFORE anything else
+class MockLogger:
+    """Proper mock logger that doesn't interfere with other operations"""
+
+    def info(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
+    def debug(self, msg):
+        pass
+
+
+mock_logger = MockLogger()
+mock_logger_module = type("module", (), {})()
+mock_logger_module.TTLogger = lambda: mock_logger
+sys.modules["utils.logger"] = mock_logger_module
+
+
 # Create mock runner classes with proper names BEFORE any imports
 def create_mock_runner_class(class_name: str):
     """Create a mock runner class with the specified name."""
@@ -511,9 +514,6 @@ def create_mock_runner_class(class_name: str):
 # Create mock runner modules directly in sys.modules with our custom classes
 # This prevents Python from trying to import and execute the actual runner files
 runner_mocks = {
-    "tt_model_runners.base_device_runner": {
-        "BaseDeviceRunner": type("BaseDeviceRunner", (), {})
-    },  # Base class mock
     "tt_model_runners.sdxl_generate_runner_trace": {
         "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
             "TTSDXLGenerateRunnerTrace"
@@ -538,14 +538,11 @@ runner_mocks = {
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
     },
-    "tt_model_runners.vllm_forge_runner": {
-        "VLLMForgeRunner": create_mock_runner_class("VLLMForgeRunner")
-    },
     "tt_model_runners.vllm_bge_large_en_runner": {
         "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
     },
-    "tt_model_runners.test_runner": {
-        "TestRunner": create_mock_runner_class("TestRunner")
+    "tt_model_runners.llm_test_runner": {
+        "LLMTestRunner": create_mock_runner_class("LLMTestRunner"),
     },
     "tt_model_runners.vllm_forge_qwen_embedding_runner": {
         "VLLMForgeEmbeddingQwenRunner": create_mock_runner_class(
@@ -557,6 +554,9 @@ runner_mocks = {
     },
     "tt_model_runners.lora_trainer_runner": {
         "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    },
+    "tt_model_runners.speecht5_runner": {
+        "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
     },
     "tt_model_runners.forge_runners": {},
     "tt_model_runners.forge_runners.runners": {

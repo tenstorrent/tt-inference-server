@@ -118,6 +118,12 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
+    parser.add_argument(
+        "--percentile-report",
+        action="store_true",
+        help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
+    )
+
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
         "--override-docker-image",
@@ -188,9 +194,14 @@ def parse_arguments():
     parser.add_argument(
         "--tools",
         type=str,
-        choices=["genai", "vllm"],
+        choices=["vllm", "genai", "aiperf"],
         default="vllm",
-        help="Benchmarking tool to use: 'genai' for genai-perf (Triton SDK), 'vllm' for vLLM benchmark_serving.py (default)",
+        help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), 'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf)",
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help="Disable vLLM API key authorization in the server (skips JWT_SECRET requirement)",
     )
 
     args = parser.parse_args()
@@ -212,6 +223,8 @@ def handle_secrets(model_spec):
     jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
     # if interactive, user can enter secrets manually or it should not be a production deployment
     jwt_secret_required = jwt_secret_required and not args.interactive
+    # --no-auth disables authorization, so JWT_SECRET is not required
+    jwt_secret_required = jwt_secret_required and not args.no_auth
 
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
@@ -310,6 +323,7 @@ def format_cli_args_summary(args, model_spec):
         f"  dev_mode:                   {args.dev_mode}",
         f"  docker_server:              {args.docker_server}",
         f"  local_server:               {args.local_server}",
+        f"  no_auth:                    {args.no_auth}",
         f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
         f"  service_port:               {args.service_port}",
         f"  docker_override_image:      {args.override_docker_image}",
@@ -323,6 +337,7 @@ def format_cli_args_summary(args, model_spec):
         f"  reset_venvs:                {args.reset_venvs}",
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
+        f"  tools:                      {args.tools}",
         "",
         "=" * 60,
     ]
@@ -354,6 +369,9 @@ def validate_runtime_args(model_spec):
         assert model_spec.model_id in BENCHMARK_CONFIGS, (
             f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
         )
+    if workflow_type == WorkflowType.STRESS_TESTS:
+        pass  # Model support already validated via MODEL_SPECS check at line 342
+
     if workflow_type == WorkflowType.TESTS:
         assert model_spec.model_name in TEST_CONFIGS, (
             f"Model:={model_spec.model_name} not found in TEST_CONFIGS"

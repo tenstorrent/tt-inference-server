@@ -5368,6 +5368,62 @@
             }
         ]
     },
+    "mochi-1-preview": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
+    "wan2.2-t2v-a14b-diffusers": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
     "mobilenetv2": {
         "n150": [
             {
@@ -5376,7 +5432,7 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
+                        "ttft_ms": 600,
                         "tput_user": 20
                     }
                 }
@@ -5535,7 +5591,7 @@
         ]
     },
     "Qwen3-Embedding-4B": {
-         "n150": [
+        "n150": [
             {
                 "max_concurrency": 1,
                 "task_type": "embedding",

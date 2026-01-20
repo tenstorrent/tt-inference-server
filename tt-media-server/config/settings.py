@@ -18,6 +18,7 @@ from config.constants import (
     ModelServices,
     SupportedModels,
 )
+from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
+    use_queue_per_worker: bool = False
+    use_memory_queue: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -71,15 +74,7 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
     job_database_path: str = "./jobs.db"
 
-    # Text processing settings
-    min_context_length: int = 32
-    max_model_length: int = 128
-    max_num_batched_tokens: int = 128
-    max_num_seqs: int = 1
-
-    # Image processing settings
-    image_return_format: str = "JPEG"
-    image_quality: int = 85
+    vllm: VLLMSettings = VLLMSettings()
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
@@ -164,6 +159,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
         ]:

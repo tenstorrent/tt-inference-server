@@ -430,7 +430,66 @@ jobs:
 
       - name: Run LLM Streaming Performance Test
         run: |
-          pytest performance_tests/test_llm_streaming.py -sv >> $GITHUB_STEP_SUMMARY
+          # Run pytest and capture output (visible in job logs via tee)
+          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          # Extract only the CI report section (between markers) to avoid matching source code
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+
+          # Parse CI report metrics from the extracted section
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+
+          # Determine status
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            STATUS="✅ PASSED"
+          else
+            STATUS="❌ FAILED"
+          fi
+
+          # Write formatted summary
+          {
+            echo "## 🚀 LLM Streaming Performance Test"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | $STATUS |"
+            echo "| **Tokens Received** | $TOKENS |"
+            echo "| **Total Time** | ${TOTAL_TIME}ms |"
+            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
+            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
+            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          # Store exit code for later
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          if [ -f performance_tests/server.log ]; then
+            cat performance_tests/server.log
+          else
+            echo "No server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-streaming-server-logs
+          path: tt-media-server/performance_tests/server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
 
 
   forge-runner-changes:
@@ -547,6 +606,7 @@ jobs:
           # Run from repo root so coverage.xml has paths like "tt-media-server/..."
           # This makes paths match git diff output
           pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
             --cov=tt-media-server \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
@@ -569,8 +629,10 @@ jobs:
           echo "Checking coverage for tt-media-server only (gradual rollout)"
 
           # Generate diff-cover report for changed lines only
+          # --exclude uses fnmatch patterns (shell-style wildcards)
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
+            --exclude '*/tests/*' '*/performance_tests/*' \
             --fail-under=50 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
