@@ -32,6 +32,7 @@ from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
 from workflows.workflow_venvs import create_local_setup_venv
+from workflows.progress import emit_progress
 
 logger = logging.getLogger("run_log")
 
@@ -118,12 +119,6 @@ def parse_arguments():
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
-    parser.add_argument(
-        "--percentile-report",
-        action="store_true",
-        help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
-    )
-
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
         "--override-docker-image",
@@ -429,98 +424,112 @@ def handle_maintenance_args(args):
 
 
 def main():
-    args = parse_arguments()
-    # step 0: handle maintenance args
-    handle_maintenance_args(args)
+    container_info = None
+    try:
+        args = parse_arguments()
+        emit_progress("initialization", 5, "args parsed")
+        # step 0: handle maintenance args
+        handle_maintenance_args(args)
 
-    # step 1: determine model spec
-    if args.model_spec_json:
-        logger.warning(
-            f"No validation is done, model_spec loading from JSON file: {args.model_spec_json}"
-        )
-        model_spec = ModelSpec.from_json(args.model_spec_json)
-    else:
-        model_spec = get_runtime_model_spec(args)
-    model_id = model_spec.model_id
-
-    # step 2: validate runtime
-    validate_runtime_args(model_spec)
-    handle_secrets(model_spec)
-    tt_inference_server_sha = get_current_commit_sha()
-
-    # step 3: setup logging
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_id = get_run_id(
-        timestamp=run_timestamp,
-        model_id=model_id,
-        workflow=model_spec.cli_args.workflow,
-    )
-    log_path = get_default_workflow_root_log_dir()
-    run_logs_path = log_path / "run_logs"
-    run_model_spec_path = log_path / "run_specs"
-    ensure_readwriteable_dir(run_logs_path)
-    ensure_readwriteable_dir(run_model_spec_path)
-    run_log_path = run_logs_path / f"run_{run_id}.log"
-
-    setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
-
-    # Log CLI arguments and runtime info in a clean format
-    version = Path("VERSION").read_text().strip()
-    logger.info(f"TT-Inference version: {version}")
-    logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
-    logger.info(format_cli_args_summary(args, model_spec))
-
-    # write model spec to json file
-    json_fpath = model_spec.to_json(run_id, run_model_spec_path)
-    logger.info(f"Model spec saved to: {json_fpath}")
-
-    # validate local setup after run logger has been initialized
-    # and ModelSpec JSON has been written
-    validate_local_setup(model_spec, json_fpath)
-
-    # step 4: optionally run inference server
-    if model_spec.cli_args.docker_server:
-        logger.info("Running inference server in Docker container ...")
-        setup_config = setup_host(
-            model_spec=model_spec,
-            jwt_secret=os.getenv("JWT_SECRET"),
-            hf_token=os.getenv("HF_TOKEN"),
-            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
-        )
-        run_docker_server(model_spec, setup_config, json_fpath)
-    elif model_spec.cli_args.local_server:
-        logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
-
-    # step 5: run workflows
-    main_return_code = 0
-
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
-        model_spec.cli_args.run_id = run_id
-        return_codes = run_workflows(model_spec, json_fpath)
-        if all(return_code == 0 for return_code in return_codes):
-            logger.info("✅ Completed run.py successfully.")
-        else:
-            main_return_code = 1
-            logger.error(
-                f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
+        # step 1: determine model spec
+        if args.model_spec_json:
+            logger.warning(
+                f"No validation is done, model_spec loading from JSON file: {args.model_spec_json}"
             )
-    else:
-        logger.info(
-            f"Completed {model_spec.cli_args.workflow} workflow, skipping run_workflows()."
+            model_spec = ModelSpec.from_json(args.model_spec_json)
+        else:
+            model_spec = get_runtime_model_spec(args)
+        model_id = model_spec.model_id
+
+        # step 2: validate runtime
+        validate_runtime_args(model_spec)
+        handle_secrets(model_spec)
+        emit_progress("setup", 15, "env+local setup ok")
+        tt_inference_server_sha = get_current_commit_sha()
+
+        # step 3: setup logging
+        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_id = get_run_id(
+            timestamp=run_timestamp,
+            model_id=model_id,
+            workflow=model_spec.cli_args.workflow,
         )
+        log_path = get_default_workflow_root_log_dir()
+        run_logs_path = log_path / "run_logs"
+        run_model_spec_path = log_path / "run_specs"
+        ensure_readwriteable_dir(run_logs_path)
+        ensure_readwriteable_dir(run_model_spec_path)
+        run_log_path = run_logs_path / f"run_{run_id}.log"
 
-    logger.info(
-        "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
-    )
-    logger.info(
-        "If you encounter any issues please share the log file in a GitHub issue and server log if available."
-    )
-    logger.info(f"This log file is saved on local machine at: {run_log_path}")
+        setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
 
-    return main_return_code
+        # Log CLI arguments and runtime info in a clean format
+        version = Path("VERSION").read_text().strip()
+        logger.info(f"TT-Inference version: {version}")
+        logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
+        logger.info(format_cli_args_summary(args, model_spec))
+
+        # write model spec to json file
+        json_fpath = model_spec.to_json(run_id, run_model_spec_path)
+        logger.info(f"Model spec saved to: {json_fpath}")
+
+        # validate local setup after run logger has been initialized
+        # and ModelSpec JSON has been written
+        validate_local_setup(model_spec, json_fpath)
+
+        # step 4: optionally run inference server
+        if model_spec.cli_args.docker_server:
+            logger.info("Running inference server in Docker container ...")
+            setup_config = setup_host(
+                model_spec=model_spec,
+                jwt_secret=os.getenv("JWT_SECRET"),
+                hf_token=os.getenv("HF_TOKEN"),
+                automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+            )
+            emit_progress("model_preparation", 40, "host setup complete")
+            emit_progress("container_setup", 70, "starting docker")
+            container_info = run_docker_server(model_spec, setup_config, json_fpath)
+            emit_progress("finalizing", 90, "container started", container_info)
+        elif model_spec.cli_args.local_server:
+            logger.info("Running inference server on localhost ...")
+            raise NotImplementedError("TODO")
+
+        # step 5: run workflows
+        main_return_code = 0
+
+        skip_workflows = {WorkflowType.SERVER}
+        if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
+            model_spec.cli_args.run_id = run_id
+            return_codes = run_workflows(model_spec, json_fpath)
+            if all(return_code == 0 for return_code in return_codes):
+                logger.info("✅ Completed run.py successfully.")
+                emit_progress("complete", 100, "workflows completed successfully", container_info)
+            else:
+                main_return_code = 1
+                logger.error(
+                    f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
+                )
+        else:
+            logger.info(
+                f"Completed {model_spec.cli_args.workflow} workflow, skipping run_workflows()."
+            )
+            emit_progress("complete", 100, "server ready", container_info)
+
+        logger.info(
+            "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
+        )
+        logger.info(
+            "If you encounter any issues please share the log file in a GitHub issue and server log if available."
+        )
+        logger.info(f"This log file is saved on local machine at: {run_log_path}")
+
+        return main_return_code, container_info or {}
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}", exc_info=True)
+        emit_progress("error", 0, f"exception: {str(e)}")
+        return 1, container_info or {}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    return_code, _ = main()
+    sys.exit(return_code)
