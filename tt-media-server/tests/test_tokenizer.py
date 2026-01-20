@@ -350,7 +350,9 @@ class TestDetokenizeEndpoint:
         assert exc_info.value.detail == "Detokenization failed"
 
     @patch("open_ai_api.tokenizer.logger")
-    def test_detokenize_with_tokenizer_loading_error_raises_exception(self, mock_logger):
+    def test_detokenize_with_tokenizer_loading_error_raises_exception(
+        self, mock_logger
+    ):
         """Test that tokenizer loading errors are handled properly."""
         with patch("open_ai_api.tokenizer.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = Exception("Loading failed")
