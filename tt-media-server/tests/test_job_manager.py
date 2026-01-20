@@ -75,20 +75,6 @@ class TestJob:
         assert job.is_completed()
         assert job.is_terminal()
 
-    def test_mark_completed_invalid_type(self):
-        """Test that mark_completed raises TypeError when result_path is not a string"""
-        job = Job(id="test-123", job_type="video", model="test-model")
-
-        # result_path must be a string
-        with pytest.raises(TypeError):
-            job.mark_completed(result_path=12345)
-
-        with pytest.raises(TypeError):
-            job.mark_completed(result_path=["path/one", "path/two"])
-
-        # Verify the job status did not change to COMPLETED because it crashed
-        assert job.status == JobStatus.QUEUED
-
     def test_mark_failed(self):
         """Test marking job as failed"""
         job = Job(id="test-123", job_type="video", model="test-model")
@@ -657,6 +643,36 @@ class TestJobManager:
             assert db_job is not None
             assert db_job["status"] == "failed"
             assert db_job["error_message"]["code"] == "processing_error"
+
+    @pytest.mark.asyncio
+    async def test_job_processing_failure_invalid_result_path(self, job_manager, mock_request):
+        """Test job fails when task function returns non-string result_path"""
+
+        async def task_func_returns_list(req):
+            await asyncio.sleep(0.1)
+            return ["path/one", "path/two"]  # Invalid: should be string
+
+        # Test with list return
+        await job_manager.create_job(
+            job_id="job-list",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_returns_list,
+        )
+
+        # Wait for processing
+        await asyncio.sleep(0.3)
+
+        job_list = job_manager.get_job_metadata("job-list")
+        assert job_list["status"] == "failed"
+        assert "result_path must be str" in job_list["error"]["message"]
+
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-list")
+            assert db_job is not None
+            assert db_job["status"] == "failed"
+            assert "result_path must be str" in db_job["error_message"]["message"]
 
     @pytest.mark.asyncio
     async def test_cancel_job_transitions_to_cancelled(self, job_manager, mock_request):

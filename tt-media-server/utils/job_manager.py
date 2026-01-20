@@ -47,8 +47,6 @@ class Job:
         self.status = JobStatus.IN_PROGRESS
 
     def mark_completed(self, result_path: str):
-        if result_path is not None and not isinstance(result_path, str):
-            raise TypeError(f"result_path must be str, not {type(result_path)}")
         self.completed_at = int(time.time())
         self.status = JobStatus.COMPLETED
         self.result_path = result_path
@@ -244,6 +242,9 @@ class JobManager:
 
             result_path = await task_function(request)
 
+            if result_path is not None and not isinstance(result_path, str):
+                raise TypeError(f"result_path must be str, not {type(result_path)}")
+                
             job.mark_completed(result_path=result_path)
             if self.db:
                 self.db.update_job_status(
