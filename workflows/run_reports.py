@@ -1551,9 +1551,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
-        vllm_tts = [
-            r for r in vllm_release_raw if r.get("task_type") == "text_to_speech"
-        ]
+        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]

@@ -392,7 +392,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     if params.get("task_type") == "text_to_speech" or params.get("task_type") == "tts":
         logger.info(f"Processing TTS benchmark file: {filename}")
         # For TTS benchmarks, extract data from JSON content
-        benchmarks_data = data.get("benchmarks: ", data)
+        benchmarks_data = data.get("benchmarks", {})
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -400,22 +400,20 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model_id": data.get("model", ""),
             "backend": "text_to_speech",
             "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            "num_requests": benchmarks_data.get("num_requests", 0),
+            "mean_ttft_ms": benchmarks_data.get("ttft", 0)
             * 1000,  # ttft is in seconds, convert to ms
             "filename": filename,
             "task_type": "tts",
-            "accuracy_check": benchmarks_data.get("benchmarks").get(
-                "accuracy_check", 0
-            ),
-            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
-            "ttft_p90": benchmarks_data.get("benchmarks").get("ttft_p90", 0) * 1000
-            if benchmarks_data.get("benchmarks").get("ttft_p90")
+            "accuracy_check": benchmarks_data.get("accuracy_check", 0),
+            "rtr": benchmarks_data.get("rtr", 0),
+            "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
+            if benchmarks_data.get("ttft_p90")
             else None,
-            "ttft_p95": benchmarks_data.get("benchmarks").get("ttft_p95", 0) * 1000
-            if benchmarks_data.get("benchmarks").get("ttft_p95")
+            "p95_ttft": benchmarks_data.get("ttft_p95", 0) * 1000
+            if benchmarks_data.get("ttft_p95")
             else None,
-            "wer": benchmarks_data.get("benchmarks").get("wer", None),
+            "wer": benchmarks_data.get("wer", None),
         }
         return format_metrics(metrics)
 
