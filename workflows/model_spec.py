@@ -1512,6 +1512,10 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 0,
+                    "trace_mode" : "none",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N150X4,
@@ -1646,7 +1650,8 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 71045120,
+                    "trace_region_size": 0,
+                    "trace_mode" : "none",
                     
                 },
                 env_vars={
@@ -1858,6 +1863,10 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 0,
+                    "trace_mode" : "none",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
