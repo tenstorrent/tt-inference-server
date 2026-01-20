@@ -444,6 +444,27 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "req_tput", 0.0
             ),
         }
+
+    if params.get("task_type") == "video":
+        # For VIDEO benchmarks, extract data from JSON content
+        logger.info(f"Processing VIDEO benchmark file: {filename}")
+        benchmarks_data = data.get("benchmarks: ", data)
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model": data.get("model", ""),
+            "model_name": data.get("model", ""),
+            "model_id": data.get("model", ""),
+            "backend": "video",
+            "device": params["device"],
+            "filename": filename,
+            "task_type": "video",
+            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
+            * 1000,  # ttft is already in seconds, convert to ms
+            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "inference_steps_per_second", 0
+            ),
+        }
         return format_metrics(metrics)
 
     # Calculate statistics for text/image benchmarks
@@ -710,6 +731,23 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_inference_steps", "Num Inference Steps"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("task_type", "Task Type"),
+    ]
+
+    display_dict = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name, NOT_MEASURED_STR)
+        display_dict[display_header] = str(value)
+
+    return display_dict
+
+
+def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for video benchmarks
+    display_cols: List[Tuple[str, str]] = [
+        ("backend", "Source"),
+        ("num_requests", "Num Requests"),
+        ("num_inference_steps", "Num Inference Steps"),
+        ("mean_ttft_ms", "TTFT (ms)"),
     ]
 
     display_dict = {}
