@@ -339,7 +339,7 @@ class TestResponseContent:
 
         assert content["id"] == "job_123"
         assert content["object"] == JobTypes.VIDEO.value
-        assert content["deleted"] is True
+        assert content["cancelled"] is True
 
 
 if __name__ == "__main__":
