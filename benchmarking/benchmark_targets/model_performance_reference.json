@@ -5368,6 +5368,62 @@
             }
         ]
     },
+    "mochi-1-preview": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
+    "wan2.2-t2v-a14b-diffusers": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
     "mobilenetv2": {
         "n150": [
             {
