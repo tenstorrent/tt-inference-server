@@ -54,6 +54,7 @@ EVAL_TASK_TYPES = [
     ModelType.AUDIO,
     ModelType.EMBEDDING,
     ModelType.TEXT_TO_SPEECH,
+    ModelType.VIDEO,
 ]
 
 
@@ -362,10 +363,8 @@ def main():
     env_config.vllm_model = model_spec.hf_model_repo
 
     if (
-        model_spec.model_type == ModelType.CNN
-        or model_spec.model_type == ModelType.IMAGE
-        or model_spec.model_type == ModelType.EMBEDDING
-        or model_spec.model_type == ModelType.TEXT_TO_SPEECH
+        model_spec.model_type in EVAL_TASK_TYPES
+        and model_spec.model_type != ModelType.AUDIO
     ):
         return run_media_evals(
             eval_config,

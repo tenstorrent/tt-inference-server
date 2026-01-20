@@ -199,6 +199,7 @@ class ModelType(IntEnum):
     IMAGE = auto()
     EMBEDDING = auto()
     TEXT_TO_SPEECH = auto()
+    VIDEO = auto()
 
 
 @dataclass(frozen=True)
@@ -2256,7 +2257,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
-        model_type=ModelType.CNN,
+        model_type=ModelType.VIDEO,
         display_name="mochi-1-preview",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2281,7 +2282,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
-        model_type=ModelType.CNN,
+        model_type=ModelType.VIDEO,
         display_name="wan2.2-t2v-a14b-diffusers",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[

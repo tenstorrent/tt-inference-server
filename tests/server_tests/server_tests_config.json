@@ -1409,5 +1409,46 @@
                 "targets": {}
             }
         ]
+    },
+        {
+        "weights": [
+            "Wan2.2-T2V-A14B-Diffusers"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "VideoGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.video_generation_load_test",
+                "enabled": true,
+                "description": "Test Video generation time",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 20,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "video_generation_target_time": 370
+                }
+            }
+        ]
     }
 ]
