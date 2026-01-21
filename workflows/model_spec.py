@@ -2500,7 +2500,7 @@ spec_templates = [
                 device=DeviceTypes.N150,
                 max_concurrency=1,
                 max_context=2048,
-                default_impl=True,
+                default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
                     "VLLM__MAX_MODEL_LENGTH": "2048",
@@ -2511,7 +2511,7 @@ spec_templates = [
                 device=DeviceTypes.N300,
                 max_concurrency=1,
                 max_context=2048,
-                default_impl=True,
+                default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
                     "VLLM__MAX_MODEL_LENGTH": "2048",
