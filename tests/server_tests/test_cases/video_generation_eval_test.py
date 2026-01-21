@@ -327,7 +327,8 @@ class VideoGenerationEvalsTest(BaseTest):
 
             with open(video_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+                    if chunk:  # Filter out keep-alive chunks
+                        f.write(chunk)
 
             logger.info(f"Video downloaded: {video_path}")
             return str(video_path)
@@ -350,8 +351,8 @@ class VideoGenerationEvalsTest(BaseTest):
         - Pattern: clip_scores = [[score for frame in video] for video in videos]
 
         Args:
-            videos_info: List of video information dicts
-            prompts: List of prompts corresponding to videos
+            videos_info: List of video information dicts (contains prompt for each video)
+            prompts: List of prompts (not directly used - prompts come from videos_info)
             frame_sample_rate: Sample every Nth frame (default: 8)
 
         Returns:
@@ -361,11 +362,12 @@ class VideoGenerationEvalsTest(BaseTest):
 
         clip = CLIPEncoder()
 
-        # Step 1: Extract all videos as list of frame lists
-        # Structure: videos = [[frame1, frame2, ...], [frame1, frame2, ...], ...]
+        # Step 1: Extract all videos as list of frame lists WITH their prompts
+        # Structure: videos = [{'frames': [frame1, frame2, ...], 'prompt': str}, ...]
         videos = []
         for idx, video_info in enumerate(videos_info):
             video_path = video_info["video_path"]
+            prompt = video_info["prompt"]
             logger.info(
                 f"Extracting frames from video {idx + 1}/{len(videos_info)}: {video_path}"
             )
@@ -376,7 +378,7 @@ class VideoGenerationEvalsTest(BaseTest):
                 logger.warning(f"No frames extracted from video: {video_path}")
                 continue
 
-            videos.append(frames)
+            videos.append({"frames": frames, "prompt": prompt})
             logger.info(f"Video {idx + 1}: extracted {len(frames)} frames")
 
         if not videos:
@@ -389,11 +391,14 @@ class VideoGenerationEvalsTest(BaseTest):
                 "num_videos": 0,
             }
 
-        # Step 2: Calculate CLIP scores
+        # Step 2: Calculate CLIP scores using correct prompt for each video
         logger.info("Calculating CLIP scores for all frames...")
         clip_scores = [
-            [100 * clip.get_clip_score(prompts[i], img).item() for img in video]
-            for i, video in enumerate(videos)
+            [
+                100 * clip.get_clip_score(video["prompt"], img).item()
+                for img in video["frames"]
+            ]
+            for video in videos
         ]
 
         # Step 3: Calculate statistics per video
@@ -460,6 +465,7 @@ class VideoGenerationEvalsTest(BaseTest):
             List of PIL Image objects representing video frames
         """
         frames = []
+        cap = None
 
         try:
             cap = cv2.VideoCapture(video_path)
@@ -488,7 +494,6 @@ class VideoGenerationEvalsTest(BaseTest):
 
                 frame_idx += 1
 
-            cap.release()
             logger.info(
                 f"Extracted {len(frames)} frames (sampled every {frame_sample_rate} frames) "
                 f"from {total_frames} total frames"
@@ -496,6 +501,9 @@ class VideoGenerationEvalsTest(BaseTest):
 
         except Exception as e:
             logger.error(f"Error extracting frames from video: {e}")
+        finally:
+            if cap is not None:
+                cap.release()
 
         return frames
 
