@@ -1093,9 +1093,7 @@ def aiperf_benchmark_generate_report(
         # TEXT BENCHMARKS SECTION
         if aiperf_text_results:
             release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-            release_str += (
-                "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            )
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
             # Only show AIPerf-specific detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
@@ -1105,9 +1103,7 @@ def aiperf_benchmark_generate_report(
         # IMAGE BENCHMARKS SECTION
         if aiperf_image_results:
             release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
-            release_str += (
-                "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            )
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
             # Only show AIPerf-specific detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(
