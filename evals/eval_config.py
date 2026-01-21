@@ -1783,20 +1783,133 @@ _eval_config_list = [
             #     ),
             # ),
             EvalTask(
-                task_name="longbench",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                include_path="work_dir",
-                apply_chat_template=False,
+                task_name="longbench_qasper_e",
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multifieldqa_en_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_hotpotqa_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_2wikimqa_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_gov_report_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,strict-match",
-                        ],
+                        "result_keys": ["rougeL,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multi_news_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["rougeL,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_trec_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["acc,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_triviaqa_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_samsum_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["rougeL,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_passage_count_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["acc,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_passage_retrieval_en_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["acc,none"], "unit": "percent"},
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_lcc_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["edit_sim,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_repobench_p_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["edit_sim,none"],
                         "unit": "percent",
                     },
                 ),
