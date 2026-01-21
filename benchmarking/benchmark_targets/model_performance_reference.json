@@ -5368,6 +5368,62 @@
             }
         ]
     },
+    "mochi-1-preview": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
+    "wan2.2-t2v-a14b-diffusers": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 1,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ]
+    },
     "mobilenetv2": {
         "n150": [
             {
@@ -5667,6 +5723,34 @@
                     "theoretical": {
                         "ttft_ms": 50,
                         "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "speecht5-tts": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
                     }
                 }
             }

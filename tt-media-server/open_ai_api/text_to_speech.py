@@ -4,17 +4,38 @@
 
 
 from domain.text_to_speech_request import TextToSpeechRequest
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Security,
-)
+from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_cheker import get_api_key
 
 router = APIRouter()
+
+
+async def handle_tts_request(tts_request, service):
+    """
+    Handle TTS request with different response formats.
+
+    Returns:
+        If response_format is "audio" or "wav", returns WAV bytes directly.
+        Otherwise, returns JSON with base64-encoded audio.
+    """
+    try:
+        result = await service.process_request(tts_request)
+        if tts_request.response_format.lower() in ("audio", "wav"):
+            # Return WAV bytes directly
+            if hasattr(result, "wav_bytes") and result.wav_bytes:
+                return Response(content=result.wav_bytes, media_type="audio/wav")
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail="WAV bytes not available in response",
+                )
+        return get_dict_response(result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/speech")
@@ -27,17 +48,13 @@ async def text_to_speech(
     Convert text to speech using the provided request.
 
     Returns:
-        Generated audio base64 encoded.
+        If response_format is "audio" or "wav", returns WAV bytes directly.
+        Otherwise, returns JSON with base64-encoded audio.
 
     Raises:
         HTTPException: If text-to-speech fails.
     """
-    try:
-        result = await service.process_request(tts_request)
-        return get_dict_response(result)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return await handle_tts_request(tts_request, service)
 
 
 def get_dict_response(obj):
