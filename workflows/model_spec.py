@@ -1153,6 +1153,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 10000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1654,7 +1657,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 71045120,
+                    "trace_region_size": 30000000,
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
@@ -1859,6 +1862,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={"trace_region_size": 10000000},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
