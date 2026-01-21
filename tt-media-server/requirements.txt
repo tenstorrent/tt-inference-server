@@ -7,6 +7,7 @@ httpx
 imageio-ffmpeg
 loguru
 numpy
+diffusers==0.35.1
 prometheus-client
 prometheus-fastapi-instrumentator
 psutil
