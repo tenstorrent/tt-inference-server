@@ -1,21 +1,73 @@
-# How To Add Support for a New Model
+# How To Add Support for a New Model in tt-inference-server
+
+## Step 0: preconditions
+
+1. Tenstorrent code implementation has all runtime preconditions and configurations documented.
+2. vLLM or other inference server integration complete. For example with vLLM:
+    A. Support for the specific model is added in the Tenstorrent vLLM fork https://github.com/tenstorrent/vllm/tree/dev (For details of Tenstorrent vLLM integration see https://github.com/tenstorrent/tt-metal/blob/main/tech_reports/LLMs/vLLM_integration.md)
+    B. vLLM compatible generator is complete (see e.g. https://github.com/tenstorrent/tt-metal/blob/main/models/tt_transformers/tt/generator_vllm.py)
+    C. covering tt-metal CI vLLM nightly test has been added https://github.com/tenstorrent/tt-metal/actions/workflows/vllm-nightly-tests.yaml
+
 
 ## Step 1: Add a new GitHub issue for tracking model readiness support
 
 Add a new GitHub [tt-inference-server issue](https://github.com/tenstorrent/tt-inference-server/issues).
 
-- use issue name format: `Model readiness support: {MODEL_NAME}`
-- creat sub-issues for:
-    - `Evals: {MODEL_NAME}`
-    - `Benchmark targets: {MODEL_NAME}`
+Use the `Add a Model to Model Readiness` GitHub Issues template
 
 Examples of Model readiness support tickets:
-* https://github.com/tenstorrent/tt-inference-server/issues/248
-* https://github.com/tenstorrent/tt-inference-server/issues/237
-* https://github.com/tenstorrent/tt-inference-server/issues/233
+* https://github.com/tenstorrent/tt-inference-server/issues/1371
+* https://github.com/tenstorrent/tt-inference-server/issues/1322
 
+## Step 2: Add model_spec.py reference
 
-## Step 2: Add Accuracy Evals
+The list of ModelSpecTemplates in https://github.com/tenstorrent/tt-inference-server/blob/main/workflows/model_spec.py defines the specification for each model. This includes what parameters (e.g. `max_context`, `max_concurrency`), settings, eng vars, etc. are required to make it run as expected with desired inference features.
+
+For example for Qwen3-32B on WH Galaxy:
+```python
+ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=qwen3_32b_galaxy_impl,
+        tt_metal_commit="a9b09e0",
+        vllm_commit="a186bf4",
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "num_scheduler_steps": 1,
+                },
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D_RING",
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
+    ),
+```
+
+## Step 3: Add Accuracy Evals
 
 ### Selecting Tasks for Model Evaluation
 
@@ -75,7 +127,7 @@ In addition to the published benchmarks we also care about the scores achieved f
 
 ### eval_config.py
 
-#### Step 2A: Define an EvalConfig
+#### Step 3A: Define an EvalConfig
 Each model gets one EvalConfig. The primary field to update is the hf_model_repo, which is the HuggingFace repo or unique identifier of your model. Below is an example for Qwen2.5-70B model:
 
 ```python
@@ -89,7 +141,7 @@ EvalConfig(
     ],
 )
 ```
-#### Step 2B: Add EvalTask Entries
+#### Step 3B: Add EvalTask Entries
 Each EvalTask specifies a benchmark/task (e.g., AIME, GPQA, IFEval) the model will be evaluated on. You may add multiple tasks per model. Below is an example for AIME24:
 ```python
 EvalTask(
@@ -152,7 +204,7 @@ EvalTask(
 - `model_kwargs` (dict): Model-specific arguments (e.g., model name, server URL, tokenizer backend, max length, etc.). Default: `{}`.
 
 
-## Step 3: Add Performance Targets
+## Step 4: Add Performance Targets
 
 The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specific specific points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` the 2 points ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
 
