@@ -14,11 +14,11 @@ from domain.video_generate_request import VideoGenerateRequest
 from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
-from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
-    StableDiffusion3Pipeline,
-)
 from models.experimental.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
+)
+from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
+    StableDiffusion3Pipeline,
 )
 from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
@@ -245,6 +245,9 @@ class TTWan22Runner(TTDiTRunner):
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+
+    def load_weights(self):
+        return False
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
