@@ -976,11 +976,11 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
-                max_context=1024,
+                max_concurrency=128,
+                max_context=64*1024,
                 default_impl=True,
                 vllm_args={
-                    "max_num_seqs": "1",
+                    "max_num_seqs": "128",
                     "num_scheduler_steps": "1",
                 },
                 env_vars={
@@ -992,7 +992,6 @@ spec_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
