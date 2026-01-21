@@ -1183,6 +1183,24 @@
                     "mock_mode": false
                 },
                 "targets": {}
+            },
+            {
+                "name": "TTSLoadTest",
+                "module": "tests.server_tests.test_cases.tts_load_test",
+                "enabled": true,
+                "description": "Test TTS generation load performance with concurrent requests",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "tts_generation_time": 10,
+                    "text_length": "short"
+                }
             }
         ]
     },
