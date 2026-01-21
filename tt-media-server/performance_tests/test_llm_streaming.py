@@ -8,15 +8,13 @@ from dataclasses import dataclass
 
 import pytest
 
+from performance_tests.conftest import SERVER_BASE_URL, TEST_RUNNER_FREQUENCY_MS
 from performance_tests.llm_streaming_client import (
     LLMStreamingClient,
 )
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-TEST_RUNNER_FREQUENCY_MS = 20
 
 
 @dataclass
@@ -40,7 +38,7 @@ async def test_streaming_performance_full(server_process):
     # Arrange
     thresholds = PerformanceThresholds.from_env()
     client = LLMStreamingClient(
-        url="http://localhost:8000/v1/completions", api_key="your-secret-key"
+        url=f"{SERVER_BASE_URL}/v1/completions", api_key="your-secret-key"
     )
 
     # Act

@@ -20,10 +20,6 @@ from tests.server_tests.base_test import BaseTest
 from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
-    launch_cpu_server,
-    launch_device_server,
-    stop_server,
-    wait_for_server_ready,
 )
 from tests.server_tests.test_classes import TestConfig
 
@@ -37,10 +33,6 @@ MODELS = [
     # "tt-xla-unet",
     "tt-xla-vit",
 ]
-# CPU accuracy baselines (as decimal, e.g., 0.35 = 35%)
-CPU_ACCURACY_BASELINE = {
-    "tt-xla-mobilenetv2": 0.35,
-}
 REQUEST_TIMEOUT_SECONDS = 60.0
 ACCURACY_FILE_BY_MODE = {
     "cpu": "cpu_accuracy.json",
@@ -99,16 +91,24 @@ class VisionEvalsTest(BaseTest):
             logger.info("Step 1: Downloading samples")
             self._download_samples(count=request.download_count)
 
-            # Step 2: Measure device accuracy (uses existing server if provided)
-            logger.info("Step 2: Measuring device accuracy")
+            # Step 2: Measure CPU accuracy (server already running)
+            logger.info("Step 2: Measuring CPU accuracy")
             self._measure_accuracy(
                 models=target_models,
-                server_url=request.server_url,  # Use existing server if provided
+                server_url=request.server_url,
+                mode="cpu",
+            )
+
+            # Step 3: Measure device accuracy (server already running)
+            logger.info("Step 3: Measuring device accuracy")
+            self._measure_accuracy(
+                models=target_models,
+                server_url=request.server_url,
                 mode="device",
             )
 
-            # Step 3: Compare results
-            logger.info("Step 3: Comparing CPU vs device results")
+            # Step 4: Compare results
+            logger.info("Step 4: Comparing CPU vs device results")
             self._compare_results()
 
             return {
@@ -137,6 +137,56 @@ class VisionEvalsTest(BaseTest):
             raise ValueError("Metadata must be a list of sample descriptors.")
 
         return metadata
+
+    def _wait_for_server_ready(
+        self,
+        service_port: int = 8000,
+        max_attempts: int = 230,
+        retry_delay: int = 10,
+    ) -> bool:
+        """Wait for server to be ready using simple HTTP health check.
+
+        Args:
+            service_port: Port where the server is running.
+            max_attempts: Maximum number of retry attempts.
+            retry_delay: Seconds to wait between retries.
+
+        Returns:
+            bool: True if server is ready, False otherwise.
+        """
+        logger.info("Waiting for server to be ready...")
+        health_url = f"http://localhost:{service_port}/tt-liveness"
+        logger.info("Health URL: %s", health_url)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.get(health_url, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "alive" and data.get("model_ready"):
+                        logger.info(
+                            "Server is ready after %s attempt(s)",
+                            attempt,
+                        )
+                        return True
+                logger.info(
+                    "Server not ready (attempt %s/%s), retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    retry_delay,
+                )
+            except requests.exceptions.RequestException as e:
+                logger.info(
+                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    e,
+                    retry_delay,
+                )
+            time.sleep(retry_delay)
+
+        logger.error("Server health check failed after %s attempts", max_attempts)
+        return False
 
     def _replay_samples(
         self,
@@ -389,46 +439,31 @@ class VisionEvalsTest(BaseTest):
         authorization: str | None = None,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        """Measure accuracy for models against an already-running server.
+
+        Note: Server must already be running. This method waits for health check
+        then runs accuracy measurements.
+        """
         logger.info(f"Measuring accuracy for models: {models} in {mode} mode")
         dataset_path = Path(DATASET_DIR)
         metadata = self._load_metadata(dataset_path)
         summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
         accuracy_summary: dict[str, float] = {}
 
+        # Wait for server to be ready (assumes server is already running)
+        if not self._wait_for_server_ready():
+            raise RuntimeError("Server health check failed - server not ready")
+
         for model in models:
-            process = None
-            log_path = None
+            logger.info("Measuring accuracy for model: %s", model)
 
-            try:
-                if mode == "cpu":
-                    logger.info("Starting CPU server for model: %s", model)
-                    process, log_path = launch_cpu_server(model)
-                    wait_for_server_ready(process, log_path=log_path)
-                    logger.info("CPU server is ready for model: %s", model)
-                elif mode == "device":
-                    if server_url:
-                        logger.info(
-                            "Using existing server at %s for model: %s",
-                            server_url,
-                            model,
-                        )
-                    else:
-                        logger.info("Starting device server for model: %s", model)
-                        process, log_path = launch_device_server(model)
-                        wait_for_server_ready(process, log_path=log_path)
-                        logger.info("Device server is ready for model: %s", model)
-
-                results = self._replay_samples(
-                    metadata=metadata,
-                    dataset_path=dataset_path,
-                    server_url=server_url or SERVER_DEFAULT_URL,
-                    authorization=authorization,
-                    timeout=timeout,
-                )
-            finally:
-                # Clean up the server process if we started one
-                if process is not None:
-                    stop_server(process)
+            results = self._replay_samples(
+                metadata=metadata,
+                dataset_path=dataset_path,
+                server_url=server_url or SERVER_DEFAULT_URL,
+                authorization=authorization,
+                timeout=timeout,
+            )
 
             correct, total, mismatches = self._analyze_results(results)
             logger.info(
@@ -441,32 +476,16 @@ class VisionEvalsTest(BaseTest):
             accuracy = (correct / total) if total else 0.0
             logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
             accuracy_summary[model] = accuracy
-            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
 
             # Store detailed results for this model and mode
             if model not in self.eval_results:
                 self.eval_results[model] = {}
-
-            cpu_baseline = CPU_ACCURACY_BASELINE.get(model)
-            diff_from_cpu = None
-            if cpu_baseline is not None and mode == "device":
-                diff_from_cpu = accuracy - cpu_baseline
-                diff_pct = diff_from_cpu * 100
-                logger.info(
-                    "CPU baseline comparison for %s: device=%.2f%%, cpu=%.2f%%, diff=%+.2f%%",
-                    model,
-                    accuracy * 100,
-                    cpu_baseline * 100,
-                    diff_pct,
-                )
 
             self.eval_results[model][mode] = {
                 "accuracy": accuracy,
                 "correct": correct,
                 "total": total,
                 "mismatches_count": len(mismatches),
-                "cpu_baseline": cpu_baseline,
-                "diff_from_cpu_baseline": diff_from_cpu,
             }
 
             logger.info(

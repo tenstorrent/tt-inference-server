@@ -434,13 +434,16 @@ jobs:
           pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
           TEST_EXIT_CODE=${PIPESTATUS[0]}
 
-          # Parse CI report metrics
-          TOKENS=$(grep 'tokens_received=' test_output.txt | cut -d= -f2 || echo "N/A")
-          TOTAL_TIME=$(grep 'total_time_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          MEAN_INTERVAL=$(grep 'mean_interval_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          THROUGHPUT=$(grep 'throughput_tps=' test_output.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep 'overhead_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep 'threshold_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          # Extract only the CI report section (between markers) to avoid matching source code
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+
+          # Parse CI report metrics from the extracted section
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
 
           # Determine status
           if [ $TEST_EXIT_CODE -eq 0 ]; then
@@ -463,7 +466,30 @@ jobs:
             echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
           } >> $GITHUB_STEP_SUMMARY
 
-          exit $TEST_EXIT_CODE
+          # Store exit code for later
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          if [ -f performance_tests/server.log ]; then
+            cat performance_tests/server.log
+          else
+            echo "No server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-streaming-server-logs
+          path: tt-media-server/performance_tests/server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
 
 
   forge-runner-changes:

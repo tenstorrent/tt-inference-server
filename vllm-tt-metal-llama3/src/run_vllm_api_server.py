@@ -41,24 +41,46 @@ def handle_code_versions(model_spec_json):
     logger.info(f"commit SHA: {vllm_sha}")
 
 
-# Copied from vllm/examples/offline_inference_tt.py
-def register_tt_models():
-    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
-    if llama_text_version == "tt_transformers":
-        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
-    elif llama_text_version == "llama3_70b_galaxy":
+def _load_model_spec_json():
+    """Load ModelSpec JSON from TT_MODEL_SPEC_JSON_PATH.
+
+    Returns:
+        dict: The loaded ModelSpec JSON.
+
+    Raises:
+        RuntimeError: If TT_MODEL_SPEC_JSON_PATH environment variable is not set.
+        FileNotFoundError: If the specified file does not exist.
+        JSONDecodeError: If the file contains invalid JSON.
+    """
+    model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
+    if model_spec_path is None:
+        raise RuntimeError("TT_MODEL_SPEC_JSON_PATH environment variable is not set")
+
+    with open(model_spec_path, "r") as f:
+        return json.load(f)
+
+
+def register_tt_models(impl_id=None):
+    """Register TT models with vLLM ModelRegistry.
+
+    Args:
+        impl_id: Implementation ID from ModelSpec JSON (e.g., "tt_transformers",
+                 "llama3_70b_galaxy", "qwen3_32b_galaxy"). If None, defaults to
+                 "tt_transformers".
+    """
+    impl_id = impl_id or "tt_transformers"
+
+    # Llama path selection based on impl_id
+    if impl_id == "llama3_70b_galaxy":
         path_llama_text = (
             "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
-    elif llama_text_version == "llama2_70b":
+    elif impl_id == "llama2_70b":
         path_llama_text = (
             "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
         )
-    else:
-        raise ValueError(
-            f"Unsupported TT Llama version: {llama_text_version}, "
-            "pick one of [tt_transformers, llama3_subdevices, llama2_70b]"
-        )
+    else:  # default: tt_transformers
+        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
 
     # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
@@ -70,22 +92,18 @@ def register_tt_models():
     )
 
     # Qwen2.5 - Text
-    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
+    ModelRegistry.register_model(
+        "TTQwen2ForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:QwenForCausalLM",
+    )
 
-    # Qwen3 - Text
-    qwen3_text_version = os.getenv("TT_QWEN3_TEXT_VER", "tt_transformers")
-    if qwen3_text_version == "tt_transformers":
-        path_qwen3_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-    elif qwen3_text_version == "qwen3_32b_galaxy":
+    # Qwen3 path selection based on impl_id
+    if impl_id == "qwen3_32b_galaxy":
         path_qwen3_text = (
             "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
         )
     else:
-        raise ValueError(
-            f"Unsupported TT Qwen3 version: {qwen3_text_version}, "
-            "pick one of [tt_transformers, qwen3_32b_galaxy]"
-        )
+        path_qwen3_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
 
     ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen3_text)
 
@@ -112,11 +130,20 @@ def register_tt_models():
         "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
     )
 
+    # DeepseekV3
+    ModelRegistry.register_model(
+        "TTDeepseekV3ForCausalLM",
+        "models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM",
+    )
 
-register_tt_models()
+
+# Load model spec at import time for vLLM model registration
+_MODEL_SPEC = _load_model_spec_json()
+_IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
+register_tt_models(_IMPL_ID)
 
 
-def model_setup(model_spec_json):
+def model_setup(model_spec_json, impl_id):
     # step 1: validate env vars passed in
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
@@ -149,7 +176,6 @@ def model_setup(model_spec_json):
     model_env_vars["HF_MODEL"] = hf_dir
     logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
-    impl_id = model_spec_json["impl"]["impl_id"]
     if impl_id == "subdevices":
         model_env_vars["LLAMA_VERSION"] = "subdevices"
     elif impl_id == "llama2-t3000":
@@ -192,6 +218,18 @@ def handle_secrets(model_spec_json):
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
 
+    # Check if --no-auth was passed via CLI args
+    no_auth = model_spec_json.get("cli_args", {}).get("no_auth", False)
+    if no_auth:
+        # Remove VLLM_API_KEY if present to disable authorization
+        if "VLLM_API_KEY" in os.environ:
+            del os.environ["VLLM_API_KEY"]
+        logger.info(
+            "--no-auth is set: requests to vLLM API will not require authorization. "
+            "HTTP Authorization header will not be checked."
+        )
+        return
+
     # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
     vllm_api_key = os.getenv("VLLM_API_KEY")
     if vllm_api_key:
@@ -214,12 +252,12 @@ def handle_secrets(model_spec_json):
         )
 
 
-def runtime_settings(model_spec_json):
+def runtime_settings(model_spec_json, impl_id):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(model_spec_json)
 
     # TODO: check HF repo access with HF_TOKEN supplied
-    model_setup(model_spec_json)
+    model_setup(model_spec_json, impl_id)
 
 
 def set_runtime_env_vars(model_spec_json):
@@ -291,21 +329,16 @@ def start_trace_capture(model_spec_json):
 
 
 def main():
-    # use raw model_spec_json to demonstrate interoperability
-    # avoids importing full Python dependency tree which may not be usable in 3rd party systems
-    with open(os.getenv("TT_MODEL_SPEC_JSON_PATH"), "r") as f:
-        model_spec_json = json.load(f)
+    set_runtime_env_vars(_MODEL_SPEC)
+    handle_code_versions(_MODEL_SPEC)
 
-    set_runtime_env_vars(model_spec_json)
-    handle_code_versions(model_spec_json)
-
-    runtime_settings(model_spec_json)
-    start_trace_capture(model_spec_json)
+    runtime_settings(_MODEL_SPEC, _IMPL_ID)
+    start_trace_capture(_MODEL_SPEC)
 
     # vLLM CLI arguments
     logger.info("vllm_args:")
-    pprint(model_spec_json["device_model_spec"]["vllm_args"])
-    for key, value in model_spec_json["device_model_spec"]["vllm_args"].items():
+    pprint(_MODEL_SPEC["device_model_spec"]["vllm_args"])
+    for key, value in _MODEL_SPEC["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):

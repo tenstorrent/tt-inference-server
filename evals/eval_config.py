@@ -1214,6 +1214,65 @@ _eval_config_list = [
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
                 seed=42,
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-0528",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "deepseek-ai/DeepSeek-R1-0528",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "deepseek-ai/DeepSeek-R1-0528",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -2013,6 +2072,40 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="genmo/mochi-1-preview",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
         tasks=[
             EvalTask(
@@ -2235,6 +2328,23 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=84.3,
                     published_score_ref="https://arxiv.org/abs/1905.11946",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="microsoft/speecht5_tts",
+        tasks=[
+            EvalTask(
+                task_name="tts_generation",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path=None,
+                max_concurrent=32,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2110.07205",
                     score_func=lambda results: 0.0,
                 ),
             ),

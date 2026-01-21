@@ -3,16 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from typing import Optional, Union
+
 import numpy as np
-from pydantic import ConfigDict, PrivateAttr, field_validator
-from config.constants import AudioResponseFormat
+from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
+from pydantic import PrivateAttr, field_validator
 
 
 class TextToSpeechRequest(BaseRequest):
-    # Required for np.ndarray type in private fields
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     # Required fields
     text: str  # Input text to convert to speech
 
@@ -33,9 +31,8 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
-    # Custom fields for our implementation
-    response_format: str = AudioResponseFormat.VERBOSE_JSON.value
-    stream: bool = False  # Whether to stream audio generation
+    # Response format
+    response_format: str = ResponseFormat.AUDIO.value  # ResponseFormat.AUDIO for WAV bytes, ResponseFormat.VERBOSE_JSON or ResponseFormat.JSON for JSON
 
     # Private fields for internal processing
     _speaker_embedding_array: Optional[np.ndarray] = PrivateAttr(default=None)

@@ -43,7 +43,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
         self.num_calls = 1000
         self.dimensions = 1000
-        self.concurrency = self.model_spec.device_model_spec.max_concurrency
+        self.concurrency = int(
+            self.model_spec.device_model_spec.env_vars.get("VLLM__MAX_NUM_SEQS", 1)
+        )
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
@@ -98,7 +100,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         """Run embedding transcription benchmark."""
 
         # Use the venv's python and vllm executable directly
-        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_EMBEDDING)
+        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
         vllm_exec = venv_config.venv_path / "bin" / "vllm"
 
         os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
