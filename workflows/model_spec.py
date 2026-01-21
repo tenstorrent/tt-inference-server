@@ -2355,6 +2355,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "8",
+                    "MAX_BATCH_SIZE": "8",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2363,9 +2366,12 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "6144",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "16",
+                    "MAX_BATCH_SIZE": "16",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2374,9 +2380,12 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "6144",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "16",
+                    "MAX_BATCH_SIZE": "16",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2388,6 +2397,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "8",
+                    "MAX_BATCH_SIZE": "8",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
                     "TT_METAL_INSPECTOR_RPC": "0",
@@ -2415,6 +2427,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2426,6 +2441,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2437,6 +2455,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2448,6 +2469,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
         ],
