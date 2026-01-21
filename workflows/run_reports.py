@@ -2161,17 +2161,46 @@ def extract_eval_json_data(json_path: Path):
     return extracted, meta_data
 
 
+def select_best_eval_files(files):
+    """Select best eval file per task: prefer full evals, then most recent."""
+    from collections import defaultdict
+
+    task_files = defaultdict(list)
+
+    for filepath in files:
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
+
+            # Get task name from results
+            task = list(data.get("results", {}).keys())[0]
+
+            # Parse timestamp from filename: results_YYYY-MM-DDTHH-MM-SS.json
+            ts_str = Path(filepath).stem.replace("results_", "").split(".")[0]
+            timestamp = datetime.strptime(ts_str, "%Y-%m-%dT%H-%M-%S")
+
+            # Check if full eval (limit=null)
+            is_full = data.get("config", {}).get("limit") is None
+
+            task_files[task].append((is_full, timestamp, str(filepath)))
+        except Exception:
+            continue  # Skip unparseable files
+
+    # For each task, pick max by (is_full, timestamp) - tuple comparison works naturally
+    return [max(group)[2] for group in task_files.values()]
+
+
 def extract_eval_results(files):
+    """Extract evaluation results from JSON files, selecting best result per task."""
+    selected_files = select_best_eval_files(files)
+
     results = {}
     meta_data = {}
-    for json_file in files:
-        # logger.info(f"Processing: {json_file}")
+    for json_file in selected_files:
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert task_name == check_task_name, (
-            f"Task name mismatch: {task_name} != {check_task_name}"
-        )
+        assert task_name == check_task_name, f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
         meta_data[task_name] = meta
 
