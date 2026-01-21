@@ -5727,5 +5727,33 @@
                 }
             }
         ]
+    },
+    "speecht5-tts": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ]
     }
 }
