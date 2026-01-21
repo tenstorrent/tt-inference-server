@@ -2161,192 +2161,47 @@ def extract_eval_json_data(json_path: Path):
     return extracted, meta_data
 
 
-def parse_eval_file_metadata(json_path):
-    """Extract metadata from an eval result file for selection purposes.
-
-    Args:
-        json_path: Path to the eval result JSON file
-
-    Returns:
-        dict with keys:
-            - filepath: original file path
-            - timestamp: datetime object from filename
-            - task_name: name of the evaluation task
-            - is_full_eval: True if limit=null (full eval), False otherwise
-            - effective_samples: number of samples actually evaluated
-            - original_samples: total samples available
-            - limit_value: the limit value from config (None for full eval)
-    """
-    filepath = Path(json_path)
-    filename = filepath.name
-
-    # Parse timestamp from filename: results_YYYY-MM-DDTHH-MM-SS.microseconds.json
-    try:
-        timestamp_str = filename.replace("results_", "").replace(".json", "")
-        # Split off microseconds if present
-        if "." in timestamp_str:
-            timestamp_str = timestamp_str.split(".")[0]
-        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H-%M-%S")
-    except (ValueError, IndexError) as e:
-        logger.warning(f"Could not parse timestamp from filename {filename}: {e}. Using epoch time.")
-        timestamp = datetime.fromtimestamp(0)
-
-    # Load JSON to extract task name and limit info
-    try:
-        with filepath.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Extract task name from results keys
-        results = data.get("results", {})
-        if not results:
-            logger.warning(f"No results found in {filename}")
-            return None
-        task_name = list(results.keys())[0]
-
-        # Check if this is a full eval or limited eval
-        config = data.get("config", {})
-        limit_value = config.get("limit")
-        is_full_eval = limit_value is None
-
-        # Extract sample counts
-        n_samples = data.get("n-samples", {}).get(task_name, {})
-        effective_samples = n_samples.get("effective", 0)
-        original_samples = n_samples.get("original", 0)
-
-        return {
-            "filepath": str(filepath),
-            "timestamp": timestamp,
-            "task_name": task_name,
-            "is_full_eval": is_full_eval,
-            "effective_samples": effective_samples,
-            "original_samples": original_samples,
-            "limit_value": limit_value,
-        }
-    except Exception as e:
-        logger.warning(f"Error parsing metadata from {filename}: {e}")
-        return None
-
-
 def select_best_eval_files(files):
-    """Select the best eval result file for each task.
+    """Select best eval file per task: prefer full evals, then most recent."""
+    from collections import defaultdict
 
-    Selection strategy:
-    1. Prefer full evals (limit=null) over limited evals (limit=0.5, etc.)
-    2. Among evals of same type, prefer most recent by timestamp
+    task_files = defaultdict(list)
 
-    Args:
-        files: List of file paths to eval result JSON files
-
-    Returns:
-        List of selected file paths (one per task)
-    """
-    if not files:
-        return []
-
-    # Parse metadata for all files
-    file_metadata = []
-    unparseable_files = []
     for filepath in files:
-        metadata = parse_eval_file_metadata(filepath)
-        if metadata:
-            file_metadata.append(metadata)
-        else:
-            # If metadata parsing fails, keep track to include at the end
-            # These files will still be processed but can't participate in selection
-            unparseable_files.append(filepath)
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
 
-    if not file_metadata:
-        logger.warning("No valid eval file metadata found, processing all files without selection")
-        return list(files)  # Return original list if parsing fails for all files
+            # Get task name from results
+            task = list(data.get("results", {}).keys())[0]
 
-    # Group files by task name
-    task_groups = {}
-    for meta in file_metadata:
-        task_name = meta["task_name"]
-        if task_name not in task_groups:
-            task_groups[task_name] = []
-        task_groups[task_name].append(meta)
+            # Parse timestamp from filename: results_YYYY-MM-DDTHH-MM-SS.json
+            ts_str = Path(filepath).stem.replace("results_", "").split(".")[0]
+            timestamp = datetime.strptime(ts_str, "%Y-%m-%dT%H-%M-%S")
 
-    # Select best file for each task
-    selected_files = []
-    for task_name, group in task_groups.items():
-        if len(group) == 1:
-            # Only one result for this task
-            selected = group[0]
-            logger.info(f"Task '{task_name}': Using single result from {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-        else:
-            # Multiple results - apply selection logic
-            # Sort by: is_full_eval (descending), then timestamp (descending)
-            sorted_group = sorted(
-                group,
-                key=lambda x: (x["is_full_eval"], x["timestamp"]),
-                reverse=True
-            )
-            selected = sorted_group[0]
+            # Check if full eval (limit=null)
+            is_full = data.get("config", {}).get("limit") is None
 
-            # Log the selection decision
-            eval_type = "full eval" if selected["is_full_eval"] else f"limited eval (limit={selected['limit_value']})"
-            logger.info(
-                f"Task '{task_name}': Found {len(group)} results. "
-                f"Selected {eval_type} from {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')} "
-                f"({selected['effective_samples']}/{selected['original_samples']} samples)"
-            )
+            task_files[task].append((is_full, timestamp, str(filepath)))
+        except Exception:
+            continue  # Skip unparseable files
 
-            # Log what was skipped
-            for skipped in sorted_group[1:]:
-                skip_type = "full eval" if skipped["is_full_eval"] else f"limited eval (limit={skipped['limit_value']})"
-                logger.info(
-                    f"  Skipped {skip_type} from {skipped['timestamp'].strftime('%Y-%m-%d %H:%M:%S')} "
-                    f"({skipped['effective_samples']}/{skipped['original_samples']} samples)"
-                )
-
-        selected_files.append(selected["filepath"])
-
-    # Include any unparseable files at the end
-    # These will be processed but couldn't participate in selection
-    if unparseable_files:
-        logger.warning(f"Including {len(unparseable_files)} unparseable files that could not participate in selection")
-        selected_files.extend(unparseable_files)
-
-    return selected_files
+    # For each task, pick max by (is_full, timestamp) - tuple comparison works naturally
+    return [max(group)[2] for group in task_files.values()]
 
 
 def extract_eval_results(files):
-    """Extract evaluation results from JSON files, selecting the best result for each task.
-
-    When multiple eval results exist for the same task, this function selects:
-    1. Full evals over limited evals
-    2. Most recent eval among those of the same type
-
-    Args:
-        files: List of file paths to eval result JSON files
-
-    Returns:
-        Tuple of (results_dict, meta_data_dict)
-    """
-    # Select best files for each task
+    """Extract evaluation results from JSON files, selecting best result per task."""
     selected_files = select_best_eval_files(files)
 
     results = {}
     meta_data = {}
     for json_file in selected_files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         task_name = meta.pop("task_name")
         check_task_name = list(res[0].keys())[0]
-        assert task_name == check_task_name, (
-            f"Task name mismatch: {task_name} != {check_task_name}"
-        )
+        assert task_name == check_task_name, f"Task name mismatch: {task_name} != {check_task_name}"
         results[task_name] = {k: v for d in res for k, v in d.items()}
-
-        # Add selection metadata to meta_data
-        file_meta = parse_eval_file_metadata(json_file)
-        if file_meta:
-            meta["eval_timestamp"] = file_meta["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-            meta["is_full_eval"] = file_meta["is_full_eval"]
-            meta["effective_samples"] = file_meta["effective_samples"]
-            meta["original_samples"] = file_meta["original_samples"]
-
         meta_data[task_name] = meta
 
     return results, meta_data
@@ -2466,23 +2321,8 @@ def generate_evals_release_markdown(report_rows):
 
     explain_str = "\n\nNote: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score."
 
-    # Add eval metadata section showing which evals were used
-    metadata_str = "\n\n### Evaluation Run Details\n\n"
-    for row in report_rows:
-        task_name = row.get("task_name", "Unknown")
-        metadata = row.get("metadata", {})
-        if metadata:
-            timestamp = metadata.get("eval_timestamp", "N/A")
-            is_full = metadata.get("is_full_eval", True)
-            effective = metadata.get("effective_samples", "N/A")
-            original = metadata.get("original_samples", "N/A")
-            eval_type = "Full evaluation" if is_full else "Limited evaluation"
-            metadata_str += f"- **{task_name}**: {eval_type} from {timestamp} ({effective}/{original} samples)\n"
-        else:
-            metadata_str += f"- **{task_name}**: No metadata available\n"
-
     markdown_str = (
-        header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str + metadata_str
+        header_row + "\n" + divider_row + "\n" + "\n".join(row_strs) + explain_str
     )
     return markdown_str
 
