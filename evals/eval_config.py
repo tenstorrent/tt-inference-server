@@ -821,59 +821,59 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
-            # EvalTask(
-            #     task_name="r1_gpqa_diamond",
-            #     score=EvalTaskScore(
-            #         published_score=62.0,
-            #         published_score_ref="https://arxiv.org/pdf/2505.09388",
-            #         gpu_reference_score=64.14,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "exact_match,none",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-            #     model_kwargs={
-            #         "model": "Qwen/Qwen3-8B",
-            #         "base_url": "http://127.0.0.1:8000/v1/completions",
-            #         "tokenizer_backend": "huggingface",
-            #         "max_length": 65536,
-            #     },
-            #     # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-            #     gen_kwargs={
-            #         "stream": "false",
-            #         "max_gen_toks": 32768,
-            #         "until": [],
-            #         "do_sample": "true",
-            #         "temperature": 0.6,
-            #         "top_k": 20,
-            #         "top_p": 0.95,
-            #     },
-            #     limit_samples_map={
-            #         EvalLimitMode.CI_NIGHTLY: 0.2,
-            #         EvalLimitMode.SMOKE_TEST: 0.01,
-            #     },
-            # ),
-                EvalTask(
-                    task_name="mmlu_pro",
-                    num_fewshot=5,
-                    score=EvalTaskScore(
-                        published_score=56.73,
-                        published_score_ref="https://arxiv.org/pdf/2505.09388",
-                        gpu_reference_score=66.07,
-                        gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
-                        score_func=score_task_single_key,
-                        score_func_kwargs={
-                            "result_keys": [
-                                "exact_match,custom-extract",
-                            ],
-                            "unit": "percent",
-                        },
-                    ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=62.0,
+                    published_score_ref="https://arxiv.org/pdf/2505.09388",
+                    gpu_reference_score=64.14,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3129960933",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-8B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=56.73,
+                    published_score_ref="https://arxiv.org/pdf/2505.09388",
+                    gpu_reference_score=66.07,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-8B",
