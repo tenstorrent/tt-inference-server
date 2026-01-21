@@ -25,7 +25,6 @@ from utils.logger import TTLogger
 
 
 class Settings(BaseSettings):
-    logger = TTLogger()
     # General settings
     environment: str = "development"
     device: Optional[str] = None
@@ -97,6 +96,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.logger = TTLogger()
 
         model_to_run = os.getenv("MODEL")
         if model_to_run and self.device:
