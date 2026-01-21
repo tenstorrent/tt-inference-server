@@ -109,7 +109,6 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
-        # Accuracy check is calculated in evals_release_report_data() in run_reports.py
         # Similar to how image and audio pipelines work
 
         # Make benchmark_data is inside of list as an object
