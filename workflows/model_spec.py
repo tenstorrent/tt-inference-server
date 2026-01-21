@@ -1854,9 +1854,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    "trace_region_size": 10000000
-                },
+                override_tt_config={"trace_region_size": 10000000},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
