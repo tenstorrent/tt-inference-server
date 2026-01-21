@@ -22,14 +22,20 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.dit_runners", fromlist=["TTSD35Runner"]
     ).TTSD35Runner(wid, num_threads),
     ModelRunners.TT_FLUX_1_DEV: lambda wid, num_threads: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTFlux1DevRunner"]
-    ).TTFlux1DevRunner(wid, num_threads),
+        "tt_model_runners.dit_runners", fromlist=["TTFlux1Runner"]
+    ).TTFlux1Runner(wid, num_threads),
     ModelRunners.TT_FLUX_1_SCHNELL: lambda wid, num_threads: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTFlux1SchnellRunner"]
-    ).TTFlux1SchnellRunner(wid, num_threads),
+        "tt_model_runners.dit_runners", fromlist=["TTFlux1Runner"]
+    ).TTFlux1Runner(wid, num_threads),
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid, num_threads: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid, num_threads),
+    ModelRunners.TT_QWEN_IMAGE: lambda wid, num_threads: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTQwenImageRunner"]
+    ).TTQwenImageRunner(wid, num_threads),
+    ModelRunners.TT_QWEN_IMAGE_2512: lambda wid, num_threads: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTQwenImage2512Runner"]
+    ).TTQwenImageRunner(wid, num_threads),
     ModelRunners.TT_MOCHI_1: lambda wid, num_threads: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid, num_threads),
@@ -45,9 +51,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLMBGELargeEN_V1_5: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_bge_large_en_runner", fromlist=["VLLMBGELargeENRunner"]
     ).VLLMBGELargeENRunner(wid, num_threads),
-    ModelRunners.TEST: lambda wid, num_threads: __import__(
-        "tt_model_runners.test_runner", fromlist=["TestRunner"]
-    ).TestRunner(wid, num_threads),
+    ModelRunners.LLM_TEST: lambda wid, num_threads: __import__(
+        "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
+    ).LLMTestRunner(wid, num_threads),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],

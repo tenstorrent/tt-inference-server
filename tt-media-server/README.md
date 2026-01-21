@@ -10,9 +10,10 @@ This server is built to serve non-LLM models. Currently supported models:
 6. Mochi1
 7. Wan2.2
 8. Motif-Image-6B-Preview
-9. Whisper
-10. Microsoft Resnet (Forge)
-11. VLLM with TT Plugin
+9. Qwen-Image
+10. Whisper
+11. Microsoft Resnet (Forge)
+12. VLLM with TT Plugin
 
 # Repo structure
 
@@ -96,23 +97,25 @@ source run_uvicorn.sh
 - Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only T3K and 6u galaxy are supported.
 
 ## Supported DiT models
 The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
 | MODEL | Supported device options|
 |-------|--------|
+| stable-diffusion-3.5-large | galaxy, t3k |
 | flux.1-dev | galaxy, t3k, p300, qbge |
 | flux.1-schnell | galaxy, t3k, p300, qbge |
 | motif-image-6b-preview | galaxy, t3k |
+| qwen-image | galaxy, t3k |
+| qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
 For example, to run flux.1-dev on t3k
-1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
-2. Set device special env variable ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
+2. Set device special env variable e.g ```export DEVICE=t3k```.
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
 ## VLLM with TT Plugin Setup
 
@@ -260,17 +263,104 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
 
-- JSON Request: Send a JSON POST request to `/speech`
+- JSON Request: Send a JSON POST request to `/audio/speech`
+
+**Default behavior:** Returns WAV file directly (default `response_format="audio"`)
+
 ```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/audio/speech' \
-  -H 'accept: application/json' \
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{
-  "text": "Hello, this is a test of the text to speech system."
-}'
+    "text": "Hello, this is a test of the text to speech system."
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
 ```
+
+**Request WAV file with explicit format:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello world, this is a test of text to speech",
+    "response_format": "audio"
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
+```
+
+**Request JSON response with base64 audio:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "This should return JSON",
+    "response_format": "verbose_json"
+  }' \
+  --silent \
+  --show-error
+```
+
+**Swagger/OpenAPI request body examples:**
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system."
+}
+```
+
+```json
+{
+  "text": "Hello world, this is a test of text to speech",
+  "response_format": "audio"
+}
+```
+
+```json
+{
+  "text": "This is another test",
+  "response_format": "wav"
+}
+```
+
+```json
+{
+  "text": "This should return JSON",
+  "response_format": "verbose_json"
+}
+```
+
+```json
+{
+  "text": "This is a JSON format test",
+  "response_format": "json"
+}
+```
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system.",
+  "response_format": "audio",
+  "speaker_id": "default_speaker"
+}
+```
+
+**Available response formats:**
+- `"audio"` or `"wav"` (default) - Returns WAV file directly (binary, `Content-Type: audio/wav`)
+- `"verbose_json"` or `"json"` - Returns JSON with base64-encoded audio
+
+**Optional fields:**
+- `speaker_id` - ID for pre-configured speaker embeddings (0-7456 for CMU ARCTIC dataset)
+- `speaker_embedding` - Base64-encoded or raw bytes of speaker embedding (advanced)
+
+**Note:** Do NOT include `speaker_embedding` unless you have a valid base64-encoded embedding.
 
 # Image search test call
 
@@ -353,8 +443,7 @@ curl -X 'GET' \
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
-The example below downloads the full file unless a `Range` header is specified.
+The `/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
@@ -362,17 +451,6 @@ curl -X 'GET' \
   -H 'Authorization: Bearer your-secret-key' \
   -o output.mp4
 ```
-
-To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Range: bytes=0-1048575' \
-  -o partial_output.mp4
-```
-This will download only the first 1 MB (bytes 0–1048575) of the video file.
 
 ## Cancel video job and assets
 

@@ -35,9 +35,12 @@ class WorkflowVenvType(IntEnum):
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
+    EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
+    BENCHMARKS_VIDEO = auto()
+    BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
@@ -47,6 +50,7 @@ class WorkflowVenvType(IntEnum):
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    HTTP_CLIENT_VIDEO_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
@@ -64,6 +68,8 @@ class DeviceTypes(IntEnum):
     T3K = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
+    DUAL_GALAXY = auto()
+    QUAD_GALAXY = auto()
     GPU = auto()
 
     @classmethod
@@ -87,6 +93,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
+            DeviceTypes.DUAL_GALAXY: "DUAL",
+            DeviceTypes.QUAD_GALAXY: "QUAD",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -107,6 +115,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "TT-LoudBox",
             DeviceTypes.GALAXY: "Tenstorrent Galaxy",
             DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
+            DeviceTypes.DUAL_GALAXY: "Dual Tenstorrent Galaxy",
+            DeviceTypes.QUAD_GALAXY: "Quad Tenstorrent Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")

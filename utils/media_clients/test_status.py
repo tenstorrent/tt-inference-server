@@ -124,3 +124,73 @@ class EmbeddingTestStatus(BaseTestStatus):
 
     def to_dict(self) -> Dict[str, Any]:
         return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}
+
+
+class TtsTestStatus(BaseTestStatus):
+    """Test status for text-to-speech models."""
+
+    def __init__(
+        self,
+        status: bool,
+        elapsed: float,
+        ttft_ms: Optional[float] = None,
+        rtr: Optional[float] = None,
+        text: Optional[str] = None,
+        audio_duration: Optional[float] = None,
+        wer: Optional[float] = None,
+        reference_text: Optional[str] = None,
+    ):
+        super().__init__(status, elapsed)
+        self.ttft_ms = ttft_ms
+        self.rtr = rtr
+        self.text = text
+        self.audio_duration = audio_duration
+        self.wer = wer
+        self.reference_text = reference_text
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "elapsed": self.elapsed,
+            "ttft_ms": self.ttft_ms,
+            "rtr": self.rtr,
+            "text": self.text,
+            "audio_duration": self.audio_duration,
+            "wer": self.wer,
+            "reference_text": self.reference_text,
+        }
+
+
+class VideoGenerationTestStatus(BaseTestStatus):
+    """Test status for video generation models (Mochi, WAN, etc.)."""
+
+    def __init__(
+        self,
+        status: bool,
+        elapsed: float,
+        num_inference_steps: int = 0,
+        inference_steps_per_second: float = 0,
+        ttft: Optional[float] = None,
+        job_id: Optional[str] = None,
+        video_path: Optional[str] = None,
+        prompt: Optional[str] = None,
+    ):
+        super().__init__(status, elapsed)
+        self.num_inference_steps = num_inference_steps
+        self.inference_steps_per_second = inference_steps_per_second
+        self.ttft = ttft
+        self.job_id = job_id
+        self.video_path = video_path
+        self.prompt = prompt
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "elapsed": self.elapsed,
+            "num_inference_steps": self.num_inference_steps,
+            "inference_steps_per_second": self.inference_steps_per_second,
+            "ttft": self.ttft,
+            "job_id": self.job_id,
+            "video_path": self.video_path,
+            "prompt": self.prompt,
+        }
