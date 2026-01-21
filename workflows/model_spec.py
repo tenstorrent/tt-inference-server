@@ -1528,7 +1528,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
         impl=tt_transformers_impl,
-        tt_metal_commit="777be4e",  # adam/mistral24b-multimodal rebased to main
+        tt_metal_commit="7e7b850",  # adam/mistral24b-multimodal - support text-only requests
         vllm_commit="78694f8",  # adam/mistral24b-integration rebased to dev
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1542,22 +1542,24 @@ spec_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
+                    "num_scheduler_steps": 1, # Not used in V1
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
                     "trace_region_size": 51934848,
                     "fabric_config": "FABRIC_1D",
-                    "sample_on_device_mode": "decode_only",
+                    "sample_on_device_mode": "decode_only", #Look into this
                 },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        # supported_modalities=["text"],
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
