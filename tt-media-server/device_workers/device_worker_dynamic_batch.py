@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import time
 from multiprocessing import Queue
 
 from device_workers.worker_utils import (
@@ -72,18 +71,8 @@ def device_worker(
             task_id = request._task_id
             result_generator = await device_runner._run_async([request])
             slot_id = request._queue_name
-            ### REMOVE THIS!!!
-            token_count = 0
-            start_time = None
-            ### REMOVE THIS!!!
             async for task_id, is_final, text in result_generator:
-                if token_count == 0:
-                    start_time = time.perf_counter()
-                token_count += 1
                 result_queue.put(is_final, text, slot_id)
-            elapsed = time.perf_counter() - start_time
-            rate = token_count / elapsed
-            logger.info(f"rate={rate:.0f} tok/s")
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
             )

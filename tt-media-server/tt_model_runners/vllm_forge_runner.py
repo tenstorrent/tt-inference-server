@@ -10,6 +10,7 @@ from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind
 
@@ -106,14 +107,42 @@ class VLLMForgeRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    def _generate_streaming(
+    async def _generate_streaming(
         self, request: CompletionRequest, sampling_params: SamplingParams
     ):
         """✅ Yields tuples of (task_id, is_final, text) to avoid pickling"""
         task_id = request._task_id
 
-        iterator = self.llm_engine.generate(request.prompt, sampling_params, task_id)
-        return iterator
+        chunks = []
+        chunks_append = chunks.append
+
+        strip_eos = TextUtils.strip_eos
+
+        async for request_output in self.llm_engine.generate(
+            request.prompt, sampling_params, task_id
+        ):
+            outputs = request_output.outputs
+            if not outputs:
+                continue
+
+            for output in outputs:
+                chunk_text = output.text
+                if not chunk_text:
+                    continue
+
+                if chunk_text.endswith(("</s>", "<|endoftext|>", "<|im_end|>")):
+                    chunk_text = strip_eos(chunk_text)
+                    if not chunk_text:
+                        continue
+
+                chunks_append(chunk_text)
+
+                yield (task_id, 0, chunk_text)
+
+        # do this on purpose to avoid over max decode issues
+        yield (task_id, 1, "final_text")
+
+        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
     async def _generate_non_streaming(
         self, request: CompletionRequest, sampling_params: SamplingParams

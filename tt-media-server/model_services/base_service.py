@@ -9,6 +9,7 @@ from typing import Any, Optional
 from config.constants import JobTypes
 from config.settings import settings
 from domain.base_request import BaseRequest
+from domain.completion_response import CompletionStreamChunk
 from model_services.memory_queue import SlotManager
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
@@ -25,7 +26,8 @@ class BaseService(ABC):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
         self._job_manager = get_job_manager()
-        self.slot_manager = SlotManager(self.scheduler.result_queues_by_worker[0])
+        if settings.use_memory_queue:
+            self.slot_manager = SlotManager(self.scheduler.result_queues_by_worker[0])
         if settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
 
@@ -134,15 +136,21 @@ class BaseService(ABC):
         "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process(self, request):
-        slot_id = self.slot_manager.reserve_slot(request._task_id)
-
-        request._queue_name = slot_id
+        slot_id = None
+        if self.slot_manager:
+            slot_id = self.slot_manager.reserve_slot(request._task_id)
+            request._queue_name = slot_id
+        else:
+            queue = asyncio.Queue()
+            self.scheduler.result_queues[request._task_id] = queue
 
         self.scheduler.process_request(request)
 
         try:
             result = await asyncio.wait_for(
-                self.scheduler.result_queues_by_worker[0].get(slot_id),
+                self.scheduler.result_queues_by_worker[0].get(slot_id)
+                if slot_id
+                else queue.get(),
                 timeout=settings.request_processing_timeout_seconds,
             )
             return result
@@ -155,7 +163,8 @@ class BaseService(ABC):
             self.logger.error(f"Error processing request: {e}")
             raise e
         finally:
-            self.slot_manager.release_slot(slot_id)
+            if slot_id and self.slot_manager:
+                self.slot_manager.release_slot(slot_id)
             self.scheduler.result_queues.pop(request._task_id, None)
 
     @log_execution_time(
@@ -163,14 +172,14 @@ class BaseService(ABC):
     )
     async def process_streaming(self, request):
         task_id = request._task_id
-
-        slot_id = self.slot_manager.reserve_slot(request._task_id)
-        request._queue_name = slot_id
+        slot_id = None
+        if self.slot_manager:
+            slot_id = self.slot_manager.reserve_slot(request._task_id)
+            request._queue_name = slot_id
+        else:
+            queue = self.scheduler.result_queues[request._task_id] = asyncio.Queue()
 
         self.scheduler.process_request(request)
-
-        # Import once outside the loop
-        from domain.completion_response import CompletionStreamChunk
 
         try:
             dynamic_timeout = settings.request_processing_timeout_seconds
@@ -182,50 +191,81 @@ class BaseService(ABC):
             result_queue = self.scheduler.result_queues_by_worker[0]
 
             while True:
-                # Batch read for better performance
-                batch = result_queue.read_batch(slot_id, max_items=5000)
+                if self.slot_manager:
+                    # Batch read for better performance
+                    batch = result_queue.read_batch(slot_id, max_items=5000)
 
-                if not batch:
-                    empty_iterations += 1
+                    if not batch:
+                        empty_iterations += 1
 
-                    # Check timeout less frequently
-                    if empty_iterations >= 1000:
-                        elapsed = asyncio.get_event_loop().time() - start_time
-                        if elapsed > dynamic_timeout:
-                            raise asyncio.TimeoutError(
-                                f"Streaming timed out after {dynamic_timeout}s"
-                            )
-                        empty_iterations = 0
+                        # Check timeout less frequently
+                        if empty_iterations >= 1000:
+                            elapsed = asyncio.get_event_loop().time() - start_time
+                            if elapsed > dynamic_timeout:
+                                raise asyncio.TimeoutError(
+                                    f"Streaming timed out after {dynamic_timeout}s"
+                                )
+                            empty_iterations = 0
 
-                    # Tight spin for a bit before yielding - reduces context switch overhead
-                    if empty_iterations < 100:
-                        continue  # Tight spin, no yield
+                        # Tight spin for a bit before yielding - reduces context switch overhead
+                        if empty_iterations < 100:
+                            continue  # Tight spin, no yield
 
-                    # Yield to event loop occasionally
-                    await asyncio.sleep(0)
-                    continue
+                        # Yield to event loop occasionally
+                        await asyncio.sleep(0)
+                        continue
 
-                # Reset on data received
-                empty_iterations = 0
-                start_time = asyncio.get_event_loop().time()
+                    # Reset on data received
+                    empty_iterations = 0
+                    start_time = asyncio.get_event_loop().time()
 
-                # Collect texts and check for final in one pass
-                texts = []
-                is_done = False
+                    # Collect texts and check for final in one pass
+                    texts = []
+                    is_done = False
 
-                for is_final, text in batch:
-                    if is_final:
-                        is_done = True
+                    for is_final, text in batch:
+                        if is_final:
+                            is_done = True
+                            break
+                        if text:
+                            texts.append(text)
+
+                    # Yield batched text as single chunk - HUGE performance gain
+                    if texts:
+                        yield CompletionStreamChunk(text="".join(texts))
+
+                    if is_done:
+                        return
+                else:
+                    try:
+                        # Get chunk without extra timeout overhead
+                        chunk = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        # Wait only when queue is empty
+                        chunk = await asyncio.wait_for(
+                            queue.get(), timeout=dynamic_timeout
+                        )
+
+                    # Type-based dispatch (faster than isinstance)
+                    chunk_type = chunk.get("type")
+
+                    if chunk_type == "streaming_chunk":
+                        formatted_chunk = chunk["chunk"]
+                        # Inline the check - no function calls
+                        if formatted_chunk and formatted_chunk.text:
+                            yield formatted_chunk
+
+                    elif chunk_type == "final_result":
+                        if chunk.get("return", False):
+                            final_result = chunk["result"]
+                            if final_result is not None:
+                                yield final_result
                         break
-                    if text:
-                        texts.append(text)
-
-                # Yield batched text as single chunk - HUGE performance gain
-                if texts:
-                    yield CompletionStreamChunk(text="".join(texts))
-
-                if is_done:
-                    return
+                    else:
+                        self.logger.error(
+                            f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
+                        )
+                        raise ValueError(f"Streaming protocol violation: {chunk_type}")
 
         except asyncio.TimeoutError:
             self.logger.error(f"Streaming timed out for task {task_id}")
@@ -234,7 +274,8 @@ class BaseService(ABC):
             self.logger.error(f"Streaming failed for task {task_id}: {e}")
             raise
         finally:
-            self.slot_manager.release_slot(slot_id)
+            if self.slot_manager and slot_id:
+                self.slot_manager.release_slot(slot_id)
 
     async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
         return await self._job_manager.create_job(
