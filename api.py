@@ -253,6 +253,7 @@ class RunRequest(BaseModel):
     hf_token: Optional[str] = None
     # Internal flag to track if this is already a retry (to prevent infinite loops)
     is_retry: Optional[bool] = False
+    skip_system_sw_validation: Optional[bool] = False
 
 
 def normalize_device_alias(device: str) -> str:
@@ -628,6 +629,9 @@ async def run_inference(request: RunRequest):
         # Add dev-mode if requested (used for auto-retry on failure)
         if request.dev_mode:
             sys.argv.extend(["--dev-mode"])
+        # Skip system software validation if requested (handles prerelease versions like '2.6.0-rc1')
+        if request.skip_system_sw_validation:
+            sys.argv.extend(["--skip-system-sw-validation"])
         sys.argv.extend(["--service-port", "7000"])
         
         # Add optional arguments if they are set
@@ -858,9 +862,9 @@ async def run_inference(request: RunRequest):
                                 "last_updated": time.time()
                             })
                     
-                    # Create a new request with dev_mode=True and is_retry=True
-                    retry_request = request.copy(update={"dev_mode": True, "is_retry": True})
-                    
+                    # Create a new request with dev_mode=True, skip_system_sw_validation=True, and is_retry=True
+                    retry_request = request.copy(update={"dev_mode": True, "skip_system_sw_validation": True, "is_retry": True})
+
                     # Recursively call run_inference with the retry request
                     return await run_inference(retry_request)
                 
@@ -947,9 +951,9 @@ async def run_inference(request: RunRequest):
                             "last_updated": time.time()
                         })
             
-            # Create a new request with dev_mode=True and is_retry=True
-            retry_request = request.copy(update={"dev_mode": True, "is_retry": True})
-            
+            # Create a new request with dev_mode=True, skip_system_sw_validation=True, and is_retry=True
+            retry_request = request.copy(update={"dev_mode": True, "skip_system_sw_validation": True, "is_retry": True})
+
             # Recursively call run_inference with the retry request
             return await run_inference(retry_request)
         
