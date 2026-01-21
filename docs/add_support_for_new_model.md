@@ -75,7 +75,7 @@ In addition to the published benchmarks we also care about the scores achieved f
 
 ### eval_config.py
 
-#### Step 1: Define an EvalConfig
+#### Step 2A: Define an EvalConfig
 Each model gets one EvalConfig. The primary field to update is the hf_model_repo, which is the HuggingFace repo or unique identifier of your model. Below is an example for Qwen2.5-70B model:
 
 ```python
@@ -89,7 +89,7 @@ EvalConfig(
     ],
 )
 ```
-#### Step 2: Add EvalTask Entries
+#### Step 2B: Add EvalTask Entries
 Each EvalTask specifies a benchmark/task (e.g., AIME, GPQA, IFEval) the model will be evaluated on. You may add multiple tasks per model. Below is an example for AIME24:
 ```python
 EvalTask(
@@ -152,5 +152,71 @@ EvalTask(
 - `model_kwargs` (dict): Model-specific arguments (e.g., model name, server URL, tokenizer backend, max length, etc.). Default: `{}`.
 
 
-## Step 3: Add Performance Benchmarks
+## Step 3: Add Performance Targets
 
+The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specific specific points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` the 2 points ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
+
+```json
+"Llama-3.3-70B-Instruct": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 113.0,
+                        "tput_user": 19.0,
+                        "tput": 610.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50.0,
+                        "tput_user": 73.0,
+                        "tput": 2438.0
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "tput_user": 80
+                    }
+                }
+            }
+        ],
+```
+
+This defines the pass/fail checks you can see in the report:
+```
+#### Text-to-Text Performance Benchmark Targets Llama-3.3-70B-Instruct on galaxy
+
+| ISL  | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) | Functional TTFT Check | Functional Tput User Check | Complete TTFT Check | Complete Tput User Check | Target TTFT Check | Target Tput User Check | Functional TTFT (ms) | Functional Tput User (TPS) | Complete TTFT (ms) | Complete Tput User (TPS) | Target TTFT (ms) | Target Tput User (TPS) |
+|------|-----|-------------|-----------|-----------------|-------------------|-----------------------|----------------------------|---------------------|--------------------------|-------------------|------------------------|----------------------|----------------------------|--------------------|--------------------------|------------------|------------------------|
+|  128 | 128 |           1 |      94.0 |           53.79 |              53.8 | PASS ✅               | PASS ✅                    | PASS ✅             | PASS ✅                  | FAIL ⛔           | FAIL ⛔                |               500.00 |                       8.00 |             100.00 |                    40.00 |            50.00 |                  80.00 |
+| 2048 | 128 |           1 |     397.0 |           49.98 |              50.0 | PASS ✅               | PASS ✅                    | PASS ✅             | PASS ✅                  | PASS ✅           | FAIL ⛔                |              8000.00 |                       8.00 |            1600.00 |                    40.00 |           800.00 |                  80.00 |
+
+```
