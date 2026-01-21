@@ -133,12 +133,6 @@ def get_embedding_docker_env_vars(model_spec, args):
         "VLLM__MAX_NUM_SEQS": model_spec.device_model_spec.env_vars.get(
             "VLLM__MAX_NUM_SEQS", 1
         ),
-        "DEFAULT_THROTTLE_LEVEL": model_spec.device_model_spec.env_vars.get(
-            "DEFAULT_THROTTLE_LEVEL", 0
-        ),
-        "MAX_BATCH_SIZE": model_spec.device_model_spec.env_vars.get(
-            "MAX_BATCH_SIZE", 1
-        ),
     }
 
     logger.info(
