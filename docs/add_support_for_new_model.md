@@ -4,9 +4,9 @@
 
 1. Tenstorrent code implementation has all runtime preconditions and configurations documented.
 2. vLLM or other inference server integration complete. For example with vLLM:
-    A. Support for the specific model is added in the Tenstorrent vLLM fork https://github.com/tenstorrent/vllm/tree/dev (For details of Tenstorrent vLLM integration see https://github.com/tenstorrent/tt-metal/blob/main/tech_reports/LLMs/vLLM_integration.md)
-    B. vLLM compatible generator is complete (see e.g. https://github.com/tenstorrent/tt-metal/blob/main/models/tt_transformers/tt/generator_vllm.py)
-    C. covering tt-metal CI vLLM nightly test has been added https://github.com/tenstorrent/tt-metal/actions/workflows/vllm-nightly-tests.yaml
+    - A. Support for the specific model is added in the Tenstorrent vLLM fork https://github.com/tenstorrent/vllm/tree/dev (For details of Tenstorrent vLLM integration see https://github.com/tenstorrent/tt-metal/blob/main/tech_reports/LLMs/vLLM_integration.md)
+    - B. vLLM compatible generator is complete (see e.g. https://github.com/tenstorrent/tt-metal/blob/main/models/tt_transformers/tt/generator_vllm.py)
+    - C. covering tt-metal CI vLLM nightly test has been added https://github.com/tenstorrent/tt-metal/actions/workflows/vllm-nightly-tests.yaml
 
 
 ## Step 1: Add a new GitHub issue for tracking model readiness support
@@ -23,7 +23,7 @@ Examples of Model readiness support tickets:
 
 The list of ModelSpecTemplates in https://github.com/tenstorrent/tt-inference-server/blob/main/workflows/model_spec.py defines the specification for each model. This includes what parameters (e.g. `max_context`, `max_concurrency`), settings, eng vars, etc. are required to make it run as expected with desired inference features.
 
-For example for Qwen3-32B on WH Galaxy:
+For example, for Qwen3-32B on WH Galaxy:
 ```python
 ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -136,8 +136,8 @@ EvalConfig(
     tasks=[
         # Add one or more EvalTask entries here
         EvalTask(
-            # Check Step 2 for EvalTask()
-        );  
+            # See Step 3B for EvalTask() parameters
+        ),
     ],
 )
 ```
@@ -159,8 +159,7 @@ EvalTask(
             "unit": "percent",
         },
     ),
-    workflow_venv_type=_
-    WorkflowVenvType.EVALS_COMMON,
+    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
     include_path="work_dir",
     apply_chat_template=True,
     model_kwargs={
@@ -206,7 +205,7 @@ EvalTask(
 
 ## Step 4: Add Performance Targets
 
-The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specific specific points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` the 2 points ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
+The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specify points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` there are 2 points: ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
 
 ```json
 "Llama-3.3-70B-Instruct": {
