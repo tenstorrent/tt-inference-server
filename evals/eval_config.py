@@ -1246,9 +1246,9 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    "max_length": 2048,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={"stream": "false", "max_gen_toks": "512"},
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -1275,9 +1275,9 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    "max_length": 2048,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={"stream": "false", "max_gen_toks": "512"},
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
