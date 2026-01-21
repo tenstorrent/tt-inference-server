@@ -23,6 +23,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 from utils.logger import TTLogger
 
+logger = TTLogger()
+
 
 class Settings(BaseSettings):
     # General settings
@@ -96,7 +98,6 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.logger = TTLogger()
 
         model_to_run = os.getenv("MODEL")
         if model_to_run and self.device:
@@ -141,7 +142,7 @@ class Settings(BaseSettings):
             self._calculate_audio_chunk_duration()
 
         if self.max_batch_size < self.vllm.max_num_seqs:
-            self.logger.warning(
+            logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
 
