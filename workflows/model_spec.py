@@ -1897,7 +1897,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 36410368,
                 },
             ),
             DeviceModelSpec(
