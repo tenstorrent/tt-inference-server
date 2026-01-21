@@ -847,10 +847,10 @@ async def run_inference(request: RunRequest):
                             "last_updated": time.time()
                         })
                 
-                # Auto-retry with dev_mode if this is the first attempt
-                if not request.is_retry and not request.dev_mode:
-                    logger.info(f"Deployment failed with return code {return_code}, auto-retrying with dev_mode=True")
-                    
+                # Auto-retry with dev_mode and skip_system_sw_validation if this is the first attempt
+                if not request.is_retry and not request.skip_system_sw_validation:
+                    logger.info(f"Deployment failed with return code {return_code}, auto-retrying with dev_mode=True and skip_system_sw_validation=True")
+
                     # Update progress to show retry
                     with progress_lock:
                         if job_id in progress_store:
@@ -858,10 +858,10 @@ async def run_inference(request: RunRequest):
                                 "status": "retrying",
                                 "stage": "retry",
                                 "progress": 0,
-                                "message": "Retrying deployment with dev_mode enabled...",
+                                "message": "Retrying deployment with dev_mode and skip_system_sw_validation enabled...",
                                 "last_updated": time.time()
                             })
-                    
+
                     # Create a new request with dev_mode=True, skip_system_sw_validation=True, and is_retry=True
                     retry_request = request.copy(update={"dev_mode": True, "skip_system_sw_validation": True, "is_retry": True})
 
