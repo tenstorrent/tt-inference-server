@@ -169,10 +169,10 @@ def report_test(results_report, request):
     # Use the full node name (e.g., "test_n[2]") for specific context
     test_node_name = request.node.name
 
-    if test_func_name not in results_report["parameter_support"]:
-        results_report["parameter_support"][test_func_name] = []
+    if test_func_name not in results_report["results"]:
+        results_report["results"][test_func_name] = []
 
-    results_report["parameter_support"][test_func_name].append(
+    results_report["results"][test_func_name].append(
         {
             "status": outcome,
             "message": message,
