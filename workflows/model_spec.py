@@ -1649,7 +1649,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 40000000,
+                    "trace_region_size": 30000000,
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
@@ -1855,7 +1855,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 15000000
+                    "trace_region_size": 10000000
                 },
             ),
             DeviceModelSpec(
