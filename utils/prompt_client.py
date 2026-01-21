@@ -434,6 +434,7 @@ class PromptClient:
             completions_url = self.completions_url
 
         if force_max_tokens:
+            json_data["min_tokens"] = max_tokens  # min_tokens not supported on TT backend in V1
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
@@ -707,7 +708,7 @@ class PromptClient:
         }
 
         if force_max_tokens:
-            json_data["min_tokens"] = max_tokens
+            json_data["min_tokens"] = max_tokens  # min_tokens not supported on TT backend in V1
             json_data["ignore_eos"] = True
 
         chat_url = f"{self._get_api_base_url()}/chat/completions"
