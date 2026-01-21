@@ -362,12 +362,12 @@ class VideoGenerationEvalsTest(BaseTest):
 
         clip = CLIPEncoder()
 
-        # Step 1: Extract all videos as list of frame lists WITH their prompts
-        # Structure: videos = [{'frames': [frame1, frame2, ...], 'prompt': str}, ...]
-        videos = []
+        # Step 1: Extract all videos as list of frame lists
+        # Structure matches videos_info but adds frames:
+        # [{'prompt': str, 'video_path': str, 'frames': [PIL.Image, ...]}, ...]
+        videos_with_frames = []
         for idx, video_info in enumerate(videos_info):
             video_path = video_info["video_path"]
-            prompt = video_info["prompt"]
             logger.info(
                 f"Extracting frames from video {idx + 1}/{len(videos_info)}: {video_path}"
             )
@@ -378,10 +378,12 @@ class VideoGenerationEvalsTest(BaseTest):
                 logger.warning(f"No frames extracted from video: {video_path}")
                 continue
 
-            videos.append({"frames": frames, "prompt": prompt})
+            # Add frames to existing video_info (already has correct prompt)
+            video_with_frames = {**video_info, "frames": frames}
+            videos_with_frames.append(video_with_frames)
             logger.info(f"Video {idx + 1}: extracted {len(frames)} frames")
 
-        if not videos:
+        if not videos_with_frames:
             logger.error("No videos with valid frames found")
             return {
                 "average_clip": 0.0,
@@ -391,14 +393,14 @@ class VideoGenerationEvalsTest(BaseTest):
                 "num_videos": 0,
             }
 
-        # Step 2: Calculate CLIP scores using correct prompt for each video
+        # Step 2: Calculate CLIP scores using correct prompt from videos_info
         logger.info("Calculating CLIP scores for all frames...")
         clip_scores = [
             [
                 100 * clip.get_clip_score(video["prompt"], img).item()
                 for img in video["frames"]
             ]
-            for video in videos
+            for video in videos_with_frames
         ]
 
         # Step 3: Calculate statistics per video
