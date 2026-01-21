@@ -1084,45 +1084,49 @@ def aiperf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if aiperf_text_results:
-        release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+    # Only include section if there are results to display
+    if aiperf_text_results or aiperf_image_results:
+        release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if aiperf_text_results:
+            release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += (
+                "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+            )
 
-    # IMAGE BENCHMARKS SECTION
-    if aiperf_image_results:
-        release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            aiperf_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if aiperf_image_results:
+            release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += (
+                "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+            )
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                aiperf_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
@@ -1370,41 +1374,45 @@ def genai_perf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if genai_text_results:
-        release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+    # Only include section if there are results to display
+    if genai_text_results or genai_image_results:
+        release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if genai_text_results:
+            release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # IMAGE BENCHMARKS SECTION
-    if genai_image_results:
-        release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            genai_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if genai_image_results:
+            release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                genai_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
