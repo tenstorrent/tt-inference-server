@@ -938,8 +938,8 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
-                max_concurrency=1,
-                max_context=1024,
+                max_concurrency=128,
+                max_context=128*1024,
                 default_impl=True,
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
@@ -947,15 +947,14 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
-                max_context=1024,
+                max_concurrency=128,
+                max_context=128*1024,
                 default_impl=True,
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(

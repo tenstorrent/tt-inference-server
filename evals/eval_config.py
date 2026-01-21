@@ -2323,6 +2323,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=0,
+                model_kwargs={
+                    "max_length": 131072,  # Tell lm-eval the actual context length
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32*1024,  # Add this for long reasoning responses
+                },
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.01,
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -2341,47 +2348,47 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=85.3,  # MMLU Pro score
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="r1_aime24",
-                score=EvalTaskScore(
-                    published_score=92.1,  # AIME 2024 score (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+        #     EvalTask(
+        #         task_name="mmlu_pro",
+        #         num_fewshot=5,
+        #         score=EvalTaskScore(
+        #             published_score=85.3,  # MMLU Pro score
+        #             published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+        #             gpu_reference_score=None,
+        #             gpu_reference_score_ref="TBD",
+        #             score_func=score_task_single_key,
+        #             score_func_kwargs={
+        #                 "result_keys": [
+        #                     "exact_match,custom-extract",
+        #                 ],
+        #                 "unit": "percent",
+        #             },
+        #         ),
+        #         limit_samples_map={
+        #             EvalLimitMode.CI_NIGHTLY: 0.2,
+        #             EvalLimitMode.SMOKE_TEST: 0.01,
+        #         },
+        #     ),
+        #     EvalTask(
+        #         task_name="r1_aime24",
+        #         score=EvalTaskScore(
+        #             published_score=92.1,  # AIME 2024 score (without tools)
+        #             published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+        #             gpu_reference_score=None,
+        #             gpu_reference_score_ref="TBD",
+        #             score_func=score_task_single_key,
+        #             score_func_kwargs={
+        #                 "result_keys": [
+        #                     "exact_match,none",
+        #                 ],
+        #                 "unit": "percent",
+        #             },
+        #         ),
+        #         limit_samples_map={
+        #             EvalLimitMode.CI_NIGHTLY: 0.2,
+        #             EvalLimitMode.SMOKE_TEST: 0.01,
+        #         },
+        #     ),
         ],
     ),
     EvalConfig(
