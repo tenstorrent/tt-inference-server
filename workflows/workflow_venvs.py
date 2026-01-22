@@ -224,6 +224,16 @@ def setup_benchmarks_vllm(
     return True
 
 
+def setup_benchmarks_video(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup video benchmarking environment."""
+    logger.info("running setup_benchmarks_video() ...")
+    return setup_venv(venv_config)
+
+
 def setup_evals_vision(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -523,6 +533,10 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         setup_function=setup_benchmarks_aiperf,
         python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
+        setup_function=setup_benchmarks_video,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
