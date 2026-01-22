@@ -1129,7 +1129,9 @@ def aiperf_benchmark_generate_report(
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **Output Tok/s**: Output token throughput\n"
-        release_str += "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
@@ -1418,7 +1420,9 @@ def genai_perf_benchmark_generate_report(
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **Output Tok/s**: Output token throughput\n"
-        release_str += "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report

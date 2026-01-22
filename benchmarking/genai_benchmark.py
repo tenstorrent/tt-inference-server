@@ -237,15 +237,11 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
     print(
         f"Output token throughput (tok/s):         {metrics.get('output_token_throughput', 0):.2f}"
     )
-    total_token_tput = metrics.get('total_token_throughput', 0)
+    total_token_tput = metrics.get("total_token_throughput", 0)
     if total_token_tput == "N/A":
-        print(
-            "Total token throughput (tok/s):          N/A"
-        )
+        print("Total token throughput (tok/s):          N/A")
     else:
-        print(
-            f"Total token throughput (tok/s):          {total_token_tput:.2f}"
-        )
+        print(f"Total token throughput (tok/s):          {total_token_tput:.2f}")
     print(
         f"Total input tokens:                      {metrics.get('total_input_tokens', 0)}"
     )
