@@ -1199,7 +1199,7 @@
                 "targets": {
                     "num_of_devices": 1,
                     "tts_generation_time": 10,
-                    "text_length": "short"
+                    "compare_audio": true
                 }
             }
         ]
