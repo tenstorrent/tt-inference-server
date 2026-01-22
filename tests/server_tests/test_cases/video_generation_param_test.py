@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import asyncio
+import json
 import logging
 import time
 
@@ -11,11 +12,14 @@ from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
+# Constants
+ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
+
 # Base payload with default parameters
 default_payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors, cinematic quality, smooth camera movement",
     "negative_prompt": "blurry, low quality, distorted, shaky",
-    "num_inference_steps": 20,
+    "num_inference_steps": 40,
     "seed": 42,
 }
 
@@ -61,6 +65,17 @@ class VideoGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/video/generations"
         logger.info(f"Testing video generation parameters at {self.url}")
+
+        # Determine model name and get appropriate num_inference_steps
+        model_name = self.config.get("model", "test-model")
+        default_steps = self._get_num_inference_steps_from_reference(model_name, 40)
+        logger.info(f"Using num_inference_steps={default_steps} for model={model_name}")
+
+        # Update payloads with model-specific default steps
+        default_payload["num_inference_steps"] = default_steps
+        seed_123_payload["num_inference_steps"] = default_steps
+        no_negative_prompt_payload["num_inference_steps"] = default_steps
+        different_prompt_payload["num_inference_steps"] = default_steps
 
         # Create list of payloads to test different parameters
         payloads = [
@@ -222,3 +237,31 @@ class VideoGenerationParamTest(BaseTest):
 
         # Return list of response data in the same order as input payloads
         return sorted(response_data_list, key=lambda x: x["index"])
+
+    def _load_accuracy_reference(self) -> dict:
+        """Load accuracy reference data from JSON file."""
+        logger.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
+        try:
+            with open(ACCURACY_REFERENCE_PATH, "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.warning(
+                f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}, using defaults"
+            )
+            return {}
+        except json.JSONDecodeError as e:
+            logger.warning(
+                f"Invalid JSON in accuracy reference file: {e}, using defaults"
+            )
+            return {}
+
+    def _get_num_inference_steps_from_reference(
+        self, model_name: str, default: int
+    ) -> int:
+        """Get num_inference_steps from reference data for a given model."""
+        reference_data = self._load_accuracy_reference()
+        if model_name in reference_data:
+            num_steps = reference_data[model_name].get("num_inference_steps")
+            if num_steps:
+                return num_steps
+        return default
