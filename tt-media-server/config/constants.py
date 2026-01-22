@@ -226,7 +226,7 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
@@ -266,7 +266,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -278,7 +278,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -450,13 +450,13 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
@@ -467,14 +467,14 @@ ModelConfigs = {
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 16,
