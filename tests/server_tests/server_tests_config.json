@@ -1197,8 +1197,9 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 1,
+                    "num_of_devices": 5,
                     "tts_generation_time": 10,
+                    "sample_count": 10,
                     "compare_audio": true
                 }
             }

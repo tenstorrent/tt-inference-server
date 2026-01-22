@@ -37,70 +37,91 @@ class TTSLoadTest(BaseTest):
     LibriTTS-R dataset has proper train/validation/test splits:
     - train.clean.100, train.clean.360, train.other.500 (training)
     - dev.clean, dev.other (validation)
-    - test.clean, test.other (test) - recommended for MCD evaluation
     """
 
     def __init__(self, config, targets=None, **kwargs):
         super().__init__(config, targets)
         self.comparison_results: dict = {}
 
+    def _log_step_header(self, step_num: int, title: str, details: list[str] = None):
+        """Log step header with consistent formatting."""
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info(f"Step {step_num}: {title}")
+        if details:
+            for detail in details:
+                logger.info(f"   {detail}")
+        logger.info("=" * 70)
+
+    def _format_response_values(self, results: dict) -> dict:
+        """Format response values for consistency (round floats to appropriate decimals)."""
+        time_fields_2dec = [
+            "requests_duration",
+            "min_duration",
+            "average_duration",
+            "ttft_ms",
+            "min_ttft_ms",
+            "max_ttft_ms",
+        ]
+        for field in time_fields_2dec:
+            if field in results:
+                results[field] = round(results[field], 2)
+
+        if "accuracy" in results:
+            results["accuracy"] = round(results["accuracy"], 4)
+
+        return results
+
+    def _log_summary(self, results: dict, target_time: float, total_duration: float):
+        """Log test summary with all metrics."""
+        logger.info("")
+        logger.info(
+            "📊 Results: "
+            f"avg={results.get('average_duration', 0):.2f}s "
+            f"(min={results.get('min_duration', 0):.2f}s, "
+            f"max={results.get('requests_duration', 0):.2f}s), "
+            f"target={target_time}s, "
+            f"TTFT={results.get('ttft_ms', 0):.2f}ms, "
+            f"accuracy={results.get('accuracy', 0) * 100:.1f}%, "
+            f"success={results['success']}, "
+            f"duration={total_duration:.1f}s"
+        )
+
     async def _run_specific_test_async(self):
         test_start_time = time.time()
 
         self.url = f"http://localhost:{self.service_port}/audio/speech"
-        logger.info("=" * 70)
-        logger.info("🚀 Starting TTS Load Test")
-        logger.info("=" * 70)
-        logger.info(f"   Service URL: {self.url}")
-        logger.info(f"   Targets: {self.targets}")
+        logger.info("🚀 TTS Load Test - Starting")
 
         # Use same parameter names and defaults as AudioTranscriptionLoadTest
-        devices = self.targets.get("num_of_devices", 1)
+        # Default 5 for concurrent load testing (batch_size = num_of_devices)
+        devices = self.targets.get("num_of_devices", 5)
         tts_target_time = self.targets.get("tts_generation_time", 10)
-        sample_count = self.targets.get("sample_count", 20)
-
-        # Get dataset split from targets (default: test for evaluation)
-        # Note: Without config parameter, only standard splits are available: train, test, validation
+        sample_count = self.targets.get("sample_count", 10)
         dataset_split = self.targets.get("dataset_split", "test")
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info(
-            f"Step 1: Downloading {sample_count} samples from LibriTTS-R dataset"
-        )
-        logger.info(f"   Split: {dataset_split}")
-        logger.info("=" * 70)
-        step1_start = time.time()
-        self._download_samples(count=sample_count, split=dataset_split)
-        step1_duration = time.time() - step1_start
-        logger.info(f"✅ Step 1 completed in {step1_duration:.2f}s")
 
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info("Step 2: Loading metadata")
-        logger.info("=" * 70)
-        step2_start = time.time()
+        # Step 1: Download samples
+        logger.debug(
+            f"Downloading {sample_count} samples from LibriTTS-R dataset (split: {dataset_split})"
+        )
+        self._download_samples(count=sample_count, split=dataset_split)
+
+        # Step 2: Load metadata
         metadata = self._load_metadata()
-        step2_duration = time.time() - step2_start
         if not metadata:
             logger.error("❌ No metadata found. Please download samples first.")
             return {
                 "success": False,
                 "error": "No metadata found. Please download samples first.",
             }
-        logger.info(f"✅ Step 2 completed in {step2_duration:.2f}s")
-        logger.info(f"   Loaded {len(metadata)} samples from metadata")
 
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info(f"Step 3: Running load test with {devices} concurrent requests")
-        logger.info(f"   Target time: {tts_target_time}s")
-        logger.info("=" * 70)
-        step3_start = time.time()
+        # Step 3: Run load test
+        logger.info(
+            f"Running load test: {len(metadata)} samples, {devices} concurrent requests (target: {tts_target_time}s)"
+        )
         load_test_results = await self._run_load_test(
             metadata=metadata, batch_size=devices
         )
-        step3_duration = time.time() - step3_start
-        logger.info(f"✅ Step 3 completed in {step3_duration:.2f}s")
 
         # Initialize success criteria based on time check (before Step 4)
         time_check = load_test_results.get("average_duration", 0) <= tts_target_time
@@ -108,123 +129,107 @@ class TTSLoadTest(BaseTest):
         load_test_results["success"] = time_check and ttft_check
 
         # Step 4: Compare generated audio with reference (if enabled)
-        # Similar to vision_evals_test: measure accuracy and save results
         compare_audio = self.targets.get("compare_audio", True)
         if compare_audio:
-            logger.info("")
-            logger.info("=" * 70)
-            logger.info("Step 4: Comparing generated audio with reference audio")
-            logger.info("=" * 70)
-            step4_start = time.time()
+            logger.debug("Comparing generated audio with reference audio")
             comparison_results = await self._compare_audio_results(
                 metadata=metadata, batch_size=devices
             )
-            step4_duration = time.time() - step4_start
-            logger.info(f"✅ Step 4 completed in {step4_duration:.2f}s")
 
-            # Save comparison results to JSON (like vision_evals_test)
-            dataset_path = Path(DATASET_DIR)
-            accuracy_file = dataset_path / "tts_accuracy.json"
-            # Use accuracy if available, fallback to success_rate
-            # Ensure comparison_results is a dict before accessing
-            if not isinstance(comparison_results, dict):
-                logger.warning(
-                    f"comparison_results is not a dict: {type(comparison_results)}"
-                )
-                comparison_results = {}
-            accuracy_value = comparison_results.get(
-                "accuracy"
-            ) or comparison_results.get("success_rate", 0.0)
-            accuracy_data = {
-                "accuracy": accuracy_value,
-                "valid_responses": comparison_results.get("valid_responses", 0),
-                "total": comparison_results.get("total", 0),
-                "mismatches_count": comparison_results.get("mismatches_count", 0),
-            }
-            with accuracy_file.open("w", encoding="utf-8") as f:
-                json.dump(accuracy_data, f, indent=2)
-            logger.info(f"   Saved accuracy results to {accuracy_file}")
-
+            accuracy_value = self._save_accuracy_results(comparison_results)
             load_test_results["comparison"] = comparison_results
             load_test_results["accuracy"] = accuracy_value
 
-            # Update success to include accuracy check
-            accuracy_threshold = self.targets.get(
-                "accuracy_threshold", 0.8
-            )  # 80% default
+            accuracy_threshold = self.targets.get("accuracy_threshold", 0.8)
             accuracy_check = accuracy_value >= accuracy_threshold
             load_test_results["success"] = (
                 load_test_results["success"] and accuracy_check
             )
-            logger.info(
-                f"   Accuracy check: {accuracy_check} ({accuracy_value * 100:.2f}% >= {accuracy_threshold * 100:.2f}%)"
-            )
-        else:
-            logger.info("Step 4: Skipped (compare_audio=false)")
-            logger.info(
-                "   Note: Enable compare_audio=true to validate audio quality against reference"
-            )
 
-        # Step 5: Always cleanup samples after test (unless explicitly disabled)
-        cleanup = self.targets.get("cleanup", True)  # Default to True (auto-cleanup)
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info("Step 5: Cleanup")
-        logger.info("=" * 70)
+        # Step 5: Cleanup samples
+        cleanup = self.targets.get("cleanup", True)
         if cleanup:
-            step5_start = time.time()
-            logger.info("Cleaning up downloaded samples...")
             self._cleanup_samples()
-            step5_duration = time.time() - step5_start
-            logger.info(f"✅ Step 5 completed in {step5_duration:.2f}s")
-        else:
-            logger.info("Skipping cleanup (cleanup=false in targets)")
 
+        # Prepare final results
         load_test_results["target_time"] = tts_target_time
         load_test_results["devices"] = devices
         load_test_results["sample_count"] = len(metadata)
+        load_test_results = self._format_response_values(load_test_results)
 
-        # Log success criteria (success already set before Step 4)
-        logger.info("")
-        logger.info("   Success Criteria:")
-        logger.info(
-            f"   ├─ Time check: {time_check} (avg {load_test_results.get('average_duration', 0):.2f}s <= {tts_target_time}s)"
-        )
-        if "ttft_ms" in load_test_results:
-            logger.info(
-                f"   ├─ TTFT: {load_test_results.get('ttft_ms', 0):.2f}ms (avg)"
-            )
-            logger.info(
-                f"   └─ Max TTFT: {load_test_results.get('max_ttft_ms', 0):.2f}ms"
-            )
-        else:
-            logger.info("   └─ TTFT: N/A")
-
+        # Log final summary
         total_duration = time.time() - test_start_time
-        logger.info("")
-        logger.info("=" * 70)
-        logger.info("📊 Test Summary")
-        logger.info("=" * 70)
-        logger.info(f"   Total duration: {total_duration:.2f}s")
-        logger.info(
-            f"   Average request time: {load_test_results.get('average_duration', 0):.2f}s"
-        )
-        logger.info(f"   Target time: {tts_target_time}s")
-        if "ttft_ms" in load_test_results:
-            logger.info(
-                f"   ⏱️  Average TTFT: {load_test_results.get('ttft_ms', 0):.2f}ms"
-            )
-            logger.info(
-                f"   ⏱️  Max TTFT: {load_test_results.get('max_ttft_ms', 0):.2f}ms"
-            )
-        if "accuracy" in load_test_results:
-            logger.info(
-                f"   📊 Audio accuracy: {load_test_results.get('accuracy', 0) * 100:.2f}%"
-            )
-        logger.info(f"   ✅ Success: {load_test_results['success']}")
-        logger.info("=" * 70)
+        self._log_summary(load_test_results, tts_target_time, total_duration)
 
         return load_test_results
+
+    def _save_accuracy_results(self, comparison_results: dict) -> float:
+        """Save accuracy results to JSON file and return accuracy value."""
+        if not isinstance(comparison_results, dict):
+            logger.warning(
+                f"comparison_results is not a dict: {type(comparison_results)}"
+            )
+            comparison_results = {}
+
+        accuracy_value = comparison_results.get("accuracy") or comparison_results.get(
+            "success_rate", 0.0
+        )
+        accuracy_data = {
+            "accuracy": accuracy_value,
+            "valid_responses": comparison_results.get("valid_responses", 0),
+            "total": comparison_results.get("total", 0),
+            "mismatches_count": comparison_results.get("mismatches_count", 0),
+        }
+
+        dataset_path = Path(DATASET_DIR)
+        accuracy_file = dataset_path / "tts_accuracy.json"
+        with accuracy_file.open("w", encoding="utf-8") as f:
+            json.dump(accuracy_data, f, indent=2)
+        logger.debug(f"Saved accuracy results to {accuracy_file}")
+
+        return accuracy_value
+
+    def _extract_batch_metrics(self, batch_results: list) -> tuple[list, list]:
+        """Extract duration and TTFT metrics from batch results."""
+        if isinstance(batch_results[0], dict):
+            durations = [r["duration"] for r in batch_results]
+            ttft_values = [r["ttft_ms"] for r in batch_results]
+        else:
+            # Fallback for old format
+            durations = batch_results
+            ttft_values = [0] * len(batch_results)
+        return durations, ttft_values
+
+    def _calculate_metrics(
+        self, durations: list[float], ttft_values: list[float]
+    ) -> dict:
+        """Calculate aggregate metrics from duration and TTFT lists."""
+        max_duration = max(durations) if durations else 0
+        min_duration = min(durations) if durations else 0
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        avg_ttft_ms = sum(ttft_values) / len(ttft_values) if ttft_values else 0
+        max_ttft_ms = max(ttft_values) if ttft_values else 0
+        min_ttft_ms = min(ttft_values) if ttft_values else 0
+
+        return {
+            "requests_duration": round(max_duration, 2),
+            "min_duration": round(min_duration, 2),
+            "average_duration": round(avg_duration, 2),
+            "ttft_ms": round(avg_ttft_ms, 2),
+            "min_ttft_ms": round(min_ttft_ms, 2),
+            "max_ttft_ms": round(max_ttft_ms, 2),
+        }
+
+    def _log_load_test_results(
+        self,
+        metrics: dict,
+        total_samples: int,
+        num_batches: int,
+        iteration_duration: float,
+    ):
+        """Log load test results in a formatted way."""
+        # Results are logged in _log_summary, no need for detailed logging here
+        pass
 
     def _download_samples(self, count: int = 20, split: str = "test") -> None:
         """Download samples from LibriTTS-R dataset and save metadata.
@@ -255,16 +260,12 @@ class TTSLoadTest(BaseTest):
 
         download_start = time.time()
 
-        logger.info(
-            f"📥 Downloading {count} samples from LibriTTS-R dataset (split: {split})"
+        logger.debug(
+            f"Downloading {count} samples from LibriTTS-R dataset (split: {split})"
         )
-        logger.info("   Dataset: blabble-io/libritts_r")
-        logger.info("   Using streaming mode for faster download")
 
         try:
             from datasets import load_dataset
-
-            logger.info("   Importing datasets library...")
 
             # Load LibriTTS-R dataset (blabble-io/libritts_r)
             # Note: Some versions of datasets library don't support config parameter properly
@@ -275,14 +276,9 @@ class TTSLoadTest(BaseTest):
             # If that fails due to ParquetConfig issue, load without config and find split manually
             try:
                 # Try with streaming first (faster, doesn't download everything)
-                logger.info(
-                    f"   Attempting to load dataset with config='clean', split='{split}'..."
-                )
+                logger.debug(f"Loading dataset with config='clean', split='{split}'...")
                 dataset = load_dataset(
                     "blabble-io/libritts_r", "clean", split=split, streaming=True
-                )
-                logger.info(
-                    "✅ Successfully loaded dataset with config='clean' (streaming mode)"
                 )
             except (TypeError, ValueError) as e:
                 if (
@@ -306,19 +302,13 @@ class TTSLoadTest(BaseTest):
                         "train.other.500": "train",
                     }
                     standard_split = split_mapping.get(split, "test")
-                    logger.info(
+                    logger.debug(
                         f"Using standard split '{standard_split}' instead of '{split}'"
                     )
 
                     # Load with streaming using standard split
-                    logger.info(
-                        f"   Loading dataset with standard split '{standard_split}' (streaming)..."
-                    )
                     dataset = load_dataset(
                         "blabble-io/libritts_r", split=standard_split, streaming=True
-                    )
-                    logger.info(
-                        f"✅ Successfully loaded dataset with split '{standard_split}'"
                     )
                 else:
                     # Different error, re-raise it
@@ -355,37 +345,23 @@ class TTSLoadTest(BaseTest):
                     )
                     count = total_samples
 
-                logger.info(f"   Selecting {count} samples...")
+                logger.debug(f"Selecting {count} samples...")
                 select_start = time.time()
                 dataset_subset = dataset.select(range(count))
                 select_duration = time.time() - select_start
-                logger.info(f"✅ Selected {count} samples in {select_duration:.2f}s")
+                logger.debug(f"Selected {count} samples in {select_duration:.2f}s")
 
             output_path = Path(DATASET_DIR)
-            logger.info(f"   Preparing output directory: {output_path}")
             if output_path.exists():
-                logger.info("   Removing existing directory...")
                 shutil.rmtree(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
-            logger.info("✅ Output directory ready")
 
-            # LibriTTS-R dataset structure (from blabble-io/libritts_r):
-            # id, text_original, text_normalized, audio (dict with path, array, sampling_rate),
-            # path, speaker_id, chapter_id
-            logger.info(
-                f"   Processing {len(dataset_subset) if isinstance(dataset_subset, list) else 'N'} samples..."
-            )
             metadata = []
             # Handle both list (from streaming) and dataset object
             samples_iter = (
                 dataset_subset if isinstance(dataset_subset, list) else dataset_subset
             )
-            process_start = time.time()
             for idx, sample in enumerate(samples_iter):
-                if (idx + 1) % 10 == 0 or idx == 0:
-                    logger.info(
-                        f"   Processing sample {idx + 1}/{len(samples_iter) if isinstance(samples_iter, list) else '?'}..."
-                    )
                 sample_id = sample.get("id", f"libritts_{idx:05d}")
 
                 text_original = sample.get("text_original", "")
@@ -426,8 +402,8 @@ class TTSLoadTest(BaseTest):
             with metadata_path.open("w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
 
-            logger.info(
-                f"Saved {len(metadata)} LibriTTS-R samples metadata to {metadata_path} (split: {split})"
+            logger.debug(
+                f"Saved {len(metadata)} LibriTTS-R samples metadata (split: {split})"
             )
 
         except ImportError:
@@ -482,9 +458,6 @@ class TTSLoadTest(BaseTest):
         """
         load_test_start = time.time()
 
-        logger.info(f"   Preparing {batch_size} concurrent requests...")
-        logger.info(f"   Using {len(metadata)} samples from metadata")
-
         async def timed_request(session, index, text):
             logger.debug(f"   Starting TTS request {index} with text: {text[:50]}...")
             try:
@@ -501,8 +474,6 @@ class TTSLoadTest(BaseTest):
                     self.url, json=payload, headers=headers
                 ) as response:
                     # Measure TTFT: time from request start to first byte received
-                    ttft_start = time.perf_counter()
-                    # Read first byte to measure TTFT (Time To First Token/Response)
                     first_chunk = await response.content.read(1)
                     ttft_ms = (
                         time.perf_counter() - start
@@ -582,22 +553,20 @@ class TTSLoadTest(BaseTest):
 
         sample_texts = [sample["text"] for sample in metadata]
 
-        # Calculate number of batches needed to process all samples
+        # Process all samples in batches with concurrent requests per batch
+        # This ensures all samples are tested while maintaining concurrent load
         num_batches = (len(sample_texts) + batch_size - 1) // batch_size
-        logger.info(
-            f"   Processing {len(sample_texts)} samples in {num_batches} batches of {batch_size} concurrent requests"
-        )
+
+        if batch_size == 1:
+            logger.warning(
+                "⚠️  batch_size=1 means sequential execution (not concurrent load). "
+                "Consider increasing num_of_devices for true concurrent load testing."
+            )
 
         for iteration in range(2):
-            if iteration == 0:
-                logger.info(f"   🔥 Warm-up iteration {iteration + 1}/2...")
-            else:
-                logger.info(f"   📊 Measured iteration {iteration + 1}/2...")
-
             iteration_start = time.time()
             all_durations = []
             all_ttft_values = []
-            all_audio_durations = []
 
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -608,11 +577,6 @@ class TTSLoadTest(BaseTest):
                     batch_start = batch_idx * batch_size
                     batch_end = min(batch_start + batch_size, len(sample_texts))
                     batch_samples = sample_texts[batch_start:batch_end]
-                    batch_num = batch_idx + 1
-
-                    logger.debug(
-                        f"   Batch {batch_num}/{num_batches}: Processing samples {batch_start + 1}-{batch_end} ({len(batch_samples)} concurrent requests)..."
-                    )
 
                     tasks = [
                         timed_request(
@@ -626,59 +590,23 @@ class TTSLoadTest(BaseTest):
                     batch_results = await asyncio.gather(*tasks)
 
                     # Extract metrics from batch results
-                    if isinstance(batch_results[0], dict):
-                        batch_durations = [r["duration"] for r in batch_results]
-                        batch_ttft_values = [r["ttft_ms"] for r in batch_results]
-                        batch_audio_durations = [
-                            r.get("audio_duration", 0) for r in batch_results
-                        ]
-                    else:
-                        # Fallback for old format
-                        batch_durations = batch_results
-                        batch_ttft_values = [0] * len(batch_results)
-                        batch_audio_durations = [0] * len(batch_results)
-
+                    batch_durations, batch_ttft_values = self._extract_batch_metrics(
+                        batch_results
+                    )
                     all_durations.extend(batch_durations)
                     all_ttft_values.extend(batch_ttft_values)
-                    all_audio_durations.extend(batch_audio_durations)
 
             iteration_duration = time.time() - iteration_start
 
             # Calculate aggregate metrics across all batches
-            requests_duration = max(all_durations) if all_durations else 0
-            total_duration = sum(all_durations)
-            avg_duration = total_duration / len(all_durations) if all_durations else 0
-            avg_ttft_ms = (
-                sum(all_ttft_values) / len(all_ttft_values) if all_ttft_values else 0
-            )
-            max_ttft_ms = max(all_ttft_values) if all_ttft_values else 0
+            metrics = self._calculate_metrics(all_durations, all_ttft_values)
 
             if iteration == 0:
-                logger.info(
-                    f"✅ Warm-up completed in {iteration_duration:.2f}s ({len(all_durations)} total requests in {num_batches} batches)"
-                )
+                logger.debug(f"Warm-up completed in {iteration_duration:.2f}s")
             else:
-                logger.info("")
-                logger.info("   📊 Load Test Results:")
-                logger.info(f"   ├─ Total samples processed: {len(all_durations)}")
-                logger.info(f"   ├─ Number of batches: {num_batches}")
-                logger.info(
-                    f"   ├─ Max time (slowest request): {requests_duration:.2f}s"
-                )
-                logger.info(f"   ├─ Average time: {avg_duration:.2f}s")
-                logger.info(f"   ├─ Average TTFT: {avg_ttft_ms:.2f}ms")
-                logger.info(f"   ├─ Max TTFT: {max_ttft_ms:.2f}ms")
-                logger.info(f"   └─ Total iteration time: {iteration_duration:.2f}s")
-
-                load_test_duration = time.time() - load_test_start
-                logger.info(f"   Total load test duration: {load_test_duration:.2f}s")
-
                 return {
-                    "requests_duration": requests_duration,
-                    "average_duration": avg_duration,
-                    "ttft_ms": avg_ttft_ms,
-                    "max_ttft_ms": max_ttft_ms,
-                    "ttft_values": all_ttft_values,
+                    **metrics,
+                    "ttft_values": [round(v, 2) for v in all_ttft_values],
                     "total_samples": len(all_durations),
                     "num_batches": num_batches,
                 }
@@ -711,11 +639,9 @@ class TTSLoadTest(BaseTest):
         Returns:
             List of results with sample and response data
         """
-        logger.info(f"Replaying {len(metadata)} samples through TTS API")
 
         async def request_with_sample(session, index, sample):
             text = sample.get("normalized_text") or sample.get("text", "")
-            logger.debug(f"Request {index}: {text[:50]}...")
             try:
                 # Request JSON format to get structured response
                 payload = {"text": text, "response_format": "verbose_json"}
@@ -742,9 +668,6 @@ class TTSLoadTest(BaseTest):
 
         # Process all samples in batches for comparison
         num_batches = (len(metadata) + batch_size - 1) // batch_size
-        logger.info(
-            f"Processing {len(metadata)} samples in {num_batches} batches of up to {batch_size} concurrent requests"
-        )
 
         all_results = []
         session_timeout = aiohttp.ClientTimeout(total=2000)
@@ -758,10 +681,6 @@ class TTSLoadTest(BaseTest):
                 batch_samples = metadata[batch_start:batch_end]
                 batch_num = batch_idx + 1
 
-                logger.debug(
-                    f"Batch {batch_num}/{num_batches}: Processing samples {batch_start + 1}-{batch_end} ({len(batch_samples)} concurrent requests)..."
-                )
-
                 tasks = [
                     request_with_sample(session, batch_start + i + 1, sample)
                     for i, sample in enumerate(batch_samples)
@@ -769,7 +688,6 @@ class TTSLoadTest(BaseTest):
                 batch_results = await asyncio.gather(*tasks)
                 all_results.extend(batch_results)
 
-        logger.info(f"Collected {len(all_results)} responses for comparison")
         return all_results
 
     def _extract_audio_info(self, response: dict) -> dict:
@@ -798,7 +716,7 @@ class TTSLoadTest(BaseTest):
         Returns:
             Dictionary with analysis results
         """
-        logger.info("Analyzing TTS results...")
+        logger.debug("Analyzing TTS results...")
         total = len(results)
         valid_responses = 0
         mismatches: list[dict] = []
@@ -836,12 +754,9 @@ class TTSLoadTest(BaseTest):
         # Calculate accuracy (like vision_evals_test)
         accuracy = (valid_responses / total) if total > 0 else 0.0
 
-        logger.info("")
-        logger.info("   📊 Audio Comparison Results:")
-        logger.info(f"   ├─ Total samples: {total}")
-        logger.info(f"   ├─ Valid responses: {valid_responses}")
-        logger.info(f"   ├─ Mismatches: {len(mismatches)}")
-        logger.info(f"   └─ Accuracy: {accuracy * 100:.2f}%")
+        logger.debug(
+            f"Audio comparison: {valid_responses}/{total} valid, accuracy: {accuracy * 100:.2f}%"
+        )
 
         comparison_result = {
             "total": total,
@@ -858,7 +773,7 @@ class TTSLoadTest(BaseTest):
             mismatch_path = dataset_path / "tts_mismatches.json"
             with mismatch_path.open("w", encoding="utf-8") as f:
                 json.dump(mismatches, f, indent=2)
-            logger.info(f"Saved mismatches to {mismatch_path}")
+            logger.debug(f"Saved mismatches to {mismatch_path}")
             comparison_result["mismatches"] = mismatches
 
         return comparison_result
@@ -875,12 +790,6 @@ class TTSLoadTest(BaseTest):
         if dataset_path.exists():
             try:
                 shutil.rmtree(dataset_path)
-                logger.info(
-                    f"✅ Successfully cleaned up dataset directory: {dataset_path}"
-                )
+                logger.debug(f"Cleaned up dataset directory: {dataset_path}")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to clean up dataset directory: {e}")
-        else:
-            logger.info(
-                f"Dataset directory does not exist: {dataset_path} (nothing to clean)"
-            )
