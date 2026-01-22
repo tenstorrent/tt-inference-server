@@ -341,6 +341,7 @@ def main():
         or model_spec.inference_engine == InferenceEngine.FORGE.value
     ):
         os.environ["VLLM_API_KEY"] = "your-secret-key"
+        os.environ["OPENAI_API_KEY"] = "your-secret-key"
         logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
     env_vars = os.environ.copy()
 
