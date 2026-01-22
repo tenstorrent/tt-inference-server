@@ -29,7 +29,7 @@ from evals.eval_config import EVAL_CONFIGS, EvalTask
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import InferenceEngine, ModelSpec, ModelType
+from workflows.model_spec import ModelSpec, ModelType
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
@@ -336,13 +336,6 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    if (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        or model_spec.inference_engine == InferenceEngine.FORGE.value
-    ):
-        os.environ["VLLM_API_KEY"] = "your-secret-key"
-        os.environ["OPENAI_API_KEY"] = "your-secret-key"
-        logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
