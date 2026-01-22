@@ -266,7 +266,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
