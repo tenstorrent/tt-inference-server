@@ -240,7 +240,7 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
     total_token_tput = metrics.get('total_token_throughput', 0)
     if total_token_tput == "N/A":
         print(
-            f"Total token throughput (tok/s):          N/A"
+            "Total token throughput (tok/s):          N/A"
         )
     else:
         print(
