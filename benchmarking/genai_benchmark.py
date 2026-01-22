@@ -198,6 +198,9 @@ def parse_metrics(artifact_dir) -> Dict[str, float]:
             "std_e2el_ms": data["request_latency"]["std"],
             # Throughput metrics
             "output_token_throughput": data["output_token_throughput"]["avg"],
+            "total_token_throughput": data.get("total_token_throughput", {}).get(
+                "avg", "N/A"
+            ),
             "request_throughput": data["request_throughput"]["avg"],
             # Calculated token counts (approximations)
             "total_input_tokens": int(
@@ -234,6 +237,15 @@ def print_detailed_results(isl, osl, concurrency, num_requests, metrics):
     print(
         f"Output token throughput (tok/s):         {metrics.get('output_token_throughput', 0):.2f}"
     )
+    total_token_tput = metrics.get('total_token_throughput', 0)
+    if total_token_tput == "N/A":
+        print(
+            f"Total token throughput (tok/s):          N/A"
+        )
+    else:
+        print(
+            f"Total token throughput (tok/s):          {total_token_tput:.2f}"
+        )
     print(
         f"Total input tokens:                      {metrics.get('total_input_tokens', 0)}"
     )
