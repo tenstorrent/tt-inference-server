@@ -643,7 +643,9 @@ class TestJobManager:
             assert db_job["error_message"]["code"] == "processing_error"
 
     @pytest.mark.asyncio
-    async def test_job_processing_failure_invalid_result_path(self, job_manager, mock_request):
+    async def test_job_processing_failure_invalid_result_path(
+        self, job_manager, mock_request
+    ):
         """Test job fails when task function returns non-string result_path"""
 
         async def task_func_returns_list(req):

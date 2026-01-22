@@ -9,6 +9,7 @@ import sqlite3
 import json
 from contextlib import contextmanager
 
+
 class JobDatabase:
     """Database interface for persistent job storage."""
 
@@ -24,7 +25,7 @@ class JobDatabase:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
         return conn
-    
+
     @contextmanager
     def _get_cursor(self, commit: bool = True):
         conn = self._get_connection()
@@ -80,7 +81,6 @@ class JobDatabase:
                 ),
             )
 
-
     def update_job_status(
         self,
         job_id: str,
@@ -115,7 +115,6 @@ class JobDatabase:
         """Delete a job from the database."""
         with self._get_cursor() as cursor:
             cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-
 
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific job from the database by its ID."""

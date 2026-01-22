@@ -143,9 +143,11 @@ class JobManager:
                         created_at=job.created_at,
                     )
                 except Exception as e:
-                    self._logger.error(f"Failed to insert job {job_id} into database: {e}")
+                    self._logger.error(
+                        f"Failed to insert job {job_id} into database: {e}"
+                    )
                     raise
-            
+
             # we only add the job to the in-memory storage if the database insert was successful
             self._jobs[job_id] = job
             self._logger.info(f"Job {job_id} created.")
@@ -198,8 +200,9 @@ class JobManager:
                 try:
                     self.db.update_job_status(job.id, job.status.value)
                 except Exception as e:
-                    self._logger.error(f"DB update failed, but proceeding with task cancellation: {e}")
-
+                    self._logger.error(
+                        f"DB update failed, but proceeding with task cancellation: {e}"
+                    )
 
             self._cleanup_job(job)
 
@@ -232,7 +235,9 @@ class JobManager:
                         try:
                             self.db.update_job_status(job.id, job.status.value)
                         except Exception as e:
-                            self._logger.error(f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}")
+                            self._logger.error(
+                                f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}"
+                            )
 
                     task = self._cleanup_job(job)
                     if task:
@@ -252,13 +257,15 @@ class JobManager:
                 try:
                     self.db.update_job_status(job.id, job.status.value)
                 except Exception as e:
-                    self._logger.error(f"Failed to sync 'in_progress' to DB for {job.id}: {e}")
+                    self._logger.error(
+                        f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
+                    )
 
             result_path = await task_function(request)
 
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
-                
+
             job.mark_completed(result_path=result_path)
             if self.db:
                 try:
@@ -269,7 +276,9 @@ class JobManager:
                         result_path=job.result_path,
                     )
                 except Exception as e:
-                    self._logger.error(f"Failed to sync 'completed' to DB for {job.id}: {e}")
+                    self._logger.error(
+                        f"Failed to sync 'completed' to DB for {job.id}: {e}"
+                    )
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
@@ -280,7 +289,9 @@ class JobManager:
                         job.id, job.status.value, completed_at=job.completed_at
                     )
                 except Exception as e:
-                    self._logger.error(f"Failed to sync 'cancelled' to DB for {job.id}: {e}")
+                    self._logger.error(
+                        f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
+                    )
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
@@ -288,13 +299,15 @@ class JobManager:
             if self.db:
                 try:
                     self.db.update_job_status(
-                    job.id,
-                    job.status.value,
-                    completed_at=job.completed_at,
-                    error_message=job.error,
-                )
+                        job.id,
+                        job.status.value,
+                        completed_at=job.completed_at,
+                        error_message=job.error,
+                    )
                 except Exception as e:
-                    self._logger.error(f"Failed to sync 'failed' to DB for {job.id}: {e}")
+                    self._logger.error(
+                        f"Failed to sync 'failed' to DB for {job.id}: {e}"
+                    )
         finally:
             job._task = None
 
@@ -341,7 +354,9 @@ class JobManager:
                         try:
                             self.db.delete_job(job_id)
                         except Exception as e:
-                            self._logger.error(f"Database deletion failed for job {job_id} during cleanup: {e}")
+                            self._logger.error(
+                                f"Database deletion failed for job {job_id} during cleanup: {e}"
+                            )
 
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
@@ -416,7 +431,9 @@ class JobManager:
                             error_message=job.error,
                         )
                     except Exception as e:
-                        self._logger.error(f"Failed to sync corrected status for job {job.id} to DB: {e}")
+                        self._logger.error(
+                            f"Failed to sync corrected status for job {job.id} to DB: {e}"
+                        )
                 else:
                     self._logger.debug(
                         f"Restored job {job.id} from database (status: {job.status.value})"

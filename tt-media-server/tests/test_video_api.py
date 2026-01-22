@@ -229,7 +229,9 @@ class TestDownloadVideoContent:
     def test_download_video_content_file_not_exists(self):
         """Test video download when file path doesn't exist"""
         mock_service = MagicMock()
-        mock_service.get_job_result_path = MagicMock(return_value="/nonexistent/path.mp4")
+        mock_service.get_job_result_path = MagicMock(
+            return_value="/nonexistent/path.mp4"
+        )
 
         mock_request = MagicMock()
 
@@ -247,7 +249,9 @@ class TestDownloadVideoContent:
     def test_download_video_content_invalid_type(self):
         """Test video download when result is not a string"""
         mock_service = MagicMock()
-        mock_service.get_job_result_path = MagicMock(return_value={"error": "not a path"})
+        mock_service.get_job_result_path = MagicMock(
+            return_value={"error": "not a path"}
+        )
 
         mock_request = MagicMock()
 
