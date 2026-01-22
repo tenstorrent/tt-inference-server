@@ -69,6 +69,15 @@ docker run --rm -p 8080:8080 \
 - **Browser:** `http://HOST_IP:8080`
 - **VLC:** `vlc tcp://HOST_IP:8080`
 
+**Remote Access (via SSH tunnel):**
+```bash
+# From your local machine, forward port 8080:
+ssh -L 8080:localhost:8080 user@remote-host
+
+# Then open in your local browser:
+# http://localhost:8080
+```
+
 > **Note:** First run takes ~2 minutes for model trace compilation. Subsequent frames run at full speed.
 
 ## Modes
@@ -88,7 +97,7 @@ docker run --rm -p 8080:8080 \
 |--------|-------|
 | Model compile | ~2 minutes (first frame only) |
 | Inference | ~5-10ms per frame |
-| Throughput | 100-120+ FPS after warmup |
+| Throughput | 100-120 FPS after warmup |
 | Resolution | 640x640 |
 
 ## Files
