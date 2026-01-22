@@ -91,7 +91,8 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
         service_port=service_port,
     )
 
-    is_healthy, runner_in_use = health_checker.get_health()
+    # use 1 device for health check so evals start earlier
+    is_healthy, runner_in_use = health_checker.get_health(1, 1)
     if not is_healthy:
         raise RuntimeError("❌ Media server is not healthy. Aborting evaluations.")
 
