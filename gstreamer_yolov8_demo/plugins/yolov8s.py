@@ -2,7 +2,9 @@
 """
 GStreamer YOLOv8s Plugin for Tenstorrent Devices
 Uses GstElement with chain function for reliable frame processing.
+Supports mesh devices (T3K, QuietBox) with multiple chips.
 """
+import os
 import sys
 import gi
 import time
@@ -18,7 +20,8 @@ sys.stdout = sys.stderr
 
 import ttnn
 from models.demos.yolov8s.runner.performant_runner import YOLOv8sPerformantRunner
-from models.demos.utils.common_demo_utils import load_coco_class_names, postprocess as obj_postprocess
+from models.demos.yolov8s.common import YOLOV8S_L1_SMALL_SIZE
+from models.demos.utils.common_demo_utils import load_coco_class_names, postprocess as obj_postprocess, get_mesh_mappers
 
 # Initialize GStreamer
 Gst.init(None)
@@ -61,6 +64,7 @@ class Yolov8s(Gst.Element):
         self.device_id = 0
         self.model = None
         self.device = None
+        self.mesh_composer = None
         self.names = None
         self.frame_count = 0
         self.total_inference_time = 0
@@ -77,25 +81,61 @@ class Yolov8s(Gst.Element):
         print("[YOLOv8s] Pads created", flush=True)
 
     def _initialize_device(self):
-        """Initialize TT device and load model."""
-        print(f"[YOLOv8s] Initializing TT device {self.device_id}...", flush=True)
+        """Initialize TT device and load model.
         
-        self.device = ttnn.CreateDevice(
-            self.device_id,
-            l1_small_size=24576,
-            trace_region_size=3211264,
-            num_command_queues=2,
-        )
-        self.device.enable_program_cache()
+        Uses single device for real-time streaming (batch_size=1).
+        Set USE_MESH_DEVICE=1 to use all devices (for batched processing).
+        """
+        device_ids = ttnn.get_device_ids()
+        num_devices = len(device_ids)
+        use_mesh = os.environ.get("USE_MESH_DEVICE", "0") == "1"
+        
+        print(f"[YOLOv8s] Found {num_devices} TT devices: {device_ids}", flush=True)
+        
+        device_params = {
+            "l1_small_size": YOLOV8S_L1_SMALL_SIZE,
+            "trace_region_size": 6434816,
+            "num_command_queues": 2,
+        }
+        
+        if use_mesh and num_devices > 1:
+            # Multi-device mesh mode (for batched processing)
+            mesh_shape = ttnn.MeshShape(1, num_devices)
+            print(f"[YOLOv8s] Creating mesh device with shape {mesh_shape}...", flush=True)
+            self.device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
+            self.device.enable_program_cache()
+            
+            actual_devices = self.device.get_num_devices()
+            inputs_mesh_mapper, _, output_mesh_composer = get_mesh_mappers(self.device)
+            self.mesh_composer = output_mesh_composer
+            
+            print(f"[YOLOv8s] Mesh device created with {actual_devices} devices", flush=True)
+            batch_size = actual_devices
+        else:
+            # Single device mode (for real-time streaming)
+            print(f"[YOLOv8s] Using single device mode (device 0)...", flush=True)
+            self.device = ttnn.CreateDevice(
+                self.device_id,
+                l1_small_size=device_params["l1_small_size"],
+                trace_region_size=device_params["trace_region_size"],
+                num_command_queues=device_params["num_command_queues"],
+            )
+            self.device.enable_program_cache()
+            inputs_mesh_mapper = None
+            self.mesh_composer = None
+            batch_size = 1
+            print(f"[YOLOv8s] Single device created", flush=True)
         
         print("[YOLOv8s] Loading model (trace compile ~2 min)...", flush=True)
         self.model = YOLOv8sPerformantRunner(
             self.device,
-            device_batch_size=1,
+            device_batch_size=batch_size,
+            mesh_mapper=inputs_mesh_mapper,
+            mesh_composer=self.mesh_composer,
         )
         
         self.names = load_coco_class_names()
-        print("[YOLOv8s] Model loaded and ready!", flush=True)
+        print(f"[YOLOv8s] Model loaded! Batch size: {batch_size}", flush=True)
 
     def _sink_event(self, pad, parent, event):
         """Handle sink pad events."""
@@ -129,10 +169,10 @@ class Yolov8s(Gst.Element):
             tensor = torch.from_numpy(frame_rgb).float().div(255.0).unsqueeze(0)
             tensor = torch.permute(tensor, (0, 3, 1, 2))
 
-            # 3. TT Inference
+            # 3. TT Inference (runs on all mesh devices)
             t_start = time.time()
             preds = self.model.run(tensor)
-            preds = ttnn.to_torch(preds[0], dtype=torch.float32, mesh_composer=self.model.runner_infra.mesh_composer)
+            preds = ttnn.to_torch(preds[0], dtype=torch.float32, mesh_composer=self.mesh_composer)
             t_end = time.time()
 
             inference_ms = (t_end - t_start) * 1000
@@ -164,18 +204,36 @@ class Yolov8s(Gst.Element):
             return Gst.FlowReturn.ERROR
 
     def _draw_detections(self, result, image):
-        """Draw bounding boxes on image."""
+        """Draw bounding boxes on image with confidence filtering."""
         boxes = result["boxes"]["xyxy"]
         scores = result["boxes"]["conf"]
         classes = result["boxes"]["cls"]
-
+        
+        # Higher confidence threshold to reduce false positives
+        CONF_THRESHOLD = 0.5
+        
         for box, score, cls in zip(boxes, scores, classes):
-            x1, y1, x2, y2 = map(int, box)
-            label = f"{self.names[int(cls)]} {score.item():.2f}"
+            conf = score.item() if hasattr(score, 'item') else float(score)
             
-            # Blue box, yellow text
-            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+            # Skip low confidence detections
+            if conf < CONF_THRESHOLD:
+                continue
+                
+            x1, y1, x2, y2 = map(int, box)
+            class_id = int(cls)
+            class_name = self.names[class_id] if class_id < len(self.names) else f"class_{class_id}"
+            label = f"{class_name} {conf:.2f}"
+            
+            # Color by class (green for person, blue for vehicle, red for others)
+            if class_name == "person":
+                color = (0, 255, 0)  # Green
+            elif class_name in ["car", "truck", "bus", "motorcycle", "bicycle"]:
+                color = (255, 100, 0)  # Blue-ish
+            else:
+                color = (0, 0, 255)  # Red for other classes
+            
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
         return cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
 

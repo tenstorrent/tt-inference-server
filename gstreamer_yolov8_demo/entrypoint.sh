@@ -53,23 +53,30 @@ fi
 MODE=$1
 shift
 
-# Common pipeline parts
-YOLO_PROCESS="queue ! videoconvert ! videoscale ! video/x-raw,width=640,height=640,format=NV12,framerate=30/1 ! \
-    queue ! x264enc tune=zerolatency ! h264parse ! avdec_h264 ! \
-    videoconvert ! video/x-raw,format=BGRx,width=640,height=640,framerate=30/1 ! \
-    yolov8s"
+# Common pipeline: scale and convert to BGRx 640x640 for YOLOv8s
+YOLO_PROCESS="queue ! videoconvert ! videoscale ! video/x-raw,format=BGRx,width=640,height=640 ! yolov8s"
 
-# Output: MJPEG stream for browser
+# Output: MJPEG stream (TCP for VLC, HTTP wrapper for browser)
+TCP_PORT=8081
 STREAM_OUTPUT="videoconvert ! jpegenc quality=85 ! multipartmux boundary=frame ! \
-    tcpserversink host=0.0.0.0 port=$STREAM_PORT"
+    tcpserversink host=0.0.0.0 port=$TCP_PORT"
+
+# Function to start HTTP wrapper for browser access
+start_http_wrapper() {
+    echo "Starting HTTP server on port $STREAM_PORT..."
+    python3 /app/http_stream.py &
+    sleep 1
+}
 
 case $MODE in
     "stream-test")
         echo ""
-        echo "🎥 Streaming test pattern to http://0.0.0.0:$STREAM_PORT"
-        echo "   View with: vlc tcp://HOST:$STREAM_PORT or browser"
+        echo "🎥 Streaming test pattern"
+        echo "   Browser: http://HOST:$STREAM_PORT"
+        echo "   VLC: vlc tcp://HOST:$TCP_PORT"
         echo "   (Model compiles on first run ~2 min)"
         echo ""
+        start_http_wrapper
         gst-launch-1.0 -v videotestsrc ! \
             "video/x-raw,width=640,height=480,framerate=30/1,format=UYVY" ! \
             $YOLO_PROCESS ! $STREAM_OUTPUT
@@ -79,11 +86,13 @@ case $MODE in
         VIDEO_PATH=$1
         echo ""
         echo "🎥 Streaming video: $VIDEO_PATH"
-        echo "   View at: http://HOST:$STREAM_PORT"
+        echo "   Browser: http://HOST:$STREAM_PORT"
+        echo "   VLC: vlc tcp://HOST:$TCP_PORT"
         echo ""
+        start_http_wrapper
         gst-launch-1.0 -v filesrc location="$VIDEO_PATH" ! \
-            decodebin ! videoconvert ! \
-            "video/x-raw,width=640,height=480,framerate=30/1" ! \
+            decodebin ! videoconvert ! videoscale ! videorate ! \
+            "video/x-raw,width=640,height=640,framerate=30/1" ! \
             $YOLO_PROCESS ! $STREAM_OUTPUT
         ;;
     
@@ -91,11 +100,13 @@ case $MODE in
         RTSP_URL=$1
         echo ""
         echo "🎥 Streaming from RTSP: $RTSP_URL"
-        echo "   View at: http://HOST:$STREAM_PORT"
+        echo "   Browser: http://HOST:$STREAM_PORT"
         echo ""
-        gst-launch-1.0 -v rtspsrc location="$RTSP_URL" latency=0 ! \
+        start_http_wrapper
+        gst-launch-1.0 -v rtspsrc location="$RTSP_URL" latency=0 protocols=tcp ! \
             rtph264depay ! h264parse ! avdec_h264 ! \
-            videoconvert ! "video/x-raw,width=640,height=480,framerate=30/1" ! \
+            videoconvert ! videoscale ! videorate ! \
+            "video/x-raw,width=640,height=640,framerate=30/1" ! \
             $YOLO_PROCESS ! $STREAM_OUTPUT
         ;;
     
@@ -103,8 +114,9 @@ case $MODE in
         DEVICE=${1:-/dev/video0}
         echo ""
         echo "🎥 Streaming from webcam: $DEVICE"
-        echo "   View at: http://HOST:$STREAM_PORT"
+        echo "   Browser: http://HOST:$STREAM_PORT"
         echo ""
+        start_http_wrapper
         gst-launch-1.0 -v v4l2src device=$DEVICE ! \
             "video/x-raw,width=640,height=480,framerate=30/1" ! \
             $YOLO_PROCESS ! $STREAM_OUTPUT

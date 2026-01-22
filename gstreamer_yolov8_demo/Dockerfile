@@ -1,7 +1,10 @@
 # GStreamer YOLOv8s Demo on Tenstorrent
 # Customer runs: docker run -p 8080:8080 ... tt-gstreamer-yolov8 stream-test
 
-ARG BASE_IMAGE=sdxl-inf-server_89c6a49:latest
+# Base image with tt-metal and YOLOv8s model
+# Use local image or pull from registry:
+#   docker build --build-arg BASE_IMAGE=ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov8s-base:v0.0.1 ...
+ARG BASE_IMAGE=ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov8s-base:v0.0.1
 FROM ${BASE_IMAGE}
 
 USER root
@@ -54,8 +57,9 @@ ENV GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
 ENV PYTHONPATH=/home/container_app_user/tt-metal
 ENV GST_DEBUG=1
 
-# Copy entrypoint
+# Copy entrypoint and HTTP server
 COPY --chown=container_app_user:container_app_user entrypoint.sh /app/entrypoint.sh
+COPY --chown=container_app_user:container_app_user http_stream.py /app/http_stream.py
 RUN chmod +x /app/entrypoint.sh
 
 WORKDIR /home/container_app_user/tt-metal

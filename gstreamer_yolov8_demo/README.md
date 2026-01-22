@@ -108,7 +108,7 @@ gstreamer_yolov8_demo/
 ├── entrypoint.sh       # Runtime modes
 ├── plugins/
 │   └── yolov8s.py      # GStreamer plugin (TT inference)
-├── mjpeg_server.py     # HTTP streaming server
+├── http_stream.py      # HTTP streaming wrapper
 └── README.md           # This file
 ```
 
@@ -117,7 +117,7 @@ gstreamer_yolov8_demo/
 - Tenstorrent Wormhole device
 - Docker with TT device access
 - Hugepages configured (`/dev/hugepages-1G`)
-- Base image: `sdxl-inf-server_89c6a49:latest`
+- Base image: `ghcr.io/tenstorrent/tt-inference-server/tt-metal-yolov8s-base:v0.0.1`
 
 ## Troubleshooting
 
