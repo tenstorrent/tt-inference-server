@@ -2198,6 +2198,62 @@ _eval_config_list = [
             ),
         ],
     ),
+        EvalConfig(
+        hf_model_repo="meta-llama/Llama-3.2-3B",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path="work_dir",
+                eval_class="local-completions",
+                use_chat_api=False,
+                max_concurrent=1,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=75.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["prompt_level_strict_acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                gen_kwargs={
+                    "max_gen_toks": "16",
+                    "stream": "false",
+                },
+                model_kwargs={"max_length": 2048, "tokenized_requests": "False"},
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                include_path="work_dir",
+                eval_class="local-completions",
+                use_chat_api=False,
+                max_concurrent=1,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=75.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["prompt_level_strict_acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                gen_kwargs={
+                    "max_gen_toks": "1",
+                    "stream": "false",
+                },
+                model_kwargs={"max_length": 2048, "tokenized_requests": "False"},
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="resnet-50",
         tasks=[
