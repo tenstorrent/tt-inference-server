@@ -7,7 +7,7 @@ from pathlib import Path
 
 import sqlite3
 import json
-
+from contextlib import contextmanager
 
 class JobDatabase:
     """Database interface for persistent job storage."""
@@ -24,26 +24,36 @@ class JobDatabase:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
         return conn
+    
+    @contextmanager
+    def _get_cursor(self, commit: bool = True):
+        conn = self._get_connection()
+        try:
+            yield conn.cursor()
+            if commit:
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init_db(self):
         """Initializes the schema."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS jobs (
-                id TEXT PRIMARY KEY,
-                job_type TEXT NOT NULL,
-                model TEXT NOT NULL,
-                request_parameters TEXT,
-                status TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                completed_at INTEGER,
-                error_message TEXT,
-                result_path TEXT
-            );
-        """)
-        conn.commit()
-        conn.close()
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    job_type TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    request_parameters TEXT,
+                    status TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    completed_at INTEGER,
+                    error_message TEXT,
+                    result_path TEXT
+                );
+            """)
 
     def insert_job(
         self,
@@ -55,24 +65,21 @@ class JobDatabase:
         created_at: int,
     ) -> None:
         """Insert a new job into the database."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    job_type,
+                    model,
+                    status,
+                    json.dumps(request_parameters),
+                    created_at,
+                ),
+            )
 
-        cursor.execute(
-            """
-            INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                job_id,
-                job_type,
-                model,
-                status,
-                json.dumps(request_parameters),
-                created_at,
-            ),
-        )
-        conn.commit()
-        conn.close()
 
     def update_job_status(
         self,
@@ -83,49 +90,38 @@ class JobDatabase:
         error_message: Optional[dict[str, str]] = None,
     ) -> None:
         """Update job status and optional fields."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        with self._get_cursor(commit=True) as cursor:
+            updates = ["status = ?"]
+            params = [status]
 
-        updates = ["status = ?"]
-        params = [status]
+            if completed_at is not None:
+                updates.append("completed_at = ?")
+                params.append(completed_at)
 
-        if completed_at is not None:
-            updates.append("completed_at = ?")
-            params.append(completed_at)
+            if error_message is not None:
+                updates.append("error_message = ?")
+                params.append(json.dumps(error_message))
 
-        if error_message is not None:
-            updates.append("error_message = ?")
-            params.append(json.dumps(error_message))
+            if result_path is not None:
+                updates.append("result_path = ?")
+                params.append(result_path)
 
-        if result_path is not None:
-            updates.append("result_path = ?")
-            params.append(result_path)
+            query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"
+            params.append(job_id)
 
-        query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"
-        params.append(job_id)
-
-        cursor.execute(query, tuple(params))
-        conn.commit()
-        conn.close()
+            cursor.execute(query, tuple(params))
 
     def delete_job(self, job_id: str) -> None:
         """Delete a job from the database."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        with self._get_cursor() as cursor:
+            cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
-        cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-
-        conn.commit()
-        conn.close()
 
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific job from the database by its ID."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = cursor.fetchone()
-        conn.close()
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+            row = cursor.fetchone()
 
         if row:
             job_dict = dict(row)
@@ -144,13 +140,9 @@ class JobDatabase:
 
     def get_all_jobs(self) -> List[Dict[str, Any]]:
         """Retrieve all jobs from the database."""
-        conn = self._get_connection()
-        # Using Row factory allows accessing columns by name
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT * FROM jobs ORDER BY created_at DESC")
-        rows = cursor.fetchall()
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute("SELECT * FROM jobs ORDER BY created_at DESC")
+            rows = cursor.fetchall()
 
         jobs = []
         for row in rows:
@@ -164,5 +156,4 @@ class JobDatabase:
                 job_dict["error_message"] = json.loads(job_dict["error_message"])
             jobs.append(job_dict)
 
-        conn.close()
         return jobs
