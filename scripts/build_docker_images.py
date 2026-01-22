@@ -876,7 +876,7 @@ def build_cloud_image(
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.cloud.Dockerfile",
         ".",
     ]
 
@@ -902,7 +902,7 @@ def build_dev_image(image_tags, logger):
         "--build-arg",
         f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
     ]
 
@@ -928,7 +928,7 @@ def build_release_image(image_tags, logger):
         "--build-arg",
         f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
     ]
 

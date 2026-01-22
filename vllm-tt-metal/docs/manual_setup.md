@@ -18,7 +18,7 @@ Note: as the docker image is downloading you can continue to the next step and d
 
 #### Option B: Build Docker Image
 
-For instructions on building the Docker imagem locally see: [vllm-tt-metal-llama3/docs/development](../vllm-tt-metal-llama3/docs/development.md#step-1-build-docker-image)
+For instructions on building the Docker imagem locally see: [vllm-tt-metal/docs/development](../vllm-tt-metal/docs/development.md#step-1-build-docker-image)
 
 ### Weights Setup: environment variables and weights files
 

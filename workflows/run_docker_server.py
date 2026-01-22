@@ -288,7 +288,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         else:
             # For LLM models (vLLM containers), mount vLLM-related directories
             docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",

@@ -168,9 +168,9 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 
 # Copy application files
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    "vllm-tt-metal-llama3/src" "${APP_DIR}/src"
+    "vllm-tt-metal/src" "${APP_DIR}/src"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    "vllm-tt-metal-llama3/requirements.txt" "${APP_DIR}/requirements.txt"
+    "vllm-tt-metal/requirements.txt" "${APP_DIR}/requirements.txt"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "utils" "${APP_DIR}/utils"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

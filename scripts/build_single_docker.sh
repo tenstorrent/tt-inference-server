@@ -232,7 +232,7 @@ if [ "$build" = true ]; then
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
+        . -f vllm-tt-metal/vllm.tt-metal.src.cloud.Dockerfile
     else
         echo "skipping, build_cloud_image=${build_cloud_image}"
     fi
@@ -243,7 +243,7 @@ if [ "$build" = true ]; then
         docker build \
         -t "${dev_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+        . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built images:"
         echo "${cloud_image_tag}"
@@ -260,7 +260,7 @@ if [ "$build" = true ]; then
         docker build \
         -t "${release_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+        . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
     else
         echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi

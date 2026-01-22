@@ -1,6 +1,6 @@
-# Development vllm-tt-metal-llama3
+# Development vllm-tt-metal
 
-Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal-llama3/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
+Containerization in: https://github.com/tenstorrent/tt-inference-server/blob/tstesco/vllm-llama3-70b/vllm-tt-metal/vllm.llama3.src.base.inference.v0.52.0.Dockerfile 
 
 tt-metal and vLLM are under active development in lock-step: https://github.com/tenstorrent/vllm/tree/dev/tt_metal 
 
@@ -11,7 +11,7 @@ lm-evaluation-harness fork: https://github.com/tstescoTT/lm-evaluation-harness
 The script `build_docker.sh` handles building images for different configurations:
 
 ```bash
-cd tt-inference-server/vllm-tt-metal-llama3
+cd tt-inference-server/vllm-tt-metal
 chmod +x build_docker.sh
 ./build_docker.sh --build
 # or change the ubuntu version to 22.04
@@ -121,12 +121,12 @@ docker build \
   --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
   --build-arg TT_VLLM_COMMIT_SHA_OR_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG} \
   --build-arg CONTAINER_APP_UID=${CONTAINER_APP_UID} \
-  . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
+  . -f vllm-tt-metal/vllm.tt-metal.src.cloud.Dockerfile
 # build dev image
 docker build \
   -t ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
   --build-arg CLOUD_DOCKERFILE_URL=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG} \
-  . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+  . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 ```
 
 ### Build tt-metal Ubuntu 22.04 base image manually

@@ -89,7 +89,7 @@ WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SERVER,
     run_script_path=get_repo_root_path()
-    / "vllm-tt-metal-llama3"
+    / "vllm-tt-metal"
     / "src"
     / "run_vllm_api_server.py",
     workflow_run_script_venv_type=None,

@@ -61,7 +61,7 @@ def map_perf_status_to_model_status(perf_status):
 
 # Mapping inference engine to documentation link
 INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "vllm-tt-metal-llama3/README.md",
+    InferenceEngine.VLLM.value: "vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "tt-media-server/README.md",
     InferenceEngine.FORGE.value: "tt-media-server/README.md",
 }
