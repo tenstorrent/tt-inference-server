@@ -434,7 +434,7 @@ class PromptClient:
             completions_url = self.completions_url
 
         if force_max_tokens:
-            json_data["min_tokens"] = max_tokens  # min_tokens not supported on TT backend in V1
+            json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
@@ -447,6 +447,20 @@ class PromptClient:
             stream=stream,
             timeout=1800,
         )
+
+        # Check for HTTP errors before processing
+        if response.status_code != 200:
+            error_detail = ""
+            try:
+                error_json = response.json()
+                error_detail = error_json.get("message", "") or error_json.get("error", "")
+            except:
+                error_detail = response.text
+            
+            logger.error(
+                f"Request failed with status {response.status_code} "
+                f"({'chat completions' if use_chat_api else 'completions'} endpoint): {error_detail}"
+            )
 
         return self._process_response(
             response,
@@ -708,7 +722,7 @@ class PromptClient:
         }
 
         if force_max_tokens:
-            json_data["min_tokens"] = max_tokens  # min_tokens not supported on TT backend in V1
+            json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
         chat_url = f"{self._get_api_base_url()}/chat/completions"
