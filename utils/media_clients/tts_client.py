@@ -89,6 +89,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
         logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
+        # Metadata fields (excluded from numeric metrics in process_list_format_eval_files)
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name
         benchmark_data["timestamp"] = time.strftime(
@@ -101,20 +102,29 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
-        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
-        benchmark_data["rtr"] = rtr_value
-        benchmark_data["p90_ttft"] = p90_ttft
-        benchmark_data["p95_ttft"] = p95_ttft
 
-        # Similar to how image and audio pipelines work
+        task_name = benchmark_data["task_name"]
 
-        # Make benchmark_data is inside of list as an object
-        benchmark_data = [benchmark_data]
+        dict_format_data = {
+            "results": {
+                task_name: {
+                    "score": ttft_value,
+                    "rtr": rtr_value,
+                    "p90_ttft": p90_ttft,
+                    "p95_ttft": p95_ttft,
+                }
+            },
+            "configs": {
+                task_name: {
+                    "task": task_name,
+                    "dataset_path": "N/A",
+                }
+            },
+        }
 
-        # Write benchmark_data to JSON file
         eval_filename = (
             Path(self.output_path)
             / f"eval_{self.model_spec.model_id}"
@@ -157,9 +167,8 @@ class TtsClientStrategy(BaseMediaStrategy):
         """Get number of calls for TTS with TTS-specific defaults.
 
         TTS requires more samples for statistical validity:
-        - BENCHMARK: 25 calls (for reliable P90/P95 tail latency)
-        - EVAL: 12 calls (for valid WER, without too many ASR calls)
-
+        - BENCHMARK: 10 calls (for reliable P90/P95 tail latency)
+        - EVAL: 5 calls (for valid WER, without too many ASR calls)
         Args:
             is_eval: True for EVAL workflow, False for BENCHMARK workflow
 
@@ -174,7 +183,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             return base_num_calls
 
         # Override default (2) with TTS-specific defaults
-        tts_default = 12 if is_eval else 25
+        tts_default = 5 if is_eval else 10
         workflow_type = "eval" if is_eval else "benchmark"
         logger.info(
             f"Using TTS-specific {workflow_type} default: {tts_default} calls (was {base_num_calls})"
@@ -182,15 +191,17 @@ class TtsClientStrategy(BaseMediaStrategy):
         return tts_default
 
     def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
+        """
+        Generate benchmark report for TTS model.
+        """
         logger.info("Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
             / f"benchmark_{self.model_spec.model_id}_{time.time()}.json"
         )
-        # Create directory structure if it doesn't exist
+
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT (in ms)
         ttft_value = self._calculate_ttft_value(status_list)
 
         # Calculate RTR
@@ -199,14 +210,17 @@ class TtsClientStrategy(BaseMediaStrategy):
         # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
-        # Convert TtsTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "ttft": ttft_value / 1000,
                 "rtr": rtr_value,
-                "ttft_p90": p90_ttft / 1000 if p90_ttft else None,
-                "ttft_p95": p95_ttft / 1000 if p95_ttft else None,
+                "ttft_p90": p90_ttft / 1000
+                if p90_ttft
+                else None,  # Convert ms to seconds
+                "ttft_p95": p95_ttft / 1000
+                if p95_ttft
+                else None,  # Convert ms to seconds
             },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -306,7 +320,8 @@ class TtsClientStrategy(BaseMediaStrategy):
             "Authorization": "Bearer your-secret-key",
             "Content-Type": "application/json",
         }
-        payload = {"text": text}
+        payload = {"text": text, "response_format": "json"}
+        logger.debug(f"TTS request payload: {payload}")
 
         url = f"{self.base_url}/audio/speech"
         start_time = time.monotonic()
@@ -328,9 +343,18 @@ class TtsClientStrategy(BaseMediaStrategy):
                         )
                         return False, 0.0, None, None
 
-                    # For TTS, we receive the complete audio in one response
-                    # TTFT is the time until we receive the response (first byte)
-                    # Measure time when response is received, before parsing JSON
+                    # Check content-type to ensure we're receiving JSON, not WAV bytes
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    logger.debug(f"Response Content-Type: {content_type}")
+                    if "audio" in content_type or "wav" in content_type:
+                        logger.error(
+                            f"Received audio/wav response instead of JSON. "
+                            f"Make sure response_format='json' is set in request. "
+                            f"Content-Type: {content_type}. "
+                            f"Request payload was: {payload}"
+                        )
+                        return False, 0.0, None, None, text, None, None
+
                     response_start = time.monotonic()
                     response_data = await response.json()
 
