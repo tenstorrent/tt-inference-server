@@ -982,7 +982,7 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "num_scheduler_steps": "1",
-                    "max_num_seqs": 1,
+                    "max_num_seqs": "1",
                 },
             ),
         ],
@@ -990,7 +990,7 @@ spec_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "0",
+            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "(4, 8)"
         },
     ),
