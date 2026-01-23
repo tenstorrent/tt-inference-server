@@ -1396,7 +1396,7 @@ def genai_perf_benchmark_generate_report(
             # Show GenAI-Perf detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # IMAGE BENCHMARKS SECTION
         if genai_image_results:
@@ -1408,7 +1408,7 @@ def genai_perf_benchmark_generate_report(
                 genai_image_results, is_image_benchmark=True
             )
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # Metric definitions
         release_str += "**Metric Definitions:**\n"
