@@ -7,6 +7,7 @@ import os
 from config.settings import settings
 from huggingface_hub import snapshot_download, try_to_load_from_cache
 from huggingface_hub.utils import LocalEntryNotFoundError
+from tt_model_runners.runner_fabric import get_device_runner
 
 from utils.logger import TTLogger
 
@@ -17,6 +18,14 @@ class HuggingFaceUtils:
 
     def download_weights(self):
         try:
+            # get device runner instance and try to load weights
+            pipeline_weights_loaded = get_device_runner("-1").load_weights()
+
+            # if weights could be loaded from pipeline stop here
+            # otherwise continue for models that don't use pipeline object
+            if pipeline_weights_loaded:
+                return
+
             model_name = settings.model_weights_path
             if not model_name:
                 self.logger.warning(

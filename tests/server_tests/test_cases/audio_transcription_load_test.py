@@ -46,7 +46,7 @@ class AudioTranscriptionLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_audio_transribtion(batch_size=devices)
+        ) = await self.test_concurrent_audio_transcription(batch_size=devices)
 
         self.test_payloads_path = "utils/test_payloads"
 
@@ -58,7 +58,7 @@ class AudioTranscriptionLoadTest(BaseTest):
             "success": average_duration <= audio_transcription_time,
         }
 
-    async def test_concurrent_audio_transribtion(self, batch_size):
+    async def test_concurrent_audio_transcription(self, batch_size):
         async def timed_request(session, index):
             print(f"Starting request {index}")
             try:

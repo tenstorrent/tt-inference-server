@@ -1,6 +1,5 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-pjrt-plugin-tt==0.6.0.dev20251202
-vllm-tt==0.6.0.dev20251202
+tt-forge==0.7.0
 torchvision
 
 timm # input preprocessing

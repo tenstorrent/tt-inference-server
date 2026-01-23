@@ -16,17 +16,24 @@ from domain.completion_response import (
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
-class TestRunner(BaseDeviceRunner):
+class LLMTestRunner(BaseDeviceRunner):
+    """Test runner for LLM streaming performance tests.
+
+    Generates fake tokens at a configurable frequency to test the streaming
+    infrastructure without requiring actual model inference.
+    """
+
     MILLISECONDS_PER_SECOND = 1000
 
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
         self.num_torch_threads = num_torch_threads
-        # use float to allow fractional values
+        # Frequency is set via TEST_RUNNER_FREQUENCY_MS env var, configured in
+        # performance_tests/conftest.py which is the single source of truth
         self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
 
         self.logger.info(
-            f"TestRunner initialized for device {self.device_id}: "
+            f"LLMTestRunner initialized for device {self.device_id}: "
             f"frequency={self.streaming_frequency_ms}ms, "
         )
 
@@ -43,23 +50,29 @@ class TestRunner(BaseDeviceRunner):
         self, request: CompletionRequest
     ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
         frequency_seconds = (
-            self.streaming_frequency_ms / TestRunner.MILLISECONDS_PER_SECOND
+            self.streaming_frequency_ms / LLMTestRunner.MILLISECONDS_PER_SECOND
         )
         task_id = request._task_id
 
-        # Precreate streaming chunks to reduce overhead
-        streaming_chunks = [
-            StreamingChunkOutput(
-                type="streaming_chunk",
-                chunk=CompletionStreamChunk(
-                    text=f"token_{i}",
-                    index=i,
-                    finish_reason=None,
-                ),
-                task_id=task_id,
-            )
-            for i in range(request.max_tokens)
-        ]
+        if self.settings.use_memory_queue:
+            # Memory queue format: (task_id, is_final, text)
+            streaming_chunks = [
+                (task_id, 0, f"token_{i}") for i in range(request.max_tokens)
+            ]
+        else:
+            # StreamingChunkOutput format
+            streaming_chunks = [
+                StreamingChunkOutput(
+                    type="streaming_chunk",
+                    chunk=CompletionStreamChunk(
+                        text=f"token_{i}",
+                        index=i,
+                        finish_reason=None,
+                    ),
+                    task_id=task_id,
+                )
+                for i in range(request.max_tokens)
+            ]
 
         start_time = time.perf_counter()
 
@@ -75,12 +88,17 @@ class TestRunner(BaseDeviceRunner):
 
             yield chunk
 
-        yield FinalResultOutput(
-            type="final_result",
-            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
-            task_id=task_id,
-            return_result=True,
-        )
+        if self.settings.use_memory_queue:
+            yield (task_id, 1, "[DONE]")
+        else:
+            yield FinalResultOutput(
+                type="final_result",
+                result=CompletionStreamChunk(
+                    text="[DONE]", index=0, finish_reason=None
+                ),
+                task_id=task_id,
+                return_result=True,
+            )
 
     def run(self, requests: list[CompletionRequest]):
         return []

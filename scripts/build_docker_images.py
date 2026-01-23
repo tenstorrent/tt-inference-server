@@ -46,21 +46,31 @@ def _build_combination_id(tt_metal_commit, vllm_commit):
     return f"{tm}-{vc}"
 
 
-def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
+def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir, stdout_only=False):
     """
-    Set up individual logger for each combination with file logging only.
-    Console output is handled by the main process to avoid overlapping.
+    Set up individual logger for each combination.
+    Default: logs to file only.
+    With stdout_only=True: logs to stdout only (no file).
+
+    Args:
+        tt_metal_commit: tt-metal commit hash
+        vllm_commit: vllm commit hash
+        log_dir: Directory for log files
+        stdout_only: If True, only log to stdout (no file logging)
     """
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
     logger_name = f"process_{combination_id}"
 
-    # Create log directory if it doesn't exist
+    # Create log directory if it doesn't exist (only if we're logging to file)
     log_dir = Path(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    if not stdout_only:
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     # Create log file path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"build_{timestamp}_{combination_id}.log"
+    log_file = (
+        log_dir / f"build_{timestamp}_{combination_id}.log" if not stdout_only else None
+    )
 
     # Create logger
     process_logger = logging.getLogger(logger_name)
@@ -70,18 +80,23 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
     if process_logger.handlers:
         process_logger.handlers.clear()
 
-    # File handler for this combination (NO console handler to avoid overlap)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-
     # Formatter
     formatter = logging.Formatter(
         f"[{combination_id}] %(asctime)s - %(levelname)s: %(message)s"
     )
-    file_handler.setFormatter(formatter)
 
-    # Add only file handler - no console handler to prevent overlapping output
-    process_logger.addHandler(file_handler)
+    # File handler (default behavior - only if not stdout_only)
+    if not stdout_only:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        process_logger.addHandler(file_handler)
+    else:
+        # Console handler for stdout-only mode (with combination_id prefix for clarity)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        process_logger.addHandler(console_handler)
 
     return process_logger, log_file
 
@@ -155,12 +170,13 @@ def process_sha_combination(args_tuple):
         push,
         container_app_uid,
         dry_run,
+        stdout_only,
     ) = args_tuple
 
     # Set up individual logging for this combination
     logs_dir = get_build_logs_dir()
     process_logger, log_file = setup_individual_logger(
-        tt_metal_commit, vllm_commit, logs_dir
+        tt_metal_commit, vllm_commit, logs_dir, stdout_only=stdout_only
     )
 
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
@@ -170,7 +186,10 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"tt_metal_commit: {tt_metal_commit}")
         process_logger.info(f"vllm_commit: {vllm_commit}")
         process_logger.info(f"ubuntu_version: {ubuntu_version}")
-        process_logger.info(f"Log file: {log_file}")
+        if log_file:
+            process_logger.info(f"Log file: {log_file}")
+        else:
+            process_logger.info("Logging to stdout only (no file logging)")
 
         # Resolve tt_metal_commit to full SHA early in the process
         process_logger.info("Resolving tt_metal_commit to full SHA...")
@@ -387,7 +406,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "images": image_status,
         }
 
@@ -406,7 +425,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "error": str(e),
             "images": image_status if "image_status" in locals() else {},
         }
@@ -414,7 +433,9 @@ def process_sha_combination(args_tuple):
 
 def run_command_with_logging(command, logger, check=True, cwd=None):
     """
-    Run a command and write output directly to the process log file.
+    Run a command and write output to log file (default) or stdout (if stdout-only mode).
+    Default behavior: writes to log file only.
+    stdout-only mode: writes to stdout in real-time.
     """
     if isinstance(command, str):
         command = command.split()
@@ -443,6 +464,11 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
         # Capture output while streaming it
         stdout_lines = []
 
+        # Check if there's a console handler (stdout-only mode)
+        has_console_handler = any(
+            isinstance(handler, logging.StreamHandler) for handler in logger.handlers
+        )
+
         # Read output line by line as it's produced
         for line in iter(process.stdout.readline, ""):
             line = line.rstrip()
@@ -452,6 +478,9 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
                 if log_file_handler:
                     log_file_handler.stream.write(line + "\n")
                     log_file_handler.stream.flush()
+                # Print to stdout only if console handler is present (stdout-only mode)
+                if has_console_handler:
+                    print(line, flush=True)
 
         # Wait for process to complete
         process.wait()
@@ -772,6 +801,8 @@ def build_tt_metal_base_image(
         build_command = [
             "docker",
             "build",
+            "--platform",
+            "linux/amd64",
             "-t",
             tt_metal_base_tag,
             "--build-arg",
@@ -916,36 +947,17 @@ def push_image(image_tag, logger):
     logger.info(f"Successfully pushed image: {image_tag}")
 
 
-def build_docker_images(
-    model_configs,
-    force_build=False,
-    release=False,
-    push=False,
-    ubuntu_version="20.04",
-    build_metal_commit=None,
-    max_workers=None,
-    single_threaded=False,
-    dry_run=False,
-):
+def list_image_combinations(model_configs, build_metal_commit=None):
     """
-    Builds all Docker images required by the provided ModelConfigs.
+    Get unique Docker image commit combinations that would be built.
 
     Args:
         model_configs: Dictionary of model configurations
-        force_build: Force rebuild even if images exist
-        release: Mark build as release
-        push: Push containers to registry
-        ubuntu_version: Ubuntu version to use for base images
-        build_metal_commit: Only build containers with this exact tt-metal commit
-        max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
-        single_threaded: Run builds sequentially instead of in parallel (for debugging)
-        dry_run: Print summary of what would be built without building
-    """
-    # Validate inputs
-    container_app_uid = 1000
-    validate_inputs(ubuntu_version, container_app_uid)
+        build_metal_commit: Only return combinations with this exact tt-metal commit
 
-    # Filter combinations if build_metal_commit is specified
+    Returns:
+        Set of tuples (tt_metal_commit, vllm_commit) representing unique combinations
+    """
     unique_sha_combinations = {
         (config.tt_metal_commit, config.vllm_commit)
         for config in model_configs.values()
@@ -968,7 +980,54 @@ def build_docker_images(
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
+        return set()
+
+    return unique_sha_combinations
+
+
+def build_docker_images(
+    model_configs,
+    force_build=False,
+    release=False,
+    push=False,
+    ubuntu_version="20.04",
+    build_metal_commit=None,
+    max_workers=None,
+    single_threaded=False,
+    dry_run=False,
+    stdout_only=False,
+):
+    """
+    Builds all Docker images required by the provided ModelConfigs.
+
+    Args:
+        model_configs: Dictionary of model configurations
+        force_build: Force rebuild even if images exist
+        release: Mark build as release
+        push: Push containers to registry
+        ubuntu_version: Ubuntu version to use for base images
+        build_metal_commit: Only build containers with this exact tt-metal commit
+        max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
+        single_threaded: Run builds sequentially instead of in parallel (for debugging)
+        dry_run: Print summary of what would be built without building
+        stdout_only: If True, only log to stdout (no file logging)
+    """
+    # Validate inputs
+    container_app_uid = 1000
+    validate_inputs(ubuntu_version, container_app_uid)
+
+    # Get unique combinations using the shared function
+    unique_sha_combinations = list_image_combinations(
+        model_configs,
+        build_metal_commit=build_metal_commit,
+    )
+
+    if not unique_sha_combinations:
+        logger.warning(
+            f"No configurations found with tt_metal_commit={build_metal_commit}"
+        )
         return
+
     unique_sha_combinations_str = "\n".join(
         [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
     )
@@ -1000,6 +1059,7 @@ def build_docker_images(
             push,
             container_app_uid,
             dry_run,
+            stdout_only,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1033,15 +1093,21 @@ def build_docker_images(
     for result in results:
         if result["success"]:
             success_count += 1
-            logger.info(
-                f"✅ Success: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.info(f"✅ Success: {result['combination_id']}{log_info}")
         else:
             failure_count += 1
             failed_combinations.append(result)
-            logger.error(
-                f"❌ Failed: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.error(f"❌ Failed: {result['combination_id']}{log_info}")
             logger.error(f"   Error: {result['error']}")
 
     logger.info(
@@ -1049,10 +1115,16 @@ def build_docker_images(
     )
 
     if failed_combinations:
-        logger.error("Failed combinations and their log files:")
+        logger.error("Failed combinations:")
         for failed in failed_combinations:
-            logger.error(f"  - {failed['combination_id']}: {failed['log_file']}")
-        logger.error("Use the log files above to debug the specific failures.")
+            log_info = (
+                f" - Log: {failed['log_file']}"
+                if failed.get("log_file")
+                else " (stdout only)"
+            )
+            logger.error(f"  - {failed['combination_id']}{log_info}")
+        if any(f.get("log_file") for f in failed_combinations):
+            logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
     build_attempted = {"cloud": [], "dev": [], "release": []}
@@ -1135,6 +1207,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Print summary of what would be built without building",
     )
+    parser.add_argument(
+        "--stdout-only",
+        action="store_true",
+        help="Only log to stdout (no file logging)",
+    )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
@@ -1144,6 +1221,7 @@ if __name__ == "__main__":
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
     logger.info(f"dry_run: {args.dry_run}")
+    logger.info(f"stdout_only: {args.stdout_only}")
 
     build_docker_images(
         MODEL_SPECS,
@@ -1155,4 +1233,5 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         single_threaded=args.single_threaded,
         dry_run=args.dry_run,
+        stdout_only=args.stdout_only,
     )

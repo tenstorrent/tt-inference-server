@@ -531,7 +531,7 @@ class TestJobManager:
         # Check private fields are NOT present
         assert "_task" not in job_data
         assert (
-            "result" not in job_data
+            "result_path" not in job_data
         )  # Result not in metadata, only in get_job_result_path
 
     @pytest.mark.asyncio
@@ -586,8 +586,8 @@ class TestJobManager:
             task_function=task_func,
         )
 
-        result = job_manager.get_job_result_path("job-123")
-        assert result is None
+        result_path = job_manager.get_job_result_path("job-123")
+        assert result_path is None
 
     @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):
@@ -657,6 +657,38 @@ class TestJobManager:
             assert db_job is not None
             assert db_job["status"] == "failed"
             assert db_job["error_message"]["code"] == "processing_error"
+
+    @pytest.mark.asyncio
+    async def test_job_processing_failure_invalid_result_path(
+        self, job_manager, mock_request
+    ):
+        """Test job fails when task function returns non-string result_path"""
+
+        async def task_func_returns_list(req):
+            await asyncio.sleep(0.1)
+            return ["path/one", "path/two"]  # Invalid: should be string
+
+        # Test with list return
+        await job_manager.create_job(
+            job_id="job-list",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_returns_list,
+        )
+
+        # Wait for processing
+        await asyncio.sleep(0.3)
+
+        job_list = job_manager.get_job_metadata("job-list")
+        assert job_list["status"] == "failed"
+        assert "result_path must be str" in job_list["error"]["message"]
+
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-list")
+            assert db_job is not None
+            assert db_job["status"] == "failed"
+            assert "result_path must be str" in db_job["error_message"]["message"]
 
     @pytest.mark.asyncio
     async def test_cancel_job_transitions_to_cancelled(self, job_manager, mock_request):

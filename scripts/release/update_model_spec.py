@@ -12,6 +12,7 @@ fields in model_spec.py for each ModelSpecTemplate based on CI results.
 Usage:
     python3 update_model_spec_commits.py <last_good_json_path>
     python3 update_model_spec_commits.py --dry-run <last_good_json_path>
+    python3 update_model_spec_commits.py --ignore-perf-status <last_good_json_path>
     python3 update_model_spec_commits.py --help
 
 Example:
@@ -22,6 +23,7 @@ The script:
 - For each template, checks all weights to find matching model_ids in the JSON
 - Validates that all devices in a template have consistent commits
 - Updates commits in-place (7-character hash format)
+- Updates status field based on perf_status (unless --ignore-perf-status is used)
 - Skips templates with no CI data
 - Errors if different devices have conflicting commits
 """
@@ -41,6 +43,7 @@ from workflows.model_spec import (
     ModelSpecTemplate,
     generate_default_docker_link,
     VERSION,
+    InferenceEngine,
 )
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
@@ -56,6 +59,13 @@ def map_perf_status_to_model_status(perf_status):
     return status_map.get(perf_status.lower() if perf_status else None)
 
 
+# Mapping inference engine to documentation link
+INFERENCE_ENGINE_README_LINKS = {
+    InferenceEngine.VLLM.value: "vllm-tt-metal-llama3/README.md",
+    InferenceEngine.MEDIA.value: "tt-media-server/README.md",
+    InferenceEngine.FORGE.value: "tt-media-server/README.md",
+}
+
 # Mapping device type to hardware link text
 DEVICE_HARDWARE_LINKS = {
     DeviceTypes.T3K: "[WH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[WH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
@@ -65,6 +75,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
     DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
     DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) (P150X4)",
+    DeviceTypes.P150X8: "[BH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (P150X8)",
 }
 
 
@@ -79,20 +90,32 @@ def get_hardware_str(devices: Set[DeviceTypes]) -> str:
     return hardware_str
 
 
-def get_status_str(status):
-    return ModelStatusTypes.to_display_string(status)
+def generate_markdown_table(templates_to_use=None, status_filter=None) -> str:
+    """
+    Generate a markdown table from model spec templates.
 
+    Args:
+        templates_to_use: Optional list of templates. Falls back to global spec_templates.
+        status_filter: Optional ModelStatusTypes value to filter templates by status.
 
-def generate_markdown_table(templates_to_use=None) -> str:
+    Returns:
+        Markdown table string with header and rows.
+    """
     header = (
-        "| Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |\n"
-        "|---------------|----------|--------|-----------------|-------------|--------------|\n"
+        "| Model Name | Hardware | Model Weights | tt-metal commit | Docker Image |\n"
+        "|-------|---------------|----------|-----------------|---------------|\n"
     )
     rows = []
 
     # Use provided templates or fall back to global spec_templates
     templates = templates_to_use if templates_to_use is not None else spec_templates
 
+    # Filter by status if specified
+    if status_filter is not None:
+        templates = [t for t in templates if t.status == status_filter]
+
+    # Build row data for sorting
+    row_data = []
     for spec in templates:
         try:
             # Create a descriptive model architecture name
@@ -105,23 +128,27 @@ def generate_markdown_table(templates_to_use=None) -> str:
             if not hardware:
                 continue
 
-            # Create multiple HF repo weight links from the weights list
+            # Create Model column with display_name or first weight name, linked to README
+            model_name = (
+                spec.display_name
+                if spec.display_name
+                else model_name_from_weight(spec.weights[0])
+            )
+            readme_link = INFERENCE_ENGINE_README_LINKS.get(spec.inference_engine, "")
+            model_str = f"[{model_name}]({readme_link})" if readme_link else model_name
+
+            # Create multiple HF repo weight links using full repo name
             model_weights = []
             for weight in spec.weights:
-                model_weights.append(
-                    f"[{Path(weight).name}](https://huggingface.co/{weight})"
-                )
+                model_weights.append(f"[{weight}](https://huggingface.co/{weight})")
             model_weights_str = "<br/>".join(model_weights)
 
-            status_str = get_status_str(spec.status)
+            # Get sort key from first weight's model name
+            sort_key = model_name_from_weight(spec.weights[0]) if spec.weights else ""
+
             # Generate code link directly since ModelSpecTemplate doesn't have code_link
             code_link = f"{spec.impl.repo_url}/tree/{spec.tt_metal_commit}/{spec.impl.code_path}"
             tt_metal_commit = f"[{spec.tt_metal_commit[:16]}]({code_link})"
-
-            # parse vLLM commit if specified
-            vllm_commit_string = "N/A"
-            if spec.vllm_commit is not None:
-                vllm_commit_string = f"[{spec.vllm_commit[:8]}](https://github.com/tenstorrent/vllm/tree/{spec.vllm_commit})"
 
             # Handle docker_image which might be None for templates
             if spec.docker_image:
@@ -136,16 +163,123 @@ def generate_markdown_table(templates_to_use=None) -> str:
 
             # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
             # best is to link to package root with ghcr.io, cannot link directly to the tag
-            docker_image_str = f"[{ghcr_tag}](https://{docker_image_full})"
-            row = f"| {model_weights_str} | {hardware} | {status_str} | {tt_metal_commit} | {vllm_commit_string} | {docker_image_str} |"
-            rows.append(row)
+            docker_image_str = f"[{ghcr_tag[:21]}](https://{docker_image_full})"
+            row = f"| {model_str} | {hardware} | {model_weights_str} | {tt_metal_commit} | {docker_image_str} |"
+            row_data.append((sort_key, row))
         except Exception as e:
             print(f"Error processing ModelSpecTemplate: {e}", file=sys.stderr)
             raise e
 
+    # Sort by model name (first weight)
+    row_data.sort(key=lambda x: x[0].lower())
+    rows = [row for _, row in row_data]
+
     markdown_str = header + "\n".join(rows)
 
     return markdown_str
+
+
+# Status groups to include in grouped markdown output, ordered by priority
+PUBLISHED_STATUS_GROUPS = (
+    ModelStatusTypes.TOP_PERF,
+    ModelStatusTypes.COMPLETE,
+    ModelStatusTypes.FUNCTIONAL,
+)
+
+# Markdown table structure: header line + separator line
+_MARKDOWN_TABLE_HEADER_LINE_COUNT = 2
+
+
+def _get_status_markers(status: ModelStatusTypes) -> tuple:
+    """Generate HTML comment markers for a status type."""
+    name = status.name
+    return (f"<!-- {name}_MODELS_START -->", f"<!-- {name}_MODELS_END -->")
+
+
+def _table_has_data_rows(table: str) -> bool:
+    """Check if a markdown table has any data rows beyond header and separator."""
+    line_count = len(table.strip().split("\n"))
+    return line_count > _MARKDOWN_TABLE_HEADER_LINE_COUNT
+
+
+def _generate_status_section_markdown(
+    status: ModelStatusTypes,
+    templates_to_use=None,
+    include_header: bool = True,
+    empty_message: str = None,
+) -> str:
+    """
+    Generate markdown content for a single status type with markers.
+
+    Args:
+        status: ModelStatusTypes value to filter templates by.
+        templates_to_use: Optional list of templates. Falls back to global spec_templates.
+        include_header: Whether to include the section header (### Status Models).
+        empty_message: Optional message to show when no models match. If None, returns empty string.
+
+    Returns:
+        Markdown string with table wrapped in HTML comment markers, or empty string if no data.
+    """
+    start_marker, end_marker = _get_status_markers(status)
+    table = generate_markdown_table(
+        templates_to_use=templates_to_use, status_filter=status
+    )
+
+    if not _table_has_data_rows(table):
+        if empty_message:
+            return f"{start_marker}\n{empty_message}\n{end_marker}"
+        return ""
+
+    section_title = ModelStatusTypes.to_display_string(status)
+    if include_header:
+        content = f"### {section_title} Models\n\n{table}"
+    else:
+        content = table
+
+    return f"{start_marker}\n{content}\n{end_marker}"
+
+
+def generate_grouped_markdown_tables(templates_to_use=None) -> str:
+    """
+    Generate markdown tables grouped by status: Top Performance, Complete, Functional.
+
+    Excludes Experimental status models. Each section is wrapped in HTML comment markers.
+
+    Args:
+        templates_to_use: Optional list of templates. Falls back to global spec_templates.
+
+    Returns:
+        Markdown string with tables separated by status section headers and markers.
+    """
+    sections = []
+    for status in PUBLISHED_STATUS_GROUPS:
+        section = _generate_status_section_markdown(
+            status=status,
+            templates_to_use=templates_to_use,
+            include_header=True,
+        )
+        if section:
+            sections.append(section)
+
+    return "\n\n".join(sections)
+
+
+def generate_experimental_models_markdown(templates_to_use=None) -> str:
+    """
+    Generate markdown content for experimental models with markers for idempotent replacement.
+
+    Args:
+        templates_to_use: Optional list of templates. Falls back to global spec_templates.
+
+    Returns:
+        Markdown string with experimental models table wrapped in HTML comment markers.
+    """
+    return _generate_status_section_markdown(
+        status=ModelStatusTypes.EXPERIMENTAL,
+        templates_to_use=templates_to_use,
+        include_header=False,
+        empty_message="_No experimental models at this time._",
+    )
 
 
 def model_name_from_weight(weight):
@@ -570,9 +704,37 @@ def export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
+def _replace_marker_content(
+    content: str, status: ModelStatusTypes, new_section: str
+) -> str:
+    """
+    Replace content between status markers in a document.
+
+    Args:
+        content: Full document content
+        status: ModelStatusTypes to identify which markers to use
+        new_section: New content to place between markers (includes markers)
+
+    Returns:
+        Updated content with replaced section, or original if markers not found
+    """
+    start_marker, end_marker = _get_status_markers(status)
+    start_pos = content.find(start_marker)
+    end_pos = content.find(end_marker)
+
+    if start_pos == -1 or end_pos == -1:
+        return content
+
+    end_pos += len(end_marker)
+    return content[:start_pos] + new_section + content[end_pos:]
+
+
 def update_readme_model_support(model_spec_path, readme_path="README.md"):
     """
-    Update the Model Support table in README.md with the latest model specs.
+    Update the Model Support tables in README.md with the latest model specs.
+
+    Uses HTML comment markers for idempotent replacement of each status section.
+    Generates tables for: Top Performance, Complete, Functional.
 
     Args:
         model_spec_path: Path to the model_spec.py file
@@ -595,68 +757,102 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     # Get the updated spec_templates from the reloaded module
     updated_spec_templates = model_spec_module.spec_templates
 
-    # Generate the new table using the updated templates
-    new_table = generate_markdown_table(templates_to_use=updated_spec_templates)
-
     # Read current README content
     with open(readme_file, "r") as f:
         content = f.read()
 
-    # Find the table section - look for the header line
-    table_header = "| Model Weights | Hardware | Status | tt-metal commit | vLLM commit | Docker Image |"
-
-    if table_header not in content:
-        print(
-            f"Warning: Could not find model support table in {readme_path}, skipping update"
+    # Replace each status section using markers for idempotent updates
+    updated_content = content
+    for status in PUBLISHED_STATUS_GROUPS:
+        new_section = _generate_status_section_markdown(
+            status=status,
+            templates_to_use=updated_spec_templates,
+            include_header=True,
         )
-        return
-
-    # Find the start of the table (the header line)
-    header_start = content.find(table_header)
-
-    # Find the end of the table by scanning forward from header_start
-    # The table consists of:
-    # 1. Header line (starts with |)
-    # 2. Separator line (starts with |)
-    # 3. Multiple data rows (start with |)
-    # 4. Ends at first blank line
-
-    lines_from_header = content[header_start:].split("\n")
-    table_line_count = 0
-
-    for i, line in enumerate(lines_from_header):
-        stripped = line.strip()
-        if i == 0 or stripped.startswith("|"):
-            # This is part of the table
-            table_line_count += 1
-        elif stripped == "" and i > 2:
-            # Found blank line after table content - this is the end
-            break
-        else:
-            # Unexpected content - stop here
-            break
-
-    if table_line_count < 3:
-        print(
-            f"Warning: Could not properly identify model support table in {readme_path}, skipping update"
-        )
-        return
-
-    # Calculate the position after the last table row
-    # Count characters including newlines for each table line
-    table_end = header_start
-    for i in range(table_line_count):
-        table_end += len(lines_from_header[i]) + 1  # +1 for newline
-
-    # Delete the old table and insert the new one
-    # Keep everything before the table, add new table, keep everything after
-    updated_content = content[:header_start] + new_table + "\n" + content[table_end:]
+        if new_section:
+            updated_content = _replace_marker_content(
+                updated_content, status, new_section
+            )
 
     # Write back to file
     with open(readme_file, "w") as f:
         f.write(updated_content)
 
-    print(f"\nSuccessfully updated Model Support table in {readme_path}")
+    print(f"\nSuccessfully updated Model Support tables in {readme_path}")
+
+
+def update_experimental_models_doc(
+    model_spec_path, experimental_doc_path="docs/experimental_models.md"
+):
+    """
+    Update the experimental models documentation file with the latest experimental model specs.
+
+    Creates the file if it doesn't exist. Uses HTML comment markers to replace the
+    experimental models section idempotently.
+
+    Args:
+        model_spec_path: Path to the model_spec.py file
+        experimental_doc_path: Path to experimental models doc (default: docs/experimental_models.md)
+    """
+    experimental_file = Path(experimental_doc_path)
+
+    # Dynamically import the updated model_spec module to get fresh spec_templates
+    repo_root = model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    spec = importlib.util.spec_from_file_location(
+        "model_spec_experimental", model_spec_path
+    )
+    model_spec_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model_spec_module)
+
+    # Get the updated spec_templates from the reloaded module
+    updated_spec_templates = model_spec_module.spec_templates
+
+    # Generate the experimental models markdown with markers
+    experimental_content = generate_experimental_models_markdown(
+        templates_to_use=updated_spec_templates
+    )
+
+    # Default header content for new file
+    header_content = (
+        "# Experimental Models\n\n"
+        "Models with Experimental status are under active development and may have "
+        "stability or performance issues. If you encounter problems with any model "
+        "please [file an issue](https://github.com/tenstorrent/tt-inference-server/issues/new?template=Blank+issue).\n\n"
+    )
+
+    if not experimental_file.exists():
+        # Create directory if needed
+        experimental_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create new file with header and experimental content
+        full_content = header_content + experimental_content + "\n"
+        with open(experimental_file, "w") as f:
+            f.write(full_content)
+        print(f"\nCreated experimental models doc: {experimental_doc_path}")
+        return
+
+    # File exists - read and update using marker-based replacement
+    with open(experimental_file, "r") as f:
+        content = f.read()
+
+    start_marker, end_marker = _get_status_markers(ModelStatusTypes.EXPERIMENTAL)
+
+    if start_marker in content and end_marker in content:
+        # Markers found - replace content between them (idempotent)
+        updated_content = _replace_marker_content(
+            content, ModelStatusTypes.EXPERIMENTAL, experimental_content
+        )
+    else:
+        # Markers not found - append section at end with markers
+        updated_content = content.rstrip() + "\n\n" + experimental_content + "\n"
+
+    with open(experimental_file, "w") as f:
+        f.write(updated_content)
+
+    print(f"\nSuccessfully updated experimental models doc: {experimental_doc_path}")
 
 
 def main():
@@ -689,6 +885,11 @@ def main():
         default="README.md",
         help="Path to README.md file (default: README.md)",
     )
+    parser.add_argument(
+        "--ignore-perf-status",
+        action="store_true",
+        help="Only update tt_metal_commit and vllm_commit, do not update status/perf_status",
+    )
 
     args = parser.parse_args()
 
@@ -704,6 +905,9 @@ def main():
 
         # Update README.md Model Support table
         update_readme_model_support(model_spec_path, args.readme_path)
+
+        # Update experimental models doc
+        update_experimental_models_doc(model_spec_path)
 
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
@@ -791,8 +995,10 @@ def main():
             continue
 
         # Update the template fields
+        # If --ignore-perf-status is set, don't update status
+        status_to_update = None if args.ignore_perf_status else status
         updated_template = update_template_fields(
-            template_text, tt_metal_commit, vllm_commit, status
+            template_text, tt_metal_commit, vllm_commit, status_to_update
         )
 
         if updated_template != template_text:
@@ -807,8 +1013,10 @@ def main():
                 print(f"  tt_metal_commit: {tt_metal_commit}")
             if vllm_commit:
                 print(f"  vllm_commit: {vllm_commit}")
-            if status:
-                print(f"  status: {status}")
+            if status_to_update:
+                print(f"  status: {status_to_update}")
+            elif args.ignore_perf_status and status:
+                print(f"  status: {status} (ignored, not updating)")
 
             # Track update for markdown generation
             status_before = extract_status(template_text)
@@ -819,6 +1027,8 @@ def main():
                 template, last_good_data
             )
             model_arch = model_name_from_weight(weights[0]) if weights else "unknown"
+            # For status_after, use None if ignoring perf status, otherwise use the status
+            status_after = None if args.ignore_perf_status else status
 
             update_records.append(
                 {
@@ -828,7 +1038,7 @@ def main():
                     "weights": weights,
                     "devices": devices,
                     "status_before": status_before,
-                    "status_after": status,
+                    "status_after": status_after,
                     "tt_metal_commit_before": tt_metal_commit_before,
                     "tt_metal_commit_after": tt_metal_commit,
                     "vllm_commit_before": vllm_commit_before,
@@ -868,6 +1078,9 @@ def main():
 
             # Update README.md Model Support table with the updated model specs
             update_readme_model_support(model_spec_path)
+
+            # Update experimental models doc
+            update_experimental_models_doc(model_spec_path)
     else:
         print("\nNo updates needed.")
 

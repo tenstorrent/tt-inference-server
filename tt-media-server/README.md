@@ -10,9 +10,10 @@ This server is built to serve non-LLM models. Currently supported models:
 6. Mochi1
 7. Wan2.2
 8. Motif-Image-6B-Preview
-9. Whisper
-10. Microsoft Resnet (Forge)
-11. VLLM with TT Plugin
+9. Qwen-Image
+10. Whisper
+11. Microsoft Resnet (Forge)
+12. VLLM with TT Plugin
 
 # Repo structure
 
@@ -96,23 +97,25 @@ source run_uvicorn.sh
 - Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only T3K and 6u galaxy are supported.
 
 ## Supported DiT models
 The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
 | MODEL | Supported device options|
 |-------|--------|
+| stable-diffusion-3.5-large | galaxy, t3k |
 | flux.1-dev | galaxy, t3k, p300, qbge |
 | flux.1-schnell | galaxy, t3k, p300, qbge |
 | motif-image-6b-preview | galaxy, t3k |
+| qwen-image | galaxy, t3k |
+| qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
 For example, to run flux.1-dev on t3k
-1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
-2. Set device special env variable ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
+2. Set device special env variable e.g ```export DEVICE=t3k```.
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
 ## VLLM with TT Plugin Setup
 
@@ -123,7 +126,7 @@ The server supports running large language models using VLLM with the Tenstorren
 1. **Install the TT-VLLM Plugin**
 
    Follow the installation instructions from the repository:
-   https://github.com/dmadicTT/tt-vllm-plugin
+   https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin
 
 2. **Required Environment Variables**
 
@@ -255,6 +258,150 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 *Please note that test_data.json is within docker container or within tests folder*
 
+
+# Text-to-Speech (TTS) test call
+
+The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
+
+- JSON Request: Send a JSON POST request to `/audio/speech`
+
+**Default behavior:** Returns WAV file directly (default `response_format="audio"`)
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello, this is a test of the text to speech system."
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
+```
+
+**Request WAV file with explicit format:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello world, this is a test of text to speech",
+    "response_format": "audio"
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
+```
+
+**Request JSON response with base64 audio:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "This should return JSON",
+    "response_format": "verbose_json"
+  }' \
+  --silent \
+  --show-error
+```
+
+**Swagger/OpenAPI request body examples:**
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system."
+}
+```
+
+```json
+{
+  "text": "Hello world, this is a test of text to speech",
+  "response_format": "audio"
+}
+```
+
+```json
+{
+  "text": "This is another test",
+  "response_format": "wav"
+}
+```
+
+```json
+{
+  "text": "This should return JSON",
+  "response_format": "verbose_json"
+}
+```
+
+```json
+{
+  "text": "This is a JSON format test",
+  "response_format": "json"
+}
+```
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system.",
+  "response_format": "audio",
+  "speaker_id": "default_speaker"
+}
+```
+
+**Available response formats:**
+- `"audio"` or `"wav"` (default) - Returns WAV file directly (binary, `Content-Type: audio/wav`)
+- `"verbose_json"` or `"json"` - Returns JSON with base64-encoded audio
+
+**Optional fields:**
+- `speaker_id` - ID for pre-configured speaker embeddings (0-7456 for CMU ARCTIC dataset)
+- `speaker_embedding` - Base64-encoded or raw bytes of speaker embedding (advanced)
+
+**Note:** Do NOT include `speaker_embedding` unless you have a valid base64-encoded embedding.
+
+# Image search test call
+
+The image search API uses a CNN model to search for similar images. It supports multiple input methods.
+
+- Base64 JSON Request: Send a JSON POST request to `/search-image`
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/search-image' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "[base64 encoded image]",
+  "response_format": "json",
+  "top_k": 3,
+  "min_confidence": 70.0
+}'
+```
+
+- File Upload: Send a multipart form data POST request to `/search-image`
+```bash
+curl -X POST "http://localhost:8000/search-image" \
+  -H "Authorization: Bearer your-secret-key" \
+  -F "file=@/path/to/image.jpg" \
+  -F "response_format=json" \
+  -F "top_k=5" \
+  -F "min_confidence=80.0"
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prompt` / `file` | string / file | required | Base64-encoded image (JSON) or image file (multipart) |
+| `response_format` | string | `"json"` | Response format for results |
+| `top_k` | integer | `3` | Number of top results to return |
+| `min_confidence` | float | `70.0` | Minimum confidence threshold (0-100) |
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+
 # Video generation API
 
 ## Submit video generation job
@@ -296,8 +443,7 @@ curl -X 'GET' \
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
-The example below downloads the full file unless a `Range` header is specified.
+The `/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
@@ -306,22 +452,11 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Range: bytes=0-1048575' \
-  -o partial_output.mp4
-```
-This will download only the first 1 MB (bytes 0–1048575) of the video file.
-
 ## Cancel video job and assets
 
 ```bash
-curl -X 'DELETE' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -383,7 +518,7 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'DELETE' \
+curl -X 'POST' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
@@ -541,22 +676,20 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
+| `JOB_DATABASE_PATH` | `./jobs.db` | The file system path where the job database is stored. This setting is only applicable when job persistence is enabled |
 
-## Text Processing Settings
+## VLLM Settings
 
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
-| `MAX_MODEL_LENGTH` | `128` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_BATCHED_TOKENS` | `128` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. Must be a power of two. Max value is 16384. |
-| `MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. If max_batch_size is more than 1, it must be equal to max_num_seqs.  |
-
-## Image Processing Settings
+These settings configure VLLM-based model runners and are grouped under `settings.vllm` in the configuration.
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `IMAGE_RETURN_FORMAT` | `"JPEG"` | Specifies the format in which generated images are returned by the API |
-| `IMAGE_QUALITY` | `85` | Sets the quality level for generated images. Value range: 1-100, where higher values mean better quality and larger file size |
+| `VLLM__MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Hugging Face model identifier for VLLM inference. |
+| `VLLM__MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
+| `VLLM__MAX_MODEL_LENGTH` | `2048` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. |
+| `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
+| `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
+| `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 
 ## Audio Processing Settings
 

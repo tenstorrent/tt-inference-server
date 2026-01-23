@@ -28,6 +28,7 @@ ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 # tt-metal build vars
 ENV CONFIG=Release
 ENV LOGURU_LEVEL=INFO
+ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
 
 # apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
@@ -85,7 +86,7 @@ RUN pip3 install --upgrade setuptools wheel \
 
 # user setup
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} \
+    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
@@ -98,6 +99,7 @@ RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
+    && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
