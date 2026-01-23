@@ -27,11 +27,9 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
     top_p = request.top_p if request.top_p is not None else defaults["top_p"]
     top_k = request.top_k if request.top_k is not None else defaults["top_k"]
     min_p = request.min_p if request.min_p is not None else defaults["min_p"]
-    max_tokens = (
-        request.max_tokens
-        if request.max_tokens is not None
-        else defaults["max_tokens"]
-    )
+
+    # We check falsey here because that is what we used to do, if user passes 0, he will get 0 tokens back
+    max_tokens = request.max_tokens if request.max_tokens else defaults["max_tokens"]
     n = request.n if request.n is not None else defaults["n"]
     seed = request.seed if request.seed is not None else defaults["seed"]
     logprobs = (
@@ -65,9 +63,10 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
     )
 
     # Validate parameter combinations
-    # When temperature is 0, sampling is deterministic - top_p has no effect
+    # When temperature is 0, sampling is deterministic (greedy decoding)
     if temperature == 0.0:
-        top_p = 1.0  # Ensure greedy decoding
+        top_p = 1.0
+        top_k = 0
 
     return SamplingParams(
         n=n,
