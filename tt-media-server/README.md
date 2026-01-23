@@ -455,8 +455,8 @@ curl -X 'GET' \
 ## Cancel video job and assets
 
 ```bash
-curl -X 'DELETE' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -518,7 +518,7 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'DELETE' \
+curl -X 'POST' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
@@ -676,6 +676,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
+| `JOB_DATABASE_PATH` | `./jobs.db` | The file system path where the job database is stored. This setting is only applicable when job persistence is enabled |
 
 ## VLLM Settings
 

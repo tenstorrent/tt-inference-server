@@ -72,7 +72,7 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    VLLMForge = "vllm_forge"
+    VLLM = "vllm"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLM_QWEN_EMBEDDING_8B = "vllm_qwen_embedding_8b"
     VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
@@ -112,7 +112,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE_2512,
     },
     ModelServices.LLM: {
-        ModelRunners.VLLMForge,
+        ModelRunners.VLLM,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLM_QWEN_EMBEDDING_8B,
         ModelRunners.VLLMBGELargeEN_V1_5,
@@ -169,7 +169,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLM_QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
@@ -495,26 +495,30 @@ ModelConfigs = {
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 32,
+        "max_batch_size": 16,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 256,
+        "max_batch_size": 8,
+        "default_throttle_level": 0,
     },
 }
 

@@ -1084,45 +1084,45 @@ def aiperf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if aiperf_text_results:
-        release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+    # Only include section if there are results to display
+    if aiperf_text_results or aiperf_image_results:
+        release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if aiperf_text_results:
+            release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
-    # IMAGE BENCHMARKS SECTION
-    if aiperf_image_results:
-        release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            aiperf_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if aiperf_image_results:
+            release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                aiperf_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
@@ -1370,41 +1370,45 @@ def genai_perf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if genai_text_results:
-        release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+    # Only include section if there are results to display
+    if genai_text_results or genai_image_results:
+        release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if genai_text_results:
+            release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # IMAGE BENCHMARKS SECTION
-    if genai_image_results:
-        release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            genai_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if genai_image_results:
+            release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                genai_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
@@ -2523,6 +2527,8 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
     logger.info("Tests Summary")
@@ -2537,23 +2543,62 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            None,
+            None,
         )
     # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
     files = files[0]
 
     # generate vLLM parameter coverage report
-    # TODO: Implement returning raw report, defaulting to None for now
-    markdown_str, release_raw = (
-        generate_vllm_parameter_report(
-            files, output_path, report_id, metadata, model_spec=model_spec
-        ),
-        None,
+    markdown_str = generate_vllm_parameter_report(
+        files, output_path, report_id, metadata, model_spec=model_spec
     )
+
+    # Look for parameter_report.json in tests_output directory
+    release_raw = None
+    test_dir_pattern = f"test_{model_spec.model_id}_*"
+    test_dir_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
+    )
+    test_dirs = glob(test_dir_path_pattern)
+
+    for test_dir in test_dirs:
+        parameter_report_path = Path(test_dir) / "parameter_report.json"
+        if parameter_report_path.exists():
+            try:
+                with open(parameter_report_path, "r", encoding="utf-8") as f:
+                    release_raw = json.load(f)
+                logger.info(f"Loaded parameter report from: {parameter_report_path}")
+                break
+            except Exception as e:
+                logger.warning(
+                    f"Could not read parameter report {parameter_report_path}: {e}"
+                )
+
+    if release_raw is None:
+        logger.info("No parameter_report.json found in tests_output directory.")
+        release_raw = [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ]
 
     release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
-    return release_str, release_raw
+    # Write markdown report to file
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"Tests report saved to: {output_path}")
+
+    # Save raw data to data directory
+    data_fpath = data_dir / f"tests_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+    logger.info(f"Tests data saved to: {data_fpath}")
+
+    return release_str, release_raw, output_path, data_fpath
 
 
 def generate_evals_markdown_table(results, meta_data) -> str:
@@ -3328,7 +3373,12 @@ def main():
     )
 
     # generate tests report
-    tests_release_str, tests_release_data = generate_tests_report(
+    (
+        tests_release_str,
+        tests_release_data,
+        tests_disp_md_path,
+        tests_data_file_path,
+    ) = generate_tests_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
     # generate stress test report
@@ -3397,6 +3447,9 @@ def main():
 
         # Check for server tests JSON files
         server_tests_data = []
+
+        # Use tests_release_data for parameter_support_tests
+        parameter_support_tests_data = tests_release_data if tests_release_data else []
 
         # Add target_checks for specific model if applicable
         if (
@@ -3626,6 +3679,10 @@ def main():
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
+
+        # Add parameter_support_tests only if data exists
+        if parameter_support_tests_data:
+            output_data["parameter_support_tests"] = parameter_support_tests_data
 
         json.dump(output_data, f, indent=4)
 
