@@ -2323,13 +2323,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=0,
-                model_kwargs={
-                    "max_length": 131072,  # Tell lm-eval the actual context length
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32*1024,  # Add this for long reasoning responses
-                },
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.01,
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -2397,13 +2390,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=0,
-                model_kwargs={
-                    "max_length": 64*1024,  # Tell lm-eval the actual context length
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32*1024,  # Add this for long reasoning responses
-                },
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.01,
                     EvalLimitMode.CI_NIGHTLY: 0.2,
