@@ -165,7 +165,11 @@ class VLLMRunner(BaseDeviceRunner):
 
     async def _generate_non_streaming(self, requests: list[CompletionRequest]):
         tasks = [self.process_request_non_streaming(request) for request in requests]
-        self.logger.info(f"Device {self.device_id}: Starting non-streaming batch generation for {len(tasks)} requests")
+        self.logger.info(
+            f"Device {self.device_id}: Starting non-streaming batch generation for {len(tasks)} requests"
+        )
         results = await asyncio.gather(*tasks)
-        self.logger.info(f"Device {self.device_id}: Non-streaming batch generation completed for {len(tasks)} requests")
+        self.logger.info(
+            f"Device {self.device_id}: Non-streaming batch generation completed for {len(tasks)} requests"
+        )
         return results
