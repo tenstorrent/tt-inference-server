@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
+    job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
 
