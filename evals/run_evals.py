@@ -332,31 +332,11 @@ def main():
     assert device == model_spec.device_type
 
     # Setup authentication based on model type
-    # DEBUG: Log values to understand auth path
-    logger.info(
-        f"DEBUG AUTH: model_type={model_spec.model_type}, inference_engine={model_spec.inference_engine}"
-    )
-    logger.info(f"DEBUG AUTH: EVAL_TASK_TYPES={EVAL_TASK_TYPES}")
-    logger.info(
-        f"DEBUG AUTH: InferenceEngine.FORGE.value={InferenceEngine.FORGE.value}"
-    )
-    logger.info(
-        f"DEBUG AUTH: model_type in EVAL_TASK_TYPES = {model_spec.model_type in EVAL_TASK_TYPES}"
-    )
-    logger.info(
-        f"DEBUG AUTH: inference_engine == FORGE = {model_spec.inference_engine == InferenceEngine.FORGE.value}"
-    )
-    logger.info(f"DEBUG AUTH: args.jwt_secret = '{args.jwt_secret}'")
-    logger.info(f"DEBUG AUTH: os.getenv('API_KEY') = '{os.getenv('API_KEY')}'")
-
     if (
         model_spec.model_type in EVAL_TASK_TYPES
         or model_spec.inference_engine == InferenceEngine.FORGE.value
     ):
         _setup_openai_api_key(args, logger)
-        logger.info(
-            f"DEBUG AUTH: OPENAI_API_KEY set to '{os.environ.get('OPENAI_API_KEY')}'"
-        )
     elif args.jwt_secret:
         # For LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(

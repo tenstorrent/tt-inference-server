@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_1.value
+    is_galaxy: bool = False# used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.VLLM.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    default_throttle_level: str = "0"
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000

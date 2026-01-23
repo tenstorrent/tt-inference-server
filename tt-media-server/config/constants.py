@@ -543,25 +543,25 @@ ModelConfigs = {
             "gpu_memory_utilization": 1,
         },
     },
-    (ModelRunners.VLLMForge, DeviceTypes.N150): {
+    (ModelRunners.VLLM, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.N300): {
+    (ModelRunners.VLLM, DeviceTypes.N300): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.T3K): {
+    (ModelRunners.VLLM, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 32,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.GALAXY): {
+    (ModelRunners.VLLM, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
