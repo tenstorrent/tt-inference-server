@@ -74,6 +74,8 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return "image"
     if model_type == ModelType.EMBEDDING:
         return "embedding"
+    if model_type == ModelType.VIDEO:
+        return "video"
 
 
 def _get_task_type(model_id: str) -> str | None:
