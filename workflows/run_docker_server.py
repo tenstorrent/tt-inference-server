@@ -223,6 +223,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     elif (
         model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
+        or model_spec.model_type == ModelType.VIDEO
     ):
         docker_env_vars.update(get_cnn_docker_env_vars(model_spec, args))
     elif model_spec.model_type == ModelType.EMBEDDING:
@@ -274,7 +275,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
-        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE or model_spec.model_type == ModelType.EMBEDDING:
+        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE or model_spec.model_type == ModelType.EMBEDDING or model_spec.model_type == ModelType.VIDEO:
             # For CNN models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
