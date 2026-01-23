@@ -140,7 +140,8 @@ def get_embedding_docker_env_vars(model_spec, args):
     )
     return env_vars
 
-#Check needed 
+
+# Check needed
 def get_tts_docker_env_vars(model_spec, args):
     """Get TTS (text-to-speech) specific environment variables for Docker container.
 

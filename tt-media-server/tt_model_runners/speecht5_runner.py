@@ -76,8 +76,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         """Load HuggingFace model weights for download verification"""
         try:
             model_weights_path = (
-                self.settings.model_weights_path
-                or SupportedModels.SPEECHT5_TTS.value
+                self.settings.model_weights_path or SupportedModels.SPEECHT5_TTS.value
             )
             self.logger.info(
                 f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}"
@@ -109,7 +108,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
                 self.processor = SpeechT5Processor.from_pretrained(model_name)
                 self.model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
-                self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+                self.vocoder = SpeechT5HifiGan.from_pretrained(
+                    "microsoft/speecht5_hifigan"
+                )
             else:
                 self.logger.info(
                     f"Device {self.device_id}: Using already loaded SpeechT5 models"
