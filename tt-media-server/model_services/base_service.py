@@ -224,8 +224,8 @@ class BaseService(ABC):
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
         return self._job_manager.get_job_metadata(job_id)
 
-    def get_job_result(self, job_id: str) -> Optional[Any]:
-        return self._job_manager.get_job_result(job_id)
+    def get_job_result_path(self, job_id: str) -> Optional[Any]:
+        return self._job_manager.get_job_result_path(job_id)
 
     def cancel_job(self, job_id: str) -> bool:
         return self._job_manager.cancel_job(job_id)
