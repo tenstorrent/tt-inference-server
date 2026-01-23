@@ -41,7 +41,6 @@ class CompletionRequest(BaseRequest):
     # Reproducibility
     seed: int | None = None
 
-
     # sampling-params
     temperature: float | None = None
     top_p: float | None = None
