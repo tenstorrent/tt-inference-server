@@ -125,6 +125,8 @@ class TtsClientStrategy(BaseMediaStrategy):
             },
         }
 
+        benchmark_data.update(dict_format_data)
+
         eval_filename = (
             Path(self.output_path)
             / f"eval_{self.model_spec.model_id}"
