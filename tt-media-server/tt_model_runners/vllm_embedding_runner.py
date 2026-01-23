@@ -24,6 +24,7 @@ class VLLMEmbeddingRunner(BaseDeviceRunner):
         # (e.g., batch of 8 becomes 7+1, doubling forward passes).
         # See: https://github.com/tenstorrent/tt-inference-server/issues/1453
         os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+        os.environ["HF_MODEL"] = self.model
         self.logger.info(f"Device {self.device_id}: Loading model...")
 
         prompts = [
@@ -34,6 +35,7 @@ class VLLMEmbeddingRunner(BaseDeviceRunner):
             max_model_len=self.max_model_len,
             max_num_seqs=self.max_num_seqs,
             max_num_batched_tokens=self.max_model_len * self.max_num_seqs,
+            use_tqdm_on_load=False,
         )
 
         self.llm.embed(prompts)
