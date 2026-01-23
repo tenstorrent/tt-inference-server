@@ -982,9 +982,6 @@ spec_templates = [
                 vllm_args={
                     "num_scheduler_steps": "1",
                 },
-                env_vars={
-                    "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid that worked on bare metal
-                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -992,6 +989,7 @@ spec_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "VLLM_USE_V1": "0",
+            "MESH_DEVICE": "(4, 8)"
         },
     ),
     ModelSpecTemplate(
