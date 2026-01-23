@@ -391,6 +391,7 @@ def main():
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = cli_args.get("service_port")
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.vllm_model = model_spec.hf_model_repo
 
     if (
