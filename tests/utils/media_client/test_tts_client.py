@@ -15,9 +15,10 @@ from utils.media_clients.test_status import TtsTestStatus
 class MockAsyncResponse:
     """Mock async response for aiohttp."""
 
-    def __init__(self, status=200, json_data=None):
+    def __init__(self, status=200, json_data=None, headers=None):
         self.status = status
         self._json_data = json_data or {}
+        self.headers = headers or {}
 
     async def json(self):
         return self._json_data
@@ -92,7 +93,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
 
         result = strategy._get_tts_num_calls(is_eval=False)
 
-        assert result == 25  # TTS benchmark default
+        assert result == 10  # TTS benchmark default
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     @patch("utils.media_clients.tts_client.get_num_calls")
@@ -106,7 +107,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
 
         result = strategy._get_tts_num_calls(is_eval=True)
 
-        assert result == 12  # TTS eval default
+        assert result == 5  # TTS eval default
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     @patch("utils.media_clients.tts_client.get_num_calls")
@@ -548,6 +549,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_response = MockAsyncResponse(
             status=200,
             json_data={"audio": "base64audio", "duration": 0.32},
+            headers={"Content-Type": "application/json"},
         )
         mock_session = MockAsyncSession(mock_response)
 
@@ -570,6 +572,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_response = MockAsyncResponse(
             status=200,
             json_data={"audio": "base64audio", "duration": 0.32},
+            headers={"Content-Type": "application/json"},
         )
         mock_session = MockAsyncSession(mock_response)
 
@@ -597,7 +600,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
 
         strategy = self._create_strategy()
         mock_response = MockAsyncResponse(
-            status=200, json_data={"audio": "base64audio"}
+            status=200, json_data={"audio": "base64audio"}, headers={"Content-Type": "application/json"}
         )
         mock_session = MockAsyncSession(mock_response)
 
@@ -687,21 +690,21 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
-        assert isinstance(report_data, list)
-        assert len(report_data) == 1
-        eval_result = report_data[0]
+        # Verify dict format structure
+        assert isinstance(report_data, dict)
+        assert "results" in report_data
+        assert "configs" in report_data
+        
+        # Verify task_name exists in both results and configs
+        task_name = "test_task"
+        assert task_name in report_data["results"]
+        assert task_name in report_data["configs"]
+        
+        eval_result = report_data["results"][task_name]
 
-        # Verify required keys
+        # Verify required keys in results
         required_keys = [
-            "model",
-            "device",
-            "timestamp",
-            "task_type",
-            "task_name",
-            "tolerance",
-            "published_score",
             "score",
-            "published_score_ref",
             "rtr",
             "p90_ttft",
             "p95_ttft",
