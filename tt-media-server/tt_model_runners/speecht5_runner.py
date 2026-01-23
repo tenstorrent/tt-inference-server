@@ -53,6 +53,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id)
         self.processor = None
+        self.model = None  # HuggingFace model reference
         self.vocoder = None
         self.ttnn_encoder = None
         self.ttnn_decoder = None
@@ -71,18 +72,50 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
         return device_params
 
+    def load_weights(self):
+        """Load HuggingFace model weights for download verification"""
+        try:
+            model_weights_path = (
+                self.settings.model_weights_path
+                or SupportedModels.SPEECHT5_TTS.value
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}"
+            )
+
+            # Load processor and model to verify weights are available
+            self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
+            self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
+            self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+
+            self.logger.info(
+                f"Device {self.device_id}: Successfully loaded HuggingFace model components"
+            )
+            return True
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Failed to load HuggingFace model: {e}"
+            )
+            raise RuntimeError(f"Failed to load reference model: {str(e)}") from e
+
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:
-            # Load HuggingFace models
-            model_name = SupportedModels.SPEECHT5_TTS.value
-            self.logger.info(
-                f"Device {self.device_id}: Loading SpeechT5 models from {model_name}"
-            )
+            if self.processor is None or self.model is None or self.vocoder is None:
+                model_name = SupportedModels.SPEECHT5_TTS.value
+                self.logger.info(
+                    f"Device {self.device_id}: Loading SpeechT5 models from {model_name}"
+                )
 
-            self.processor = SpeechT5Processor.from_pretrained(model_name)
-            model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
-            self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+                self.processor = SpeechT5Processor.from_pretrained(model_name)
+                self.model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
+                self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+            else:
+                self.logger.info(
+                    f"Device {self.device_id}: Using already loaded SpeechT5 models"
+                )
+
+            model = self.model
 
             # Initialize speaker embeddings manager
             self.speaker_manager = SpeakerEmbeddingsManager()
