@@ -102,7 +102,7 @@ def download_video_content(
     Raises:
         HTTPException: If video not found, not completed, or failed.
     """
-    file_path = service.get_job_result(job_id)
+    file_path = service.get_job_result_path(job_id)
     if (
         file_path is None
         or not isinstance(file_path, str)
@@ -129,7 +129,7 @@ def download_video_content(
     )
 
 
-@router.delete("/generations/{job_id}")
+@router.post("/generations/{job_id}/cancel")
 def cancel_video_job(
     job_id: str,
     service: BaseService = Depends(service_resolver),
@@ -152,6 +152,6 @@ def cancel_video_job(
         content={
             "id": job_id,
             "object": JobTypes.VIDEO.value,
-            "deleted": True,
+            "cancelled": True,
         }
     )

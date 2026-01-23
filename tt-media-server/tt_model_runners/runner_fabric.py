@@ -45,15 +45,19 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WHISPER: lambda wid, num_threads: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid, num_threads),
-    ModelRunners.VLLMForge: lambda wid, num_threads: __import__(
-        "tt_model_runners.vllm_forge_runner", fromlist=["VLLMForgeRunner"]
-    ).VLLMForgeRunner(wid, num_threads),
+    ModelRunners.VLLM: lambda wid, num_threads: __import__(
+        "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
+    ).VLLMRunner(wid, num_threads),
     ModelRunners.VLLMBGELargeEN_V1_5: lambda wid, num_threads: __import__(
-        "tt_model_runners.vllm_bge_large_en_runner", fromlist=["VLLMBGELargeENRunner"]
+        "tt_model_runners.vllm_embedding_runner", fromlist=["VLLMBGELargeENRunner"]
     ).VLLMBGELargeENRunner(wid, num_threads),
     ModelRunners.LLM_TEST: lambda wid, num_threads: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid, num_threads),
+    ModelRunners.VLLM_QWEN_EMBEDDING_8B: lambda wid, num_threads: __import__(
+        "tt_model_runners.vllm_embedding_runner",
+        fromlist=["VLLMQwen3Embedding8BRunner"],
+    ).VLLMQwen3Embedding8BRunner(wid, num_threads),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
