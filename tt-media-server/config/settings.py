@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     audio_language: str = "English"
 
     # Telemetry settings
-    enable_telemetry: bool = False
+    enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
 
     model_config = SettingsConfigDict(env_file=".env")
