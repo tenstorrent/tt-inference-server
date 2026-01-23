@@ -117,9 +117,10 @@ class VLLMRunner(BaseDeviceRunner):
         chunks_append = chunks.append
 
         strip_eos = TextUtils.strip_eos
+        sampling_params = self.build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
-            request.prompt, self.build_sampling_params(request), task_id
+            request.prompt, sampling_params, task_id
         ):
             outputs = request_output.outputs
             if not outputs:
@@ -164,5 +165,7 @@ class VLLMRunner(BaseDeviceRunner):
 
     async def _generate_non_streaming(self, requests: list[CompletionRequest]):
         tasks = [self.process_request_non_streaming(request) for request in requests]
+        self.logger.info(f"Device {self.device_id}: Starting non-streaming batch generation for {len(tasks)} requests")
         results = await asyncio.gather(*tasks)
+        self.logger.info(f"Device {self.device_id}: Non-streaming batch generation completed for {len(tasks)} requests")
         return results
