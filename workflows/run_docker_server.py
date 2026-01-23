@@ -140,6 +140,33 @@ def get_embedding_docker_env_vars(model_spec, args):
     )
     return env_vars
 
+#Check needed 
+def get_tts_docker_env_vars(model_spec, args):
+    """Get TTS (text-to-speech) specific environment variables for Docker container.
+
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+
+    Returns:
+        Dictionary of TTS-specific environment variables
+    """
+    if getattr(args, "device_id", None):
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+    else:
+        device_ids_str = "(0)"
+
+    env_vars = {
+        "MODEL": model_spec.model_name,
+        "DEVICE": model_spec.device_type.name.lower(),
+        "DEVICE_IDS": device_ids_str,
+    }
+
+    logger.info(
+        f"TTS environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, DEVICE_IDS={device_ids_str}"
+    )
+    return env_vars
+
 
 def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
@@ -220,8 +247,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
 
-    # Add environment variables for tt-media-server containers (audio and cnn models)
-    if model_spec.model_type == ModelType.AUDIO:
+    # Add environment variables for tt-media-server containers (audio, cnn, and tts models)
+    if model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        docker_env_vars.update(get_tts_docker_env_vars(model_spec, args))
+    elif model_spec.model_type == ModelType.AUDIO:
         docker_env_vars.update(get_audio_docker_env_vars(model_spec, args))
     elif (
         model_spec.model_type == ModelType.CNN
@@ -270,7 +299,16 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
-        if model_spec.model_type == ModelType.AUDIO:
+        # Check for TTS models first by model_name (TTS models may use ModelType.AUDIO)
+        if model_spec.model_name == "speecht5-tts":
+            # For TTS models (tt-media-server containers), mount the tt-media-server directory
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            ]
+        elif model_spec.model_type == ModelType.AUDIO:
             # For audio models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
