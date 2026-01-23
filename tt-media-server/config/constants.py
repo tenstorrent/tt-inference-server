@@ -604,25 +604,25 @@ ModelConfigs = {
         },
         "default_throttle_level": 0,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.N150): {
+    (ModelRunners.VLLM, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.N300): {
+    (ModelRunners.VLLM, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.T3K): {
+    (ModelRunners.VLLM, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.GALAXY): {
+    (ModelRunners.VLLM, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
