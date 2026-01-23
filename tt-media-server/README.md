@@ -455,8 +455,8 @@ curl -X 'GET' \
 ## Cancel video job and assets
 
 ```bash
-curl -X 'DELETE' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -518,7 +518,7 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'DELETE' \
+curl -X 'POST' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
