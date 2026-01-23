@@ -183,10 +183,16 @@ class Yolov8s(Gst.Element):
             results = obj_postprocess(preds, tensor, [frame_bgr], [["1"]], self.names)[0]
             out_image = self._draw_detections(results, frame_bgr)
 
-            # Print stats every frame for now
+            # Calculate stats
             avg_ms = self.total_inference_time / self.frame_count
             fps = 1000 / avg_ms if avg_ms > 0 else 0
-            print(f"[YOLOv8s] Frame {self.frame_count}: {inference_ms:.1f}ms (avg: {avg_ms:.1f}ms, ~{fps:.0f} FPS)", flush=True)
+            
+            # Draw FPS overlay on image
+            out_image = self._draw_fps_overlay(out_image, inference_ms, fps)
+            
+            # Print stats every 30 frames
+            if self.frame_count % 30 == 0:
+                print(f"[YOLOv8s] Frame {self.frame_count}: {inference_ms:.1f}ms (avg: {avg_ms:.1f}ms, ~{fps:.0f} FPS)", flush=True)
 
             # 5. Create output buffer
             out_buf = Gst.Buffer.new_allocate(None, out_image.nbytes, None)
@@ -202,6 +208,20 @@ class Yolov8s(Gst.Element):
             import traceback
             traceback.print_exc()
             return Gst.FlowReturn.ERROR
+
+    def _draw_fps_overlay(self, image, inference_ms, fps):
+        """Draw FPS and latency overlay on image."""
+        # Semi-transparent background
+        overlay = image.copy()
+        cv2.rectangle(overlay, (5, 5), (250, 70), (0, 0, 0), -1)
+        image = cv2.addWeighted(overlay, 0.6, image, 0.4, 0)
+        
+        # Text
+        cv2.putText(image, f"Tenstorrent YOLOv8s", (10, 25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 212, 255), 2)
+        cv2.putText(image, f"Inference: {inference_ms:.1f}ms | {fps:.0f} FPS", (10, 55),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        return image
 
     def _draw_detections(self, result, image):
         """Draw bounding boxes on image with confidence filtering."""

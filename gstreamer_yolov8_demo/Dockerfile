@@ -38,7 +38,7 @@ RUN /home/container_app_user/python_env_gst/bin/pip install --upgrade pip && \
     /home/container_app_user/python_env_gst/bin/pip install \
         torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     /home/container_app_user/python_env_gst/bin/pip install \
-        graphviz numpy_ringbuffer opencv-python-headless pytest ultralytics datasets
+        graphviz numpy_ringbuffer opencv-python-headless pytest ultralytics datasets websockets
 
 # Install tt-metal
 RUN /home/container_app_user/python_env_gst/bin/pip install -e .
@@ -57,12 +57,19 @@ ENV GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
 ENV PYTHONPATH=/home/container_app_user/tt-metal
 ENV GST_DEBUG=1
 
-# Copy entrypoint and HTTP server
+# Copy entrypoint and server scripts
 COPY --chown=container_app_user:container_app_user entrypoint.sh /app/entrypoint.sh
 COPY --chown=container_app_user:container_app_user http_stream.py /app/http_stream.py
+COPY --chown=container_app_user:container_app_user test_8device_parallel.py /app/test_8device_parallel.py
+COPY --chown=container_app_user:container_app_user websocket_server.py /app/websocket_server.py
+COPY --chown=container_app_user:container_app_user gst_server.py /app/gst_server.py
+
+# Copy demo videos (included in image - no external files needed)
+COPY --chown=container_app_user:container_app_user city_traffic.mp4 /app/demo/city_traffic.mp4
+COPY --chown=container_app_user:container_app_user sample_traffic.mp4 /app/demo/sample_traffic.mp4
 RUN chmod +x /app/entrypoint.sh
 
 WORKDIR /home/container_app_user/tt-metal
-EXPOSE 8080
+EXPOSE 8080 8765
 
 ENTRYPOINT ["/app/entrypoint.sh"]
