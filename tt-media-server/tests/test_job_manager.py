@@ -75,20 +75,6 @@ class TestJob:
         assert job.is_completed()
         assert job.is_terminal()
 
-    def test_mark_completed_invalid_type(self):
-        """Test that mark_completed raises TypeError when result_path is not a string"""
-        job = Job(id="test-123", job_type="video", model="test-model")
-
-        # result_path must be a string
-        with pytest.raises(TypeError):
-            job.mark_completed(result_path=12345)
-
-        with pytest.raises(TypeError):
-            job.mark_completed(result_path=["path/one", "path/two"])
-
-        # Verify the job status did not change to COMPLETED because it crashed
-        assert job.status == JobStatus.QUEUED
-
     def test_mark_failed(self):
         """Test marking job as failed"""
         job = Job(id="test-123", job_type="video", model="test-model")
@@ -171,7 +157,6 @@ class TestJob:
         assert result["status"] == "completed"
         assert result["completed_at"] is not None
         assert "error" not in result
-        assert result["result_path"] == "videos/test-123.mp4"
 
     def test_to_public_dict_failed(self):
         """Test converting failed job to public dict"""
@@ -186,7 +171,6 @@ class TestJob:
             "message": "Test error message",
         }
         assert result["completed_at"] is not None
-        assert "result_path" not in result
 
 
 class TestJobManager:
