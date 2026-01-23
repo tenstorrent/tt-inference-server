@@ -113,7 +113,7 @@ def device_worker(
                             )
                         )
             else:
-                responses = device_runner.run([request for request in requests])
+                responses = device_runner.run(requests)
 
                 if responses is None or len(responses) == 0:
                     for request in requests:

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionStreamChunk
-from tt_model_runners.vllm_forge_runner import VLLMForgeRunner
+from tt_model_runners.vllm_runner import VLLMRunner
 
 
 @dataclass
@@ -48,7 +48,7 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
     mock_settings.device_mesh_shape = (1, 8)  # Ensure device_mesh_shape[0] is an int
     mock_get_settings.return_value = mock_settings
 
-    runner = VLLMForgeRunner(device_id="test-device")
+    runner = VLLMRunner(device_id="test-device")
     runner.llm_engine = MockAsyncLLMEngine(
         [
             "!",
@@ -88,7 +88,7 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
     mock_settings.device_mesh_shape = (1, 8)  # Ensure device_mesh_shape[0] is an int
     mock_get_settings.return_value = mock_settings
 
-    runner = VLLMForgeRunner(device_id="test-device")
+    runner = VLLMRunner(device_id="test-device")
     tokens = [
         "!",
         " I",
