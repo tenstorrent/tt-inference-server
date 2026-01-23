@@ -952,7 +952,7 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "num_scheduler_steps": "1",
-                    "max_num_seqs": 1,
+                    "max_num_seqs": "1",
                 },
             ),
         ],
