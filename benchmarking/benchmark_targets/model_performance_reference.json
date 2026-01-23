@@ -5543,9 +5543,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5556,9 +5556,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5569,9 +5569,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5582,9 +5582,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5723,6 +5723,34 @@
                     "theoretical": {
                         "ttft_ms": 50,
                         "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "speecht5-tts": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 166,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
                     }
                 }
             }
