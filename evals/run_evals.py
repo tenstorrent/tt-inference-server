@@ -114,6 +114,7 @@ def _setup_openai_api_key(args, logger):
     # jwt_secret is for vLLM JWT encoding, not media server plain API key auth
     api_key = os.getenv("API_KEY", "your-secret-key")
     os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["VLLM_API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set for media server auth.")
 
 
