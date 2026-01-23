@@ -70,7 +70,7 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    VLLMForge = "vllm_forge"
+    VLLM = "vllm"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -109,7 +109,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE_2512,
     },
     ModelServices.LLM: {
-        ModelRunners.VLLMForge,
+        ModelRunners.VLLM,
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLMBGELargeEN_V1_5,
         ModelRunners.LLM_TEST,
@@ -164,7 +164,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
