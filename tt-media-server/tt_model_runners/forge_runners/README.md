@@ -30,7 +30,7 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
-   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"   
+   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"
    pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
@@ -72,7 +72,7 @@ Interactive API documentation is available at:
 
 ### Demo
 
-Resnet Demo 
+Resnet Demo
 - http://127.0.0.1:8000/static/demos/resnet.html
 
 ### Making Inference Requests
@@ -125,7 +125,7 @@ tt-inference-server/tt-media-server$ pytest tt_model_runners/forge_runners/test_
 Model should first be tested locally:
 
 1. In tt-media-server, in `config/vllm_settings`, choose the desired model from the `SupportedModels` enum
-2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLMForge.value`
+2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLM.value`
 3. Create a python3.11 venv with the forge vllm plugin and activate
 4. Do a `pip install -r` in both tt-inference-server and tt-media-server
 5. Do `export VLLM_TARGET_DEVICE="empty"`
@@ -135,3 +135,7 @@ Model should first be tested locally:
 ### CI
 
 To run the forge model, select the `forge-vllm-plugin` implementation when running the dispatch workflow in tt-shield. This will trigger the building of a tt-media-server container running the forge vllm plugin.
+
+Add the model into the options dropdown(under the model input) in on-dispatch.yml in .github/workflows/on-dispatch.yml file
+
+To add models into the on-nightly workflow, navigate to tt-shield repo, and add the model into the model matrix in .github/workflows/on-dispatch.yml , under   run-evals-on-media-inference-server-forge job

@@ -194,7 +194,6 @@ class Settings(BaseSettings):
 
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
-        self.vllm.model = SupportedModels[model_name_enum.name].value
 
         # Find the appropriate model runner for this model name
         model_runner_enum = None
@@ -219,6 +218,11 @@ class Settings(BaseSettings):
             for key, value in matching_config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
+        if any(
+            self.model_runner == r.value
+            for r in MODEL_SERVICE_RUNNER_MAP[ModelServices.LLM]
+        ):
+            self.vllm.model = SupportedModels[model_name_enum.name].value
 
 
 settings = Settings()
