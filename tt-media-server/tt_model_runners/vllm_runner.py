@@ -20,12 +20,12 @@ class VLLMRunner(BaseDeviceRunner):
         super().__init__(device_id, num_torch_threads)
 
     @log_execution_time(
-        "VLLM Forge model load",
+        "VLLM model load",
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     async def warmup(self) -> bool:
-        self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
+        self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
@@ -52,7 +52,7 @@ class VLLMRunner(BaseDeviceRunner):
         return True
 
     @log_execution_time(
-        "Run VLLM Forge inference",
+        "Run VLLM inference",
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
