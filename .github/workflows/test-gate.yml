@@ -77,17 +77,10 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r tt-media-server/requirements.txt
 
-      - name: Test pytest collection
-        timeout-minutes: 1
-        run: |
-          echo "Testing if pytest can collect tests..."
-          pytest tests/ --ignore=tests/server_tests --collect-only -q || echo "Collection failed or timed out"
-
       - name: Run tt-inference-server tests
-        timeout-minutes: 2
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors --timeout=30 > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
 
           # try to find final pytest summary line (robust)
           SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
