@@ -348,13 +348,13 @@ class TestJobManagement:
         mock_job_manager.get_job_metadata.assert_called_once_with("job_1")
         assert result == {"job_id": "job_1"}
 
-    def test_get_job_result(self, service):
-        """Test get_job_result delegates to job manager"""
-        mock_job_manager.get_job_result = Mock(return_value="job_result")
+    def test_get_job_result_path(self, service):
+        """Test get_job_result_path delegates to job manager"""
+        mock_job_manager.get_job_result_path = Mock(return_value="job_result")
 
-        result = service.get_job_result("job_1")
+        result = service.get_job_result_path("job_1")
 
-        mock_job_manager.get_job_result.assert_called_once_with("job_1")
+        mock_job_manager.get_job_result_path.assert_called_once_with("job_1")
         assert result == "job_result"
 
     def test_cancel_job(self, service):
