@@ -15,7 +15,7 @@ from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 from vllm.sampling_params import RequestOutputKind
 
 
-class VLLMForgeRunner(BaseDeviceRunner):
+class VLLMRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 

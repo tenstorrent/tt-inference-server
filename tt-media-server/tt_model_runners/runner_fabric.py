@@ -45,9 +45,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WHISPER: lambda wid, num_threads: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid, num_threads),
-    ModelRunners.VLLMForge: lambda wid, num_threads: __import__(
-        "tt_model_runners.vllm_forge_runner", fromlist=["VLLMForgeRunner"]
-    ).VLLMForgeRunner(wid, num_threads),
+    ModelRunners.VLLM: lambda wid, num_threads: __import__(
+        "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
+    ).VLLMRunner(wid, num_threads),
     ModelRunners.VLLMBGELargeEN_V1_5: lambda wid, num_threads: __import__(
         "tt_model_runners.vllm_bge_large_en_runner", fromlist=["VLLMBGELargeENRunner"]
     ).VLLMBGELargeENRunner(wid, num_threads),
