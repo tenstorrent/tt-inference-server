@@ -10,9 +10,9 @@ from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+from utils.sampling_params_builder import build_sampling_params
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
-from vllm.sampling_params import RequestOutputKind
 
 
 class VLLMRunner(BaseDeviceRunner):
@@ -61,41 +61,11 @@ class VLLMRunner(BaseDeviceRunner):
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self._run_async(requests))
 
-    def build_sampling_params(self, request: CompletionRequest):
-        return SamplingParams(
-            n=1,
-            presence_penalty=0.0,
-            frequency_penalty=0.0,
-            repetition_penalty=1.0,
-            seed=None,
-            stop=[],
-            stop_token_ids=[],
-            bad_words=[],
-            include_stop_str_in_output=False,
-            ignore_eos=False,
-            min_tokens=0,
-            logprobs=None,
-            prompt_logprobs=None,
-            temperature=0.0,
-            top_p=1.0,
-            top_k=0,
-            min_p=0.0,
-            max_tokens=request.max_tokens if request.max_tokens else 65536,
-            skip_special_tokens=True,
-            spaces_between_special_tokens=True,
-            truncate_prompt_tokens=None,
-            guided_decoding=None,
-            extra_args=None,
-            output_kind=RequestOutputKind.DELTA,
-        )
-
     async def _run_async(self, requests: list[CompletionRequest]):
         try:
             self.logger.debug(f"Device {self.device_id}: Running inference")
 
             request = requests[0]
-            # Harcode those sampling params
-            # SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], include_stop_str_in_output=False, ignore_eos=False, max_tokens=231, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, truncate_prompt_tokens=None, guided_decoding=None, extra_args=None)
             if request.stream:
                 return self._generate_streaming(request)
             else:
@@ -117,7 +87,7 @@ class VLLMRunner(BaseDeviceRunner):
         chunks_append = chunks.append
 
         strip_eos = TextUtils.strip_eos
-        sampling_params = self.build_sampling_params(request)
+        sampling_params = build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
             request.prompt, sampling_params, task_id
@@ -148,7 +118,7 @@ class VLLMRunner(BaseDeviceRunner):
     async def process_request_non_streaming(self, request: CompletionRequest):
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
-        sampling_params = self.build_sampling_params(request)
+        sampling_params = build_sampling_params(request)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
