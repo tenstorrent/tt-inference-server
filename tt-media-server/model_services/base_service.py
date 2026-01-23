@@ -128,9 +128,6 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
 
-    @log_execution_time(
-        "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
-    )
     async def process(self, request):
         queue = asyncio.Queue()
         self.scheduler.result_queues[request._task_id] = queue

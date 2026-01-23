@@ -8,6 +8,7 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
+from config.constants import QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
@@ -15,6 +16,7 @@ from device_workers.device_worker_dynamic_batch import (
 )
 from fastapi import HTTPException
 from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -30,28 +32,34 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = TTQueue(
-            self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
-        )
+        self.task_queue = self._get_queue(name="task_queue", create=True, size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
         # Create one result queue per worker
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
-                self.result_queues_by_worker[i] = (
-                    SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
-                    if self.settings.use_memory_queue
-                    else Queue()
+                self.result_queues_by_worker[i] = self._get_queue(
+                    name=f"chunk_queue_{i}", create=True, size=10000
                 )
         else:
-            self.result_queues_by_worker[0] = (
-                SharedMemoryChunkQueue(name="chunk_queue_0", create=True)
-                if self.settings.use_memory_queue
-                else Queue()
+            self.result_queues_by_worker[0] = self._get_queue(
+                name="chunk_queue_0", create=True, size=10000
             )
 
         self.error_queue = Queue()
+
+    def _get_queue(self, name: str, create: bool, size: int):
+        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
+            return TTFasterFifoQueue(size)
+        elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:
+            return TTQueue(size)
+        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
+            return TTQueue(size)
+        elif self.settings.queue_for_multiprocessing == QueueType.MemoryQueue.value:
+            return SharedMemoryChunkQueue(capacity=size, name=name, create=create)
+        else:
+            return Queue()
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -72,7 +80,6 @@ class Scheduler:
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
 
-    @log_execution_time("Scheduler request processing")
     def process_request(self, request):
         try:
             self.check_is_model_ready()
@@ -164,7 +171,10 @@ class Scheduler:
                 result_queue,
                 self.warmup_signals_queue,
                 self.error_queue,
-                result_queue.name if self.settings.use_memory_queue else None,
+                result_queue.name
+                if self.settings.queue_for_multiprocessing
+                == QueueType.MemoryQueue.value
+                else None,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -212,38 +222,46 @@ class Scheduler:
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
-        """✅ Read from ALL worker queues in parallel"""
+        """✅ Read from ALL worker queues in parallel using batch reads"""
         while self.listener_running:
             try:
-                # Non-blocking reads from all queues
                 result_found = False
 
                 for worker_index, result_queue in self.result_queues_by_worker.items():
                     try:
-                        result = result_queue.get_nowait()
+                        # Batch read - get up to 100 results at once
+                        results = result_queue.get_many(
+                            max_messages_to_get=1000, block=False, timeout=0.001
+                        )
 
-                        if result is None:
+                        if not results:
                             continue
 
                         result_found = True
-                        worker_id, result_key, input_data = result
+                        # Process all results in batch
+                        for result in results:
+                            if result is None:
+                                continue
 
-                        if result_key is None:
-                            self.listener_running = False
-                            break
+                            worker_id, result_key, input_data = result
 
-                        queue_obj = self.result_queues.get(result_key)
+                            if result_key is None:
+                                self.listener_running = False
+                                break
 
-                        if queue_obj:
-                            await queue_obj.put(input_data)
-                        else:
-                            current_queues = list(self.result_queues.keys())
-                            self.logger.warning(
-                                f"No result queue found for task {result_key}. "
-                                f"Current queues: {current_queues}"
-                            )
-                    except:  # noqa: BLE001, E722
-                        self.logger.debug("Queue is currently empty")
+                            queue_obj = self.result_queues.get(result_key)
+
+                            if queue_obj:
+                                await queue_obj.put(input_data)
+                            else:
+                                current_queues = list(self.result_queues.keys())
+                                self.logger.warning(
+                                    f"No result queue found for task {result_key}. "
+                                    f"Current queues: {current_queues}"
+                                )
+
+                    except Exception:
+                        pass  # Queue empty, continue to next
 
                 # Only sleep if no results found
                 if not result_found:

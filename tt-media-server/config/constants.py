@@ -179,6 +179,12 @@ class DeviceTypes(Enum):
     P300 = "p300"
 
 
+class QueueType(Enum):
+    MemoryQueue = "MemoryQueue"
+    FasterFifo = "FasterFifo"
+    TTQueue = "TTQueue"
+
+
 class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"

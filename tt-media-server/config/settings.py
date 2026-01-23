@@ -15,6 +15,7 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
+    QueueType,
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
@@ -28,16 +29,16 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "(0)"
-    is_galaxy: bool = False  # used for graph device split and class init
+    device_ids: str = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11)"
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
-    use_greedy_based_allocation: bool = True
+    use_greedy_based_allocation: bool = False
 
     # Model settings
-    model_runner: str = ModelRunners.VLLMBGELargeEN_V1_5.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
     download_weights_from_service: bool = False
     use_queue_per_worker: bool = False
-    use_memory_queue: bool = False
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Queue and batch settings
     max_queue_size: int = 5000
