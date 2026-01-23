@@ -17,7 +17,7 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-torch
+torch==2.7.1
 tqdm
 transformers
 uvicorn
