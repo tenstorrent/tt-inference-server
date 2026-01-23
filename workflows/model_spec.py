@@ -952,13 +952,14 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "num_scheduler_steps": "1",
+                    "max_num_seqs": 1,
                 },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "0",
+            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -981,6 +982,7 @@ spec_templates = [
                 default_impl=True,
                 vllm_args={
                     "num_scheduler_steps": "1",
+                    "max_num_seqs": 1,
                 },
             ),
         ],
