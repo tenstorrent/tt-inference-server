@@ -600,7 +600,9 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
 
         strategy = self._create_strategy()
         mock_response = MockAsyncResponse(
-            status=200, json_data={"audio": "base64audio"}, headers={"Content-Type": "application/json"}
+            status=200,
+            json_data={"audio": "base64audio"},
+            headers={"Content-Type": "application/json"},
         )
         mock_session = MockAsyncSession(mock_response)
 
@@ -694,12 +696,12 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert isinstance(report_data, dict)
         assert "results" in report_data
         assert "configs" in report_data
-        
+
         # Verify task_name exists in both results and configs
         task_name = "test_task"
         assert task_name in report_data["results"]
         assert task_name in report_data["configs"]
-        
+
         eval_result = report_data["results"][task_name]
 
         # Verify required keys in results
