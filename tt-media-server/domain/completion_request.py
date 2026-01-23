@@ -10,6 +10,7 @@ import torch
 
 _LONG_INFO = torch.iinfo(torch.long)
 
+
 class StreamOptions(BaseModel):
     """Stream options for OpenAI-compatible streaming responses."""
 
@@ -67,5 +68,5 @@ class CompletionRequest(BaseRequest):
     allowed_token_ids: list[int] | None = None
     prompt_logprobs: int | None = None
     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_LONG_INFO.max)] | None = (
-    None
-)
+        None
+    )
