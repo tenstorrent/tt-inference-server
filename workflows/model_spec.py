@@ -981,8 +981,12 @@ spec_templates = [
                 max_context=1024,
                 default_impl=True,
                 vllm_args={
-                    "num_scheduler_steps": "1",
                     "max_num_seqs": "1",
+                    "num_scheduler_steps": "1",
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid that worked on bare metal
                 },
             ),
         ],
