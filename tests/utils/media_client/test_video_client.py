@@ -534,7 +534,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         "_generate_video",
         return_value=(True, 60.0, "job1", "/tmp/video1.mp4"),
     )
-    def test_run_video_generation_benchmark(self, mock_generate, mock_inference_steps):
+    def test_run_video_generation_benchmark(self, mock_generate):
         strategy = self._create_strategy()
 
         result = strategy._run_video_generation_benchmark(3)
@@ -549,9 +549,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         "_generate_video",
         return_value=(True, 50.0, "job1", "/tmp/video1.mp4"),
     )
-    def test_run_video_generation_benchmark_single_call(
-        self, mock_generate, mock_inference_steps
-    ):
+    def test_run_video_generation_benchmark_single_call(self, mock_generate):
         strategy = self._create_strategy()
 
         result = strategy._run_video_generation_benchmark(1)
@@ -718,9 +716,7 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
     "_generate_video",
     return_value=(True, 60.0, "job1", "/tmp/video.mp4"),
 )
-def test_run_video_generation_various_num_calls(
-    mock_generate, mock_inference_steps, num_calls
-):
+def test_run_video_generation_various_num_calls(mock_generate, num_calls):
     """Test that benchmark runs correct number of iterations."""
     model_spec = MagicMock()
     model_spec.model_name = "test"
