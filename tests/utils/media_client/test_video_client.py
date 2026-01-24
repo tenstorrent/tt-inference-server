@@ -528,12 +528,13 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         device.name = "test_device"
         return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
         return_value=(True, 60.0, "job1", "/tmp/video1.mp4"),
     )
-    def test_run_video_generation_benchmark(self, mock_generate):
+    def test_run_video_generation_benchmark(self, mock_generate, mock_inference_steps):
         strategy = self._create_strategy()
 
         result = strategy._run_video_generation_benchmark(3)
@@ -542,12 +543,15 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         assert all(isinstance(s, VideoGenerationTestStatus) for s in result)
         assert mock_generate.call_count == 3
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
         return_value=(True, 50.0, "job1", "/tmp/video1.mp4"),
     )
-    def test_run_video_generation_benchmark_single_call(self, mock_generate):
+    def test_run_video_generation_benchmark_single_call(
+        self, mock_generate, mock_inference_steps
+    ):
         strategy = self._create_strategy()
 
         result = strategy._run_video_generation_benchmark(1)
@@ -708,12 +712,15 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
     "num_calls",
     [1, 2, 5, 10],
 )
+@patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test": 20})
 @patch.object(
     VideoClientStrategy,
     "_generate_video",
     return_value=(True, 60.0, "job1", "/tmp/video.mp4"),
 )
-def test_run_video_generation_various_num_calls(mock_generate, num_calls):
+def test_run_video_generation_various_num_calls(
+    mock_generate, mock_inference_steps, num_calls
+):
     """Test that benchmark runs correct number of iterations."""
     model_spec = MagicMock()
     model_spec.model_name = "test"
