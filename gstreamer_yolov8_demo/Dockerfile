@@ -63,6 +63,7 @@ COPY --chown=container_app_user:container_app_user http_stream.py /app/http_stre
 COPY --chown=container_app_user:container_app_user test_8device_parallel.py /app/test_8device_parallel.py
 COPY --chown=container_app_user:container_app_user websocket_server.py /app/websocket_server.py
 COPY --chown=container_app_user:container_app_user gst_server.py /app/gst_server.py
+COPY --chown=container_app_user:container_app_user parallel_8device_stream.py /app/parallel_8device_stream.py
 
 # Copy demo videos (included in image - no external files needed)
 COPY --chown=container_app_user:container_app_user city_traffic.mp4 /app/demo/city_traffic.mp4

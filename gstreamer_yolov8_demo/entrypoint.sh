@@ -56,6 +56,7 @@ if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "    stream-file     - Custom video file"
     echo "    stream-rtsp     - RTSP IP camera"
     echo "    stream-webcam   - USB webcam on server"
+    echo "    parallel-8device  - 8-device parallel stream (8 video grid)"
     echo "    benchmark-8device - 8-device throughput test (~980 FPS)"
     echo ""
     echo "  Examples:"
@@ -139,6 +140,23 @@ case $MODE in
     "benchmark-8device")
         echo "Running 8-device parallel benchmark..."
         python3 /app/test_8device_parallel.py "$@"
+        ;;
+
+    "parallel-8device")
+        # Collect all remaining args as video paths
+        VIDEO_ARGS=""
+        if [ $# -gt 0 ]; then
+            VIDEO_ARGS="$@"
+        else
+            VIDEO_ARGS="/app/demo/city_traffic.mp4"
+        fi
+        echo ""
+        echo "Starting 8-Device Parallel Streaming Demo..."
+        echo "  Videos: $VIDEO_ARGS"
+        echo "  Browser: http://localhost:$STREAM_PORT"
+        echo "  (Shows 8 video outputs in grid - one per device)"
+        echo ""
+        python3 /app/parallel_8device_stream.py $VIDEO_ARGS --port $STREAM_PORT
         ;;
 
     "webcam-server")
