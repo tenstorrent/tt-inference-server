@@ -47,6 +47,7 @@ class SpeechT5Constants:
     MAX_STEPS = 768  # Current optimal value
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
+    HIFIGAN_VOCODER_REPO = "microsoft/speecht5_hifigan"  # Standard vocoder for all SpeechT5 models
 
 
 class TTSpeechT5Runner(BaseMetalDeviceRunner):
@@ -74,6 +75,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
     def load_weights(self):
         """Load HuggingFace model weights for download verification"""
+        self._load_huggingface_models()
+        return True
+
+    def _load_huggingface_models(self):
+        """Load HuggingFace models - used by both load_weights() and _initialize_models()"""
         try:
             model_weights_path = (
                 self.settings.model_weights_path or SupportedModels.SPEECHT5_TTS.value
@@ -82,15 +88,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}"
             )
 
-            # Load processor and model to verify weights are available
+            # Load all required components for inference
             self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
             self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
-            self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+            # Vocoder is always the same for all SpeechT5 models (standard HiFi-GAN vocoder)
+            self.vocoder = SpeechT5HifiGan.from_pretrained(SpeechT5Constants.HIFIGAN_VOCODER_REPO)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully loaded HuggingFace model components"
             )
-            return True
         except Exception as e:
             self.logger.error(
                 f"Device {self.device_id}: Failed to load HuggingFace model: {e}"
@@ -100,21 +106,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:
-            if self.processor is None or self.model is None or self.vocoder is None:
-                model_name = SupportedModels.SPEECHT5_TTS.value
-                self.logger.info(
-                    f"Device {self.device_id}: Loading SpeechT5 models from {model_name}"
-                )
-
-                self.processor = SpeechT5Processor.from_pretrained(model_name)
-                self.model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
-                self.vocoder = SpeechT5HifiGan.from_pretrained(
-                    "microsoft/speecht5_hifigan"
-                )
-            else:
-                self.logger.info(
-                    f"Device {self.device_id}: Using already loaded SpeechT5 models"
-                )
+            # Load HuggingFace models (same as in load_weights())
+            self._load_huggingface_models()
 
             model = self.model
 
