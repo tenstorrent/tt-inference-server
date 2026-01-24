@@ -271,10 +271,10 @@ UNIFIED_HTML = '''<!DOCTYPE html>
                         To use your laptop webcam, restart container with:
                     </p>
                     <div style="position:relative;">
-                        <pre id="webcam-cmd" style="background:#1a1a2e; padding:12px; border-radius:6px; font-size:0.75rem; color:#00d4ff; margin-bottom:15px; overflow-x:auto; white-space:pre-wrap;">docker run --rm --network host \
-  --device /dev/tenstorrent:/dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  tt-gstreamer-yolov8 webcam-server</pre>
+                        <pre id="webcam-cmd" style="background:#1a1a2e; padding:12px; border-radius:6px; font-size:0.75rem; color:#00d4ff; margin-bottom:15px; overflow-x:auto; white-space:pre-wrap;">docker run --rm --network host \\
+  --device /dev/tenstorrent:/dev/tenstorrent \\
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\
+  ghcr.io/tenstorrent/tt-inference-server/preview_89c6a49_20260123_164500 webcam-server</pre>
                         <button onclick="copyCmd('webcam-cmd')" style="position:absolute; top:5px; right:5px; background:#333; border:none; color:#888; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:0.7rem;">📋 Copy</button>
                     </div>
                     <button id="webcam-start" class="btn-primary" onclick="startWebcam()">Try Connect</button>
@@ -320,10 +320,10 @@ UNIFIED_HTML = '''<!DOCTYPE html>
                         To connect to an IP camera, restart container with:
                     </p>
                     <div style="position:relative;">
-                        <pre id="rtsp-cmd" style="background:#1a1a2e; padding:12px; border-radius:6px; font-size:0.75rem; color:#00d4ff; margin-bottom:15px; overflow-x:auto; white-space:pre-wrap;">docker run --rm --network host \
-  --device /dev/tenstorrent:/dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  tt-gstreamer-yolov8 stream-rtsp rtsp://CAMERA_IP:554/stream</pre>
+                        <pre id="rtsp-cmd" style="background:#1a1a2e; padding:12px; border-radius:6px; font-size:0.75rem; color:#00d4ff; margin-bottom:15px; overflow-x:auto; white-space:pre-wrap;">docker run --rm --network host \\
+  --device /dev/tenstorrent:/dev/tenstorrent \\
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\
+  ghcr.io/tenstorrent/tt-inference-server/preview_89c6a49_20260123_164500 rtsp &lt;RTSP_URL&gt;</pre>
                         <button onclick="copyCmd('rtsp-cmd')" style="position:absolute; top:5px; right:5px; background:#333; border:none; color:#888; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:0.7rem;">📋 Copy</button>
                     </div>
                     <div class="stats">
