@@ -1086,6 +1086,28 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
+                    "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 49544000,
+                    "fabric_config": "FABRIC_1D_RING",
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
