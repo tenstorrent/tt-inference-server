@@ -2493,21 +2493,8 @@ def process_list_format_eval_files(list_files):
             if task_name not in results:
                 results[task_name] = {}
 
-            # Add only numeric metrics from this eval data (exclude metadata fields)
-            # Filter out non-numeric fields like task_name, model, device, timestamp, etc.
-            excluded_fields = {
-                "task_name",
-                "model",
-                "device",
-                "timestamp",
-                "task_type",
-                "tolerance",
-                "published_score",
-                "published_score_ref",
-            }
-            for key, value in eval_data.items():
-                if key not in excluded_fields and isinstance(value, (int, float)):
-                    results[task_name][key] = value
+            # Add all metrics from this eval data
+            results[task_name].update(eval_data)
 
             # Store metadata
             if task_name not in meta_data:
@@ -2591,6 +2578,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         or model_spec.model_type.name == ModelType.IMAGE.name
         or model_spec.model_type.name == ModelType.EMBEDDING.name
         or model_spec.model_type.name == ModelType.VIDEO.name
+        or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
