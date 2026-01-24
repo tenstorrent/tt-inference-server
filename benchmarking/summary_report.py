@@ -466,6 +466,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                 "inference_steps_per_second", 0
             ),
+            "num_inference_steps": benchmarks_data.get("benchmarks").get(
+                "num_inference_steps", 0
+            ),
         }
         return format_metrics(metrics)
 
@@ -745,6 +748,7 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
 def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping for video benchmarks
+    logger.info(f"Video result: {json.dumps(result, indent=2)}")
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
@@ -976,12 +980,13 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, image, audio, embedding, and cnn benchmarks
+    # Separate text, image, audio, embedding, cnn and video benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
+    video_results = [r for r in results if r.get("task_type") == "video"]
 
     markdown_sections = []
 
@@ -1040,6 +1045,14 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         cnn_markdown_str = get_markdown_table(cnn_display_results)
         cnn_section = f"#### CNN Benchmark Sweeps for {model_name} on {device}\n\n{cnn_markdown_str}"
         markdown_sections.append(cnn_section)
+
+    if video_results:
+        video_display_results = [
+            create_video_display_dict(res) for res in video_results
+        ]
+        video_markdown_str = get_markdown_table(video_display_results)
+        video_section = f"#### Video Benchmark Sweeps for {model_name} on {device}\n\n{video_markdown_str}"
+        markdown_sections.append(video_section)
 
     # Combine sections
     if markdown_sections:
