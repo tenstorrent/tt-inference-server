@@ -102,9 +102,13 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
+        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
+        benchmark_data["rtr"] = rtr_value
+        benchmark_data["p90_ttft"] = p90_ttft
+        benchmark_data["p95_ttft"] = p95_ttft
 
         task_name = benchmark_data["task_name"]
 
@@ -126,6 +130,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         }
 
         benchmark_data.update(dict_format_data)
+
+        # Make benchmark_data is inside of list as an object
+        benchmark_data = [benchmark_data]
 
         eval_filename = (
             Path(self.output_path)
@@ -323,7 +330,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             "Content-Type": "application/json",
         }
         payload = {"text": text, "response_format": "json"}
-        logger.debug(f"TTS request payload: {payload}")
 
         url = f"{self.base_url}/audio/speech"
         start_time = time.monotonic()
@@ -381,7 +387,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             end_time = time.monotonic()
             total_duration = end_time - start_time
 
-            # Calculate RTR (Real-Time Ratio)
             rtr = None
             if audio_duration is not None and total_duration > 0:
                 rtr = audio_duration / total_duration
