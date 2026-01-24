@@ -63,8 +63,11 @@ class TestStrategyMap(unittest.TestCase):
     def test_strategy_map_contains_video(self):
         assert "VIDEO" in STRATEGY_MAP
 
+    def test_strategy_map_contains_text_to_speech(self):
+        assert "TEXT_TO_SPEECH" in STRATEGY_MAP
+
     def test_strategy_map_size(self):
-        assert len(STRATEGY_MAP) == 5
+        assert len(STRATEGY_MAP) == 6
 
 
 class TestMediaClientFactoryCreateStrategy(unittest.TestCase):

@@ -130,6 +130,9 @@ def get_embedding_docker_env_vars(model_spec, args):
         "VLLM__MIN_CONTEXT_LENGTH": model_spec.device_model_spec.env_vars.get(
             "VLLM__MIN_CONTEXT_LENGTH", 32
         ),
+        "VLLM__MAX_NUM_SEQS": model_spec.device_model_spec.env_vars.get(
+            "VLLM__MAX_NUM_SEQS", 1
+        ),
     }
 
     logger.info(

@@ -210,6 +210,8 @@ class TTQwenImageRunner(TTDiTRunner):
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
+        # setup environment for Mochi runner
+        os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
         return MochiPipeline.create_pipeline(
