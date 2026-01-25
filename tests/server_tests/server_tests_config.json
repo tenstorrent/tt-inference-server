@@ -1197,34 +1197,41 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 5,
+                    "num_of_devices": 1,
                     "tts_generation_time": 10,
                     "sample_count": 10,
                     "compare_audio": true
                 }
-            }
-        ]
-    },
-    {
-        "weights": [
-            "speecht5-tts"
-        ],
-        "device": "n150",
-        "test_cases": [
+            },
             {
-                "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
-                "enabled": false,
-                "description": "Test for device liveness checks",
+                "name": "TTSParamTest",
+                "module": "tests.server_tests.test_cases.tts_param_test",
+                "enabled": true,
+                "description": "Test TTS generation with parameter variations",
                 "test_config": {
                     "test_timeout": 3600,
-                    "retry_attempts": 220,
-                    "retry_delay": 10,
-                    "break_on_failure": true,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {}
+            },
+            {
+                "name": "TTSQualityTest",
+                "module": "tests.server_tests.test_cases.tts_quality_test",
+                "enabled": false,
+                "description": "Test TTS quality using Word Error Rate (WER)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "sample_count": 10,
+                    "wer_threshold": 0.20
                 }
             },
             {
