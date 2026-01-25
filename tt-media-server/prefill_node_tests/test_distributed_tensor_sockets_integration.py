@@ -1,31 +1,43 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent Inc.
 # SPDX-License-Identifier: Apache-2.0
 """
-Integration test for DistributedTensorSocketFactory using ttnn.create_distributed_socket.
+Integration test for distributed tensor sockets using ttnn.create_distributed_socket.
 
-This tests our custom wrapper in prefill_node/distributed_tensor_socket_factory.py
-which uses:
-- ttnn.create_distributed_socket
-- ttnn.DistributedSocketType
-- ttnn.DistributedEndpointSocketType
-- ttnn.DistributedISocket (with send/recv methods)
+This tests our utility functions in prefill_node/distributed_tensor_sockets_utilities.py:
+- build_socket_config() - creates SocketConfig for tensor transfer
+- create_tensor_socket() - creates a DistributedISocket with send/recv methods
 
-Run with:
+=== SINGLE-HOST SETUP (2x N300 on same machine) ===
+
     # First reset devices
     tt-smi -r
 
-    # Rebuild tt-metal (if C++ bindings changed)
-    cd /localdev/ztorlak/tt-metal && ./build_metal.sh
+    # Activate tt-metal environment
+    source /data/ztorlak/tt-metal/python_env/bin/activate
+    export TT_METAL_HOME=/data/ztorlak/tt-metal
+    export PYTHONPATH=/data/ztorlak/tt-metal/ttnn:$PYTHONPATH
 
-    # Run test
-    cd /localdev/ztorlak/tt-metal && \\
-    source python_env/bin/activate && \\
-    export TT_METAL_HOME=/localdev/ztorlak/tt-metal && \\
-    export TT_METAL_RUNTIME_ROOT=/localdev/ztorlak/tt-metal && \\
-    export PYTHONPATH=/localdev/ztorlak/tt-metal/ttnn:$PYTHONPATH && \\
-    tt-run --rank-binding /localdev/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/dual_n300_rank_bindings.yaml \\
-        python -m pytest /localdev/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/test_distributed_tensor_socket_factory_integration.py \\
-        -vv -s --timeout=60
+    # Run test (use --oversubscribe if in SLURM with limited slots)
+    tt-run --rank-binding /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/dual_n300_rank_bindings.yaml \\
+           --mpi-args "--oversubscribe" \\
+           python -m pytest /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/test_distributed_tensor_sockets_integration.py -vv -s --timeout=60
+
+=== MULTI-HOST SETUP (2x N300 on separate machines) ===
+
+For multi-host testing, see test_multihost_distributed_socket.py which provides:
+- Detailed setup instructions for multi-host MPI
+- Hostfile configuration
+- SLURM multi-node allocation
+
+Quick multi-host run:
+    # Create hostfile with both hosts
+    echo "host1 slots=1" > /data/ztorlak/hostfile
+    echo "host2 slots=1" >> /data/ztorlak/hostfile
+
+    # Run from tt-metal environment
+    tt-run --rank-binding /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/multihost_n300_rank_bindings.yaml \\
+           --mpi-args "--hostfile /data/ztorlak/hostfile --mca btl_tcp_if_exclude docker0,lo" \\
+           python /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/test_multihost_distributed_socket.py
 """
 
 import time
@@ -34,50 +46,23 @@ import pytest
 import torch
 import ttnn
 from loguru import logger
-from prefill_node.distributed_tensor_socket_factory import (
-    DistributedTensorSocketConfig,
-    DistributedTensorSocketFactory,
+
+from prefill_node.distributed_tensor_sockets_utilities import (
     build_socket_config,
+    create_tensor_socket,
 )
-
-
-def format_size(size_bytes: int) -> str:
-    """Format bytes to human readable string."""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.2f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.2f} MB"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
-
-
-def format_throughput(size_bytes: int, time_sec: float) -> str:
-    """Format throughput to human readable string."""
-    if time_sec == 0:
-        return "N/A"
-    throughput = size_bytes / time_sec
-    if throughput < 1024:
-        return f"{throughput:.2f} B/s"
-    elif throughput < 1024 * 1024:
-        return f"{throughput / 1024:.2f} KB/s"
-    elif throughput < 1024 * 1024 * 1024:
-        return f"{throughput / (1024 * 1024):.2f} MB/s"
-    else:
-        return f"{throughput / (1024 * 1024 * 1024):.2f} GB/s"
+from prefill_node_tests.node_utils import format_size, format_throughput
 
 
 @pytest.mark.timeout(60)
-def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> None:
+def test_distributed_tensor_socket_with_create_distributed_socket() -> None:
     """
-    Test that DistributedTensorSocketFactory can create distributed sockets and transfer tensors.
+    Test distributed tensor socket creation and tensor transfer.
 
     This tests:
-    1. DistributedTensorSocketFactory.start() - verifies bindings exist
-    2. build_socket_config() - helper to create SocketConfig
-    3. DistributedTensorSocketFactory.create_tensor_socket() - creates a DistributedISocket
-    4. DistributedISocket.send()/recv() - actual tensor transfer between ranks
+    1. build_socket_config() - helper to create SocketConfig
+    2. create_tensor_socket() - creates a DistributedISocket
+    3. DistributedISocket.send()/recv() - actual tensor transfer between ranks
 
     The test sends tensors of various sizes from rank 0 (prefill) to rank 1 (decode)
     and measures throughput.
@@ -85,7 +70,7 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
     timings: dict[str, float] = {}
     test_start = time.perf_counter()
 
-    logger.info("=== Starting DistributedTensorSocketFactory integration test ===")
+    logger.info("=== Starting distributed tensor socket integration test ===")
 
     # Initialize TT-Fabric for inter-device communication
     logger.info("Setting fabric config to FABRIC_2D")
@@ -127,33 +112,9 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
         rank = int(ttnn.distributed_context_get_rank())
         logger.info(f"Process rank={rank} started on N300 device")
 
-        # === Test DistributedTensorSocketFactory ===
-        # Configure as SENDER for rank 0, RECEIVER for rank 1
+        # === Test distributed socket utilities ===
         endpoint_type = "SENDER" if rank == 0 else "RECEIVER"
-        config = DistributedTensorSocketConfig(
-            socket_type="MPI",
-            endpoint_socket_type=endpoint_type,
-        )
-        logger.info(
-            f"Rank {rank}: Creating DistributedTensorSocketFactory with {endpoint_type}"
-        )
-
-        socket_factory = DistributedTensorSocketFactory(config)
-
-        # Test 1: Verify start() finds the bindings
-        socket_factory_start_time = time.perf_counter()
-        logger.info(f"Rank {rank}: Calling socket_factory.start()...")
-        try:
-            socket_factory.start()
-            timings["socket_factory_start"] = (
-                time.perf_counter() - socket_factory_start_time
-            )
-            logger.info(
-                f"Rank {rank}: socket_factory.start() succeeded - bindings found! "
-                f"({timings['socket_factory_start'] * 1000:.2f} ms)"
-            )
-        except RuntimeError as e:
-            pytest.fail(f"DistributedTensorSocketFactory.start() failed: {e}")
+        logger.info(f"Rank {rank}: Setting up as {endpoint_type}")
 
         # Test 2: Verify the distributed socket enums exist
         logger.info(f"Rank {rank}: Checking distributed socket enums...")
@@ -168,7 +129,7 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
         )
         logger.info(f"Rank {rank}: All distributed socket bindings present!")
 
-        # Test 3: Build socket config using the helper function
+        # Test 2: Build socket config using the helper function
         socket_config = build_socket_config(
             mesh_shape,
             sender_rank=0,
@@ -180,23 +141,23 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
             f"Rank {rank}: Creating distributed socket to other_rank={other_rank}..."
         )
 
-        # Test 4: Create distributed socket via our socket factory (TIMED)
-        socket_factory_create_start = time.perf_counter()
-        dist_socket = socket_factory.create_tensor_socket(
-            mesh_device=device,
-            other_rank=other_rank,
-            socket_config=socket_config,
+        # Test 3: Create distributed socket (TIMED)
+        socket_create_start = time.perf_counter()
+        dist_socket = create_tensor_socket(
+            device,
+            other_rank,
+            socket_config,
+            socket_type="MPI",
+            endpoint_type=endpoint_type,
         )
-        timings["socket_factory_create"] = (
-            time.perf_counter() - socket_factory_create_start
-        )
+        timings["socket_create"] = time.perf_counter() - socket_create_start
         logger.info(
             f"Rank {rank}: Distributed socket created successfully! "
-            f"({timings['socket_factory_create'] * 1000:.2f} ms)"
+            f"({timings['socket_create'] * 1000:.2f} ms)"
         )
         logger.info(f"Rank {rank}: Socket type: {type(dist_socket)}")
 
-        # Test 5: Verify socket has send/recv methods
+        # Test 4: Verify socket has send/recv methods
         assert hasattr(dist_socket, "send"), "Socket missing send() method"
         assert hasattr(dist_socket, "recv"), "Socket missing recv() method"
         logger.info(f"Rank {rank}: Socket has send/recv methods!")
@@ -343,10 +304,7 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
             f"  Device initialization:  {timings['device_init'] * 1000:>10.2f} ms"
         )
         logger.info(
-            f"  Socket factory start:          {timings['socket_factory_start'] * 1000:>10.2f} ms"
-        )
-        logger.info(
-            f"  Socket creation:        {timings['socket_factory_create'] * 1000:>10.2f} ms"
+            f"  Socket creation:        {timings['socket_create'] * 1000:>10.2f} ms"
         )
 
         # Transfer times
@@ -380,4 +338,4 @@ def test_distributed_tensor_socket_factory_with_create_distributed_socket() -> N
         logger.info("Closing mesh device")
         ttnn.close_device(device)
 
-    logger.info("=== DistributedTensorSocketFactory integration test PASSED ===")
+    logger.info("=== Distributed tensor socket integration test PASSED ===")
