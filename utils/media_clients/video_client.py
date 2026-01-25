@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
-DEFAULT_VIDEO_TIMEOUT_SECONDS = 600
+DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
+INFERENCE_STEPS = {"mochi-1-preview": 50, "Wan2.2-T2V-A14B-Diffusers": 40}
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -137,24 +138,25 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info("Running video generation benchmark.")
         status_list = []
 
+        inference_steps = INFERENCE_STEPS[self.model_spec.model_name]
+        logger.info(f"Inference steps: {inference_steps}")
+
         for i in range(num_calls):
             logger.info(f"Generating video {i + 1}/{num_calls}...")
             status, elapsed, job_id, video_path = self._generate_video(
-                prompt=f"Test video generation {i + 1}"
+                prompt=f"Test video generation {i + 1}",
+                num_inference_steps=inference_steps,
             )
             logger.info(f"Generated video in {elapsed:.2f} seconds.")
 
             # Calculate inference steps per second if num_inference_steps is available
-            num_inference_steps = 20  # Default value
-            inference_steps_per_second = (
-                num_inference_steps / elapsed if elapsed > 0 else 0
-            )
+            inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
 
             status_list.append(
                 VideoGenerationTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    num_inference_steps=num_inference_steps,
+                    num_inference_steps=inference_steps,
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,

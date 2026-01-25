@@ -525,6 +525,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         device.name = "test_device"
         return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
@@ -539,6 +540,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         assert all(isinstance(s, VideoGenerationTestStatus) for s in result)
         assert mock_generate.call_count == 3
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
@@ -705,6 +707,7 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
     "num_calls",
     [1, 2, 5, 10],
 )
+@patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test": 20})
 @patch.object(
     VideoClientStrategy,
     "_generate_video",
