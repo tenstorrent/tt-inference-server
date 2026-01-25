@@ -692,17 +692,21 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
+        # run_eval wraps data in a list (same as other media clients)
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        eval_data = report_data[0]
+
         # Verify dict format structure
-        assert isinstance(report_data, dict)
-        assert "results" in report_data
-        assert "configs" in report_data
+        assert "results" in eval_data
+        assert "configs" in eval_data
 
         # Verify task_name exists in both results and configs
         task_name = "test_task"
-        assert task_name in report_data["results"]
-        assert task_name in report_data["configs"]
+        assert task_name in eval_data["results"]
+        assert task_name in eval_data["configs"]
 
-        eval_result = report_data["results"][task_name]
+        eval_result = eval_data["results"][task_name]
 
         # Verify required keys in results
         required_keys = [
