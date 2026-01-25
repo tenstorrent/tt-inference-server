@@ -47,7 +47,9 @@ class SpeechT5Constants:
     MAX_STEPS = 768  # Current optimal value
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
-    HIFIGAN_VOCODER_REPO = "microsoft/speecht5_hifigan"  # Standard vocoder for all SpeechT5 models
+    HIFIGAN_VOCODER_REPO = (
+        "microsoft/speecht5_hifigan"  # Standard vocoder for all SpeechT5 models
+    )
 
 
 class TTSpeechT5Runner(BaseMetalDeviceRunner):
@@ -92,7 +94,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
             self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
             # Vocoder is always the same for all SpeechT5 models (standard HiFi-GAN vocoder)
-            self.vocoder = SpeechT5HifiGan.from_pretrained(SpeechT5Constants.HIFIGAN_VOCODER_REPO)
+            self.vocoder = SpeechT5HifiGan.from_pretrained(
+                SpeechT5Constants.HIFIGAN_VOCODER_REPO
+            )
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully loaded HuggingFace model components"
