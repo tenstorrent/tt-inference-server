@@ -6,8 +6,8 @@ import argparse
 import csv
 import json
 import logging
-import sys
 import re
+import sys
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -19,8 +19,14 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import cap_benchmark_params
+from benchmarking.summary_report import (
+    generate_report as benchmark_generate_report_helper,
+)
 from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from stress_tests.stress_tests_summary_report import (
+    generate_report as stress_test_generate_report_helper,
+)
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
@@ -36,14 +42,6 @@ from workflows.workflow_config import (
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
-
-from benchmarking.summary_report import (
-    generate_report as benchmark_generate_report_helper,
-)
-from stress_tests.stress_tests_summary_report import (
-    generate_report as stress_test_generate_report_helper,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +91,20 @@ def generate_cnn_report_data(model_spec, eval_run_id):
         File pattern for CNN evaluation results
     """
     # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def generate_video_report_data(model_spec, eval_run_id):
+    """Generate video-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for CNN evaluation results
+    """
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
 
@@ -1531,9 +1543,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_embedding_display_dict,
         create_image_display_dict,
         create_image_generation_display_dict,
+        create_video_display_dict,
         get_markdown_table,
-        save_to_csv,
         save_markdown_table,
+        save_to_csv,
     )
 
     # Process all tools and collect results by type (text/image/audio/tts/embedding/cnn)
@@ -1543,6 +1556,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     tts_sections = []
     embedding_sections = []
     cnn_sections = []
+    video_sections = []
 
     # Process vLLM benchmarks
     if vllm_files:
@@ -1560,6 +1574,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
             vllm_text_display = [create_display_dict(r) for r in vllm_text]
@@ -1611,6 +1626,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
             )
 
+        if vllm_video:
+            vllm_video_display = [create_video_display_dict(r) for r in vllm_video]
+            vllm_video_md = get_markdown_table(vllm_video_display)
+            video_sections.append(
+                f"#### vLLM Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_video_md}"
+            )
+
     # Process AIPerf benchmarks
     if aiperf_files:
         _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1626,6 +1648,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in aiperf_release_raw if r.get("task_type") == "embedding"
         ]
         aiperf_cnn = [r for r in aiperf_release_raw if r.get("task_type") == "cnn"]
+        aiperf_video = [r for r in aiperf_release_raw if r.get("task_type") == "video"]
 
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
@@ -1674,6 +1697,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### AIPerf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_cnn_md}"
             )
 
+        if aiperf_video and aiperf_video[0].get("backend") == "aiperf":
+            aiperf_video_display = [create_video_display_dict(r) for r in aiperf_video]
+            aiperf_video_md = get_markdown_table(aiperf_video_display)
+            video_sections.append(
+                f"#### AIPerf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_video_md}"
+            )
+
     # Process GenAI-Perf benchmarks
     if genai_files:
         _, genai_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1689,6 +1719,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in genai_release_raw if r.get("task_type") == "embedding"
         ]
         genai_cnn = [r for r in genai_release_raw if r.get("task_type") == "cnn"]
+        genai_video = [r for r in genai_release_raw if r.get("task_type") == "video"]
 
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
@@ -1737,6 +1768,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### GenAI-Perf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_cnn_md}"
             )
 
+        if genai_video and genai_video[0].get("backend") == "genai-perf":
+            genai_video_display = [create_video_display_dict(r) for r in genai_video]
+            genai_video_md = get_markdown_table(genai_video_display)
+            video_sections.append(
+                f"#### GenAI-Perf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_video_md}"
+            )
+
     # Combine sections: text, image, audio, embedding, then cnn (matching original order)
     markdown_sections = (
         text_sections
@@ -1745,6 +1783,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         + tts_sections
         + embedding_sections
         + cnn_sections
+        + video_sections
     )
 
     # Combine all sections
@@ -2415,6 +2454,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.VIDEO:
+        file_name_pattern = generate_video_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -2440,6 +2485,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
         or model_spec.model_type.name == ModelType.EMBEDDING.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
@@ -3009,6 +3055,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
     ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
@@ -3055,11 +3102,11 @@ def benchmarks_release_data_format_embedding(
     ]
 
 
-def add_target_checks_cnn_and_image(
+def add_target_checks_cnn_image_video(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
-    """Add target checks for CNN and IMAGE models based on evals and benchmark data."""
-    logger.info("Adding target_checks to CNN and IMAGE benchmark release data")
+    """Add target checks for CNN, IMAGE and VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN, IMAGE and VIDEO benchmark release data")
     tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
     benchmark_summary_data["tput_user"] = tput_user
 
@@ -3137,6 +3184,31 @@ def add_target_checks_embedding(metrics):
     return target_checks
 
 
+def add_target_checks_video(metrics):
+    """Add target checks for VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to VIDEO benchmark release data")
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "concurrency": metrics["functional_concurrency"],
+            "concurrency_ratio": metrics["functional_concurrency_ratio"],
+            "concurrency_check": metrics["functional_concurrency_check"],
+        },
+        "complete": {
+            "concurrency": metrics["complete_concurrency"],
+            "concurrency_ratio": metrics["complete_concurrency_ratio"],
+            "concurrency_check": metrics["complete_concurrency_check"],
+        },
+        "target": {
+            "concurrency": metrics["target_concurrency"],
+            "concurrency_ratio": metrics["target_concurrency_ratio"],
+            "concurrency_check": metrics["target_concurrency_check"],
+        },
+    }
+
+    return target_checks
+
+
 def calculate_target_metrics(metrics_config):
     """Calculate metrics for functional, complete, and target thresholds.
 
@@ -3146,7 +3218,7 @@ def calculate_target_metrics(metrics_config):
             - target_metric: Target metric from performance reference
             - field_name: Name of the metric field
             - is_ascending_metric: If True, higher values are preffered (e.g., throughput).
-                               If False, lower values are preffered (e.g., latency, TTFT).
+            If False, lower values are preffered (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
@@ -3456,6 +3528,7 @@ def main():
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.VIDEO.name
             or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
@@ -3546,11 +3619,12 @@ def main():
             if (
                 model_spec.model_type.name == ModelType.CNN.name
                 or model_spec.model_type.name == ModelType.IMAGE.name
+                or model_spec.model_type.name == ModelType.VIDEO.name
             ):
                 logger.info(
-                    "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
+                    "Adding target_checks for tput_user to CNN, IMAGE and VIDEO benchmark release data"
                 )
-                target_checks = add_target_checks_cnn_and_image(
+                target_checks = add_target_checks_cnn_image_video(
                     targets,
                     evals_release_data,
                     benchmark_summary_data,
