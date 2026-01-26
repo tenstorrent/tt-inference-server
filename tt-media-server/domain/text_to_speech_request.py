@@ -10,6 +10,10 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
+# Load max text length once at module import time (avoids runtime call in validator)
+_settings = get_settings()
+MAX_TTS_TEXT_LENGTH = _settings.max_tts_text_length
+
 
 class TextToSpeechRequest(BaseRequest):
     # Required fields
@@ -24,10 +28,9 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("Text must be a string")
         if not text.strip():
             raise ValueError("Text cannot be empty")
-        settings = get_settings()
-        if len(text) > settings.max_tts_text_length:
+        if len(text) > MAX_TTS_TEXT_LENGTH:
             raise ValueError(
-                f"Text exceeds maximum length of {settings.max_tts_text_length} characters. "
+                f"Text exceeds maximum length of {MAX_TTS_TEXT_LENGTH} characters. "
                 f"Received {len(text)} characters."
             )
         return text
