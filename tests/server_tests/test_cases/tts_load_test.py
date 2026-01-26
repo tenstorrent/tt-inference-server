@@ -57,7 +57,9 @@ class TTSLoadTest(BaseTest):
         sample_count = self.targets.get("sample_count", 10)
         dataset_split = self.targets.get("dataset_split", "test")
 
-        logger.info(f"TTS Load Test: devices={devices}, target={tts_target_time}s, samples={sample_count}")
+        logger.info(
+            f"TTS Load Test: devices={devices}, target={tts_target_time}s, samples={sample_count}"
+        )
 
         # Download samples
         self._download_samples(count=sample_count, split=dataset_split)
@@ -114,8 +116,12 @@ class TTSLoadTest(BaseTest):
         return {
             "requests_duration": round(max(durations), 2) if durations else 0,
             "min_duration": round(min(durations), 2) if durations else 0,
-            "average_duration": round(sum(durations) / len(durations), 2) if durations else 0,
-            "ttft_ms": round(sum(ttft_values) / len(ttft_values), 2) if ttft_values else 0,
+            "average_duration": round(sum(durations) / len(durations), 2)
+            if durations
+            else 0,
+            "ttft_ms": round(sum(ttft_values) / len(ttft_values), 2)
+            if ttft_values
+            else 0,
             "min_ttft_ms": round(min(ttft_values), 2) if ttft_values else 0,
             "max_ttft_ms": round(max(ttft_values), 2) if ttft_values else 0,
         }
@@ -135,11 +141,18 @@ class TTSLoadTest(BaseTest):
                     "blabble-io/libritts_r", "clean", split=split, streaming=True
                 )
             except (TypeError, ValueError) as e:
-                if "config" in str(e) or "ParquetConfig" in str(e) or "Bad split" in str(e):
+                if (
+                    "config" in str(e)
+                    or "ParquetConfig" in str(e)
+                    or "Bad split" in str(e)
+                ):
                     split_mapping = {
-                        "test.clean": "test", "test.other": "test",
-                        "dev.clean": "validation", "dev.other": "validation",
-                        "train.clean.100": "train", "train.clean.360": "train",
+                        "test.clean": "test",
+                        "test.other": "test",
+                        "dev.clean": "validation",
+                        "dev.other": "validation",
+                        "train.clean.100": "train",
+                        "train.clean.360": "train",
                     }
                     standard_split = split_mapping.get(split, "test")
                     dataset = load_dataset(
@@ -162,16 +175,20 @@ class TTSLoadTest(BaseTest):
             output_path.mkdir(parents=True, exist_ok=True)
 
             metadata = []
-            samples_iter = dataset_subset if isinstance(dataset_subset, list) else dataset_subset
+            samples_iter = (
+                dataset_subset if isinstance(dataset_subset, list) else dataset_subset
+            )
             for idx, sample in enumerate(samples_iter):
                 text_original = sample.get("text_original", "")
-                metadata.append({
-                    "index": idx,
-                    "id": sample.get("id", f"libritts_{idx:05d}"),
-                    "text": text_original,
-                    "normalized_text": sample.get("text_normalized", text_original),
-                    "split": split,
-                })
+                metadata.append(
+                    {
+                        "index": idx,
+                        "id": sample.get("id", f"libritts_{idx:05d}"),
+                        "text": text_original,
+                        "normalized_text": sample.get("text_normalized", text_original),
+                        "split": split,
+                    }
+                )
 
             metadata_path = output_path / METADATA_FILE
             with metadata_path.open("w", encoding="utf-8") as f:
@@ -207,7 +224,9 @@ class TTSLoadTest(BaseTest):
                 start = time.perf_counter()
                 payload = {"text": text, "response_format": "verbose_json"}
 
-                async with session.post(self.url, json=payload, headers=headers) as response:
+                async with session.post(
+                    self.url, json=payload, headers=headers
+                ) as response:
                     # Measure TTFT
                     first_chunk = await response.content.read(1)
                     ttft_ms = (time.perf_counter() - start) * 1000
@@ -229,12 +248,19 @@ class TTSLoadTest(BaseTest):
                         elif "audio/wav" in content_type:
                             import wave
                             import io
+
                             with wave.open(io.BytesIO(full_response_bytes)) as wav:
-                                audio_duration = wav.getnframes() / wav.getframerate() if wav.getframerate() > 0 else 0
+                                audio_duration = (
+                                    wav.getnframes() / wav.getframerate()
+                                    if wav.getframerate() > 0
+                                    else 0
+                                )
                         else:
                             raise Exception(f"Unexpected content-type: {content_type}")
                     else:
-                        error_text = full_response_bytes.decode("utf-8", errors="ignore")
+                        error_text = full_response_bytes.decode(
+                            "utf-8", errors="ignore"
+                        )
                         raise Exception(f"Status {response.status}: {error_text[:200]}")
 
                     return {
@@ -256,7 +282,9 @@ class TTSLoadTest(BaseTest):
             all_ttft_values = []
 
             session_timeout = aiohttp.ClientTimeout(total=2000)
-            async with aiohttp.ClientSession(headers=headers, timeout=session_timeout) as session:
+            async with aiohttp.ClientSession(
+                headers=headers, timeout=session_timeout
+            ) as session:
                 for batch_idx in range(num_batches):
                     batch_start = batch_idx * batch_size
                     batch_end = min(batch_start + batch_size, len(sample_texts))
@@ -268,7 +296,9 @@ class TTSLoadTest(BaseTest):
                     ]
                     batch_results = await asyncio.gather(*tasks)
 
-                    batch_durations, batch_ttft_values = self._extract_batch_metrics(batch_results)
+                    batch_durations, batch_ttft_values = self._extract_batch_metrics(
+                        batch_results
+                    )
                     all_durations.extend(batch_durations)
                     all_ttft_values.extend(batch_ttft_values)
 
