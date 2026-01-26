@@ -538,8 +538,11 @@ runner_mocks = {
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
     },
-    "tt_model_runners.vllm_bge_large_en_runner": {
-        "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner")
+    "tt_model_runners.vllm_embedding_runner": {
+        "VLLMBGELargeENRunner": create_mock_runner_class("VLLMBGELargeENRunner"),
+        "VLLMQwen3Embedding8BRunner": create_mock_runner_class(
+            "VLLMQwen3Embedding8BRunner"
+        ),
     },
     "tt_model_runners.llm_test_runner": {
         "LLMTestRunner": create_mock_runner_class("LLMTestRunner"),

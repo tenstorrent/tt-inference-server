@@ -198,6 +198,7 @@ class ModelType(IntEnum):
     AUDIO = auto()
     IMAGE = auto()
     EMBEDDING = auto()
+    TEXT_TO_SPEECH = auto()
     VIDEO = auto()
 
 
@@ -250,6 +251,12 @@ whisper_impl = ImplSpec(
     impl_name="whisper",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/whisper",
+)
+speecht5_impl = ImplSpec(
+    impl_id="speecht5_tts",
+    impl_name="speecht5-tts",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/speecht5_tts",
 )
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
@@ -1145,6 +1152,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 10000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1646,7 +1656,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 71045120,
+                    "trace_region_size": 30000000,
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
@@ -1851,6 +1861,7 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={"trace_region_size": 10000000},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1886,7 +1897,7 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 36410368,
                 },
             ),
             DeviceModelSpec(
@@ -2344,6 +2355,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "8",
+                    "MAX_BATCH_SIZE": "8",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2352,9 +2366,12 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "6144",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "16",
+                    "MAX_BATCH_SIZE": "16",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2363,9 +2380,12 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "6144",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "16",
+                    "MAX_BATCH_SIZE": "16",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2377,6 +2397,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "3072",
                     "VLLM__MAX_MODEL_LENGTH": "384",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "8",
+                    "MAX_BATCH_SIZE": "8",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
                     "TT_METAL_INSPECTOR_RPC": "0",
@@ -2390,7 +2413,7 @@ spec_templates = [
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.EMBEDDING,
         inference_engine=InferenceEngine.FORGE.value,
         display_name="Qwen3-Embedding-4B",
@@ -2404,6 +2427,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2415,6 +2441,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2426,6 +2455,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
             DeviceModelSpec(
@@ -2437,6 +2469,9 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                    "MAX_BATCH_SIZE": "1",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
                 },
             ),
         ],
@@ -2447,7 +2482,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="resnet-50",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2472,7 +2507,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="vovnet",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2497,7 +2532,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="mobilenetv2",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2522,7 +2557,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="efficientnet",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2547,7 +2582,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="segformer",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2572,7 +2607,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="vit",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2597,7 +2632,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         display_name="unet",
         inference_engine=InferenceEngine.FORGE.value,
@@ -2615,6 +2650,30 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
+    ),
+    ModelSpecTemplate(
+        weights=["microsoft/speecht5_tts"],
+        tt_metal_commit="a9b09e0",
+        impl=speecht5_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TEXT_TO_SPEECH,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
     ),
 ]
 

@@ -6,8 +6,8 @@ import argparse
 import csv
 import json
 import logging
-import sys
 import re
+import sys
 from datetime import datetime
 from glob import glob
 from pathlib import Path
@@ -19,8 +19,14 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import cap_benchmark_params
+from benchmarking.summary_report import (
+    generate_report as benchmark_generate_report_helper,
+)
 from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from stress_tests.stress_tests_summary_report import (
+    generate_report as stress_test_generate_report_helper,
+)
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, ModelType
@@ -36,14 +42,6 @@ from workflows.workflow_config import (
 
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import DeviceTypes, ReportCheckTypes
-
-from benchmarking.summary_report import (
-    generate_report as benchmark_generate_report_helper,
-)
-from stress_tests.stress_tests_summary_report import (
-    generate_report as stress_test_generate_report_helper,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +91,20 @@ def generate_cnn_report_data(model_spec, eval_run_id):
         File pattern for CNN evaluation results
     """
     # CNN models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def generate_video_report_data(model_spec, eval_run_id):
+    """Generate video-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for CNN evaluation results
+    """
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
 
@@ -1084,45 +1096,45 @@ def aiperf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if aiperf_text_results:
-        release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+    # Only include section if there are results to display
+    if aiperf_text_results or aiperf_image_results:
+        release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if aiperf_text_results:
+            release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
-    # IMAGE BENCHMARKS SECTION
-    if aiperf_image_results:
-        release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += (
-            "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-        )
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Only show AIPerf-specific detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            aiperf_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if aiperf_image_results:
+            release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                aiperf_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
@@ -1370,41 +1382,45 @@ def genai_perf_benchmark_generate_report(
     )
 
     # Build the complete report
-    release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+    release_str = ""
 
-    # TEXT BENCHMARKS SECTION
-    if genai_text_results:
-        release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+    # Only include section if there are results to display
+    if genai_text_results or genai_image_results:
+        release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # TEXT BENCHMARKS SECTION
+        if genai_text_results:
+            release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # IMAGE BENCHMARKS SECTION
-    if genai_image_results:
-        release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
-        release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
 
-        # Show GenAI-Perf detailed percentiles (mean, median, P99)
-        nvidia_markdown_str = aiperf_release_markdown(
-            genai_image_results, is_image_benchmark=True
-        )
-        release_str += nvidia_markdown_str
-        release_str += "\n\n"
+        # IMAGE BENCHMARKS SECTION
+        if genai_image_results:
+            release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
-    # Metric definitions
-    release_str += "**Metric Definitions:**\n"
-    release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
-    release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
-    release_str += "> - **Concur**: Concurrent requests (batch size)\n"
-    release_str += "> - **N**: Total number of requests\n"
-    release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    release_str += "> - **Tok/s**: Output token throughput\n"
-    release_str += "> - **Req/s**: Request throughput\n"
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                genai_image_results, is_image_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
     disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
@@ -1527,17 +1543,20 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_embedding_display_dict,
         create_image_display_dict,
         create_image_generation_display_dict,
+        create_video_display_dict,
         get_markdown_table,
-        save_to_csv,
         save_markdown_table,
+        save_to_csv,
     )
 
-    # Process all tools and collect results by type (text/image/audio/embedding/cnn)
+    # Process all tools and collect results by type (text/image/audio/tts/embedding/cnn)
     text_sections = []
     image_sections = []
     audio_sections = []
+    tts_sections = []
     embedding_sections = []
     cnn_sections = []
+    video_sections = []
 
     # Process vLLM benchmarks
     if vllm_files:
@@ -1546,14 +1565,16 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for vLLM
+        # Separate text, image, audio, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
+        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
             vllm_text_display = [create_display_dict(r) for r in vllm_text]
@@ -1578,6 +1599,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### vLLM Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_audio_md}"
             )
 
+        if vllm_tts:
+            from benchmarking.summary_report import create_tts_display_dict
+
+            vllm_tts_display = [create_tts_display_dict(r) for r in vllm_tts]
+            vllm_tts_md = get_markdown_table(vllm_tts_display)
+            tts_sections.append(
+                f"#### vLLM Text-to-Speech Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_tts_md}"
+            )
+
         if vllm_embedding:
             vllm_embedding_display = [
                 create_embedding_display_dict(r) for r in vllm_embedding
@@ -1596,6 +1626,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
             )
 
+        if vllm_video:
+            vllm_video_display = [create_video_display_dict(r) for r in vllm_video]
+            vllm_video_md = get_markdown_table(vllm_video_display)
+            video_sections.append(
+                f"#### vLLM Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_video_md}"
+            )
+
     # Process AIPerf benchmarks
     if aiperf_files:
         _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1611,6 +1648,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in aiperf_release_raw if r.get("task_type") == "embedding"
         ]
         aiperf_cnn = [r for r in aiperf_release_raw if r.get("task_type") == "cnn"]
+        aiperf_video = [r for r in aiperf_release_raw if r.get("task_type") == "video"]
 
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
@@ -1659,6 +1697,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### AIPerf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_cnn_md}"
             )
 
+        if aiperf_video and aiperf_video[0].get("backend") == "aiperf":
+            aiperf_video_display = [create_video_display_dict(r) for r in aiperf_video]
+            aiperf_video_md = get_markdown_table(aiperf_video_display)
+            video_sections.append(
+                f"#### AIPerf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_video_md}"
+            )
+
     # Process GenAI-Perf benchmarks
     if genai_files:
         _, genai_release_raw, _, _ = benchmark_generate_report_helper(
@@ -1674,6 +1719,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in genai_release_raw if r.get("task_type") == "embedding"
         ]
         genai_cnn = [r for r in genai_release_raw if r.get("task_type") == "cnn"]
+        genai_video = [r for r in genai_release_raw if r.get("task_type") == "video"]
 
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
@@ -1722,13 +1768,22 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### GenAI-Perf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_cnn_md}"
             )
 
+        if genai_video and genai_video[0].get("backend") == "genai-perf":
+            genai_video_display = [create_video_display_dict(r) for r in genai_video]
+            genai_video_md = get_markdown_table(genai_video_display)
+            video_sections.append(
+                f"#### GenAI-Perf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_video_md}"
+            )
+
     # Combine sections: text, image, audio, embedding, then cnn (matching original order)
     markdown_sections = (
         text_sections
         + image_sections
         + audio_sections
+        + tts_sections
         + embedding_sections
         + cnn_sections
+        + video_sections
     )
 
     # Combine all sections
@@ -2399,6 +2454,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.VIDEO:
+        file_name_pattern = generate_video_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     else:
         # LLM models use results_*.json pattern
         file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
@@ -2424,6 +2485,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
         or model_spec.model_type.name == ModelType.EMBEDDING.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
@@ -2511,6 +2573,8 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
     logger.info("Tests Summary")
@@ -2525,23 +2589,62 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            None,
+            None,
         )
     # TODO: Support handling of multiple test reports
     assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
     files = files[0]
 
     # generate vLLM parameter coverage report
-    # TODO: Implement returning raw report, defaulting to None for now
-    markdown_str, release_raw = (
-        generate_vllm_parameter_report(
-            files, output_path, report_id, metadata, model_spec=model_spec
-        ),
-        None,
+    markdown_str = generate_vllm_parameter_report(
+        files, output_path, report_id, metadata, model_spec=model_spec
     )
+
+    # Look for parameter_report.json in tests_output directory
+    release_raw = None
+    test_dir_pattern = f"test_{model_spec.model_id}_*"
+    test_dir_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
+    )
+    test_dirs = glob(test_dir_path_pattern)
+
+    for test_dir in test_dirs:
+        parameter_report_path = Path(test_dir) / "parameter_report.json"
+        if parameter_report_path.exists():
+            try:
+                with open(parameter_report_path, "r", encoding="utf-8") as f:
+                    release_raw = json.load(f)
+                logger.info(f"Loaded parameter report from: {parameter_report_path}")
+                break
+            except Exception as e:
+                logger.warning(
+                    f"Could not read parameter report {parameter_report_path}: {e}"
+                )
+
+    if release_raw is None:
+        logger.info("No parameter_report.json found in tests_output directory.")
+        release_raw = [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ]
 
     release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
 
-    return release_str, release_raw
+    # Write markdown report to file
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"Tests report saved to: {output_path}")
+
+    # Save raw data to data directory
+    data_fpath = data_dir / f"tests_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+    logger.info(f"Tests data saved to: {data_fpath}")
+
+    return release_str, release_raw, output_path, data_fpath
 
 
 def generate_evals_markdown_table(results, meta_data) -> str:
@@ -2952,6 +3055,7 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
     ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
@@ -2998,11 +3102,11 @@ def benchmarks_release_data_format_embedding(
     ]
 
 
-def add_target_checks_cnn_and_image(
+def add_target_checks_cnn_image_video(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
-    """Add target checks for CNN and IMAGE models based on evals and benchmark data."""
-    logger.info("Adding target_checks to CNN and IMAGE benchmark release data")
+    """Add target checks for CNN, IMAGE and VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN, IMAGE and VIDEO benchmark release data")
     tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
     benchmark_summary_data["tput_user"] = tput_user
 
@@ -3080,6 +3184,31 @@ def add_target_checks_embedding(metrics):
     return target_checks
 
 
+def add_target_checks_video(metrics):
+    """Add target checks for VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to VIDEO benchmark release data")
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "concurrency": metrics["functional_concurrency"],
+            "concurrency_ratio": metrics["functional_concurrency_ratio"],
+            "concurrency_check": metrics["functional_concurrency_check"],
+        },
+        "complete": {
+            "concurrency": metrics["complete_concurrency"],
+            "concurrency_ratio": metrics["complete_concurrency_ratio"],
+            "concurrency_check": metrics["complete_concurrency_check"],
+        },
+        "target": {
+            "concurrency": metrics["target_concurrency"],
+            "concurrency_ratio": metrics["target_concurrency_ratio"],
+            "concurrency_check": metrics["target_concurrency_check"],
+        },
+    }
+
+    return target_checks
+
+
 def calculate_target_metrics(metrics_config):
     """Calculate metrics for functional, complete, and target thresholds.
 
@@ -3089,7 +3218,7 @@ def calculate_target_metrics(metrics_config):
             - target_metric: Target metric from performance reference
             - field_name: Name of the metric field
             - is_ascending_metric: If True, higher values are preffered (e.g., throughput).
-                               If False, lower values are preffered (e.g., latency, TTFT).
+            If False, lower values are preffered (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
@@ -3118,6 +3247,13 @@ def calculate_target_metrics(metrics_config):
         target_metric = config["target_metric"]
         field_name = config["field_name"]
         is_ascending_metric = config.get("is_ascending_metric", False)
+
+        # Skip if target_metric is None (e.g., for TTS when target_rtr is not set)
+        if target_metric is None:
+            logger.warning(
+                f"Skipping metric calculation for {field_name}: target_metric is None"
+            )
+            continue
 
         for level, multiplier in target_multipliers.items():
             if is_ascending_metric:
@@ -3157,6 +3293,37 @@ def add_target_checks_audio(metrics):
             "ttft": metrics["target_ttft"],
             "ttft_ratio": metrics["target_ttft_ratio"],
             "ttft_check": metrics["target_ttft_check"],
+            "tput_check": tput_check,
+        },
+    }
+
+    return target_checks
+
+
+def add_target_checks_tts(metrics):
+    logger.info("Adding target_checks to TTS benchmark release data")
+    # tput_check is always 1 for now (no tput target)
+    tput_check = 1
+    target_checks = {
+        "functional": {
+            "ttft": metrics.get("functional_ttft"),
+            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("functional_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "complete": {
+            "ttft": metrics.get("complete_ttft"),
+            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("complete_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "target": {
+            "ttft": metrics.get("target_ttft"),
+            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("target_rtr_check", 1),
             "tput_check": tput_check,
         },
     }
@@ -3278,7 +3445,12 @@ def main():
     )
 
     # generate tests report
-    tests_release_str, tests_release_data = generate_tests_report(
+    (
+        tests_release_str,
+        tests_release_data,
+        tests_disp_md_path,
+        tests_data_file_path,
+    ) = generate_tests_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
     # generate stress test report
@@ -3348,11 +3520,16 @@ def main():
         # Check for server tests JSON files
         server_tests_data = []
 
+        # Use tests_release_data for parameter_support_tests
+        parameter_support_tests_data = tests_release_data if tests_release_data else []
+
         # Add target_checks for specific model if applicable
         if (
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.VIDEO.name
+            or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
             # Extract the device we are running on
@@ -3366,6 +3543,7 @@ def main():
 
             # extract targets for functional, complete, target and calculate them
             target_ttft = targets.ttft_ms
+            target_rtr = targets.rtr if hasattr(targets, "rtr") else None
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -3373,9 +3551,13 @@ def main():
             # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
             total_ttft = 0.0
             total_tput = 0.0
+            total_rtr = 0.0
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
+                # Aggregate RTR for TTS models
+                if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                    total_rtr += benchmark.get("rtr", 0)
                 benchmark_summary_data["num_requests"] = benchmark.get(
                     "num_requests", 0
                 )
@@ -3396,35 +3578,66 @@ def main():
                 else 0
             )
 
+            # For TTS, also calculate average RTR
+            avg_rtr = None
+            if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                avg_rtr = (
+                    total_rtr / len(benchmarks_release_data)
+                    if len(benchmarks_release_data) > 0
+                    else 0
+                )
+
             # Calculate all target metrics using centralized function
             # TTFT: lower is better, so is_ascending_metric=False
-            metrics = calculate_target_metrics(
-                [
+            metrics_config = [
+                {
+                    "avg_metric": avg_ttft,
+                    "target_metric": target_ttft,
+                    "field_name": "ttft",
+                    "is_ascending_metric": False,
+                },
+            ]
+
+            # For TTS, also calculate RTR metrics if target is available
+            if (
+                model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
+                and target_rtr is not None
+                and avg_rtr is not None
+            ):
+                metrics_config.append(
                     {
-                        "avg_metric": avg_ttft,
-                        "target_metric": target_ttft,
-                        "field_name": "ttft",
-                        "is_ascending_metric": False,
-                    },
-                ]
-            )
+                        "avg_metric": avg_rtr,
+                        "target_metric": target_rtr,
+                        "field_name": "rtr",
+                        "is_ascending_metric": True,  # RTR: higher is better
+                    }
+                )
+
+            metrics = calculate_target_metrics(metrics_config)
 
             target_checks = {}
             if (
                 model_spec.model_type.name == ModelType.CNN.name
                 or model_spec.model_type.name == ModelType.IMAGE.name
+                or model_spec.model_type.name == ModelType.VIDEO.name
             ):
                 logger.info(
-                    "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
+                    "Adding target_checks for tput_user to CNN, IMAGE and VIDEO benchmark release data"
                 )
-                target_checks = add_target_checks_cnn_and_image(
+                target_checks = add_target_checks_cnn_image_video(
                     targets,
                     evals_release_data,
                     benchmark_summary_data,
                     metrics,
                 )
-            else:
+            elif model_spec.model_type.name == ModelType.AUDIO.name:
                 logger.info("Adding target_checks for Audio benchmark release data")
+                target_checks = add_target_checks_audio(metrics)
+            elif model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                logger.info("Adding target_checks for TTS benchmark release data")
+                target_checks = add_target_checks_tts(metrics)
+            else:
+                logger.warning(f"Unknown model type: {model_spec.model_type.name}")
                 target_checks = add_target_checks_audio(metrics)
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
@@ -3540,6 +3753,10 @@ def main():
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
+
+        # Add parameter_support_tests only if data exists
+        if parameter_support_tests_data:
+            output_data["parameter_support_tests"] = parameter_support_tests_data
 
         json.dump(output_data, f, indent=4)
 
