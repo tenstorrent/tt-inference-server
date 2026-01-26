@@ -142,7 +142,9 @@ def report_test(results_report, request):
         - Captures exception traceback
         - Integrates cleanly with pytest
     """
+    test_start_ts = datetime.now().isoformat()
     yield  # Run the test
+    test_end_ts = datetime.now().isoformat()
 
     # Get the report object we stored in the hook
     report = getattr(request.node, "rep_call", None)
@@ -159,8 +161,7 @@ def report_test(results_report, request):
         else:
             tb = f"\nTraceback:\n{report.longrepr}"
 
-    timestamp = datetime.now().isoformat()
-    message = f"{timestamp} – {tb}"
+    message = tb.strip() if tb else ""
 
     # --- Add the test outcome to the report ---
 
@@ -174,6 +175,9 @@ def report_test(results_report, request):
 
     results_report["results"][test_func_name].append(
         {
+            "test_start_ts": test_start_ts,
+            "test_end_ts": test_end_ts,
+            "test_id": request.node.nodeid,
             "status": outcome,
             "message": message,
             "test_node_name": test_node_name,
