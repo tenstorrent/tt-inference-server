@@ -200,6 +200,7 @@ class ModelType(IntEnum):
     EMBEDDING = auto()
     TEXT_TO_SPEECH = auto()
     VIDEO = auto()
+    VLM = auto()  # Vision-Language Models (text+image-to-text)
 
 
 @dataclass(frozen=True)
@@ -1209,6 +1210,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1243,6 +1245,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1280,6 +1283,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1302,6 +1306,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,

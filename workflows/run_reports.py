@@ -1595,8 +1595,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, image, audio, tts, embedding and cnn for vLLM
+        # Separate text, vlm, image, audio, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
+        vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
         vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
@@ -1613,11 +1614,18 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### vLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_text_md}"
             )
 
+        if vllm_vlm:
+            vllm_vlm_display = [create_image_display_dict(r) for r in vllm_vlm]
+            vllm_vlm_md = get_markdown_table(vllm_vlm_display)
+            image_sections.append(
+                f"#### vLLM VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_vlm_md}"
+            )
+
         if vllm_image:
             vllm_image_display = [create_image_display_dict(r) for r in vllm_image]
             vllm_image_md = get_markdown_table(vllm_image_display)
             image_sections.append(
-                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
+                f"#### vLLM Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
         if vllm_audio:
@@ -1670,8 +1678,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(aiperf_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for AIPerf
+        # Separate text, vlm, image, audio, embedding and cnn for AIPerf
         aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
+        aiperf_vlm = [r for r in aiperf_release_raw if r.get("task_type") == "vlm"]
         aiperf_image = [r for r in aiperf_release_raw if r.get("task_type") == "image"]
         aiperf_audio = [r for r in aiperf_release_raw if r.get("task_type") == "audio"]
         aiperf_embedding = [
@@ -1687,11 +1696,18 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### AIPerf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_text_md}"
             )
 
+        if aiperf_vlm:
+            aiperf_vlm_display = [create_image_display_dict(r) for r in aiperf_vlm]
+            aiperf_vlm_md = get_markdown_table(aiperf_vlm_display)
+            image_sections.append(
+                f"#### AIPerf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_vlm_md}"
+            )
+
         if aiperf_image:
             aiperf_image_display = [create_image_display_dict(r) for r in aiperf_image]
             aiperf_image_md = get_markdown_table(aiperf_image_display)
             image_sections.append(
-                f"#### AIPerf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
+                f"#### AIPerf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
             )
 
         # Note: AIPerf does not currently support audio models
@@ -1741,8 +1757,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(genai_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for GenAI-Perf
+        # Separate text, vlm, image, audio, embedding and cnn for GenAI-Perf
         genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
+        genai_vlm = [r for r in genai_release_raw if r.get("task_type") == "vlm"]
         genai_image = [r for r in genai_release_raw if r.get("task_type") == "image"]
         genai_audio = [r for r in genai_release_raw if r.get("task_type") == "audio"]
         genai_embedding = [
@@ -1758,11 +1775,18 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_text_md}"
             )
 
+        if genai_vlm:
+            genai_vlm_display = [create_image_display_dict(r) for r in genai_vlm]
+            genai_vlm_md = get_markdown_table(genai_vlm_display)
+            image_sections.append(
+                f"#### GenAI-Perf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_vlm_md}"
+            )
+
         if genai_image:
             genai_image_display = [create_image_display_dict(r) for r in genai_image]
             genai_image_md = get_markdown_table(genai_image_display)
             image_sections.append(
-                f"#### GenAI-Perf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
+                f"#### GenAI-Perf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
             )
 
         # Note: GenAI-Perf does not currently support audio models
@@ -1858,20 +1882,20 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
     ]
 
-    # Separate text and image benchmarks from vLLM results (for targets)
+    # Separate text and vlm benchmarks from vLLM results (for targets)
     text_release_raw = [
         r for r in vllm_release_raw if r.get("task_type", "text") == "text"
     ]
-    image_release_raw = [
-        r for r in vllm_release_raw if r.get("task_type", "text") == "image"
+    vlm_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "vlm"
     ]
 
-    # Separate text and image performance references
+    # Separate text and vlm performance references
     text_perf_refs = [
         p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "text"
     ]
-    image_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "image"
+    vlm_perf_refs = [
+        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "vlm"
     ]
 
     release_sections = []
@@ -2009,14 +2033,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         text_section += "No performance targets defined for text benchmarks.\n\n"
         release_sections.append(text_section)
 
-    # Process image benchmarks if they exist
-    print(f"image_release_raw: {image_release_raw}")
-    if image_perf_refs and image_release_raw and False:
-        # hard coded for now - using fallback option for image benchmarks
-        # TODO: implement proper image benchmark targets retrieval
+    # Process VLM benchmarks if they exist
+    print(f"vlm_release_raw: {vlm_release_raw}")
+    if vlm_perf_refs and vlm_release_raw:
+        # VLM models (ModelType.VLM) now distinguished from image generation models (ModelType.IMAGE)
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
-        image_res_dict = {
+        vlm_res_dict = {
             (
                 r["input_sequence_length"],
                 r["output_sequence_length"],
@@ -2025,10 +2048,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 r["images_per_prompt"],
                 r["max_con"],
             ): r
-            for r in image_release_raw
+            for r in vlm_release_raw
         }
-        image_perf_results = {}
-        for p_ref in image_perf_refs:
+        vlm_perf_results = {}
+        for p_ref in vlm_perf_refs:
             p_ref_key = (
                 p_ref.isl,
                 p_ref.osl,
@@ -2037,9 +2060,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 p_ref.images_per_prompt,
                 p_ref.max_concurrency,
             )
-            res = image_res_dict.get(p_ref_key)
+            res = vlm_res_dict.get(p_ref_key)
             # add reference values to the result
-            image_perf_results[p_ref_key] = {
+            vlm_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
                 "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
@@ -2052,7 +2075,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             }
             # add measurements to result and checks if defined
             if res:
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": res["mean_ttft_ms"],
                         "tput_user": res["mean_tps"],
@@ -2061,7 +2084,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 )
 
                 # Prepare a dictionary to hold checks for all targets.
-                image_perf_results[p_ref_key]["target_checks"] = {}
+                vlm_perf_results[p_ref_key]["target_checks"] = {}
                 # Iterate over each target defined in p_ref.targets.
                 for target_name, perf_target in p_ref.targets.items():
                     target_check = {}
@@ -2112,7 +2135,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         target_check["tput_check"] = ReportCheckTypes.NA
 
                     # Save the computed checks under the target's name.
-                    image_perf_results[p_ref_key]["target_checks"][target_name] = (
+                    vlm_perf_results[p_ref_key]["target_checks"][target_name] = (
                         target_check
                     )
 
@@ -2120,7 +2143,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 # No result available from benchmark measurements.
                 NA_STRING = "N/A"
                 # In this case, add N/A for performance measures and an empty check dict per target.
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": NA_STRING,
                         "tput_user": NA_STRING,
@@ -2136,35 +2159,33 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                     }
                 )
 
-        # build release performance benchmarking report for images
-        sorted_image_perf_results = {
-            k: image_perf_results[k] for k in sorted(image_perf_results)
+        # build release performance benchmarking report for VLMs
+        sorted_vlm_perf_results = {
+            k: vlm_perf_results[k] for k in sorted(vlm_perf_results)
         }
-        image_release_raw_targets = [v for k, v in sorted_image_perf_results.items()]
+        vlm_release_raw_targets = [v for k, v in sorted_vlm_perf_results.items()]
 
-        flat_image_release_raw = flatten_target_checks(image_release_raw_targets)
-        image_section = (
-            f"#### Image Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
+        flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
+        vlm_section = (
+            f"#### VLM Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
         )
-        if image_release_raw_targets and image_release_raw_targets[0].get(
-            "target_checks"
-        ):
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw,
-                target_checks=image_release_raw_targets[0]["target_checks"],
+        if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
+            vlm_section += benchmark_image_release_markdown(
+                flat_vlm_release_raw,
+                target_checks=vlm_release_raw_targets[0]["target_checks"],
             )
         else:
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw, target_checks=None
+            vlm_section += benchmark_image_release_markdown(
+                flat_vlm_release_raw, target_checks=None
             )
-        release_sections.append(image_section)
-    elif image_release_raw:
-        # Show image benchmarks even without performance targets
-        image_section = (
-            f"#### Image Benchmark Results {model_spec.model_name} on {args.device}\n\n"
+        release_sections.append(vlm_section)
+    elif vlm_release_raw:
+        # Show VLM benchmarks even without performance targets
+        vlm_section = (
+            f"#### VLM Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         )
-        image_section += "No performance targets defined for image benchmarks.\n\n"
-        release_sections.append(image_section)
+        vlm_section += "No performance targets defined for VLM benchmarks.\n\n"
+        release_sections.append(vlm_section)
 
     # Combine sections or fallback to original behavior
     if release_sections:
@@ -2179,10 +2200,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 if "text_release_raw_targets" in locals()
                 else release_raw
             )
-        elif image_perf_refs:
+        elif vlm_perf_refs:
             release_raw = (
-                image_release_raw_targets
-                if "image_release_raw_targets" in locals()
+                vlm_release_raw_targets
+                if "vlm_release_raw_targets" in locals()
                 else release_raw
             )
     else:

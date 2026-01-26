@@ -621,7 +621,7 @@ def main():
     log_str += f"  {'-' * 3:<3} {'-' * 8:<8} {'-' * 6:<6} {'-' * 6:<6} {'-' * 8:<8} {'-' * 6:<6} {'-' * 8:<8}\n"
     for i, param in enumerate(all_params, 1):
         img_str = ""
-        if param.task_type == "image":
+        if param.task_type in ("image", "vlm"):
             img_str = (
                 f"{param.images_per_prompt}@{param.image_width}x{param.image_height}"
             )
@@ -676,7 +676,7 @@ def main():
         images = 0
         image_height = 0
         image_width = 0
-        if params.task_type == "image":
+        if params.task_type in ("image", "vlm"):
             images = getattr(params, "images_per_prompt", 1)
             image_height = getattr(params, "image_height", 0)
             image_width = getattr(params, "image_width", 0)

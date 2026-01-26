@@ -210,7 +210,11 @@ def cap_benchmark_params(
 
     # Calculate vision tokens for VLM models
     vision_tokens = 0
-    if params.task_type == "image" and params.image_height and params.image_width:
+    if (
+        params.task_type in ("image", "vlm")
+        and params.image_height
+        and params.image_width
+    ):
         vision_tokens = calculate_vision_tokens(
             params.image_height,
             params.image_width,
@@ -322,7 +326,7 @@ else:
                     params.images_per_prompt,
                     params.max_concurrency,
                 )
-                if params.task_type == "image"
+                if params.task_type in ("image", "vlm")
                 else (params.num_inference_steps,)
                 if params.task_type in ["cnn", "video"]
                 else (params.isl, params.osl, params.max_concurrency)
