@@ -218,9 +218,11 @@ WORKDIR ${HOME_DIR}/tt-metal
 # Set up bashrc
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Switch back to root for entrypoint (it will drop to non-root user via gosu)
+USER root
+COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
+RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
 
 EXPOSE 8000
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
