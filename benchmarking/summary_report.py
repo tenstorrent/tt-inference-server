@@ -475,6 +475,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "req_tput", 0.0
             ),
         }
+        return format_metrics(metrics)
 
     if params.get("task_type") == "video":
         # For VIDEO benchmarks, extract data from JSON content
