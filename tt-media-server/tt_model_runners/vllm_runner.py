@@ -56,8 +56,7 @@ class VLLMRunner(BaseDeviceRunner):
             return request.prompt
         elif isinstance(request.prompt, list):
             return {"prompt_token_ids": request.prompt}
-        else:
-            raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
+        raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
 
     @log_execution_time(
         "Run VLLM inference",
