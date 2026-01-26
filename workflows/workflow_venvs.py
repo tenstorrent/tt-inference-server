@@ -80,7 +80,7 @@ def setup_evals_common(
         f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
-        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler] "
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
         "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
@@ -224,6 +224,16 @@ def setup_benchmarks_vllm(
     return True
 
 
+def setup_benchmarks_video(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup video benchmarking environment."""
+    logger.info("running setup_benchmarks_video() ...")
+    return setup_venv(venv_config)
+
+
 def setup_evals_vision(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -271,6 +281,19 @@ def setup_evals_embedding(
         logger=logger,
     )
     return True
+
+
+def setup_evals_video(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """
+    Setup video evaluation environment on HOST.
+    Video models typically need basic dependencies for server interaction.
+    """
+    logger.info("Installing dependencies for video evaluation...")
+    return setup_venv(venv_config)
 
 
 def setup_stress_tests_run_script(
@@ -499,6 +522,9 @@ _venv_config_list = [
         setup_function=setup_evals_embedding,
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_VIDEO, setup_function=setup_evals_video
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         setup_function=setup_benchmarks_vllm,
         python_version="3.11",
@@ -507,6 +533,10 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         setup_function=setup_benchmarks_aiperf,
         python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
+        setup_function=setup_benchmarks_video,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
