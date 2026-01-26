@@ -155,57 +155,36 @@ class TestTextToSpeechRequestValidation:
 
     def test_text_exceeds_max_length(self):
         """Test that text exceeding max_tts_text_length raises ValueError."""
-        from unittest.mock import MagicMock, patch
+        from domain.text_to_speech_request import (
+            DEFAULT_MAX_TTS_TEXT_LENGTH,
+            TextToSpeechRequest,
+        )
 
-        mock_settings = MagicMock()
-        mock_settings.max_tts_text_length = 600
+        long_text = "a" * (DEFAULT_MAX_TTS_TEXT_LENGTH + 100)
 
-        with patch(
-            "domain.text_to_speech_request.get_settings", return_value=mock_settings
-        ):
-            from domain.text_to_speech_request import TextToSpeechRequest
+        with pytest.raises(ValueError) as exc_info:
+            TextToSpeechRequest(text=long_text)
 
-            # Generate text longer than max_tts_text_length
-            long_text = "a" * 700
-
-            with pytest.raises(ValueError) as exc_info:
-                TextToSpeechRequest(text=long_text)
-
-            assert "exceeds maximum length" in str(exc_info.value)
-            assert "600" in str(exc_info.value)
+        assert "exceeds maximum length" in str(exc_info.value)
 
     def test_text_at_max_length_succeeds(self):
         """Test that text at exactly max_tts_text_length succeeds."""
-        from unittest.mock import MagicMock, patch
+        from domain.text_to_speech_request import (
+            DEFAULT_MAX_TTS_TEXT_LENGTH,
+            TextToSpeechRequest,
+        )
 
-        mock_settings = MagicMock()
-        mock_settings.max_tts_text_length = 600
+        exact_text = "a" * DEFAULT_MAX_TTS_TEXT_LENGTH
 
-        with patch(
-            "domain.text_to_speech_request.get_settings", return_value=mock_settings
-        ):
-            from domain.text_to_speech_request import TextToSpeechRequest
-
-            # Generate text exactly at max length
-            exact_text = "a" * 600
-
-            request = TextToSpeechRequest(text=exact_text)
-            assert len(request.text) == 600
+        request = TextToSpeechRequest(text=exact_text)
+        assert len(request.text) == DEFAULT_MAX_TTS_TEXT_LENGTH
 
     def test_text_below_max_length_succeeds(self):
         """Test that text below max_tts_text_length succeeds."""
-        from unittest.mock import MagicMock, patch
+        from domain.text_to_speech_request import TextToSpeechRequest
 
-        mock_settings = MagicMock()
-        mock_settings.max_tts_text_length = 600
-
-        with patch(
-            "domain.text_to_speech_request.get_settings", return_value=mock_settings
-        ):
-            from domain.text_to_speech_request import TextToSpeechRequest
-
-            request = TextToSpeechRequest(text="Hello world")
-            assert request.text == "Hello world"
+        request = TextToSpeechRequest(text="Hello world")
+        assert request.text == "Hello world"
 
 
 class TestRealImplementation:

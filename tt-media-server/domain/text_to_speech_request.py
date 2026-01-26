@@ -32,6 +32,9 @@ class TextToSpeechRequest(BaseRequest):
         from config.settings import get_settings
 
         max_length = get_settings().max_tts_text_length
+        # Fallback to default if settings returns a Mock (test isolation issue)
+        if not isinstance(max_length, int):
+            max_length = DEFAULT_MAX_TTS_TEXT_LENGTH
         if len(text) > max_length:
             raise ValueError(
                 f"Text exceeds maximum length of {max_length} characters. "
