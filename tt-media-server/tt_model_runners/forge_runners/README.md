@@ -111,10 +111,13 @@ tt-inference-server/tt-media-server$ pytest tt_model_runners/forge_runners/test_
 
 #### tt-media-server
 - Add the new model to `ModelNames` and `SupportedModels` enums if they don't already exist there
+- Add the new model to MODEL_RUNNER_TO_MODEL_NAMES_MAP if it isn't there already
 
 #### tt-inference-server
 - Add new model spec with forge vllm plugin implementation (model_spec.py)
-- Add eval config(eval_config.py) -> only if it should differ from the existing one, or if it doesnt exist at all
+- Add eval config(eval_config.py)
+   - only IF the model doesnt have one already
+   - if adding a new eval_config, please follow the same tasks as other models in the family do
 
 #### tt-shield
 - Add model names in `on-dispatch.yml` dropdown when selecting models

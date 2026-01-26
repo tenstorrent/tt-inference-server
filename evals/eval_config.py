@@ -2198,59 +2198,84 @@ _eval_config_list = [
             ),
         ],
     ),
-        EvalConfig(
-        hf_model_repo="meta-llama/Llama-3.2-3B",
-        tasks=[
-            EvalTask(
-                task_name="ifeval",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                include_path="work_dir",
-                eval_class="local-completions",
-                use_chat_api=False,
-                max_concurrent=1,
-                apply_chat_template=False,
-                score=EvalTaskScore(
-                    published_score=75.0,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["prompt_level_strict_acc,none"],
-                        "unit": "percent",
-                    },
-                ),
-                gen_kwargs={
-                    "max_gen_toks": "16",
-                    "stream": "false",
-                },
-                model_kwargs={"max_length": 2048, "tokenized_requests": "False"},
-            ),
-        ],
-    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-4B",
         tasks=[
             EvalTask(
-                task_name="ifeval",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                include_path="work_dir",
-                eval_class="local-completions",
-                use_chat_api=False,
-                max_concurrent=1,
-                apply_chat_template=False,
+                task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=75.0,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B",
+                    published_score=55.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B-Thinking-2507",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["prompt_level_strict_acc,none"],
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
                         "unit": "percent",
                     },
                 ),
-                gen_kwargs={
-                    "max_gen_toks": "1",
-                    "stream": "false",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-4B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
                 },
-                model_kwargs={"max_length": 2048, "tokenized_requests": "False"},
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-4B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=70.4,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-4B-Thinking-2507",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-4B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-4B#best-practices
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),

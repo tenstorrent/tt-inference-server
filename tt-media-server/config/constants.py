@@ -24,6 +24,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
 
@@ -169,7 +170,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLM_QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B, ModelNames.LLAMA_3_2_3B_INSTRUCT},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
