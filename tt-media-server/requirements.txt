@@ -17,8 +17,7 @@ pytest
 pytest-asyncio
 python-multipart
 torch
-torchaudio
 tqdm
-transformers
+transformers==4.55.0
 uvicorn
 whisperx
