@@ -6,13 +6,12 @@ from typing import Optional, Union
 
 import numpy as np
 from config.constants import ResponseFormat
-from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
-# Load max text length once at module import time (avoids runtime call in validator)
-_settings = get_settings()
-MAX_TTS_TEXT_LENGTH = _settings.max_tts_text_length
+# Default max text length (SpeechT5 limitation)
+# Can be overridden via settings.max_tts_text_length
+DEFAULT_MAX_TTS_TEXT_LENGTH = 600
 
 
 class TextToSpeechRequest(BaseRequest):
@@ -28,9 +27,14 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("Text must be a string")
         if not text.strip():
             raise ValueError("Text cannot be empty")
-        if len(text) > MAX_TTS_TEXT_LENGTH:
+
+        # Lazy import to avoid circular import and import-time settings initialization
+        from config.settings import get_settings
+
+        max_length = get_settings().max_tts_text_length
+        if len(text) > max_length:
             raise ValueError(
-                f"Text exceeds maximum length of {MAX_TTS_TEXT_LENGTH} characters. "
+                f"Text exceeds maximum length of {max_length} characters. "
                 f"Received {len(text)} characters."
             )
         return text
