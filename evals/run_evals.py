@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 
 from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+from utils.gpt_oss_clients.gpt_oss_strategy import GptOSSEvalStrategy
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -361,6 +362,22 @@ def main():
     env_config.service_port = cli_args.get("service_port")
     env_config.vllm_model = model_spec.hf_model_repo
 
+    # Check if this is a gpt-oss evaluation
+    is_gpt_oss_eval = any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_GPT_OSS
+        for task in eval_config.tasks
+    )
+
+    if is_gpt_oss_eval:
+        logger.info("Detected gpt-oss evaluation tasks")
+        return run_gpt_oss_evals(
+            eval_config,
+            model_spec,
+            device,
+            args.output_path,
+            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
+        )
+
     if (
         model_spec.model_type in EVAL_TASK_TYPES
         and model_spec.model_type != ModelType.AUDIO
@@ -481,6 +498,26 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
         service_port,
         task_type=MediaTaskType.EVALUATION,
     )
+
+
+def run_gpt_oss_evals(all_params, model_spec, device, output_path, service_port):
+    """Run gpt-oss evals (AIME25, GPQA) for reasoning models."""
+    logger.info(f"Running gpt-oss evals for model: {model_spec.model_name}")
+
+    try:
+        strategy = GptOSSEvalStrategy(
+            all_params=all_params,
+            model_spec=model_spec,
+            device=device,
+            output_path=output_path,
+            service_port=service_port,
+        )
+        strategy.run_eval()
+        logger.info("✅ Completed gpt-oss evals")
+        return 0
+    except Exception as e:
+        logger.error(f"❌ gpt-oss eval failed: {e}", exc_info=True)
+        return 1
 
 
 def run_audio_evals(all_params, model_spec, device, output_path, service_port):
