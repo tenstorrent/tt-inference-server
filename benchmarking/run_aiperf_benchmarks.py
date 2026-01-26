@@ -165,6 +165,9 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
             "output_token_throughput": summary.get("output_token_throughput", {}).get(
                 "avg", 0
             ),
+            "total_token_throughput": summary.get("total_token_throughput", {}).get(
+                "avg", 0
+            ),
             "request_throughput": summary.get("request_throughput", {}).get("avg", 0),
             # Request counts
             "completed": int(summary.get("request_count", {}).get("avg", 0)),
@@ -205,6 +208,9 @@ def print_detailed_results(
     )
     logger.info(
         f"Output token throughput (tok/s):         {metrics.get('output_token_throughput', 0):.2f}"
+    )
+    logger.info(
+        f"Total token throughput (tok/s):          {metrics.get('total_token_throughput', 0):.2f}"
     )
     logger.info(
         f"Total input tokens:                      {metrics.get('total_input_tokens', 0)}"

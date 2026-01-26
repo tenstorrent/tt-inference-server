@@ -424,7 +424,8 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
             ("median_e2el_ms", "E2EL P50 (ms)"),
             ("p99_e2el_ms", "E2EL P99 (ms)"),
             # Throughput
-            ("output_token_throughput", "Tok/s"),
+            ("output_token_throughput", "Output Tok/s"),
+            ("total_token_throughput", "Total Tok/s"),
             ("request_throughput", "Req/s"),
         ]
     )
@@ -441,7 +442,7 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
                 # Format floats with appropriate precision
                 if col_name in ("request_throughput",):
                     row_dict[display_header] = f"{value:.4f}"
-                elif col_name in ("output_token_throughput",):
+                elif col_name in ("output_token_throughput", "total_token_throughput"):
                     row_dict[display_header] = f"{value:.2f}"
                 else:
                     row_dict[display_header] = f"{value:.1f}"
@@ -732,6 +733,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -793,6 +795,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -854,6 +857,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -915,6 +919,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -976,6 +981,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1037,6 +1043,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1133,7 +1140,10 @@ def aiperf_benchmark_generate_report(
         release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
@@ -1287,6 +1297,7 @@ def genai_perf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1348,6 +1359,7 @@ def genai_perf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1396,7 +1408,7 @@ def genai_perf_benchmark_generate_report(
             # Show GenAI-Perf detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # IMAGE BENCHMARKS SECTION
         if genai_image_results:
@@ -1408,7 +1420,7 @@ def genai_perf_benchmark_generate_report(
                 genai_image_results, is_image_benchmark=True
             )
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # Metric definitions
         release_str += "**Metric Definitions:**\n"
@@ -1419,7 +1431,10 @@ def genai_perf_benchmark_generate_report(
         release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
