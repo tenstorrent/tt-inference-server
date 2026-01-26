@@ -102,12 +102,11 @@ class TTSLoadTest(BaseTest):
     def _extract_batch_metrics(self, batch_results: list) -> tuple[list, list]:
         """Extract duration and TTFT metrics from batch results."""
         if isinstance(batch_results[0], dict):
-            durations = [r["duration"] for r in batch_results]
-            ttft_values = [r["ttft_ms"] for r in batch_results]
-        else:
-            durations = batch_results
-            ttft_values = [0] * len(batch_results)
-        return durations, ttft_values
+            return (
+                [r["duration"] for r in batch_results],
+                [r["ttft_ms"] for r in batch_results],
+            )
+        return batch_results, [0] * len(batch_results)
 
     def _calculate_metrics(
         self, durations: list[float], ttft_values: list[float]
