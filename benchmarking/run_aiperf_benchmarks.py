@@ -265,6 +265,13 @@ def save_individual_result(
         **metrics,  # All harmonized metrics
     }
 
+    # Add image metadata if this is a VLM benchmark
+    if images > 0:
+        result["images_per_prompt"] = images
+        result["image_height"] = image_height
+        result["image_width"] = image_width
+        result["task_type"] = "vlm"
+
     with open(filepath, "w") as f:
         json.dump(result, f, indent=2)
 

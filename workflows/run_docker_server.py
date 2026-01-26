@@ -154,7 +154,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
-    server_prefix = "vllm" if model_spec.model_type == ModelType.LLM else "media"
+    server_prefix = (
+        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
+    )
     docker_log_file_path = (
         docker_log_file_dir
         / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"

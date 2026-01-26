@@ -114,8 +114,17 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # Try AIPerf image pattern first
     match = re.search(aiperf_image_pattern, filename, re.VERBOSE)
     if match:
+        # Determine if this is VLM or image generation based on model name
+        model_name = match.group("model")
+        # Image generation models (SDXL, SD) vs VLM models (Qwen-VL, Llama-Vision, gemma-3)
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+
         return {
-            "model_name": match.group("model"),
+            "model_name": model_name,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
             "input_sequence_length": int(match.group("isl")),
@@ -125,7 +134,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "images_per_prompt": int(match.group("images_per_prompt")),
             "image_height": int(match.group("image_height")),
             "image_width": int(match.group("image_width")),
-            "task_type": "image",
+            "task_type": task_type,
             "backend": "aiperf",
         }
 
@@ -178,8 +187,17 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     if match:
         logger.info(f"Found image benchmark pattern in filename: {filename}")
         # Extract and convert numeric parameters for image benchmarks
+        # Determine if this is VLM or image generation based on model name
+        model_name = match.group("model")
+        # Image generation models (SDXL, SD) vs VLM models (Qwen-VL, Llama-Vision, gemma-3)
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+
         params = {
-            "model_name": match.group("model"),
+            "model_name": model_name,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
             "input_sequence_length": int(match.group("isl")),
@@ -189,7 +207,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "images_per_prompt": int(match.group("images_per_prompt")),
             "image_height": int(match.group("image_height")),
             "image_width": int(match.group("image_width")),
-            "task_type": "image",
+            "task_type": task_type,
         }
         return params
 
