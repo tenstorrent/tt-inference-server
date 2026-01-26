@@ -69,8 +69,8 @@ def device_worker(
 
             logger.info("Starting streaming")
 
-            async for task_id, is_final, text in result_generator:
-                result_queue.put(task_id, is_final, text)
+            async for chunk in result_generator:
+                result_queue.put((worker_id, request._task_id, chunk))
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"

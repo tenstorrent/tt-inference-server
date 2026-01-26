@@ -91,7 +91,8 @@ class VLLMRunner(BaseDeviceRunner):
         task_id = request._task_id
 
         chunks = []
-        chunks_append = chunks.append
+        chunk_type = "streaming_chunk"
+        final_type = "final_result"
 
         strip_eos = TextUtils.strip_eos
         sampling_params = build_sampling_params(request)
@@ -113,14 +114,27 @@ class VLLMRunner(BaseDeviceRunner):
                     if not chunk_text:
                         continue
 
-                chunks_append(chunk_text)
+                chunks.append(chunk_text)
 
-                yield (task_id, 0, chunk_text)
-
-        # do this on purpose to avoid over max decode issues
-        yield (task_id, 1, "final_text")
+                yield {
+                    "type": chunk_type,
+                    "chunk": CompletionStreamChunk(text=chunk_text),
+                    "task_id": task_id,
+                }
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+
+        if chunks:
+            final_text = TextUtils.clean_text("".join(chunks))
+        else:
+            final_text = ""
+
+        yield {
+            "type": final_type,
+            "result": CompletionStreamChunk(text=final_text),
+            "task_id": task_id,
+            "return": False,
+        }
 
     async def process_request_non_streaming(self, request: CompletionRequest):
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")

@@ -153,7 +153,25 @@ class SharedMemoryChunkQueue:
         self._set_write_idx(next_write_idx)
         return write_idx
 
-    def put(self, task_id: str, is_final: int, text: str) -> bool:
+    def put(self, obj, block=True, timeout=None) -> bool:
+        """Match multiprocessing.Queue interface.
+        
+        Accepts (worker_id, task_id, data) tuple where data is a dict with:
+        - type: "streaming_chunk" or "final_result"
+        - chunk/result: CompletionStreamChunk with .text attribute
+        - task_id: str
+        """
+        # Extract from tuple: (worker_id, task_id, data_dict)
+        _, task_id, data = obj
+        
+        # Extract fields from the dict
+        chunk_type = data.get("type", "streaming_chunk")
+        is_final = 1 if chunk_type == "final_result" else 0
+        
+        # Get text from chunk or result
+        chunk_obj = data.get("chunk") or data.get("result")
+        text = chunk_obj.text if chunk_obj else ""
+
         slot_idx = self._get_next_write_slot()
 
         if slot_idx == -1:
