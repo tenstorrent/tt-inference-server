@@ -2407,6 +2407,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
             ),
             EvalTask(
                 task_name="mmlu_pro",
@@ -2424,6 +2428,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -2444,6 +2452,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,

@@ -926,8 +926,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="30d9e062",
-        vllm_commit="628d4dc4",
+        tt_metal_commit="60ffb199",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -948,8 +948,11 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=128*1024,
                 default_impl=True,
+                env_vars={
+                    "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -961,8 +964,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="30d9e062",
-        vllm_commit="628d4dc4",
+        tt_metal_commit="60ffb199",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -974,7 +977,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=128*1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
