@@ -21,3 +21,4 @@ tqdm
 transformers
 uvicorn
 whisperx
+faster_fifo

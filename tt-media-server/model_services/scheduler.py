@@ -112,7 +112,7 @@ class Scheduler:
         return True
 
     @log_execution_time("Scheduler - starting workers")
-    def start_workers(self):
+    async def start_workers(self):
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -124,7 +124,9 @@ class Scheduler:
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
         self.logger.info(f"Workers to start: {self.worker_count}")
-        asyncio.create_task(self._start_workers_in_sequence())
+
+        # Start workers and wait for completion
+        await self._start_workers_in_sequence()
 
     async def _start_workers_in_sequence(self):
         """Start workers one by one with a delay to avoid overload"""

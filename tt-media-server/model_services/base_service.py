@@ -116,7 +116,15 @@ class BaseService(ABC):
 
     @log_execution_time("Starting workers")
     def start_workers(self):
-        self.scheduler.start_workers()
+        # Create task for async start_workers, don't await it
+        asyncio.create_task(self._start_workers_async())
+
+    async def _start_workers_async(self):
+        """Internal async wrapper for scheduler.start_workers()"""
+        try:
+            await self.scheduler.start_workers()
+        except Exception as e:
+            self.logger.error(f"Failed to start workers: {e}")
 
     @log_execution_time("Stopping workers")
     def stop_workers(self):
