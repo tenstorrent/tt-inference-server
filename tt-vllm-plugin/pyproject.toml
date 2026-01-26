@@ -30,7 +30,7 @@ dependencies = [
     "torch>=2.7.1,<2.8",
     "numpy>=1.24.4,<2",
     # Pin transformers to match requirements.txt
-    "transformers==4.53.0",
+    "transformers==4.55.0",
 ]
 
 [project.optional-dependencies]

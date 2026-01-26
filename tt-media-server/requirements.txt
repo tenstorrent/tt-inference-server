@@ -18,6 +18,6 @@ pytest-asyncio
 python-multipart
 torch
 tqdm
-transformers==4.53.0
+transformers==4.55.0
 uvicorn
 whisperx
