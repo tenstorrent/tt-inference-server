@@ -51,6 +51,14 @@ class VLLMRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
+    def _build_vllm_input(self, request: CompletionRequest):
+        if isinstance(request.prompt, str):
+            return request.prompt
+        elif isinstance(request.prompt, list):
+            return {"prompt_token_ids": request.prompt}
+        else:
+            raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
+
     @log_execution_time(
         "Run VLLM inference",
         TelemetryEvent.MODEL_INFERENCE,
@@ -90,7 +98,7 @@ class VLLMRunner(BaseDeviceRunner):
         sampling_params = build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, task_id
+            self._build_vllm_input(request), sampling_params, task_id
         ):
             outputs = request_output.outputs
             if not outputs:
@@ -122,7 +130,7 @@ class VLLMRunner(BaseDeviceRunner):
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+            self._build_vllm_input(request), sampling_params, request._task_id
         ):
             if request_output.outputs:
                 generated_text.append(request_output.outputs[0].text)
