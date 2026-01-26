@@ -154,19 +154,30 @@ class TTModels(nn.Module):
 
     def _flatten_to_padded(self, input_ids: torch.Tensor, forward_batch: ForwardBatch) -> torch.Tensor:
         """Converts SGLang's flattened input_ids to padded batch structure (batch_size, max_len).
-            helper function for prefill mode (in forward function) """
+            helper function for prefill mode (in forward function)
+            
+            IMPORTANT: In extend mode, input_ids only contains NEW tokens being extended,
+            not the full sequence. Use extend_seq_lens (new token counts) NOT seq_lens (total length).
+        """
         batch_size = forward_batch.batch_size # number of requests
-        seq_lens = forward_batch.seq_lens # length of each request's prompt
-        max_len = int(torch.max(seq_lens).item()) # length of the longest prompt in batch
+        # Use extend_seq_lens (new tokens only) if available, otherwise fall back to seq_lens
+        # extend_seq_lens = length of NEW tokens in input_ids
+        # seq_lens = TOTAL sequence length (including already-cached prefix)
+        if forward_batch.extend_seq_lens is not None:
+            extend_lens = forward_batch.extend_seq_lens  # new tokens per request
+        else:
+            extend_lens = forward_batch.seq_lens  # fallback for non-chunked prefill
         
-        padded_tokens = torch.zeros((batch_size, max_len), dtype=torch.long, device=input_ids.device) # create empty tensor for padded tokens
-        # sglang gives us flattened input_ids (total_tokens) and their lengths in (seq_lens)
+        max_len = int(torch.max(extend_lens).item()) # length of the longest NEW token chunk
+        
+        padded_tokens = torch.zeros((batch_size, max_len), dtype=torch.long, device=input_ids.device)
+        # sglang gives us flattened input_ids (new tokens only) and their lengths
         # we need to reconstruct batch structure to (batch, max_len)
         start = 0
         for i in range(batch_size):
-            length = int(seq_lens[i].item()) # length of the current request's prompt
-            padded_tokens[i, :length] = input_ids[start:start + length] # copy tokens from input_ids to padded_tokens
-            start += length # update index to next request's prompt
+            length = int(extend_lens[i].item()) # length of NEW tokens for this request
+            padded_tokens[i, :length] = input_ids[start:start + length]
+            start += length
 
         return padded_tokens
 
