@@ -6,6 +6,7 @@ from typing import Optional, Union
 
 import numpy as np
 from config.constants import ResponseFormat
+from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
@@ -23,6 +24,12 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("Text must be a string")
         if not text.strip():
             raise ValueError("Text cannot be empty")
+        settings = get_settings()
+        if len(text) > settings.max_tts_text_length:
+            raise ValueError(
+                f"Text exceeds maximum length of {settings.max_tts_text_length} characters. "
+                f"Received {len(text)} characters."
+            )
         return text
 
     # Optional fields for speaker embedding
