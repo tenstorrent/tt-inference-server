@@ -457,11 +457,7 @@ class ModelSpec:
                 )
 
         if not self.min_ram_gb and self.param_count:
-            # Device-aware RAM calculation
-            ram_multiplier = self.device_type.get_ram_multiplier()
-            calculated_ram = self.param_count * ram_multiplier
-            # Safety floor: minimum 16GB
-            object.__setattr__(self, "min_ram_gb", max(16, calculated_ram))
+            object.__setattr__(self, "min_ram_gb", self.param_count * 2)
 
         # Generate default docker image if not provided
         if not self.docker_image:
