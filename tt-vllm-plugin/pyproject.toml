@@ -29,6 +29,8 @@ dependencies = [
     # Pin torch/numpy to versions compatible with tt-metal
     "torch>=2.7.1,<2.8",
     "numpy>=1.24.4,<2",
+    # Pin transformers to match requirements.txt
+    "transformers==4.53.0",
 ]
 
 [project.optional-dependencies]
