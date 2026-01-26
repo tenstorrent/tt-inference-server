@@ -97,6 +97,9 @@ deployment_log_handlers: Dict[str, logging.FileHandler] = {}
 # Maximum number of log messages to keep per job
 MAX_LOG_MESSAGES = 100
 
+# Deployment timeout: 5 hours to allow for large model downloads
+DEPLOYMENT_TIMEOUT_SECONDS = 5 * 60 * 60  # 5 hours
+
 # Regex pattern for structured progress signals
 PROG_RE = re.compile(r"TT_PROGRESS stage=(\w+) pct=(\d{1,3}) msg=(.*)$")
 
@@ -350,15 +353,16 @@ async def get_run_progress(job_id: str):
             "message": "Job not found",
             "last_updated": time.time()
         })
-        
-        # Add stalled detection (>120s no updates)
+
+        # Add stalled detection (>5 hours no updates)
+        # Changed from 120s to 5 hours to accommodate long model downloads
         if progress["status"] == "running" and "last_updated" in progress:
             time_since_update = time.time() - progress["last_updated"]
-            if time_since_update > 120:  # 2 minutes
+            if time_since_update > DEPLOYMENT_TIMEOUT_SECONDS:  # 5 hours
                 progress = progress.copy()  # Don't modify the stored version
                 progress["status"] = "stalled"
-                progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
-                
+                progress["message"] = f"No progress updates for {int(time_since_update/60)} minutes - deployment may be stalled"
+
     return progress
 
 @app.get("/run/logs/{job_id}")
@@ -398,16 +402,17 @@ async def stream_run_progress(job_id: str):
                         # Check if progress has changed
                         if not last_progress or current_progress != last_progress:
                             last_progress = current_progress.copy()
-                            
-                            # Add stalled detection
+
+                            # Add stalled detection (>5 hours no updates)
+                            # Changed from 120s to 5 hours to accommodate long model downloads
                             if current_progress["status"] == "running" and "last_updated" in current_progress:
                                 time_since_update = time.time() - current_progress["last_updated"]
-                                if time_since_update > 120:  # 2 minutes
+                                if time_since_update > DEPLOYMENT_TIMEOUT_SECONDS:  # 5 hours
                                     last_progress["status"] = "stalled"
-                                    last_progress["message"] = f"No progress updates for {int(time_since_update)}s - deployment may be stalled"
-                            
+                                    last_progress["message"] = f"No progress updates for {int(time_since_update/60)} minutes - deployment may be stalled"
+
                             yield f"data: {json.dumps(last_progress)}\n\n"
-                            
+
                             # Stop streaming if deployment is complete or failed
                             if last_progress["status"] in ["completed", "error", "failed", "cancelled"]:
                                 break
