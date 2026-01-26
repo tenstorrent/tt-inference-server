@@ -150,6 +150,50 @@ class TestTTSRouterIntegration:
         assert hasattr(mock_router, "routes")
 
 
+class TestTextToSpeechRequestValidation:
+    """Test actual TextToSpeechRequest validation including max length."""
+
+    def test_text_exceeds_max_length(self):
+        """Test that text exceeding max_tts_text_length raises ValueError."""
+        from config.settings import get_settings
+        from domain.text_to_speech_request import (
+            TextToSpeechRequest as RealTextToSpeechRequest,
+        )
+
+        settings = get_settings()
+        # Generate text longer than max_tts_text_length
+        long_text = "a" * (settings.max_tts_text_length + 100)
+
+        with pytest.raises(ValueError) as exc_info:
+            RealTextToSpeechRequest(text=long_text)
+
+        assert "exceeds maximum length" in str(exc_info.value)
+        assert str(settings.max_tts_text_length) in str(exc_info.value)
+
+    def test_text_at_max_length_succeeds(self):
+        """Test that text at exactly max_tts_text_length succeeds."""
+        from config.settings import get_settings
+        from domain.text_to_speech_request import (
+            TextToSpeechRequest as RealTextToSpeechRequest,
+        )
+
+        settings = get_settings()
+        # Generate text exactly at max length
+        exact_text = "a" * settings.max_tts_text_length
+
+        request = RealTextToSpeechRequest(text=exact_text)
+        assert len(request.text) == settings.max_tts_text_length
+
+    def test_text_below_max_length_succeeds(self):
+        """Test that text below max_tts_text_length succeeds."""
+        from domain.text_to_speech_request import (
+            TextToSpeechRequest as RealTextToSpeechRequest,
+        )
+
+        request = RealTextToSpeechRequest(text="Hello world")
+        assert request.text == "Hello world"
+
+
 class TestRealImplementation:
     """Test actual text_to_speech.py implementation"""
 
