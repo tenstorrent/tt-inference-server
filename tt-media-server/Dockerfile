@@ -19,11 +19,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 
-
-# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ARG CONTAINER_APP_UID=1000
-ARG DEBIAN_FRONTEND=noninteractive
-
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 
