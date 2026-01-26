@@ -1167,7 +1167,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
