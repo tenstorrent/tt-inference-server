@@ -1235,84 +1235,14 @@
                 }
             },
             {
-                "name": "TestTTSServerHealth",
+                "name": "TTSIntegrationTest",
                 "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test server health and availability",
+                "enabled": true,
+                "description": "Test TTS error handling and input validation",
                 "test_config": {
-                    "test_timeout": 3600,
+                    "test_timeout": 300,
                     "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSAuthentication",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test API authentication",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTS",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test TTS generation",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSErrorHandling",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test error handling for invalid inputs",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSPerformance",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test performance characteristics",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSAudioQuality",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test audio output quality characteristics",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
+                    "retry_delay": 10,
                     "break_on_failure": false,
                     "mock_mode": false
                 },
