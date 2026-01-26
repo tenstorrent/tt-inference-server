@@ -55,7 +55,7 @@ import torch
 import ttnn
 from loguru import logger
 
-from prefill_node_tests.node_utils import format_size, format_throughput, log_node_info
+from prefill_node_tests.node_utils import format_throughput, log_node_info
 
 # Add the project to path
 sys.path.insert(0, "/data/ztorlak/tt-inference-server/tt-media-server")
@@ -85,41 +85,123 @@ def run_sender(device: Any, socket_config: Any, rank: int) -> dict[str, float]:
     # Barrier before transfer
     ttnn.distributed_context_barrier()
 
-    # Test tensor shapes
-    test_shapes = [
-        (1, 1, 32, 32),      # 2 KB
-        (1, 1, 128, 128),    # 32 KB
-        (1, 1, 512, 512),    # 512 KB
-        (1, 1, 1024, 1024),  # 2 MB
-    ]
+    # DeepSeek V3 KV cache parameters
+    # From: https://github.com/tenstorrent/tt-metal/pull/36146
+    NUM_LAYERS = 61
+    KVPE_DIM = 576
+    BLOCK_SIZE = 32
+
+    def get_kv_cache_shape(seq_len: int) -> tuple[int, int, int, int]:
+        """Get single-layer KV cache shape for DeepSeek V3."""
+        num_blocks = seq_len // BLOCK_SIZE
+        return (num_blocks, 1, BLOCK_SIZE, KVPE_DIM)
+
+    # Sequence lengths for each mode
+    # Single tensor mode: 163840 excluded - too large for host memory (~5.4 GB packed)
+    # Layer-by-layer mode: all seq_lengths including 163840
+    seq_lengths_single = [1024, 4096, 8192, 32768]
+    seq_lengths_lbl = [1024, 4096, 8192, 32768, 163840]
+
+    # Print DeepSeek V3 tensor sizes
+    logger.info(f"Rank {rank}: === DeepSeek V3 KV Cache Tensor Sizes ===")
+    logger.info(f"Rank {rank}: Parameters: {NUM_LAYERS} layers, kvpe_dim={KVPE_DIM}, block_size={BLOCK_SIZE}")
+    for seq_len in seq_lengths_lbl:
+        shape = get_kv_cache_shape(seq_len)
+        elements = shape[0] * shape[1] * shape[2] * shape[3]
+        per_layer_mb = elements * 1 / (1024 * 1024)  # bfloat8_b = 1 byte
+        total_mb = per_layer_mb * NUM_LAYERS
+        logger.info(
+            f"Rank {rank}:   seq_len={seq_len:>6}: shape={shape}, "
+            f"per_layer={per_layer_mb:.2f} MB, total_61_layers={total_mb:.2f} MB"
+        )
+    logger.info(f"Rank {rank}: ================================================")
 
     test_value = 42.0
 
-    for shape in test_shapes:
-        tensor_elements = shape[0] * shape[1] * shape[2] * shape[3]
-        tensor_size_bytes = tensor_elements * 2  # bfloat16
-        shape_str = f"{shape[2]}x{shape[3]}"
+    # === WARMUP ===
+    warmup_shape = get_kv_cache_shape(1024)  # Use smallest DeepSeek shape
+    warmup_elements = warmup_shape[0] * warmup_shape[1] * warmup_shape[2] * warmup_shape[3]
+    warmup_size_bytes = warmup_elements * 1  # bfloat8_b = 1 byte
+    warmup_size_mb = warmup_size_bytes / (1024 * 1024)
+    logger.info(f"Rank {rank}: === WARMUP send ({warmup_size_mb:.2f} MB) ===")
+
+    ttnn.distributed_context_barrier()
+
+    warmup_torch = torch.ones(warmup_shape, dtype=torch.bfloat16) * test_value
+    warmup_tt = ttnn.from_torch(
+        warmup_torch,
+        device=device,
+        dtype=ttnn.bfloat8_b,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        mesh_mapper=ttnn.ShardTensorToMesh(device, dim=0),
+    )
+
+    # Barrier to sync before send/recv
+    ttnn.distributed_context_barrier()
+
+    warmup_start = time.perf_counter()
+    dist_socket.send(warmup_tt)
+    ttnn.synchronize_device(device)
+    warmup_time = time.perf_counter() - warmup_start
+
+    timings["warmup_send"] = warmup_time
+    logger.info(
+        f"Rank {rank}: WARMUP send complete! "
+        f"Time: {warmup_time * 1000:.2f} ms, "
+        f"Throughput: {format_throughput(warmup_size_bytes, warmup_time)}"
+    )
+
+    # Barrier to wait for receiver to complete
+    ttnn.distributed_context_barrier()
+
+    logger.info(f"Rank {rank}: === END WARMUP ===")
+
+    # =========================================================================
+    # VARIANT 1: Single Tensor Mode (all 61 layers packed into one tensor)
+    # =========================================================================
+    logger.info(f"Rank {rank}: ")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+    logger.info(f"Rank {rank}: === VARIANT 1: SINGLE TENSOR MODE (61 layers packed) ===")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+
+    for seq_len in seq_lengths_single:
+        shape = get_kv_cache_shape(seq_len)
+        # Pack all 61 layers into one tensor: (num_blocks * 61, 1, block_size, kvpe_dim)
+        total_shape = (shape[0] * NUM_LAYERS, shape[1], shape[2], shape[3])
+        tensor_elements = total_shape[0] * total_shape[1] * total_shape[2] * total_shape[3]
+        tensor_size_bytes = tensor_elements * 1  # bfloat8_b = 1 byte
+        tensor_size_mb = tensor_size_bytes / (1024 * 1024)
+        shape_str = f"seq{seq_len}"
 
         ttnn.distributed_context_barrier()
 
-        logger.info(f"Rank {rank}: Creating tensor {shape_str} ({format_size(tensor_size_bytes)})")
-        src_torch = torch.ones(shape, dtype=torch.bfloat16) * test_value
+        logger.info(
+            f"Rank {rank}: Creating tensor {shape_str} - {NUM_LAYERS} layers packed "
+            f"({tensor_size_mb:.2f} MB, shape={total_shape})"
+        )
+        src_torch = torch.ones(total_shape, dtype=torch.bfloat16) * test_value
         src_tt = ttnn.from_torch(
             src_torch,
             device=device,
-            dtype=ttnn.bfloat16,
+            dtype=ttnn.bfloat8_b,
             layout=ttnn.TILE_LAYOUT,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ShardTensorToMesh(device, dim=0),
         )
 
+        logger.info(f"Rank {rank}: Ready to send tensor {shape_str}...")
+
+        # Barrier to sync before E2E timing starts
         ttnn.distributed_context_barrier()
 
+        # Send timing: measures just the send() operation
         send_start = time.perf_counter()
-        logger.info(f"Rank {rank}: Sending tensor {shape_str}...")
         dist_socket.send(src_tt)
         ttnn.synchronize_device(device)
         send_time = time.perf_counter() - send_start
 
-        timings[f"send_{shape_str}"] = send_time
+        timings[f"single_send_{shape_str}"] = send_time
         throughput = format_throughput(tensor_size_bytes, send_time)
         logger.info(
             f"Rank {rank}: Tensor {shape_str} sent! "
@@ -127,6 +209,70 @@ def run_sender(device: Any, socket_config: Any, rank: int) -> dict[str, float]:
             f"Throughput: {throughput}"
         )
 
+        # Barrier to wait for receiver to complete
+        ttnn.distributed_context_barrier()
+
+    # =========================================================================
+    # VARIANT 2: Layer-by-Layer Mode (61 individual transfers)
+    # =========================================================================
+    logger.info(f"Rank {rank}: ")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+    logger.info(f"Rank {rank}: === VARIANT 2: LAYER-BY-LAYER MODE (61 transfers) ===")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+
+    for seq_len in seq_lengths_lbl:
+        shape = get_kv_cache_shape(seq_len)
+        tensor_elements = shape[0] * shape[1] * shape[2] * shape[3]
+        tensor_size_bytes = tensor_elements * 1  # bfloat8_b = 1 byte per element
+        tensor_size_mb = tensor_size_bytes / (1024 * 1024)
+        total_size_mb = tensor_size_mb * NUM_LAYERS
+        shape_str = f"seq{seq_len}"
+
+        ttnn.distributed_context_barrier()
+
+        logger.info(
+            f"Rank {rank}: Starting {shape_str} - {NUM_LAYERS} layers x {tensor_size_mb:.2f} MB = {total_size_mb:.2f} MB total"
+        )
+
+        # Create the per-layer tensor once (reuse for all 61 sends)
+        src_torch = torch.ones(shape, dtype=torch.bfloat16) * test_value
+        src_tt = ttnn.from_torch(
+            src_torch,
+            device=device,
+            dtype=ttnn.bfloat8_b,
+            layout=ttnn.TILE_LAYOUT,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ShardTensorToMesh(device, dim=0),
+        )
+
+        # Barrier to sync before starting layer transfers
+        ttnn.distributed_context_barrier()
+
+        # Send 61 layers one by one
+        layer_times = []
+        total_start = time.perf_counter()
+        for layer_idx in range(NUM_LAYERS):
+            layer_start = time.perf_counter()
+            dist_socket.send(src_tt)
+            ttnn.synchronize_device(device)
+            layer_time = time.perf_counter() - layer_start
+            layer_times.append(layer_time)
+
+        total_time = time.perf_counter() - total_start
+
+        avg_layer_time = sum(layer_times) / len(layer_times)
+        total_bytes = tensor_size_bytes * NUM_LAYERS
+
+        timings[f"lbl_total_send_{shape_str}"] = total_time
+        timings[f"lbl_avg_layer_send_{shape_str}"] = avg_layer_time
+
+        logger.info(
+            f"Rank {rank}: {shape_str} sent {NUM_LAYERS} layers! "
+            f"Total: {total_time * 1000:.2f} ms ({format_throughput(total_bytes, total_time)}), "
+            f"Avg/layer: {avg_layer_time * 1000:.2f} ms ({format_throughput(tensor_size_bytes, avg_layer_time)})"
+        )
+
+        # Barrier to wait for receiver to complete
         ttnn.distributed_context_barrier()
 
     del dist_socket
@@ -152,60 +298,135 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
     # Barrier before transfer
     ttnn.distributed_context_barrier()
 
-    # Test tensor shapes (must match sender)
-    test_shapes = [
-        (1, 1, 32, 32),      # 2 KB
-        (1, 1, 128, 128),    # 32 KB
-        (1, 1, 512, 512),    # 512 KB
-        (1, 1, 1024, 1024),  # 2 MB
-    ]
+    # DeepSeek V3 KV cache parameters (must match sender)
+    NUM_LAYERS = 61
+    KVPE_DIM = 576
+    BLOCK_SIZE = 32
+
+    def get_kv_cache_shape(seq_len: int) -> tuple[int, int, int, int]:
+        """Get single-layer KV cache shape for DeepSeek V3."""
+        num_blocks = seq_len // BLOCK_SIZE
+        return (num_blocks, 1, BLOCK_SIZE, KVPE_DIM)
+
+    # Sequence lengths for each mode (must match sender)
+    seq_lengths_single = [1024, 4096, 8192, 32768]
+    seq_lengths_lbl = [1024, 4096, 8192, 32768, 163840]
 
     test_value = 42.0
     verification_passed = True
 
-    for shape in test_shapes:
-        tensor_elements = shape[0] * shape[1] * shape[2] * shape[3]
-        tensor_size_bytes = tensor_elements * 2  # bfloat16
-        shape_str = f"{shape[2]}x{shape[3]}"
+    # === WARMUP ===
+    warmup_shape = get_kv_cache_shape(1024)  # Use smallest DeepSeek shape
+    warmup_elements = warmup_shape[0] * warmup_shape[1] * warmup_shape[2] * warmup_shape[3]
+    warmup_size_bytes = warmup_elements * 1  # bfloat8_b = 1 byte
+    warmup_size_mb = warmup_size_bytes / (1024 * 1024)
+    logger.info(f"Rank {rank}: === WARMUP recv ({warmup_size_mb:.2f} MB) ===")
+
+    ttnn.distributed_context_barrier()
+
+    warmup_tt = ttnn.allocate_tensor_on_device(
+        ttnn.TensorSpec(list(warmup_shape), ttnn.DataType.BFLOAT8_B, ttnn.TILE_LAYOUT),
+        device,
+    )
+
+    # Barrier to sync before E2E timing starts
+    ttnn.distributed_context_barrier()
+
+    # E2E timing: from sync point (≈ when sender starts send) to recv completion
+    warmup_e2e_start = time.perf_counter()
+
+    # Recv timing: just the recv() operation
+    warmup_recv_start = time.perf_counter()
+    dist_socket.recv(warmup_tt)
+    ttnn.synchronize_device(device)
+    warmup_recv_time = time.perf_counter() - warmup_recv_start
+
+    warmup_e2e_time = time.perf_counter() - warmup_e2e_start
+
+    timings["warmup_recv"] = warmup_recv_time
+    timings["warmup_e2e"] = warmup_e2e_time
+    logger.info(
+        f"Rank {rank}: WARMUP recv complete! "
+        f"Recv: {warmup_recv_time * 1000:.2f} ms ({format_throughput(warmup_size_bytes, warmup_recv_time)}), "
+        f"E2E: {warmup_e2e_time * 1000:.2f} ms ({format_throughput(warmup_size_bytes, warmup_e2e_time)})"
+    )
+
+    # Barrier to sync with sender
+    ttnn.distributed_context_barrier()
+
+    logger.info(f"Rank {rank}: === END WARMUP ===")
+
+    # =========================================================================
+    # VARIANT 1: Single Tensor Mode (all 61 layers packed into one tensor)
+    # =========================================================================
+    logger.info(f"Rank {rank}: ")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+    logger.info(f"Rank {rank}: === VARIANT 1: SINGLE TENSOR MODE (61 layers packed) ===")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+
+    for seq_len in seq_lengths_single:
+        shape = get_kv_cache_shape(seq_len)
+        # Pack all 61 layers into one tensor: (num_blocks * 61, 1, block_size, kvpe_dim)
+        total_shape = (shape[0] * NUM_LAYERS, shape[1], shape[2], shape[3])
+        tensor_elements = total_shape[0] * total_shape[1] * total_shape[2] * total_shape[3]
+        tensor_size_bytes = tensor_elements * 1  # bfloat8_b = 1 byte
+        tensor_size_mb = tensor_size_bytes / (1024 * 1024)
+        shape_str = f"seq{seq_len}"
 
         ttnn.distributed_context_barrier()
 
-        logger.info(f"Rank {rank}: Allocating receive buffer {shape_str}")
+        logger.info(
+            f"Rank {rank}: Allocating receive buffer {shape_str} - {NUM_LAYERS} layers packed "
+            f"({tensor_size_mb:.2f} MB, shape={total_shape})"
+        )
         dst_tt = ttnn.allocate_tensor_on_device(
-            ttnn.TensorSpec(list(shape), ttnn.DataType.BFLOAT16, ttnn.TILE_LAYOUT),
+            ttnn.TensorSpec(list(total_shape), ttnn.DataType.BFLOAT8_B, ttnn.TILE_LAYOUT),
             device,
         )
 
+        logger.info(f"Rank {rank}: Ready to receive tensor {shape_str}...")
+
+        # Barrier to sync before E2E timing starts
         ttnn.distributed_context_barrier()
 
+        # E2E timing: from sync point (≈ when sender starts send) to recv completion
+        e2e_start = time.perf_counter()
+
+        # Recv timing: just the recv() operation
         recv_start = time.perf_counter()
-        logger.info(f"Rank {rank}: Receiving tensor {shape_str}...")
         dist_socket.recv(dst_tt)
         ttnn.synchronize_device(device)
         recv_time = time.perf_counter() - recv_start
 
-        timings[f"recv_{shape_str}"] = recv_time
-        throughput = format_throughput(tensor_size_bytes, recv_time)
+        e2e_time = time.perf_counter() - e2e_start
+
+        timings[f"single_recv_{shape_str}"] = recv_time
+        timings[f"single_e2e_{shape_str}"] = e2e_time
+
+        recv_throughput = format_throughput(tensor_size_bytes, recv_time)
+        e2e_throughput = format_throughput(tensor_size_bytes, e2e_time)
         logger.info(
             f"Rank {rank}: Tensor {shape_str} received! "
-            f"Time: {recv_time * 1000:.2f} ms, "
-            f"Throughput: {throughput}"
+            f"Recv: {recv_time * 1000:.2f} ms ({recv_throughput}), "
+            f"E2E: {e2e_time * 1000:.2f} ms ({e2e_throughput})"
         )
 
-        # Verify the smallest tensor
-        if shape == test_shapes[0]:
+        # Verify the smallest tensor (seq_len=1024) - AFTER E2E timing
+        if seq_len == seq_lengths_single[0]:
             dst_torch = ttnn.to_torch(
                 ttnn.from_device(dst_tt),
                 mesh_composer=ttnn.ConcatMeshToTensor(device, dim=-1),
             )
-            if dst_torch.shape[-1] > shape[-1]:
-                dst_torch = dst_torch[..., : shape[-1]]
+            # Trim if padded
+            if dst_torch.shape[-1] > total_shape[-1]:
+                dst_torch = dst_torch[..., : total_shape[-1]]
 
-            logger.info(f"Rank {rank}: Received values: {dst_torch[0, 0, 0, :4].tolist()}")
+            logger.info(f"Rank {rank}: Received tensor shape: {dst_torch.shape}")
+            logger.info(f"Rank {rank}: Received values (first 4): {dst_torch[0, 0, 0, :4].tolist()}")
 
-            expected = torch.ones(shape, dtype=torch.bfloat16) * test_value
+            expected = torch.ones(total_shape, dtype=torch.bfloat16) * test_value
             if torch.allclose(dst_torch.float(), expected.float(), rtol=1e-2):
-                logger.info(f"Rank {rank}: ✓ Tensor verification PASSED!")
+                logger.info(f"Rank {rank}: ✓ Single tensor verification PASSED!")
             else:
                 logger.error(
                     f"Rank {rank}: ✗ Tensor mismatch! Expected {test_value}, "
@@ -213,11 +434,154 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
                 )
                 verification_passed = False
 
+        # Barrier to sync with sender
+        ttnn.distributed_context_barrier()
+
+    # =========================================================================
+    # VARIANT 2: Layer-by-Layer Mode (61 individual transfers)
+    # =========================================================================
+    logger.info(f"Rank {rank}: ")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+    logger.info(f"Rank {rank}: === VARIANT 2: LAYER-BY-LAYER MODE (61 transfers) ===")
+    logger.info(f"Rank {rank}: {'=' * 60}")
+
+    for seq_len in seq_lengths_lbl:
+        shape = get_kv_cache_shape(seq_len)
+        tensor_elements = shape[0] * shape[1] * shape[2] * shape[3]
+        tensor_size_bytes = tensor_elements * 1  # bfloat8_b = 1 byte per element
+        tensor_size_mb = tensor_size_bytes / (1024 * 1024)
+        total_size_mb = tensor_size_mb * NUM_LAYERS
+        shape_str = f"seq{seq_len}"
+
+        ttnn.distributed_context_barrier()
+
+        logger.info(
+            f"Rank {rank}: Starting {shape_str} - {NUM_LAYERS} layers x {tensor_size_mb:.2f} MB = {total_size_mb:.2f} MB total"
+        )
+
+        # Barrier to sync before starting layer transfers
+        ttnn.distributed_context_barrier()
+
+        # Receive 61 layers one by one
+        layer_times = []
+        total_start = time.perf_counter()
+        for layer_idx in range(NUM_LAYERS):
+            # Allocate buffer for each layer
+            dst_tt = ttnn.allocate_tensor_on_device(
+                ttnn.TensorSpec(list(shape), ttnn.DataType.BFLOAT8_B, ttnn.TILE_LAYOUT),
+                device,
+            )
+
+            layer_start = time.perf_counter()
+            dist_socket.recv(dst_tt)
+            ttnn.synchronize_device(device)
+            layer_time = time.perf_counter() - layer_start
+            layer_times.append(layer_time)
+
+        total_time = time.perf_counter() - total_start
+
+        avg_layer_time = sum(layer_times) / len(layer_times)
+        total_bytes = tensor_size_bytes * NUM_LAYERS
+
+        timings[f"lbl_total_recv_{shape_str}"] = total_time
+        timings[f"lbl_avg_layer_recv_{shape_str}"] = avg_layer_time
+
+        logger.info(
+            f"Rank {rank}: {shape_str} received {NUM_LAYERS} layers! "
+            f"Total: {total_time * 1000:.2f} ms ({format_throughput(total_bytes, total_time)}), "
+            f"Avg/layer: {avg_layer_time * 1000:.2f} ms ({format_throughput(tensor_size_bytes, avg_layer_time)})"
+        )
+
+        # Barrier to sync with sender
         ttnn.distributed_context_barrier()
 
     del dist_socket
     timings["verification_passed"] = 1.0 if verification_passed else 0.0
     return timings
+
+
+def print_benchmark_summary(timings: dict[str, float]) -> None:
+    """Print a formatted benchmark summary table."""
+    # DeepSeek V3 parameters
+    NUM_LAYERS = 61
+    KVPE_DIM = 576
+    BLOCK_SIZE = 32
+
+    def get_total_mb(seq_len: int) -> float:
+        num_blocks = seq_len // BLOCK_SIZE
+        elements = num_blocks * 1 * BLOCK_SIZE * KVPE_DIM
+        per_layer_mb = elements / (1024 * 1024)  # bfloat8_b = 1 byte
+        return per_layer_mb * NUM_LAYERS
+
+    # Sequence lengths
+    seq_lengths_single = [1024, 4096, 8192, 32768]
+    seq_lengths_lbl = [1024, 4096, 8192, 32768, 163840]
+
+    # Build data for table
+    table_data = []
+    for seq_len in seq_lengths_lbl:
+        total_mb = get_total_mb(seq_len)
+
+        # Single tensor data (only for seq_lengths that were tested)
+        if seq_len in seq_lengths_single:
+            single_e2e_ms = timings.get(f"single_e2e_seq{seq_len}", 0) * 1000
+            single_gbs = (total_mb / 1024) / (single_e2e_ms / 1000) if single_e2e_ms > 0 else 0
+        else:
+            single_e2e_ms = None
+            single_gbs = None
+
+        # Layer-by-layer data
+        lbl_total_ms = timings.get(f"lbl_total_recv_seq{seq_len}", 0) * 1000
+        lbl_avg_layer_ms = timings.get(f"lbl_avg_layer_recv_seq{seq_len}", 0) * 1000
+        lbl_total_gbs = (total_mb / 1024) / (lbl_total_ms / 1000) if lbl_total_ms > 0 else 0
+        per_layer_mb = total_mb / NUM_LAYERS
+        lbl_layer_gbs = (per_layer_mb / 1024) / (lbl_avg_layer_ms / 1000) if lbl_avg_layer_ms > 0 else 0
+
+        table_data.append({
+            "seq_len": seq_len,
+            "total_mb": total_mb,
+            "single_ms": single_e2e_ms,
+            "lbl_total_ms": lbl_total_ms,
+            "lbl_layer_ms": lbl_avg_layer_ms,
+            "single_gbs": single_gbs,
+            "lbl_total_gbs": lbl_total_gbs,
+            "lbl_layer_gbs": lbl_layer_gbs,
+        })
+
+    # Print table
+    print("\n")
+    print("=" * 130)
+    print("DEEPSEEK V3 KV CACHE TRANSFER BENCHMARK (61 layers, kvpe_dim=576, bfloat8_b)")
+    print("=" * 130)
+    print(
+        f"{'Seq Len':<10} {'Total MB':<10} {'Single(ms)':<12} {'LBL Total(ms)':<14} {'LBL/Layer(ms)':<14} "
+        f"{'Single GB/s':<12} {'LBL Tot GB/s':<13} {'LBL Lyr GB/s':<12}"
+    )
+    print("-" * 130)
+
+    for row in table_data:
+        seq_len = row["seq_len"]
+        total_mb = row["total_mb"]
+        single_ms = row["single_ms"]
+        lbl_total_ms = row["lbl_total_ms"]
+        lbl_layer_ms = row["lbl_layer_ms"]
+        single_gbs = row["single_gbs"]
+        lbl_total_gbs = row["lbl_total_gbs"]
+        lbl_layer_gbs = row["lbl_layer_gbs"]
+
+        if single_ms is not None:
+            print(
+                f"{seq_len:<10} {total_mb:<10.1f} {single_ms:<12.1f} {lbl_total_ms:<14.1f} {lbl_layer_ms:<14.2f} "
+                f"{single_gbs:<12.2f} {lbl_total_gbs:<13.2f} {lbl_layer_gbs:<12.2f}"
+            )
+        else:
+            print(
+                f"{seq_len:<10} {total_mb:<10.1f} {'N/A':<12} {lbl_total_ms:<14.1f} {lbl_layer_ms:<14.2f} "
+                f"{'N/A':<12} {lbl_total_gbs:<13.2f} {lbl_layer_gbs:<12.2f}"
+            )
+
+    print("=" * 130)
+    print("")
 
 
 def main():
@@ -289,22 +653,46 @@ def main():
 
         # Print summary
         total_time = time.perf_counter() - test_start
+
+        # Print formatted benchmark table (only on receiver side - rank 1)
+        if rank == 1:
+            print_benchmark_summary(timings)
+
         logger.info("")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
         logger.info(f"Rank {rank} @ {hostname}: TEST SUMMARY")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
+
+        # Warmup
+        logger.info("--- WARMUP ---")
         for key, value in timings.items():
-            if key != "verification_passed":
+            if key.startswith("warmup"):
                 logger.info(f"  {key}: {value * 1000:.2f} ms")
-        logger.info(f"  Total time: {total_time * 1000:.2f} ms")
+
+        # Single Tensor Mode results
+        logger.info("")
+        logger.info("--- VARIANT 1: SINGLE TENSOR MODE (61 layers packed) ---")
+        for key, value in timings.items():
+            if key.startswith("single_"):
+                logger.info(f"  {key}: {value * 1000:.2f} ms")
+
+        # Layer-by-Layer Mode results
+        logger.info("")
+        logger.info("--- VARIANT 2: LAYER-BY-LAYER MODE (61 transfers) ---")
+        for key, value in timings.items():
+            if key.startswith("lbl_"):
+                logger.info(f"  {key}: {value * 1000:.2f} ms")
+
+        logger.info("")
+        logger.info(f"  Total test time: {total_time * 1000:.2f} ms")
 
         if rank == 1 and timings.get("verification_passed", 0) < 1:
             logger.error("TEST FAILED: Verification did not pass")
             sys.exit(1)
 
-        logger.info("=" * 60)
+        logger.info("=" * 70)
         logger.info(f"Rank {rank} @ {hostname}: TEST PASSED")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
 
     finally:
         logger.info(f"Rank {rank}: Closing mesh device")
