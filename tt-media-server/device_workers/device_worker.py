@@ -51,7 +51,7 @@ def device_worker(
         requests: list[object] = task_queue.get_many(
             max_messages_to_get=settings.max_batch_size, block=True
         )
-        if requests is None or requests.__len__() == 0:
+        if requests is None or len(requests) == 0:
             continue
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None
