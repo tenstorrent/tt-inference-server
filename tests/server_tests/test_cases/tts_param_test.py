@@ -36,7 +36,6 @@ headers = {
 class TTSParamTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/audio/speech"
-        print(self.targets)
 
         payloads = []
         payloads.append(default_payload)
@@ -46,8 +45,7 @@ class TTSParamTest(BaseTest):
 
         response_data_list = await self.test_concurrent_tts(payloads)
 
-        print(f"\nReceived {len(response_data_list)} responses")
-
+        logger.info(f"\nReceived {len(response_data_list)} responses")
         same_requests = (
             True if response_data_list[0] == response_data_list[1] else False
         )
@@ -139,13 +137,13 @@ class TTSParamTest(BaseTest):
                     avg_duration = sum(durations) / batch_size
 
                     print(
-                        f"\nTime taken for individual concurrent requests: {durations}"
+                        f"\n🚀 Time taken for individual concurrent requests: {durations}"
                     )
                     print(
-                        f"\nMax time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+                        f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
                     )
                     print(
-                        f"\nAvg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+                        f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
                     )
 
         return [

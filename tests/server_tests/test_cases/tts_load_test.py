@@ -102,12 +102,11 @@ class TTSLoadTest(BaseTest):
     def _extract_batch_metrics(self, batch_results: list) -> tuple[list, list]:
         """Extract duration and TTFT metrics from batch results."""
         if isinstance(batch_results[0], dict):
-            durations = [r["duration"] for r in batch_results]
-            ttft_values = [r["ttft_ms"] for r in batch_results]
-        else:
-            durations = batch_results
-            ttft_values = [0] * len(batch_results)
-        return durations, ttft_values
+            return (
+                [r["duration"] for r in batch_results],
+                [r["ttft_ms"] for r in batch_results],
+            )
+        return batch_results, [0] * len(batch_results)
 
     def _calculate_metrics(
         self, durations: list[float], ttft_values: list[float]
@@ -131,6 +130,10 @@ class TTSLoadTest(BaseTest):
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
+        logger.info(
+            f"Starting download of {count} samples from LibriTTS-R (split={split})"
+        )
+
         try:
             from datasets import load_dataset
             import itertools
@@ -140,7 +143,9 @@ class TTSLoadTest(BaseTest):
                 dataset = load_dataset(
                     "blabble-io/libritts_r", "clean", split=split, streaming=True
                 )
+                logger.debug("Dataset loaded successfully")
             except (TypeError, ValueError) as e:
+                logger.warning(f"Initial dataset load failed: {e}")
                 if (
                     "config" in str(e)
                     or "ParquetConfig" in str(e)
@@ -155,9 +160,13 @@ class TTSLoadTest(BaseTest):
                         "train.clean.360": "train",
                     }
                     standard_split = split_mapping.get(split, "test")
+                    logger.info(
+                        f"Retrying with mapped split: '{split}' -> '{standard_split}'"
+                    )
                     dataset = load_dataset(
                         "blabble-io/libritts_r", split=standard_split, streaming=True
                     )
+                    logger.debug("Dataset loaded with fallback split")
                 else:
                     raise
 

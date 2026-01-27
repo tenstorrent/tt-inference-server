@@ -1218,23 +1218,6 @@
                 "targets": {}
             },
             {
-                "name": "TTSQualityTest",
-                "module": "tests.server_tests.test_cases.tts_quality_test",
-                "enabled": false,
-                "description": "Test TTS quality using Word Error Rate (WER)",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {
-                    "sample_count": 10,
-                    "wer_threshold": 0.20
-                }
-            },
-            {
                 "name": "TTSIntegrationTest",
                 "module": "tests.server_tests.test_cases.tts_integration_test",
                 "enabled": true,
