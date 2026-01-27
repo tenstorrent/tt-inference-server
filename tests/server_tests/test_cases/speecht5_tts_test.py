@@ -29,10 +29,10 @@ class SpeechT5TTSTest(BaseTest):
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
-            logger.info("✓ Basic TTS test passed")
+            logger.info("✅ Basic TTS test passed")
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
-            logger.error(f"✗ Basic TTS test failed: {e}")
+            logger.error(f"❌ Basic TTS test failed: {e}")
 
         return results
 
