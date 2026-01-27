@@ -31,7 +31,7 @@ from workflows.run_workflows import run_workflows, WorkflowSetup
 from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
 from workflows.workflow_types import DeviceTypes, WorkflowType
-from workflows.workflow_venvs import create_local_setup_venv
+from workflows.workflow_venvs import setup_system_software_validation
 
 logger = logging.getLogger("run_log")
 
@@ -277,13 +277,14 @@ def validate_local_setup(model_spec, json_fpath):
     WorkflowSetup.bootstrap_uv()
 
     def _validate_system_software_deps():
+        
         # check, and enforce if necessary, system software dependency versions
-        venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
+        venv_python = setup_system_software_validation(WorkflowSetup.uv_exec)
 
         # fmt: off
         cmd = [
             str(venv_python),
-            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+            str(get_repo_root_path() / "workflows" / "run_system_software_validation.py"),
             "--model-spec-json", str(json_fpath),
         ]
         # fmt: on

@@ -442,31 +442,41 @@ def setup_benchmarks_aiperf(
     return True
 
 
-def create_local_setup_venv(
+def setup_system_software_validation(
+    venv_config: VenvConfig,
     uv_exec: Path,
 ) -> bool:
-    venv_config = VenvConfig(
-        venv_type=WorkflowVenvType.LOCAL_SETUP_VALIDATION,
-    )
-    logger.info("running setup_local_setup_validation() ...")
-    if not venv_config.venv_path.exists():
-        # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
-        # --managed-python: explicitly use uv managed python versions
-        # --python: set the python interpreter version in venv
-        # --allow-existing: if venv exists, check if it has correct package versions
-        # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
-        run_command(
-            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing",
-            logger=logger,
-        )
+    logger.info("running setup_system_software_validation() ...")
 
-    # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
-    # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi==3.0.34 tt-topology==1.2.15 packaging==25.0",
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} packaging==25.0",
         logger=logger,
     )
-    return venv_config.venv_python
+    return True
+
+def setup_tt_smi(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_tt_smi() ...")
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi==3.0.39",
+        logger=logger,
+    )
+    return True
+
+def setup_tt_topology(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    logger.info("running setup_tt_topology() ...")
+    run_command(
+        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-topology==1.2.16",
+        logger=logger,
+    )
+    return True
 
 
 def setup_tests_run_script(
