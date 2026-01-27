@@ -2,353 +2,120 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pathlib import Path
-
-import numpy as np
-import torch
 import ttnn
 from config.constants import SupportedModels
-from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from models.demos.bge_large_en.runner.performant_runner import BGEPerformantRunner
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from transformers import AutoTokenizer
 
-
-def model_location_generator(
-    model_version,
-    model_subdir="",
-    download_if_ci_v2=False,
-    ci_v2_timeout_in_s=300,
-    endpoint_prefix="http://large-file-cache.large-file-cache.svc.cluster.local//mldata/model_checkpoints/pytorch/huggingface",
-    download_dir_suffix="model_weights",
-):
-    """
-    Standalone model location generator that determines the appropriate file path
-    for a model based on available locations.
-
-    Checks locations in order:
-    1. Internal MLPerf path (/mnt/MLPerf/tt_dnn-models/...)
-    2. Falls back to model_version string (uses HuggingFace cache)
-
-    :param model_version: The version identifier of the model to locate (e.g., "BAAI/bge-large-en-v1.5")
-    :param model_subdir: Subdirectory within the model folder structure (default: empty string)
-    :param download_if_ci_v2: Not used in standalone version (kept for API compatibility)
-    :param ci_v2_timeout_in_s: Not used in standalone version (kept for API compatibility)
-    :param endpoint_prefix: Not used in standalone version (kept for API compatibility)
-    :param download_dir_suffix: Not used in standalone version (kept for API compatibility)
-    :return: Path to model files (MLPerf path or model_version string for HF cache)
-    """
-    model_folder = Path("tt_dnn-models") / model_subdir
-    internal_weka_path = Path("/mnt/MLPerf") / model_folder / model_version
-    has_internal_weka = internal_weka_path.exists()
-
-    if has_internal_weka:
-        return internal_weka_path
-    else:
-        # Return model_version string, which will use HuggingFace cache
-        # (HF_HOME or ~/.cache/huggingface by default)
-        return model_version
+from tt_model_runners.bge_large_en.model_location import model_location_generator
+from tt_model_runners.bge_large_en.result_processor import BGEResultProcessor
+from tt_model_runners.bge_large_en.tensor_utils import pad_tensor_to_shape
+from tt_model_runners.bge_large_en.tokenizer import BGETokenizer
 
 
 class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
+    """Runner for BGE Large EN embedding model using TTNN."""
+
+    MODEL_NAME = "BAAI/bge-large-en-v1.5"
+    MAX_MODEL_LEN = 384
+
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
-        self.tokenizer = None
+        self.tokenizer = BGETokenizer()
+        self.result_processor = BGEResultProcessor()
+        self.performant_runner = None
+        self.device_batch_size = None
+        self.sequence_length = None
 
     def get_pipeline_device_params(self):
+        """Get device parameters for the pipeline."""
         return {
             "num_command_queues": 2,
             "trace_region_size": self.settings.trace_region_size,
         }
 
     async def warmup(self) -> bool:
-        max_model_len = 384
+        """Warm up the model by initializing and running a test inference."""
+        self.logger.info(f"Device {self.device_id}: Starting BGE Large EN model warmup...")
+        
         max_num_seqs = 8 * self.settings.device_mesh_shape[1]
         self.device_batch_size = max_num_seqs
-        self.sequence_length = max_model_len
-        
-        # Load tokenizer for BGE model
-        self.tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5")
-        
+        self.sequence_length = self.MAX_MODEL_LEN
+
+        # Initialize the performant runner
         self.performant_runner = BGEPerformantRunner(
             device=self.ttnn_device,
             device_batch_size=max_num_seqs,
-            sequence_length=max_model_len,
+            sequence_length=self.sequence_length,
             act_dtype=ttnn.bfloat16,
             weight_dtype=ttnn.bfloat8_b,
             model_location_generator=model_location_generator,
-            model_name="BAAI/bge-large-en-v1.5",
+            model_name=self.MODEL_NAME,
         )
         self.performant_runner._capture_bge_trace_2cqs()
+        
+        # Run initial trace capture (without inputs)
         self.performant_runner.run()
-
+        
+        # Run actual warmup inference with sample data to compile kernels
+        self.logger.info(f"Device {self.device_id}: Running warmup inference with sample data...")
+        warmup_text = "This is a warmup sentence for the BGE embedding model."
+        warmup_inputs = [warmup_text]
+        
+        # Tokenize warmup input
+        tokenized = self.tokenizer.tokenize(warmup_inputs, self.sequence_length)
+        input_ids = tokenized["input_ids"]
+        
+        # Pad tensor to match expected shape
+        input_ids = pad_tensor_to_shape(
+            input_ids,
+            self.device_batch_size,
+            self.sequence_length,
+        )
+        
+        # Run warmup inference
+        self.performant_runner.run(input_ids)
+        ttnn.synchronize_device(self.ttnn_device)
+        
+        self.logger.info(f"Device {self.device_id}: BGE Large EN model warmup completed")
         return True
 
     def run(self, requests: list[TextEmbeddingRequest]):
+        """
+        Run inference on text embedding requests.
+
+        :param requests: List of text embedding requests
+        :return: List of embedding responses
+        """
+        self._validate_requests(requests)
+
+        text_inputs = [req.input for req in requests]
+        num_requests = len(requests)
+
+        # Tokenize inputs
+        tokenized = self.tokenizer.tokenize(text_inputs, self.sequence_length)
+        input_ids = tokenized["input_ids"]
+        token_counts = self.tokenizer.calculate_token_counts(tokenized, num_requests)
+
+        # Pad tensor to match expected shape
+        input_ids = pad_tensor_to_shape(
+            input_ids,
+            self.device_batch_size,
+            self.sequence_length,
+        )
+
+        # Run inference
+        result = self.performant_runner.run(input_ids)
+        ttnn.synchronize_device(self.ttnn_device)
+
+        # Process results
+        return self.result_processor.process(result, requests, token_counts)
+
+    def _validate_requests(self, requests: list[TextEmbeddingRequest]):
+        """Validate that all requests are for the correct model."""
         for req in requests:
             if req.model != SupportedModels.BGE_LARGE_EN_V1_5.value:
                 raise ValueError(
                     f"Model {req.model} is not supported by VLLMBGELargeENRunner"
                 )
-
-        # Extract text inputs from requests
-        text_inputs = [req.input for req in requests]
-        num_requests = len(requests)
-        
-        # Tokenize the text inputs - BGEPerformantRunner expects token IDs
-        if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5")
-        
-        # Tokenize all inputs and pad to the same length
-        tokenized = self.tokenizer(
-            text_inputs,
-            padding=True,
-            truncation=True,
-            max_length=self.sequence_length,
-            return_tensors="pt",
-        )
-        
-        # Convert token IDs to a tensor (BGEPerformantRunner expects token IDs as tensor)
-        input_ids = tokenized["input_ids"]  # Shape: [num_requests, sequence_length]
-        
-        # Calculate actual token counts (excluding padding) for each request
-        # Use attention mask if available, otherwise count non-zero tokens
-        if "attention_mask" in tokenized:
-            token_counts = tokenized["attention_mask"].sum(dim=1).tolist()
-        else:
-            # Count non-padding tokens (assuming padding token ID is 0)
-            # Get the pad token ID from the tokenizer
-            pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
-            token_counts = [
-                (input_ids[i] != pad_token_id).sum().item() 
-                for i in range(num_requests)
-            ]
-        
-        # Pad batch dimension to match device_batch_size expected by the runner
-        # The runner expects shape [device_batch_size, sequence_length]
-        if input_ids.shape[0] < self.device_batch_size:
-            # Pad with zeros (padding token ID, typically 0)
-            padding_size = self.device_batch_size - input_ids.shape[0]
-            padding = torch.zeros(
-                (padding_size, input_ids.shape[1]),
-                dtype=input_ids.dtype,
-                device=input_ids.device,
-            )
-            input_ids = torch.cat([input_ids, padding], dim=0)
-        elif input_ids.shape[0] > self.device_batch_size:
-            # Truncate if we have more requests than expected (shouldn't happen normally)
-            input_ids = input_ids[: self.device_batch_size]
-        
-        # Ensure sequence length matches
-        if input_ids.shape[1] != self.sequence_length:
-            if input_ids.shape[1] < self.sequence_length:
-                # Pad sequence dimension
-                padding_size = self.sequence_length - input_ids.shape[1]
-                padding = torch.zeros(
-                    (input_ids.shape[0], padding_size),
-                    dtype=input_ids.dtype,
-                    device=input_ids.device,
-                )
-                input_ids = torch.cat([input_ids, padding], dim=1)
-            else:
-                # Truncate sequence dimension
-                input_ids = input_ids[:, : self.sequence_length]
-        
-        result = self.performant_runner.run(input_ids)
-        ttnn.synchronize_device(self.ttnn_device)
-
-        # Handle different return types from performant_runner
-        return self._process_results(result, requests, token_counts)
-
-    def _ensure_list_format(self, embedding):
-        """
-        Convert embedding to a Python list format (JSON-serializable).
-
-        Handles:
-        - numpy arrays -> list
-        - torch tensors -> list
-        - TTNN tensors -> list
-        - Already lists -> return as-is
-
-        :param embedding: Embedding in various formats
-        :return: Python list of floats
-        """
-        # If already a list, return as-is
-        if isinstance(embedding, list):
-            return embedding
-
-        # Handle TTNN tensors
-        embedding_type_str = str(type(embedding))
-        is_ttnn_tensor = (
-            "ttnn" in embedding_type_str
-            and "Tensor" in embedding_type_str
-            and not isinstance(embedding, torch.Tensor)
-        )
-        if is_ttnn_tensor:
-            embedding = ttnn.to_torch(embedding)
-
-        # Handle PyTorch tensors
-        if isinstance(embedding, torch.Tensor):
-            embedding = embedding.cpu().numpy()
-
-        # Handle numpy arrays
-        if isinstance(embedding, np.ndarray):
-            return embedding.tolist()
-
-        # Try to convert to list if it's iterable
-        try:
-            return list(embedding)
-        except (TypeError, ValueError):
-            # If all else fails, return as-is (will cause error but at least we tried)
-            return embedding
-
-    def _process_results(
-        self,
-        result,
-        requests: list[TextEmbeddingRequest],
-        token_counts: list[int] = None,
-    ):
-        """
-        Process the result from performant_runner.run() and convert to EmbeddingResponse.
-
-        Handles different return types:
-        - List of objects with .outputs.embedding and .prompt_token_ids
-        - Tensor directly (embeddings)
-        - Other formats
-
-        :param result: Result from performant_runner.run()
-        :param requests: Original requests to match results
-        :param token_counts: List of token counts for each request (excluding padding)
-        :return: List of EmbeddingResponse objects
-        """
-        num_requests = len(requests)
-        
-        # Use provided token counts or default to 0
-        if token_counts is None:
-            token_counts = [0] * num_requests
-        else:
-            # Ensure we only use counts for actual requests (not padding)
-            token_counts = token_counts[:num_requests]
-
-        # If result is a ttnn.Tensor, convert to torch.Tensor first
-        # Check for TTNN tensor by type name (could be ttnn.Tensor or ttnn._ttnn.tensor.Tensor)
-        result_type_str = str(type(result))
-        is_ttnn_tensor = (
-            "ttnn" in result_type_str
-            and "Tensor" in result_type_str
-            and not isinstance(result, torch.Tensor)
-        )
-        if is_ttnn_tensor:
-            try:
-                result = ttnn.to_torch(result)
-            except Exception as e:
-                raise ValueError(f"Unable to convert ttnn.Tensor result: {e}") from e
-
-        # If result is a tensor, extract embeddings directly
-        if isinstance(result, torch.Tensor):
-            # Extract only the actual request results (excluding padding)
-            embeddings = result[:num_requests]
-            # Convert to list of Python lists (JSON-serializable)
-            if embeddings.dim() == 2:
-                # Shape: [batch_size, embedding_dim]
-                embedding_list = [emb.cpu().numpy().tolist() for emb in embeddings]
-            else:
-                # Handle other tensor shapes
-                embedding_list = [emb.cpu().numpy().tolist() for emb in embeddings]
-
-            return [
-                EmbeddingResponse(
-                    embedding=emb,
-                    total_tokens=token_count,
-                )
-                for emb, token_count in zip(embedding_list, token_counts)
-            ]
-
-        # If result is a list, try to extract from objects
-        if isinstance(result, list):
-            responses = []
-            for i, output in enumerate(result[:num_requests]):
-                try:
-                    # Use token count from parameter if available, otherwise try to get from output
-                    total_tokens = token_counts[i] if i < len(token_counts) else 0
-                    
-                    # Try to access .outputs.embedding structure
-                    if hasattr(output, "outputs") and hasattr(
-                        output.outputs, "embedding"
-                    ):
-                        embedding = output.outputs.embedding
-                        embedding = self._ensure_list_format(embedding)
-                        # Prefer token count from output if available, otherwise use provided count
-                        if hasattr(output, "prompt_token_ids"):
-                            total_tokens = len(output.prompt_token_ids)
-                        responses.append(
-                            EmbeddingResponse(
-                                embedding=embedding, total_tokens=total_tokens
-                            )
-                        )
-                    elif hasattr(output, "embedding"):
-                        # Direct embedding attribute
-                        embedding = output.embedding
-                        embedding = self._ensure_list_format(embedding)
-                        responses.append(
-                            EmbeddingResponse(
-                                embedding=embedding, total_tokens=total_tokens
-                            )
-                        )
-                    else:
-                        # If output is a tensor or array, use it directly
-                        # Handle TTNN tensors
-                        output_type_str = str(type(output))
-                        is_ttnn_tensor = (
-                            "ttnn" in output_type_str
-                            and "Tensor" in output_type_str
-                            and not isinstance(output, torch.Tensor)
-                        )
-                        if is_ttnn_tensor:
-                            output = ttnn.to_torch(output)
-                        if isinstance(output, torch.Tensor):
-                            embedding = output.cpu().numpy().tolist()
-                        else:
-                            embedding = self._ensure_list_format(output)
-                        responses.append(
-                            EmbeddingResponse(
-                                embedding=embedding, total_tokens=total_tokens
-                            )
-                        )
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to extract embedding from result item {i}: {e}"
-                    ) from e
-
-            return responses
-
-        # If result is a single object, try to extract from it
-        try:
-            if hasattr(result, "outputs") and hasattr(result.outputs, "embedding"):
-                embedding = result.outputs.embedding
-                embedding = self._ensure_list_format(embedding)
-                # Use token count from parameter if available, otherwise try to get from output
-                total_tokens = token_counts[0] if token_counts and len(token_counts) > 0 else 0
-                if hasattr(result, "prompt_token_ids"):
-                    total_tokens = len(result.prompt_token_ids)
-                return [
-                    EmbeddingResponse(embedding=embedding, total_tokens=total_tokens)
-                ]
-        except Exception:
-            pass
-
-        # Final fallback: try to convert if it looks like a tensor (has shape attribute)
-        if hasattr(result, "shape") and not isinstance(result, torch.Tensor):
-            try:
-                result = ttnn.to_torch(result)
-                # Recursively process the converted result
-                return self._process_results(result, requests)
-            except Exception:
-                pass
-
-        # If we get here, we couldn't process the result
-        raise ValueError(
-            f"Unable to process result of type {type(result)}. "
-            f"Expected tensor, list, or object with .outputs.embedding attribute."
-        )
