@@ -562,6 +562,18 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,
         setup_function=setup_benchmarks_genai_perf,
     ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION,
+        setup_function=setup_system_software_validation,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TT_SMI,
+        setup_function=setup_tt_smi,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TT_TOPOLOGY,
+        setup_function=setup_tt_topology,
+    ),
 ]
 
 VENV_CONFIGS = map_configs_by_attr(config_list=_venv_config_list, attr="venv_type")
