@@ -12,6 +12,7 @@ from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from models.demos.bge_large_en.runner.performant_runner import BGEPerformantRunner
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from transformers import AutoTokenizer
 
 
 def model_location_generator(
@@ -53,6 +54,7 @@ def model_location_generator(
 class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
+        self.tokenizer = None
 
     def get_pipeline_device_params(self):
         return {
@@ -65,6 +67,10 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
         max_num_seqs = 8 * self.settings.device_mesh_shape[1]
         self.device_batch_size = max_num_seqs
         self.sequence_length = max_model_len
+        
+        # Load tokenizer for BGE model
+        self.tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5")
+        
         self.performant_runner = BGEPerformantRunner(
             device=self.ttnn_device,
             device_batch_size=max_num_seqs,
@@ -86,11 +92,74 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
                     f"Model {req.model} is not supported by VLLMBGELargeENRunner"
                 )
 
-        result = self.performant_runner.run()
+        # Extract text inputs from requests
+        text_inputs = [req.input for req in requests]
+        num_requests = len(requests)
+        
+        # Tokenize the text inputs - BGEPerformantRunner expects token IDs
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-large-en-v1.5")
+        
+        # Tokenize all inputs and pad to the same length
+        tokenized = self.tokenizer(
+            text_inputs,
+            padding=True,
+            truncation=True,
+            max_length=self.sequence_length,
+            return_tensors="pt",
+        )
+        
+        # Convert token IDs to a tensor (BGEPerformantRunner expects token IDs as tensor)
+        input_ids = tokenized["input_ids"]  # Shape: [num_requests, sequence_length]
+        
+        # Calculate actual token counts (excluding padding) for each request
+        # Use attention mask if available, otherwise count non-zero tokens
+        if "attention_mask" in tokenized:
+            token_counts = tokenized["attention_mask"].sum(dim=1).tolist()
+        else:
+            # Count non-padding tokens (assuming padding token ID is 0)
+            # Get the pad token ID from the tokenizer
+            pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+            token_counts = [
+                (input_ids[i] != pad_token_id).sum().item() 
+                for i in range(num_requests)
+            ]
+        
+        # Pad batch dimension to match device_batch_size expected by the runner
+        # The runner expects shape [device_batch_size, sequence_length]
+        if input_ids.shape[0] < self.device_batch_size:
+            # Pad with zeros (padding token ID, typically 0)
+            padding_size = self.device_batch_size - input_ids.shape[0]
+            padding = torch.zeros(
+                (padding_size, input_ids.shape[1]),
+                dtype=input_ids.dtype,
+                device=input_ids.device,
+            )
+            input_ids = torch.cat([input_ids, padding], dim=0)
+        elif input_ids.shape[0] > self.device_batch_size:
+            # Truncate if we have more requests than expected (shouldn't happen normally)
+            input_ids = input_ids[: self.device_batch_size]
+        
+        # Ensure sequence length matches
+        if input_ids.shape[1] != self.sequence_length:
+            if input_ids.shape[1] < self.sequence_length:
+                # Pad sequence dimension
+                padding_size = self.sequence_length - input_ids.shape[1]
+                padding = torch.zeros(
+                    (input_ids.shape[0], padding_size),
+                    dtype=input_ids.dtype,
+                    device=input_ids.device,
+                )
+                input_ids = torch.cat([input_ids, padding], dim=1)
+            else:
+                # Truncate sequence dimension
+                input_ids = input_ids[:, : self.sequence_length]
+        
+        result = self.performant_runner.run(input_ids)
         ttnn.synchronize_device(self.ttnn_device)
 
         # Handle different return types from performant_runner
-        return self._process_results(result, requests)
+        return self._process_results(result, requests, token_counts)
 
     def _ensure_list_format(self, embedding):
         """
@@ -138,6 +207,7 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
         self,
         result,
         requests: list[TextEmbeddingRequest],
+        token_counts: list[int] = None,
     ):
         """
         Process the result from performant_runner.run() and convert to EmbeddingResponse.
@@ -149,9 +219,17 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
 
         :param result: Result from performant_runner.run()
         :param requests: Original requests to match results
+        :param token_counts: List of token counts for each request (excluding padding)
         :return: List of EmbeddingResponse objects
         """
         num_requests = len(requests)
+        
+        # Use provided token counts or default to 0
+        if token_counts is None:
+            token_counts = [0] * num_requests
+        else:
+            # Ensure we only use counts for actual requests (not padding)
+            token_counts = token_counts[:num_requests]
 
         # If result is a ttnn.Tensor, convert to torch.Tensor first
         # Check for TTNN tensor by type name (could be ttnn.Tensor or ttnn._ttnn.tensor.Tensor)
@@ -179,9 +257,6 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
                 # Handle other tensor shapes
                 embedding_list = [emb.cpu().numpy().tolist() for emb in embeddings]
 
-            # Use 0 as default token count since we don't have tokenization
-            token_counts = [0] * len(requests)
-
             return [
                 EmbeddingResponse(
                     embedding=emb,
@@ -195,16 +270,18 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
             responses = []
             for i, output in enumerate(result[:num_requests]):
                 try:
+                    # Use token count from parameter if available, otherwise try to get from output
+                    total_tokens = token_counts[i] if i < len(token_counts) else 0
+                    
                     # Try to access .outputs.embedding structure
                     if hasattr(output, "outputs") and hasattr(
                         output.outputs, "embedding"
                     ):
                         embedding = output.outputs.embedding
                         embedding = self._ensure_list_format(embedding)
+                        # Prefer token count from output if available, otherwise use provided count
                         if hasattr(output, "prompt_token_ids"):
                             total_tokens = len(output.prompt_token_ids)
-                        else:
-                            total_tokens = 0
                         responses.append(
                             EmbeddingResponse(
                                 embedding=embedding, total_tokens=total_tokens
@@ -214,7 +291,6 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
                         # Direct embedding attribute
                         embedding = output.embedding
                         embedding = self._ensure_list_format(embedding)
-                        total_tokens = 0
                         responses.append(
                             EmbeddingResponse(
                                 embedding=embedding, total_tokens=total_tokens
@@ -235,7 +311,6 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
                             embedding = output.cpu().numpy().tolist()
                         else:
                             embedding = self._ensure_list_format(output)
-                        total_tokens = 0
                         responses.append(
                             EmbeddingResponse(
                                 embedding=embedding, total_tokens=total_tokens
@@ -253,10 +328,10 @@ class VLLMBGELargeENRunner(BaseMetalDeviceRunner):
             if hasattr(result, "outputs") and hasattr(result.outputs, "embedding"):
                 embedding = result.outputs.embedding
                 embedding = self._ensure_list_format(embedding)
+                # Use token count from parameter if available, otherwise try to get from output
+                total_tokens = token_counts[0] if token_counts and len(token_counts) > 0 else 0
                 if hasattr(result, "prompt_token_ids"):
                     total_tokens = len(result.prompt_token_ids)
-                else:
-                    total_tokens = 0
                 return [
                     EmbeddingResponse(embedding=embedding, total_tokens=total_tokens)
                 ]

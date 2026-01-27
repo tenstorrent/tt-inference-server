@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "(0)"
+
+    device_ids: str = "(1)"
     is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "0"
+    default_throttle_level: str = ""
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000

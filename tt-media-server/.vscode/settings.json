@@ -21,7 +21,7 @@
     "python.testing.cwd": "${workspaceFolder}",
     "python.defaultInterpreterPath": "/opt/venv/bin/python",
     "python.testing.autoTestDiscoverOnSaveEnabled": true,
-    "python.languageServer": "Pylance",
+    "python.languageServer": "None",
     "python-envs.pythonProjects": [],
     "python.envFile": "${workspaceFolder}/.env.test"
 }
