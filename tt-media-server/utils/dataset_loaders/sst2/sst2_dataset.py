@@ -6,31 +6,26 @@ from transformers import AutoTokenizer, DataCollatorForSeq2Seq
 from torch.utils.data import DataLoader
 import torch
 
-from blacksmith.datasets.torch.sst2.sst2_utils import (
+from utils.dataset_loaders.sst2.sst2_utils import (
     PROMPT_TEMPLATE,
     RESPONSE_TEMPLATE,
     LBL2VALUE,
     DATASET_BENCHMARK,
     DATASET_NAME,
 )
-from blacksmith.tools.templates.configs import TrainingConfig
-from blacksmith.datasets.torch.torch_dataset import BaseDataset
+from utils.dataset_loaders.base_dataset import BaseDataset
+from config.settings import get_settings
 
 
 class SSTDataset(BaseDataset):
-    def __init__(self, config: TrainingConfig, split: str = "train", collate_fn=None):
-        """
-        Args:
-            config: TrainingConfig
-            split: Dataset split to use ("train", "validation")
-            collate_fn: Collate function to use for the dataset
-        """
-        self.config = config
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, padding_side="right", use_fast=True)
+    def __init__(self, model_name: str, split: str = "train", collate_fn=None):
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="right", use_fast=True)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.required_columns = ["input_ids", "attention_mask", "labels"]
         self.split = split
         self.collate_fn = collate_fn
+        self.max_length = get_settings().dataset_max_length
 
         self._prepare_dataset()
 
@@ -62,7 +57,7 @@ class SSTDataset(BaseDataset):
         raw_dataset = load_dataset(DATASET_BENCHMARK, DATASET_NAME, split=self.split)
 
         tokenized_dataset = raw_dataset.map(self._tokenize_function)
-        self.full_dataset = tokenized_dataset.filter(lambda example: example["len"] <= self.config.max_length)
+        self.full_dataset = tokenized_dataset.filter(lambda example: example["len"] <= self.max_length)
         self.dataset = self.full_dataset.remove_columns(
             [col for col in self.full_dataset.column_names if col not in self.required_columns]
         )
@@ -79,9 +74,9 @@ class SSTDataset(BaseDataset):
             "labels": sample["labels"],
         }
 
-    def get_dataloader(self) -> DataLoader:
+    def get_dataloader(self, batch_size: int) -> DataLoader:
         data_collator = DataCollatorForSeq2Seq(
-            tokenizer=self.tokenizer, padding="max_length", max_length=self.config.max_length
+            tokenizer=self.tokenizer, padding="max_length", max_length=self.max_length
         )
 
         if self.collate_fn is not None:
@@ -91,7 +86,7 @@ class SSTDataset(BaseDataset):
 
         return DataLoader(
             self.dataset,
-            batch_size=self.config.batch_size,
+            batch_size=batch_size,
             collate_fn=total_collate_fn,
             shuffle=self.split == "train",
             drop_last=True,

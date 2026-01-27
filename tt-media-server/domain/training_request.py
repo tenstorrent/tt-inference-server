@@ -10,8 +10,6 @@ from pydantic import model_validator
 from config.settings import settings
 
 class TrainingRequest(BaseRequest):
-    dataset: Optional[str] = None
-
     batch_size: int = 4
     learning_rate: float = 6e-5
     num_epochs: int = 1
@@ -26,4 +24,3 @@ class TrainingRequest(BaseRequest):
     lora_task_type: str = "CAUSAL_LM"
 
     ignored_index: -100
-

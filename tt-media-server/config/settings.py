@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     # Training settings
     dataset_loader: str = DatasetLoaders.SST2.value
+    dataset_max_length: int = 32
 
     # Queue and batch settings
     max_queue_size: int = 5000
