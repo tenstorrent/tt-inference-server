@@ -391,18 +391,21 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -415,6 +418,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
