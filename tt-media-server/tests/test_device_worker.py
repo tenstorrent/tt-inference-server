@@ -72,12 +72,13 @@ from device_workers.device_worker import device_worker
 
 class WorkerExitException(Exception):
     """Exception used to exit the device_worker loop in tests."""
+
     pass
 
 
 def create_get_many_side_effect(return_values):
     """Create a side_effect function that returns values then raises WorkerExitException.
-    
+
     The device_worker runs in a `while True` loop that only does `continue` on None/empty,
     it never breaks. So we need to raise an exception to exit the loop in tests.
     """
@@ -198,9 +199,7 @@ class TestDeviceWorker:
         mock_timer.return_value = mock_timer_instance
 
         # First call returns requests, then raises WorkerExitException to exit loop
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [mock_requests]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([mock_requests])
 
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
@@ -254,9 +253,7 @@ class TestDeviceWorker:
         mock_timer_instance = Mock()
         mock_timer.return_value = mock_timer_instance
 
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [mock_requests]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([mock_requests])
 
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
@@ -299,9 +296,7 @@ class TestDeviceWorker:
         mock_timer_instance = Mock()
         mock_timer.return_value = mock_timer_instance
 
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [mock_requests]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([mock_requests])
 
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
@@ -408,9 +403,7 @@ class TestDeviceWorker:
         request = MockImageGenerateRequest("task_1")
 
         # First call returns empty list, second returns valid request, then raises to exit
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [[], [request]]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([[], [request]])
 
         fresh_device_runner = Mock()
         fresh_device_runner.set_device.return_value = Mock()
@@ -450,9 +443,7 @@ class TestDeviceWorkerIntegration:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         mock_request = MockImageGenerateRequest("timeout_task", "test prompt", 30)
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [[mock_request]]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([[mock_request]])
 
         mock_timer_instance = Mock()
         mock_timer.return_value = mock_timer_instance
@@ -493,9 +484,7 @@ class TestDeviceWorkerIntegration:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         mock_request = MockImageGenerateRequest("timeout_task", "test prompt", 30)
-        task_queue.get_many.side_effect = create_get_many_side_effect(
-            [[mock_request]]
-        )
+        task_queue.get_many.side_effect = create_get_many_side_effect([[mock_request]])
 
         mock_timer_instance = Mock()
         mock_timer_instance.callback = None
