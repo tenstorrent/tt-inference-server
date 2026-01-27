@@ -21,7 +21,7 @@ For testing tensor transfer between two separate hosts:
 
 3. On ONE host, run with tt-run:
    ```bash
-   cd /data/ztorlak/tt-metal && source python_env/bin/activate
+   source /data/ztorlak/tt-metal/python_env/bin/activate
    export TT_METAL_HOME=/data/ztorlak/tt-metal
    export PYTHONPATH=/data/ztorlak/tt-metal/ttnn:/data/ztorlak/tt-inference-server/tt-media-server:$PYTHONPATH
 
