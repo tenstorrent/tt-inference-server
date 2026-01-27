@@ -947,7 +947,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=128,
                 max_context=128*1024,
                 default_impl=True,
                 env_vars={
@@ -976,7 +976,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=128,
                 max_context=128*1024,
                 default_impl=True,
                 env_vars={
