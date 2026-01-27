@@ -320,6 +320,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "tps_prefill_throughput": tps_prefill_throughput,
             "mean_e2el_ms": data.get("mean_e2el_ms"),
             "request_throughput": data.get("request_throughput"),
+            "total_token_throughput": data.get("total_token_throughput"),
             "total_input_tokens": data.get("total_input_tokens"),
             "total_output_tokens": data.get("total_output_tokens"),
             "num_prompts": data.get("num_prompts", ""),
@@ -475,6 +476,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "req_tput", 0.0
             ),
         }
+        return format_metrics(metrics)
 
     if params.get("task_type") == "video":
         # For VIDEO benchmarks, extract data from JSON content
@@ -621,7 +623,6 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
-        ("total_token_throughput", "Total Token Throughput (tokens/duration)"),
     ]
 
     display_dict = {}
