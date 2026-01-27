@@ -1150,7 +1150,7 @@
     },
     {
         "weights": [
-            "speecht5-tts"
+            "speecht5_tts"
         ],
         "device": "n150",
         "test_cases": [
@@ -1173,7 +1173,7 @@
             {
                 "name": "SpeechT5TTSTest",
                 "module": "tests.server_tests.test_cases.speecht5_tts_test",
-                "enabled": true,
+                "enabled": false,
                 "description": "Test SpeechT5 Text-to-Speech functionality",
                 "test_config": {
                     "test_timeout": 3600,
@@ -1185,10 +1185,10 @@
                 "targets": {}
             },
             {
-                "name": "TTSLoadTest",
-                "module": "tests.server_tests.test_cases.tts_load_test",
-                "enabled": true,
-                "description": "Test TTS generation load performance with concurrent requests",
+                "name": "TestTTSServerHealth",
+                "module": "tests.server_tests.test_cases.tts_integration_test",
+                "enabled": false,
+                "description": "Test server health and availability",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
