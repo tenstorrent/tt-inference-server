@@ -2540,6 +2540,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.VIDEO:
         file_name_pattern = generate_video_report_data(model_spec, eval_run_id)
         file_path_pattern = (
