@@ -20,12 +20,17 @@ class HuggingFaceUtils:
         model_name = settings.model_weights_path
         try:
             # get device runner instance and try to load weights
-            pipeline_weights_loaded = get_device_runner("-1").load_weights()
-
-            # if weights could be loaded from pipeline stop here
-            # otherwise continue for models that don't use pipeline object
-            if pipeline_weights_loaded:
-                return
+            try:
+                pipeline_weights_loaded = get_device_runner("-1").load_weights()
+                # if weights could be loaded from pipeline stop here
+                # otherwise continue for models that don't use pipeline object
+                if pipeline_weights_loaded:
+                    return
+            except (RuntimeError, ImportError) as e:
+                # Failed to create device runner (e.g., xformers/CUDA issues)
+                # Continue with HF download logic
+                self.logger.warning(f"Could not initialize device runner: {e}")
+                pass
 
             if not model_name:
                 self.logger.warning(
