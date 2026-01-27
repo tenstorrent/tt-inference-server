@@ -52,7 +52,7 @@ class TTQueue(Queue):
 
         # Get first item (blocking)
         try:
-            first_item = super.get(block=block, timeout=timeout)
+            first_item = super().get(block=block, timeout=timeout)
             if first_item is None:
                 return [None]
             batch.append(first_item)

@@ -19,7 +19,6 @@ mock_settings.device_ids = "(0),(1)"
 mock_settings.max_queue_size = 10
 mock_settings.max_batch_size = 1
 mock_settings.use_queue_per_worker = True
-mock_settings.use_memory_queue = False
 mock_settings.use_dynamic_batcher = True
 mock_settings.new_device_delay_seconds = 0.1
 mock_settings.max_worker_restart_count = 3
