@@ -955,7 +955,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=128,
-                max_context=128*1024,
+                max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
@@ -984,7 +984,7 @@ spec_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=128,
-                max_context=128*1024,
+                max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
