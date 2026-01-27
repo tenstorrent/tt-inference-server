@@ -947,7 +947,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=128,
                 max_context=128*1024,
                 default_impl=True,
                 env_vars={
@@ -958,7 +958,6 @@ spec_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -976,7 +975,7 @@ spec_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=128,
                 max_context=128*1024,
                 default_impl=True,
                 env_vars={
@@ -988,7 +987,6 @@ spec_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
