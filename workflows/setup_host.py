@@ -23,7 +23,6 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.bootstrap_uv import bootstrap_uv, UV_EXEC
 from workflows.model_spec import (
     ModelSpec,
     ModelSource,
