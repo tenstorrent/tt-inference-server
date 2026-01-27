@@ -9,6 +9,10 @@ from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
+# Default max text length (SpeechT5 limitation)
+# Can be overridden via settings.max_tts_text_length
+DEFAULT_MAX_TTS_TEXT_LENGTH = 600
+
 
 class TextToSpeechRequest(BaseRequest):
     # Required fields
@@ -23,6 +27,19 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("Text must be a string")
         if not text.strip():
             raise ValueError("Text cannot be empty")
+
+        # Lazy import to avoid circular import and import-time settings initialization
+        from config.settings import get_settings
+
+        max_length = get_settings().max_tts_text_length
+        # Fallback to default if settings returns a Mock (test isolation issue)
+        if not isinstance(max_length, int):
+            max_length = DEFAULT_MAX_TTS_TEXT_LENGTH
+        if len(text) > max_length:
+            raise ValueError(
+                f"Text exceeds maximum length of {max_length} characters. "
+                f"Received {len(text)} characters."
+            )
         return text
 
     # Optional fields for speaker embedding
