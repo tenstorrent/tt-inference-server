@@ -454,6 +454,7 @@ def setup_system_software_validation(
     )
     return True
 
+
 def setup_tt_smi(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -465,6 +466,7 @@ def setup_tt_smi(
         logger=logger,
     )
     return True
+
 
 def setup_tt_topology(
     venv_config: VenvConfig,

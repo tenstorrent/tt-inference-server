@@ -201,9 +201,9 @@ def main():
     filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
 
     unique_board_types = set(filtered_board_types)
-    assert len(unique_board_types) == 1, (
-        f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
-    )
+    assert (
+        len(unique_board_types) == 1
+    ), f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
     unique_board_type = unique_board_types.pop()
 
     # parse system topology if board type requires it
