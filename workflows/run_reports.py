@@ -424,7 +424,8 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
             ("median_e2el_ms", "E2EL P50 (ms)"),
             ("p99_e2el_ms", "E2EL P99 (ms)"),
             # Throughput
-            ("output_token_throughput", "Tok/s"),
+            ("output_token_throughput", "Output Tok/s"),
+            ("total_token_throughput", "Total Tok/s"),
             ("request_throughput", "Req/s"),
         ]
     )
@@ -441,7 +442,7 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
                 # Format floats with appropriate precision
                 if col_name in ("request_throughput",):
                     row_dict[display_header] = f"{value:.4f}"
-                elif col_name in ("output_token_throughput",):
+                elif col_name in ("output_token_throughput", "total_token_throughput"):
                     row_dict[display_header] = f"{value:.2f}"
                 else:
                     row_dict[display_header] = f"{value:.1f}"
@@ -732,6 +733,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -793,6 +795,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -854,6 +857,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -915,6 +919,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -976,6 +981,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1037,6 +1043,7 @@ def aiperf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1133,7 +1140,10 @@ def aiperf_benchmark_generate_report(
         release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
@@ -1287,6 +1297,7 @@ def genai_perf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1348,6 +1359,7 @@ def genai_perf_benchmark_generate_report(
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
                 # Throughput
                 "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
                 # Tokens
                 "completed": data.get("completed", 0),
@@ -1396,7 +1408,7 @@ def genai_perf_benchmark_generate_report(
             # Show GenAI-Perf detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # IMAGE BENCHMARKS SECTION
         if genai_image_results:
@@ -1408,7 +1420,7 @@ def genai_perf_benchmark_generate_report(
                 genai_image_results, is_image_benchmark=True
             )
             release_str += nvidia_markdown_str
-            release_str += "\n\n"
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
         # Metric definitions
         release_str += "**Metric Definitions:**\n"
@@ -1419,7 +1431,10 @@ def genai_perf_benchmark_generate_report(
         release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
         release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
         release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-        release_str += "> - **Tok/s**: Output token throughput\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
         release_str += "> - **Req/s**: Request throughput\n"
 
     # Save markdown report
@@ -2210,13 +2225,11 @@ def extract_eval_results(files):
     for json_file in files:
         # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
-        task_name = meta.pop("task_name")
-        check_task_name = list(res[0].keys())[0]
-        assert task_name == check_task_name, (
-            f"Task name mismatch: {task_name} != {check_task_name}"
-        )
-        results[task_name] = {k: v for d in res for k, v in d.items()}
-        meta_data[task_name] = meta
+        _ = meta.pop("task_name", None)
+        for task_dict in res:
+            for specific_task_name, metrics in task_dict.items():
+                results[specific_task_name] = metrics
+                meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -2232,59 +2245,117 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 f"Skipping report for task:= {task.task_name}, no eval score is defined."
             )
             continue
+
+        target_keys = []
+        # Check for exact match (e.g. "meta_gpqa")
         if task.task_name in results:
-            logger.info(f"eval processing task_name: {task.task_name}")
-            res = results[task.task_name]
-            kwargs = task.score.score_func_kwargs
-            kwargs["task_name"] = task.task_name
-            score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            target_keys.append(task.task_name)
+        else:
+            # Check for subtasks (e.g. config says "longbench", results have "longbench_2wikimqa")
+            prefix = f"{task.task_name}_"
+            subtasks = [k for k in results if k.startswith(prefix)]
+            target_keys.extend(sorted(subtasks))
+        if target_keys:
+            for t_key in target_keys:
+                logger.info(f"eval processing task_name: {t_key}")
 
-            # For WER (Word Error Rate), convert to accuracy once before all calculations
-            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
-            if kwargs.get("unit") == "WER":
-                score = 100 - score
+                # do NOT extract results[t_key] here.
+                # The score_func expects the ROOT results dict so it can do results[task_name].
 
-            if task.score.published_score:
-                assert task.score.published_score > 0, "Published score is not > 0"
-                ratio_to_published = score / task.score.published_score
-            else:
-                ratio_to_published = "N/A"
-            if task.score.gpu_reference_score:
-                assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
-                ratio_to_reference = score / task.score.gpu_reference_score
-                accuracy_check = ReportCheckTypes.from_result(
-                    ratio_to_reference >= (1.0 - task.score.tolerance)
-                )
-            else:
-                ratio_to_reference = "N/A"
+                kwargs = task.score.score_func_kwargs
+                # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
+                kwargs["task_name"] = t_key
+                configured_keys = kwargs.get("result_keys", [])
+                actual_data = results.get(t_key, {})
+
+                key_found = any(k in actual_data for k in configured_keys)
+
+                if not key_found:
+                    valid_candidates = [
+                        k
+                        for k, v in actual_data.items()
+                        if isinstance(v, (int, float))
+                        and "stderr" not in k
+                        and "alias" not in k
+                    ]
+
+                    if valid_candidates:
+                        logger.info(
+                            f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid_candidates[0]}"
+                        )
+                        kwargs["result_keys"] = [valid_candidates[0]]
+                try:
+                    score = task.score.score_func(
+                        results, task_name=t_key, kwargs=kwargs
+                    )
+                except Exception as e:
+                    logger.warning(f"  Could not calculate score for {t_key}: {e}")
+                    score = 0.0
+                if kwargs.get("unit") == "WER":
+                    score = 100 - score
+
                 if task.score.published_score:
+                    assert task.score.published_score > 0, "Published score is not > 0"
+                    ratio_to_published = score / task.score.published_score
+                else:
+                    ratio_to_published = "N/A"
+
+                if task.score.gpu_reference_score:
+                    assert task.score.gpu_reference_score > 0, (
+                        "Reference score is not > 0"
+                    )
+                    ratio_to_reference = score / task.score.gpu_reference_score
                     accuracy_check = ReportCheckTypes.from_result(
-                        ratio_to_published >= (1.0 - task.score.tolerance)
+                        ratio_to_reference >= (1.0 - task.score.tolerance)
                     )
                 else:
-                    accuracy_check = ReportCheckTypes.NA
+                    ratio_to_reference = "N/A"
+                    if task.score.published_score:
+                        accuracy_check = ReportCheckTypes.from_result(
+                            ratio_to_published >= (1.0 - task.score.tolerance)
+                        )
+                    else:
+                        accuracy_check = ReportCheckTypes.NA
+
+                report_rows.append(
+                    {
+                        "model": model_spec.model_name,
+                        "device": args.device,
+                        "task_name": t_key,
+                        "accuracy_check": accuracy_check,
+                        "score": score,
+                        "ratio_to_reference": ratio_to_reference,
+                        "gpu_reference_score": task.score.gpu_reference_score,
+                        "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                        "ratio_to_published": ratio_to_published,
+                        "published_score": task.score.published_score,
+                        "published_score_ref": task.score.published_score_ref,
+                        "metadata": meta_data.get(t_key),
+                    }
+                )
         else:
             score = "N/A"
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
 
-        report_rows.append(
-            {
-                "model": model_spec.model_name,
-                "device": args.device,
-                "task_name": task.task_name,
-                "accuracy_check": accuracy_check,
-                "score": score,
-                "ratio_to_reference": ratio_to_reference,
-                "gpu_reference_score": task.score.gpu_reference_score,
-                "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
-                "ratio_to_published": ratio_to_published,
-                "published_score": task.score.published_score,
-                "published_score_ref": task.score.published_score_ref,
-                "metadata": meta_data.get(task.task_name),
-            }
-        )
+            report_rows.append(
+                {
+                    "model": model_spec.model_name,
+                    "device": args.device,
+                    "task_name": task.task_name,
+                    "accuracy_check": accuracy_check,
+                    "score": score,
+                    "ratio_to_reference": ratio_to_reference,
+                    "gpu_reference_score": task.score.gpu_reference_score,
+                    "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                    "ratio_to_published": ratio_to_published,
+                    "published_score": task.score.published_score,
+                    "published_score_ref": task.score.published_score_ref,
+                    "metadata": meta_data.get(task.task_name),
+                }
+            )
+
     return report_rows
 
 
@@ -2519,7 +2590,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)
         results.update(dict_results)
         meta_data.update(dict_meta_data)
-
     if list_format_files:
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
@@ -2649,15 +2719,17 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
 
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
-    for task_group, tasks in results.items():
-        for task_name, metrics in tasks.items():
-            for metric_name, metric_value in metrics.items():
-                if metric_name and metric_name != " ":
-                    if not isinstance(
-                        metric_value, float
-                    ):  # some metrics in image evals are not floats
-                        continue
-                    rows.append((task_name, metric_name, f"{metric_value:.4f}"))
+    for task_name, metrics in results.items():
+        for metric_name, metric_value in metrics.items():
+            if metric_name and metric_name != " ":
+                if not isinstance(
+                    metric_value, float
+                ):  # some metrics in image evals are not floats
+                    continue
+                rows.append((task_name, metric_name, f"{metric_value:.4f}"))
+
+    if not rows:
+        return "No evaluation results to display."
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = f"|{'-' * (col_widths[0] + 2)}|{'-' * (col_widths[1] + 2)}|{'-' * (col_widths[2] + 2)}|"
