@@ -2263,8 +2263,8 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=85.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+                    published_score=70.58,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-8B",
                     score_func=lambda results: 0.0,
                 ),
             ),
