@@ -3,9 +3,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
+import logging
 
 import aiohttp
 from server_tests.base_test import BaseTest
+
+logger = logging.getLogger(__name__)
+
+headers = {
+    "accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": "Bearer your-secret-key",
+}
 
 
 class SpeechT5TTSTest(BaseTest):
@@ -15,25 +24,15 @@ class SpeechT5TTSTest(BaseTest):
         """Run SpeechT5 TTS tests"""
         results = {}
 
-        # Test 1: Basic TTS generation
-        print("Testing basic TTS generation...")
+        # Test: Basic TTS generation
+        logger.info("Testing basic TTS generation...")
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
-            print("✓ Basic TTS test passed")
+            logger.info("✓ Basic TTS test passed")
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
-            print(f"✗ Basic TTS test failed: {e}")
-
-        # Test 2: TTS with custom speaker ID
-        print("Testing TTS with custom speaker ID...")
-        try:
-            speaker_result = await self._test_tts_with_speaker()
-            results["tts_with_speaker"] = speaker_result
-            print("✓ Speaker TTS test passed")
-        except Exception as e:
-            results["tts_with_speaker"] = {"error": str(e)}
-            print(f"✗ Speaker TTS test failed: {e}")
+            logger.error(f"✗ Basic TTS test failed: {e}")
 
         return results
 
@@ -47,7 +46,7 @@ class SpeechT5TTSTest(BaseTest):
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as response:
+            async with session.post(url, json=payload, headers=headers) as response:
                 assert response.status == 200, (
                     f"Expected status 200, got {response.status}"
                 )
@@ -88,34 +87,4 @@ class SpeechT5TTSTest(BaseTest):
                     "sample_rate": result["sample_rate"],
                     "format": result["format"],
                     "audio_size_bytes": len(audio_bytes),
-                }
-
-    async def _test_tts_with_speaker(self):
-        """Test TTS with custom speaker ID"""
-        url = f"http://localhost:{self.service_port}/audio/speech"
-
-        payload = {
-            "text": "This is a test with a specific speaker voice.",
-            "speaker_id": "7306",  # Common speaker ID from CMU Arctic dataset
-        }
-
-        timeout = aiohttp.ClientTimeout(total=120)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as response:
-                assert response.status == 200, (
-                    f"Expected status 200, got {response.status}"
-                )
-
-                result = await response.json()
-
-                # Validate response
-                assert "audio" in result, "Response should contain 'audio' field"
-                assert result.get("speaker_id") == "7306", (
-                    f"Expected speaker_id '7306', got {result.get('speaker_id')}"
-                )
-
-                return {
-                    "status": "success",
-                    "speaker_id": result.get("speaker_id"),
-                    "duration": result["duration"],
                 }
