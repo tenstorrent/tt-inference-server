@@ -5594,6 +5594,60 @@
             }
         ]
     },
+    "Qwen3-Embedding-8B": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-Embedding-4B": {
         "n150": [
             {
