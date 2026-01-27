@@ -130,6 +130,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         avg_loss = running_loss / request.steps_freq if global_step > 0 else running_loss
                         self.logger.info(f"Step {global_step} | train/loss: {avg_loss:.4f}")
                         running_loss = 0.0
+                        
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info(f"Model checkpoint saved.")
 
