@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime
 
+
 from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
     ModelSource,
@@ -247,16 +248,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Define the environment file path for the container.
         user_home_path = "/home/container_app_user"
         # fmt: off
-        # Check for TTS models first by model_name (TTS models may use ModelType.AUDIO)
-        if model_spec.model_name == "speecht5-tts":
-            # For TTS models (tt-media-server containers), mount the tt-media-server directory
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            ]
-        elif model_spec.model_type == ModelType.AUDIO:
+        if model_spec.model_type == ModelType.AUDIO:
             # For audio models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
@@ -264,8 +256,14 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
-        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE or model_spec.model_type == ModelType.EMBEDDING or model_spec.model_type == ModelType.VIDEO:
-            # For CNN models (tt-media-server containers), mount the tt-media-server directory
+        elif (
+            model_spec.model_type == ModelType.CNN
+            or model_spec.model_type == ModelType.IMAGE
+            or model_spec.model_type == ModelType.EMBEDDING
+            or model_spec.model_type == ModelType.VIDEO
+            or model_spec.model_type == ModelType.TEXT_TO_SPEECH
+        ):
+            # For CNN, IMAGE, EMBEDDING, VIDEO, and TTS models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",

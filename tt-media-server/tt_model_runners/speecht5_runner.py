@@ -258,11 +258,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
                 raise
 
-            # Skip warmup for now to avoid kernel compilation issues
-            # Kernels will be compiled on first inference request
-            self.logger.info(
-                f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
-            )
+            self.logger.info(f"Device {device_id_int}: Model loaded successfully")
 
             # do a warmup run
             await self._run_async(
@@ -272,6 +268,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     )
                 ]
             )
+
+            self.logger.info(f"Device {device_id_int}: Model warmup completed")
 
             return True
 
