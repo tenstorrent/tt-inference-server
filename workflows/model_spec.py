@@ -240,6 +240,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+gpt_oss_impl = ImplSpec(
+    impl_id="gpt_oss",
+    impl_name="gpt-oss",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gpt_oss",
+)
 deepseek_r1_galaxy_impl = ImplSpec(
     impl_id="deepseek_r1_galaxy",
     impl_name="deepseek-r1-galaxy",
@@ -483,6 +489,11 @@ class ModelSpec:
                 "subdevice_type",
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
+
+        # infer changes to vllm_args based on env_vars
+        if "VLLM_USE_V1" in self.env_vars:
+            # remove args that are not supported by V1
+            self.device_model_spec.vllm_args.pop("num_scheduler_steps", None)
 
     def _validate_data(self):
         """Validate that required specification is present."""
@@ -919,6 +930,75 @@ class ModelSpecTemplate:
 
 # Model specification templates - these get expanded into individual specs
 spec_templates = [
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-20b"],
+        impl=gpt_oss_impl,
+        tt_metal_commit="60ffb199",
+        vllm_commit="3499ffa1",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=128,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+            "VLLM_USE_V1": "1",
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        tt_metal_commit="60ffb199",
+        vllm_commit="3499ffa1",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=False,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=128,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+            "VLLM_USE_V1": "1",
+        },
+    ),
     ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
