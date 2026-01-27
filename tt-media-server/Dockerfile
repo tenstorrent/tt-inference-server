@@ -88,7 +88,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && CXX=clang++-20 CC=clang-20 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
