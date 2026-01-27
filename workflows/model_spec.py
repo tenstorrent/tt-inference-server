@@ -463,7 +463,7 @@ class ModelSpec:
                 )
 
         if not self.min_ram_gb and self.param_count:
-            object.__setattr__(self, "min_ram_gb", self.param_count * 4)
+            object.__setattr__(self, "min_ram_gb", self.param_count * 2)
 
         # Generate default docker image if not provided
         if not self.docker_image:
@@ -964,7 +964,6 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
-        min_ram_gb=96,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_USE_V1": "1",
@@ -995,7 +994,6 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
-        min_ram_gb=384,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_USE_V1": "1",
