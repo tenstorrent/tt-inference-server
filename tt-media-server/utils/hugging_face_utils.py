@@ -17,6 +17,7 @@ class HuggingFaceUtils:
         self.logger = TTLogger()
 
     def download_weights(self):
+        model_name = None
         try:
             # get device runner instance and try to load weights
             pipeline_weights_loaded = get_device_runner("-1").load_weights()
