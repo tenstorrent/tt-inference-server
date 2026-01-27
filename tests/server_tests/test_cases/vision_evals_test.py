@@ -315,7 +315,7 @@ class VisionEvalsTest(BaseTest):
             raise ValueError("Sample count must be positive.")
 
         ds = load_dataset(
-            "imagenet-1k",
+            "ILSVRC/imagenet-1k",
             split="validation",
             streaming=True,
             download_config=DownloadConfig(num_proc=1),
