@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     enable_job_persistence: bool = False
 
     vllm: VLLMSettings = VLLMSettings()
+    use_vllm_bge: bool = True  # If True, use VLLM implementation; if False, use TTNN implementation
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
