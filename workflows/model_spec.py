@@ -963,6 +963,7 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_USE_V1": "1",
