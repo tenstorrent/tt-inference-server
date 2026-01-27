@@ -964,6 +964,7 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
+        min_ram_gb=96,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_USE_V1": "1",
@@ -994,6 +995,7 @@ spec_templates = [
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
+        min_ram_gb=384,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "VLLM_USE_V1": "1",
