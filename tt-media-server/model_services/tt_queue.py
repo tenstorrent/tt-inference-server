@@ -58,7 +58,7 @@ class TTQueue(Queue):
             batch.append(first_item)
         except Exception:
             # Handle case where queue is empty or other error
-            return [None]
+            return []
 
         # Aggressively try to get more items
         for _ in range(max_messages_to_get - 1):
