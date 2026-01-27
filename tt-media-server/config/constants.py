@@ -223,7 +223,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -231,11 +231,11 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -247,7 +247,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -259,7 +259,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -271,7 +271,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -283,7 +283,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -455,13 +455,13 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N150): {
@@ -500,14 +500,14 @@ ModelConfigs = {
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 16,
@@ -541,3 +541,26 @@ for runner in [
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
+
+
+# Default sampling parameters for vLLM inference
+# These values are used when request parameters are not specified
+_DEFAULT_SAMPLING_PARAMS = {
+    "n": 1,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "top_k": 0,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+    "repetition_penalty": 1.0,
+    "seed": None,
+    "stop": [],
+    "stop_token_ids": [],
+    "bad_words": [],
+    "max_tokens": 65536,
+    "logprobs": None,
+    "truncate_prompt_tokens": None,
+    "guided_decoding": None,
+    "extra_args": None,
+}
