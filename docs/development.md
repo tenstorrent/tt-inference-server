@@ -101,6 +101,7 @@ source .pre-commit/bin/activate
 # step 2: install
 pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
+pip install -r tt-media-server/requirements.txt
 
 # step 3: pre-commit
 pre-commit install
