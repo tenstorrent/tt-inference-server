@@ -45,6 +45,8 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
+    TT_SMI = auto()
+    TT_TOPOLOGY = auto()
 
 
 class BenchmarkTaskType(IntEnum):

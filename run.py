@@ -27,11 +27,12 @@ from workflows.utils import (
     write_dotenv,
     get_run_id,
 )
+from workflows.bootstrap_uv import bootstrap_uv
 from workflows.run_workflows import run_workflows, WorkflowSetup
 from workflows.run_docker_server import run_docker_server
 from workflows.log_setup import setup_run_logger
-from workflows.workflow_types import DeviceTypes, WorkflowType
-from workflows.workflow_venvs import setup_system_software_validation
+from workflows.workflow_types import DeviceTypes, WorkflowType, WorkflowVenvType
+from workflows.workflow_venvs import setup_system_software_validation, VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -256,9 +257,9 @@ def handle_secrets(model_spec):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(key), (
-                f"Required environment variable {key} is not set in .env file."
-            )
+            assert os.getenv(
+                key
+            ), f"Required environment variable {key} is not set in .env file."
 
 
 def get_current_commit_sha() -> str:
@@ -274,16 +275,18 @@ def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
-    WorkflowSetup.bootstrap_uv()
 
-    def _validate_system_software_deps():
-        
+    if (
+        WorkflowType.from_string(model_spec.cli_args.workflow)
+        in (WorkflowType.SERVER, WorkflowType.RELEASE)
+    ) and (not model_spec.cli_args.skip_system_sw_validation):
         # check, and enforce if necessary, system software dependency versions
-        venv_python = setup_system_software_validation(WorkflowSetup.uv_exec)
+        venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
+        venv_config.setup(model_spec=model_spec)
 
         # fmt: off
         cmd = [
-            str(venv_python),
+            str(venv_config.venv_python),
             str(get_repo_root_path() / "workflows" / "run_system_software_validation.py"),
             "--model-spec-json", str(json_fpath),
         ]
@@ -297,12 +300,6 @@ def validate_local_setup(model_spec, json_fpath):
             )
         else:
             logger.info("✅ validating local setup completed")
-
-    if (
-        WorkflowType.from_string(model_spec.cli_args.workflow)
-        in (WorkflowType.SERVER, WorkflowType.RELEASE)
-    ) and (not model_spec.cli_args.skip_system_sw_validation):
-        _validate_system_software_deps()
 
 
 def format_cli_args_summary(args, model_spec):
@@ -361,22 +358,22 @@ def validate_runtime_args(model_spec):
         raise ValueError(f"model:={args.model} does not support device:={args.device}")
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
+        assert (
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        assert (
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check at line 342
 
     if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
+        assert (
+            model_spec.model_name in TEST_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
@@ -402,12 +399,12 @@ def validate_runtime_args(model_spec):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        assert (
+            model_spec.model_name in EVAL_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert (
+            model_spec.model_id in BENCHMARK_CONFIGS
+        ), f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -415,9 +412,9 @@ def validate_runtime_args(model_spec):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (args.docker_server and args.local_server), (
-        "Cannot run --docker-server and --local-server"
-    )
+    assert not (
+        args.docker_server and args.local_server
+    ), "Cannot run --docker-server and --local-server"
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
@@ -438,9 +435,12 @@ def handle_maintenance_args(args):
 
 
 def main():
+    # step 00: handle maintenance args
     args = parse_arguments()
-    # step 0: handle maintenance args
     handle_maintenance_args(args)
+
+    # step 0: bootstrap uv
+    bootstrap_uv()
 
     # step 1: determine model spec
     if args.model_spec_json:
