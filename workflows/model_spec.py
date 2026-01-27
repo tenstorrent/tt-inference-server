@@ -457,11 +457,7 @@ class ModelSpec:
                 )
 
         if not self.min_ram_gb and self.param_count:
-            # Device-aware RAM calculation
-            ram_multiplier = self.device_type.get_ram_multiplier()
-            calculated_ram = self.param_count * ram_multiplier
-            # Safety floor: minimum 16GB
-            object.__setattr__(self, "min_ram_gb", max(16, calculated_ram))
+            object.__setattr__(self, "min_ram_gb", self.param_count * 2)
 
         # Generate default docker image if not provided
         if not self.docker_image:
@@ -1098,6 +1094,29 @@ spec_templates = [
                     "sample_on_device_mode": "decode_only",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "num_scheduler_steps": 1,
+                    "data_parallel_size": 4,
+                    "disable_mm_preprocessor_cache": True,
+                },
+                override_tt_config={
+                    "l1_small_size": 24576,
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 49544000,
+                    "fabric_config": "FABRIC_1D_RING",
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
@@ -1372,8 +1391,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1694,8 +1713,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1728,8 +1747,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1934,8 +1953,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1959,8 +1978,8 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1990,8 +2009,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
+        tt_metal_commit="18ad9aeb",
+        vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(

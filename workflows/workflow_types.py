@@ -180,26 +180,6 @@ class DeviceTypes(IntEnum):
             )
         return data_parallel_map[(self, data_parallel)]
 
-    def is_multi_device(self) -> bool:
-        """Returns True if this device type uses multi-device/distributed execution."""
-        return self in {
-            DeviceTypes.P150X4,
-            DeviceTypes.P150X8,
-            DeviceTypes.T3K,
-            DeviceTypes.GALAXY,
-            DeviceTypes.GALAXY_T3K,
-        }
-
-    def get_ram_multiplier(self) -> float:
-        """Returns the RAM multiplier for this device type.
-
-        Single-device configs need full model in RAM (4.0x).
-        Multi-device configs distribute weights across devices (2.0x).
-        """
-        if self.is_multi_device():
-            return 2.0
-        return 4.0
-
 
 class SystemTopology(Enum):
     """Enumerates all valid Wormhole system topologies"""

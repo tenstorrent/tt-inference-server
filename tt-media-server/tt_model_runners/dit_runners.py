@@ -248,6 +248,9 @@ class TTWan22Runner(TTDiTRunner):
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
 
+    def load_weights(self):
+        return False
+
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
