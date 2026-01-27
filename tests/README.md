@@ -14,6 +14,7 @@ Install the development dependencies from the root of the project:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pip install -r tt-media-server/requirements.txt
 ```
 
 This will install:
