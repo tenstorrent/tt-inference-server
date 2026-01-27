@@ -55,6 +55,9 @@ class VLLMRunner(BaseDeviceRunner):
         if isinstance(request.prompt, str):
             return request.prompt
         elif isinstance(request.prompt, list):
+            # WARNING: This is a hack to support batched lists of token ids(it is openAI compatible), we need to add proper support for this in the future.
+            if isinstance(request.prompt[0], list):
+                request.prompt = request.prompt[0]
             return {"prompt_token_ids": request.prompt}
         raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
 

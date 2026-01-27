@@ -28,7 +28,7 @@ class CompletionRequest(BaseRequest):
     model: str | None = None
 
     # prompt can be a string or a list of token ids
-    prompt: str | list[int]
+    prompt: str | list[int] | list[list[int]]
 
     # Response configuration
     echo: bool | None = False
