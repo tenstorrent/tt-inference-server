@@ -114,7 +114,6 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
-
         ModelRunners.LLM_TEST,
     },
     ModelServices.EMBEDDING: {
