@@ -16,7 +16,7 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-torch
+torch==2.7.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 tqdm
 transformers==4.55.0
 uvicorn
