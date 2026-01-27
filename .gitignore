@@ -49,6 +49,7 @@ scripts/examples/example_data
 # unignore
 !requirements*.txt
 !workflows/model_performance_reference.json
+!workflows/models-ci-config.json
 !tests/server_tests/test_config.json
 !tests/server_tests/server_tests_config.json
 !benchmarking/benchmark_targets/*.json
