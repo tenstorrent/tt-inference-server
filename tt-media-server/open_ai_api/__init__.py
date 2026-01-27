@@ -11,6 +11,7 @@ api_router = APIRouter()
 from open_ai_api import (
     audio,
     cnn,
+    embedding,
     fine_tuning,
     image,
     llm,
@@ -39,6 +40,8 @@ elif settings.model_service == ModelServices.TRAINING.value:
     api_router.include_router(
         fine_tuning.router, prefix="/fine_tuning", tags=["Fine-tuning"]
     )
+elif settings.model_service == ModelServices.EMBEDDING.value:
+    api_router.include_router(embedding.router, prefix="/v1", tags=["Embeddings"])
 
 # Maintenance endpoints are always included
 api_router.include_router(tt_maintenance_api.router, prefix="", tags=["Maintenance"])
