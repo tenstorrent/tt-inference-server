@@ -8,3 +8,20 @@ from model_services.base_service import BaseService
 class LLMService(BaseService):
     def __init__(self):
         super().__init__()
+
+    def handle_streaming_chunk(self, chunk):
+        chunk = chunk["data"]
+        if chunk and chunk.text:
+            return chunk
+
+    def handle_final_result(self, result):
+        result = result["data"]
+        if result and result.text:
+            return result
+        return None
+
+
+    async def post_process(self, result, input_request=None):
+        if isinstance(result, dict):
+            return result["data"]
+        return result

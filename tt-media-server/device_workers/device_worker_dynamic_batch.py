@@ -80,9 +80,9 @@ def device_worker(
             error_queue.put((worker_id, request._task_id, str(e)))
 
     # Handle non-streaming request
-    def handle_non_streaming(request):
+    async def handle_non_streaming(request):
         try:
-            response = device_runner.run([request])
+            response = await device_runner._run_async([request])
             if response:
                 result_queue.put((worker_id, request._task_id, response[0]))
             else:
@@ -106,8 +106,8 @@ def device_worker(
                 # Fire and forget streaming task - runs concurrently
                 asyncio.create_task(handle_streaming(request))
             else:
-                # Run non-streaming in thread pool to not block other tasks
-                loop.run_in_executor(None, handle_non_streaming, request)
+                # Fire and forget non-streaming task - runs concurrently in event loop
+                asyncio.create_task(handle_non_streaming(request))
 
     try:
         loop.run_until_complete(request_feeder())
