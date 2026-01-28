@@ -4,6 +4,7 @@ colorama
 fastapi
 faster_fifo
 httpx
+huggingface_hub
 imageio-ffmpeg
 loguru
 prometheus-client
