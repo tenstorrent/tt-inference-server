@@ -1167,7 +1167,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1183,36 +1183,31 @@
                     "mock_mode": false
                 },
                 "targets": {}
-            }
-        ]
-    },
-    {
-        "weights": [
-            "speecht5-tts"
-        ],
-        "device": "n150",
-        "test_cases": [
+            },
             {
-                "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
-                "enabled": false,
-                "description": "Test for device liveness checks",
+                "name": "TTSLoadTest",
+                "module": "tests.server_tests.test_cases.tts_load_test",
+                "enabled": true,
+                "description": "Test TTS generation load performance with concurrent requests",
                 "test_config": {
                     "test_timeout": 3600,
-                    "retry_attempts": 220,
-                    "retry_delay": 10,
-                    "break_on_failure": true,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1,
+                    "tts_generation_time": 10,
+                    "sample_count": 10,
+                    "compare_audio": true
                 }
             },
             {
-                "name": "TestTTSServerHealth",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test server health and availability",
+                "name": "TTSParamTest",
+                "module": "tests.server_tests.test_cases.tts_param_test",
+                "enabled": true,
+                "description": "Test TTS generation with parameter variations",
                 "test_config": {
                     "test_timeout": 3600,
                     "retry_attempts": 1,
@@ -1223,70 +1218,14 @@
                 "targets": {}
             },
             {
-                "name": "TestTTSAuthentication",
+                "name": "TTSIntegrationTest",
                 "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test API authentication",
+                "enabled": true,
+                "description": "Test TTS error handling and input validation",
                 "test_config": {
-                    "test_timeout": 3600,
+                    "test_timeout": 300,
                     "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTS",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test TTS generation",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSErrorHandling",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test error handling for invalid inputs",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSPerformance",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test performance characteristics",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
-            },
-            {
-                "name": "TestTTSAudioQuality",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
-                "enabled": false,
-                "description": "Test audio output quality characteristics",
-                "test_config": {
-                    "test_timeout": 3600,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
+                    "retry_delay": 10,
                     "break_on_failure": false,
                     "mock_mode": false
                 },
@@ -1409,5 +1348,175 @@
                 "targets": {}
             }
         ]
-    }
+    },
+        {
+        "weights": [
+            "Wan2.2-T2V-A14B-Diffusers"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "VideoGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.video_generation_load_test",
+                "enabled": true,
+                "description": "Test Video generation time",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 20,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "video_generation_target_time": 370
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "embedding_time": 0.1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
 ]

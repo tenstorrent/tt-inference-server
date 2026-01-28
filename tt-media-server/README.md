@@ -263,17 +263,104 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
 
-- JSON Request: Send a JSON POST request to `/speech`
+- JSON Request: Send a JSON POST request to `/audio/speech`
+
+**Default behavior:** Returns WAV file directly (default `response_format="audio"`)
+
 ```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/audio/speech' \
-  -H 'accept: application/json' \
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{
-  "text": "Hello, this is a test of the text to speech system."
-}'
+    "text": "Hello, this is a test of the text to speech system."
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
 ```
+
+**Request WAV file with explicit format:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Hello world, this is a test of text to speech",
+    "response_format": "audio"
+  }' \
+  --output output.wav \
+  --silent \
+  --show-error
+```
+
+**Request JSON response with base64 audio:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "This should return JSON",
+    "response_format": "verbose_json"
+  }' \
+  --silent \
+  --show-error
+```
+
+**Swagger/OpenAPI request body examples:**
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system."
+}
+```
+
+```json
+{
+  "text": "Hello world, this is a test of text to speech",
+  "response_format": "audio"
+}
+```
+
+```json
+{
+  "text": "This is another test",
+  "response_format": "wav"
+}
+```
+
+```json
+{
+  "text": "This should return JSON",
+  "response_format": "verbose_json"
+}
+```
+
+```json
+{
+  "text": "This is a JSON format test",
+  "response_format": "json"
+}
+```
+
+```json
+{
+  "text": "Hello, this is a test of the text to speech system.",
+  "response_format": "audio",
+  "speaker_id": "default_speaker"
+}
+```
+
+**Available response formats:**
+- `"audio"` or `"wav"` (default) - Returns WAV file directly (binary, `Content-Type: audio/wav`)
+- `"verbose_json"` or `"json"` - Returns JSON with base64-encoded audio
+
+**Optional fields:**
+- `speaker_id` - ID for pre-configured speaker embeddings (0-7456 for CMU ARCTIC dataset)
+- `speaker_embedding` - Base64-encoded or raw bytes of speaker embedding (advanced)
+
+**Note:** Do NOT include `speaker_embedding` unless you have a valid base64-encoded embedding.
 
 # Image search test call
 
@@ -356,8 +443,7 @@ curl -X 'GET' \
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
-The example below downloads the full file unless a `Range` header is specified.
+The `/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
@@ -366,22 +452,11 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Range: bytes=0-1048575' \
-  -o partial_output.mp4
-```
-This will download only the first 1 MB (bytes 0–1048575) of the video file.
-
 ## Cancel video job and assets
 
 ```bash
-curl -X 'DELETE' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -443,7 +518,7 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'DELETE' \
+curl -X 'POST' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
@@ -601,6 +676,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
+| `JOB_DATABASE_PATH` | `./jobs.db` | The file system path where the job database is stored. This setting is only applicable when job persistence is enabled |
 
 ## VLLM Settings
 

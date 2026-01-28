@@ -20,6 +20,9 @@ from config.constants import (
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
+from utils.logger import TTLogger
+
+logger = TTLogger()
 
 
 class Settings(BaseSettings):
@@ -72,6 +75,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
+    job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
     use_vllm_bge: bool = False  # If True, use VLLM implementation; if False, use TTNN implementation
@@ -138,6 +142,11 @@ class Settings(BaseSettings):
             and self.audio_chunk_duration_seconds is None
         ):
             self._calculate_audio_chunk_duration()
+
+        if self.max_batch_size < self.vllm.max_num_seqs:
+            logger.warning(
+                f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
+            )
 
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:

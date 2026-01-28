@@ -21,6 +21,7 @@ class SupportedModels(Enum):
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
+    QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
@@ -51,6 +52,7 @@ class ModelNames(Enum):
     UNET = "unet"
     VIT = "vit"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
+    QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     QWEN_3_4B = "Qwen3-4B"
@@ -70,8 +72,9 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    VLLMForge = "vllm_forge"
+    VLLM = "vllm"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
+    VLLM_QWEN_EMBEDDING_8B = "vllm_qwen_embedding_8b"
     VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
@@ -94,6 +97,7 @@ class ModelServices(Enum):
     VIDEO = "video"
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
+    EMBEDDING = "embedding"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -109,10 +113,13 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE_2512,
     },
     ModelServices.LLM: {
-        ModelRunners.VLLMForge,
-        ModelRunners.VLLMForge_QWEN_EMBEDDING,
-        ModelRunners.VLLMBGELargeEN_V1_5,
+        ModelRunners.VLLM,
         ModelRunners.LLM_TEST,
+    },
+    ModelServices.EMBEDDING: {
+        ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.VLLM_QWEN_EMBEDDING_8B,
+        ModelRunners.VLLMBGELargeEN_V1_5,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -163,8 +170,9 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
+    ModelRunners.VLLM_QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLMForge: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
 
@@ -199,6 +207,7 @@ class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
+    AUDIO = "audio"
 
 
 class JobTypes(Enum):
@@ -217,7 +226,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -225,11 +234,11 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_16.value,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -241,7 +250,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -253,7 +262,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -265,7 +274,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -277,7 +286,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
@@ -385,18 +394,21 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -409,6 +421,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
@@ -449,38 +462,70 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "use_queue_per_worker": True,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 2),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 32,
+        "max_batch_size": 16,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 256,
+        "max_batch_size": 8,
+        "default_throttle_level": 0,
     },
 }
 
@@ -503,3 +548,26 @@ for runner in [
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
+
+
+# Default sampling parameters for vLLM inference
+# These values are used when request parameters are not specified
+_DEFAULT_SAMPLING_PARAMS = {
+    "n": 1,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "top_k": 0,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+    "repetition_penalty": 1.0,
+    "seed": None,
+    "stop": [],
+    "stop_token_ids": [],
+    "bad_words": [],
+    "max_tokens": 65536,
+    "logprobs": None,
+    "truncate_prompt_tokens": None,
+    "guided_decoding": None,
+    "extra_args": None,
+}

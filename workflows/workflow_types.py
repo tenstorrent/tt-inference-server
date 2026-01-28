@@ -24,7 +24,7 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
-    LOCAL_SETUP_VALIDATION = auto()
+    SYSTEM_SOFTWARE_VALIDATION = auto()
     STRESS_TESTS_RUN_SCRIPT = auto()
     STRESS_TESTS = auto()
     EVALS_RUN_SCRIPT = auto()
@@ -35,18 +35,24 @@ class WorkflowVenvType(IntEnum):
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
+    EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
+    BENCHMARKS_VIDEO = auto()
+    BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
+    TT_SMI = auto()
+    TT_TOPOLOGY = auto()
 
 
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    HTTP_CLIENT_VIDEO_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
