@@ -11,7 +11,7 @@ from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
 from open_ai_api.video import (
     cancel_video_job,
-    download_video_content,x
+    download_video_content,
     get_jobs_metadata,
     get_video_metadata,
     submit_generate_video_request,
