@@ -14,7 +14,7 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-opencv-python-headless
+opencv-python-headless==4.8.1.78
 silero_vad
 tqdm
 uvicorn
