@@ -52,7 +52,6 @@ class LLMTestRunner(BaseDeviceRunner):
             self.streaming_frequency_ms / LLMTestRunner.MILLISECONDS_PER_SECOND
         )
 
-        chunks = []
         start_time = time.perf_counter()
 
         for i in range(request.max_tokens):
@@ -65,21 +64,18 @@ class LLMTestRunner(BaseDeviceRunner):
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
-            chunk_text = f"token_{i}"
-            chunks.append(chunk_text)
-
             yield CompletionOutput(
                 type=CHUNK_TYPE,
-                data=CompletionResult(text=chunk_text),
+                data=CompletionResult(text=f"token_{i}"),
             )
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
-        final_text = "".join(chunks) if chunks else ""
-
+        # Empty text so the final result doesn't get sent to client as extra token
+        # (llm_service.handle_final_result returns None for empty text)
         yield CompletionOutput(
             type=FINAL_TYPE,
-            data=CompletionResult(text=final_text),
+            data=CompletionResult(text=""),
         )
 
     def run(self, requests: list[CompletionRequest]):

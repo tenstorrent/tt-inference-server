@@ -3,7 +3,7 @@ import time
 from multiprocessing import shared_memory
 
 import numpy as np
-from domain.completion_response import CompletionOutput, CompletionResult
+from domain.completion_response import CompletionResult
 from utils.logger import TTLogger
 
 MAX_TEXT_LEN = 450
