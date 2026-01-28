@@ -11,3 +11,4 @@ alwaysApply: true
 - Minimize new dependencies that are not in the Python 3.8 standard library and not already used in the project.
 - Do not provide verbose explainations, writting code that correctly meets the requirements is more important, UNLESS there is a bug found in the code. If there is a bug it should be explained and then a fix to the bug proposed.
 - Use clear and professional names for all variables, functions, classes, and files.
+- Python string formatting uses F-string style (f"{}") not C printf style ("%s")
