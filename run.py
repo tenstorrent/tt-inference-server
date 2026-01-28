@@ -296,10 +296,13 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                "⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+                "⛔ validating system software dependencies failed. See errors above"
+                "for required version, and System Info section above for current system versions."
+                f"\nTo skip system software validation, use the flag: --skip-system-sw-validation"
             )
-        else:
-            logger.info("✅ validating local setup completed")
+        logger.info("✅ validating system software dependencies completed")
+
+    logger.info("✅ validating local setup completed")
 
 
 def format_cli_args_summary(args, model_spec):
