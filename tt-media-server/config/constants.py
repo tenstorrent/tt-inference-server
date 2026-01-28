@@ -97,6 +97,7 @@ class ModelServices(Enum):
     VIDEO = "video"
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
+    EMBEDDING = "embedding"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -113,10 +114,12 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
+        ModelRunners.LLM_TEST,
+    },
+    ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLM_QWEN_EMBEDDING_8B,
         ModelRunners.VLLMBGELargeEN_V1_5,
-        ModelRunners.LLM_TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -391,18 +394,21 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -415,6 +421,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
