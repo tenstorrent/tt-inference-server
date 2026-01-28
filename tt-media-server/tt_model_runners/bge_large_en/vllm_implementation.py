@@ -30,7 +30,9 @@ class VLLMBGEImplementation(BaseDeviceRunner):
     @log_execution_time("BGE Large EN model warmup")
     async def warmup(self) -> bool:
         """Warm up the VLLM model."""
-        self.logger.info(f"Device {self.device_id}: Loading BGE Large EN model with VLLM...")
+        self.logger.info(
+            f"Device {self.device_id}: Loading BGE Large EN model with VLLM..."
+        )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             SupportedModels.BGE_LARGE_EN_V1_5.value
@@ -56,7 +58,9 @@ class VLLMBGEImplementation(BaseDeviceRunner):
         self.llm = vllm.LLM(**llm_args)
 
         self.llm.embed(prompts)
-        self.logger.info(f"Device {self.device_id}: BGE Large EN model warmup completed")
+        self.logger.info(
+            f"Device {self.device_id}: BGE Large EN model warmup completed"
+        )
 
         return True
 

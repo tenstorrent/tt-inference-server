@@ -50,8 +50,11 @@ class BGETokenizer:
             return tokenized["attention_mask"].sum(dim=1).tolist()[:num_requests]
 
         # Count non-padding tokens
-        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+        pad_token_id = (
+            self.tokenizer.pad_token_id
+            if self.tokenizer.pad_token_id is not None
+            else 0
+        )
         return [
-            (input_ids[i] != pad_token_id).sum().item()
-            for i in range(num_requests)
+            (input_ids[i] != pad_token_id).sum().item() for i in range(num_requests)
         ]
