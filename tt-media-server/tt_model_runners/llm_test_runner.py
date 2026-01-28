@@ -41,9 +41,26 @@ class LLMTestRunner(BaseDeviceRunner):
         return True
 
     async def _run_async(self, requests: list[CompletionRequest]):
-        """Returns an async generator for streaming inference."""
+        """Match VLLMRunner behavior: async generator for streaming, list for non-streaming."""
         request = requests[0]
-        return self._generate_streaming(request)
+        if request.stream:
+            return self._generate_streaming(request)
+        else:
+            return await self._generate_non_streaming(requests)
+
+    async def _generate_non_streaming(self, requests: list[CompletionRequest]):
+        """Non-streaming async inference - returns list of CompletionOutput."""
+        results = []
+        for request in requests:
+            tokens = [f"token_{i}" for i in range(request.max_tokens)]
+            final_text = "".join(tokens)
+            results.append(
+                CompletionOutput(
+                    type=FINAL_TYPE,
+                    data=CompletionResult(text=final_text),
+                )
+            )
+        return results
 
     async def _generate_streaming(
         self, request: CompletionRequest
@@ -83,4 +100,15 @@ class LLMTestRunner(BaseDeviceRunner):
         )
 
     def run(self, requests: list[CompletionRequest]):
-        return []
+        """Non-streaming inference - returns complete results."""
+        results = []
+        for request in requests:
+            tokens = [f"token_{i}" for i in range(request.max_tokens)]
+            final_text = "".join(tokens)
+            results.append(
+                CompletionOutput(
+                    type=FINAL_TYPE,
+                    data=CompletionResult(text=final_text),
+                )
+            )
+        return results

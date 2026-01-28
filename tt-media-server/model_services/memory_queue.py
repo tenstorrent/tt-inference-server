@@ -1,9 +1,11 @@
 import struct
 import time
 from multiprocessing import shared_memory
+from typing import Any, List, Optional
 
 import numpy as np
 from domain.completion_response import CompletionOutput, CompletionResult
+from model_services.tt_queue_interface import TTQueueInterface
 from utils.logger import TTLogger
 
 MAX_TEXT_LEN = 450
@@ -19,7 +21,7 @@ chunk_dtype = np.dtype(
 )
 
 
-class SharedMemoryChunkQueue:
+class SharedMemoryChunkQueue(TTQueueInterface):
     def __init__(self, capacity=200000, name="chunk_queue", create=True):
         self.capacity = capacity
         self.chunk_size = chunk_dtype.itemsize
@@ -312,3 +314,67 @@ class SharedMemoryChunkQueue:
             print(f"[MemoryQueue] Unlinked: {self.name}")
         except Exception as e:
             self.logger.error(f"[MemoryQueue] Error unlinking: {e}")
+
+    def put_nowait(self, item: Any):
+        """Equivalent to put(obj, False)."""
+        raise NotImplementedError("put_nowait is not implemented for SharedMemoryChunkQueue")
+
+    def qsize(self) -> int:
+        """Return the approximate size of the queue."""
+        raise NotImplementedError("qsize is not implemented for SharedMemoryChunkQueue")
+
+    def empty(self) -> bool:
+        """Return True if the queue is empty, False otherwise (approximate)."""
+        raise NotImplementedError("empty is not implemented for SharedMemoryChunkQueue")
+
+    def full(self) -> bool:
+        """Return True if the queue is full, False otherwise (approximate)."""
+        return self._get_size() >= self.capacity - 10  # Same margin as _get_next_write_slot
+
+    def put_many(
+        self, items: List[Any], block: bool = True, timeout: Optional[float] = None
+    ):
+        """Put multiple items into the queue."""
+        for item in items:
+            self.put(item, block=block, timeout=timeout)
+
+    def get_many(
+        self,
+        max_messages_to_get: int = 100,
+        block: bool = True,
+        timeout: Optional[float] = None,
+    ) -> List[Any]:
+        """Get multiple items from the queue."""
+        batch = []
+
+        # Get first item (blocking or non-blocking based on params)
+        if block:
+            try:
+                first_item = self.get(timeout=timeout)
+                if first_item is not None:
+                    batch.append(first_item)
+            except TimeoutError:
+                return batch
+        else:
+            first_item = self.get_nowait()
+            if first_item is not None:
+                batch.append(first_item)
+            else:
+                return batch  # Return empty if non-blocking and empty
+
+        # Try to get more items non-blocking
+        for _ in range(max_messages_to_get - 1):
+            item = self.get_nowait()
+            if item is None:
+                break
+            batch.append(item)
+
+        return batch
+
+    def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
+        """Peek at next item for conditional processing."""
+        raise NotImplementedError("peek_next is not implemented for SharedMemoryChunkQueue")
+
+    def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
+        """Peek at next n items for conditional processing."""
+        raise NotImplementedError("peek is not implemented for SharedMemoryChunkQueue")

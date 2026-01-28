@@ -20,6 +20,7 @@ from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+import utils.simple_queue_factory as simple_queue_factory
 
 
 class Scheduler:
@@ -32,7 +33,9 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = self._get_queue(name="task_queue", create=True, size=10000)
+        # Task queue can use TTQueue or FasterFifo, but NOT MemoryQueue
+        # SharedMemoryChunkQueue only works for the specific chunk tuple format
+        self.task_queue = self._get_task_queue(size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
         # Create one result queue per worker
@@ -49,17 +52,22 @@ class Scheduler:
 
         self.error_queue = Queue()
 
-    def _get_queue(self, name: str, create: bool, size: int):
-        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
+    def _get_task_queue(self, size: int):
+        """Get task queue - falls back to TTQueue if MemoryQueue is configured.
+        
+        MemoryQueue (SharedMemoryChunkQueue) only works for the specific chunk 
+        tuple format, not arbitrary request objects.
+        """
+        queue_type = self.settings.queue_for_multiprocessing
+        if queue_type == QueueType.MemoryQueue.value:
+            return TTQueue(size)
+        elif queue_type == QueueType.FasterFifo.value:
             return TTFasterFifoQueue(size)
-        elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:
-            return TTQueue(size)
-        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
-            return TTQueue(size)
-        elif self.settings.queue_for_multiprocessing == QueueType.MemoryQueue.value:
-            return SharedMemoryChunkQueue(capacity=size, name=name, create=create)
         else:
-            return Queue()
+            return TTQueue(size)
+
+    def _get_queue(self, name: str, create: bool, size: int):
+        return simple_queue_factory.get_queue(self.settings.queue_for_multiprocessing, size, name, create)
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -163,6 +171,7 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
+        result_queue_capacity = 10000  # Must match size used in _start_queues
         p = Process(
             target=device_worker_dynamic_batch
             if self.settings.use_dynamic_batcher
@@ -177,6 +186,7 @@ class Scheduler:
                 if self.settings.queue_for_multiprocessing
                 == QueueType.MemoryQueue.value
                 else None,
+                result_queue_capacity,
             ),
             name=f"DeviceWorker-{worker_id}",
         )

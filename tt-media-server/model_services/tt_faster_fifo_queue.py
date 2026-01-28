@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from faster_fifo import Queue as FasterFifoQueue
 
+from model_services.tt_queue_interface import TTQueueInterface
 
-class TTFasterFifoQueue:
+
+class TTFasterFifoQueue(TTQueueInterface):
     """
     Uses faster-fifo for high-performance queuing.
     """
@@ -94,3 +96,11 @@ class TTFasterFifoQueue:
         if self._max_size <= 0:
             return False
         return self.qsize() >= self._max_size
+
+    def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
+        """Peek at next item for conditional processing."""
+        raise NotImplementedError("peek_next is not implemented for TTFasterFifoQueue")
+
+    def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
+        """Peek at next n items for conditional processing."""
+        raise NotImplementedError("peek is not implemented for TTFasterFifoQueue")

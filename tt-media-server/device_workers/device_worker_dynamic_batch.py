@@ -22,13 +22,16 @@ def device_worker(
     warmup_signals_queue: Queue,
     error_queue: Queue,
     result_queue_name: str = None,
+    result_queue_capacity: int = 10000,
 ):
     setup_worker_environment(worker_id, "16", 16)
     logger = TTLogger()
 
     # attach to queue if it's provided
     if result_queue_name is not None:
-        result_queue = SharedMemoryChunkQueue(name=result_queue_name, create=False)
+        result_queue = SharedMemoryChunkQueue(
+            name=result_queue_name, create=False, capacity=result_queue_capacity
+        )
         logger.info(
             f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
         )
