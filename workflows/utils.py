@@ -186,7 +186,7 @@ def stream_subprocess_output(pipe, logger, level):
 
 
 def run_command(
-    command, logger, log_file_path=None, shell=False, copy_env=True, env=None
+    command, logger, log_file_path=None, shell=False, copy_env=True, env=None, check=True
 ):
     """
     Note: logger must be passed because the common use case is to capture the command's
@@ -244,12 +244,17 @@ def run_command(
                 shell=shell,
                 stdout=log_file,
                 stderr=log_file,
-                check=False,
+                check=check,
                 text=True,
                 env=env,
             )
             return_code = result.returncode
 
+    if return_code != 0:
+        if check:
+            raise RuntimeError(f"⛔ Command failed with return code: {return_code}")
+        else:
+            logger.error(f"⛔ Command failed with return code: {return_code}, check=False, continuing...")
     return return_code
 
 
