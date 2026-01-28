@@ -22,7 +22,6 @@ mock_settings.enable_telemetry = False
 mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
 mock_settings.request_processing_timeout_seconds = 100
-mock_settings.use_memory_queue = True
 
 # Mock the settings module completely
 mock_settings_module = Mock()
