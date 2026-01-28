@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from utils.audio_manager import AudioManager
 
+
 class DummySettings:
     allow_audio_preprocessing = False
     default_sample_rate = 16000
@@ -18,25 +19,30 @@ class DummySettings:
     model_service = "AUDIO"
     preprocessing_model_weights_path = None
 
+
 @patch("utils.audio_manager.settings", new=DummySettings())
 def generate_dummy_wav_bytes():
     import io, wave
+
     buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as wf:
+    with wave.open(buffer, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(16000)
-        wf.writeframes(b'\x00' * 320)  # 160 samples
+        wf.writeframes(b"\x00" * 320)  # 160 samples
     return buffer.getvalue()
+
 
 def test_to_audio_array_base64():
     manager = AudioManager()
     wav_bytes = generate_dummy_wav_bytes()
     import base64
+
     b64 = base64.b64encode(wav_bytes).decode()
     arr, duration = manager.to_audio_array(b64, False)
     assert isinstance(arr, np.ndarray)
     assert duration > 0
+
 
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_to_audio_array_bytes():
@@ -46,11 +52,13 @@ def test_to_audio_array_bytes():
     assert isinstance(arr, np.ndarray)
     assert duration > 0
 
+
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_to_audio_array_invalid_type():
     manager = AudioManager()
     with pytest.raises(ValueError):
         manager.to_audio_array(123, False)
+
 
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_validate_file_size():
@@ -61,13 +69,18 @@ def test_validate_file_size():
     with pytest.raises(ValueError):
         manager._validate_file_size(b"\x00" * (DummySettings.max_audio_size_bytes + 1))
 
+
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_validate_and_truncate_duration():
     manager = AudioManager()
     arr = np.zeros(DummySettings.default_sample_rate * 70, dtype=np.float32)
     truncated, duration = manager._validate_and_truncate_duration(arr, False)
     assert duration == DummySettings.max_audio_duration_seconds
-    assert len(truncated) == DummySettings.default_sample_rate * DummySettings.max_audio_duration_seconds
+    assert (
+        len(truncated)
+        == DummySettings.default_sample_rate * DummySettings.max_audio_duration_seconds
+    )
+
 
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_normalize_speaker_ids():
@@ -82,5 +95,6 @@ def test_normalize_speaker_ids():
     assert norm[0]["speaker"] == "SPEAKER_00"
     assert norm[1]["speaker"] == "SPEAKER_01"
     assert norm[2]["speaker"] == "SPEAKER_00"
+
 
 # You can add more tests for chunk merging, audio decoding, etc.
