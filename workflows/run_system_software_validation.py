@@ -3,16 +3,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
-import subprocess
 import json
 import logging
 import os
-from packaging.specifiers import SpecifierSet
-from packaging.version import Version
-from pathlib import Path
 import re
 import signal
+import subprocess
 import sys
+from pathlib import Path
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 logger = logging.getLogger(__name__)
 
@@ -202,9 +203,9 @@ def main():
     filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
 
     unique_board_types = set(filtered_board_types)
-    assert (
-        len(unique_board_types) == 1
-    ), f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    assert len(unique_board_types) == 1, (
+        f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    )
     unique_board_type = unique_board_types.pop()
 
     # parse system topology if board type requires it
