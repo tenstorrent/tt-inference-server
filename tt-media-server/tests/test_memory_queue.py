@@ -6,11 +6,12 @@ import sys
 from multiprocessing import shared_memory
 
 import pytest
+from domain.completion_response import CompletionOutput, CompletionResult
 
 
-# Mock the CompletionStreamChunk before importing memory_queue
-class MockCompletionStreamChunk:
-    """Mock CompletionStreamChunk for testing"""
+# Mock the CompletionResult before importing memory_queue
+class MockCompletionResult:
+    """Mock CompletionResult for testing"""
 
     def __init__(self, text=None, index=None, finish_reason=None):
         self.text = text
@@ -24,13 +25,13 @@ if "domain.completion_response" not in sys.modules:
     from unittest.mock import Mock
 
     mock_completion_response = Mock()
-    mock_completion_response.CompletionStreamChunk = MockCompletionStreamChunk
+    mock_completion_response.CompletionResult = MockCompletionResult
     sys.modules["domain.completion_response"] = mock_completion_response
 else:
-    # Update the existing mock with our MockCompletionStreamChunk
+    # Update the existing mock with our MockCompletionResult
     sys.modules[
         "domain.completion_response"
-    ].CompletionStreamChunk = MockCompletionStreamChunk
+    ].CompletionResult = MockCompletionResult
 
 # DO NOT mock utils.logger here - let conftest.py handle it
 # The logger in conftest.py is already properly configured
@@ -42,15 +43,13 @@ from model_services.memory_queue import SharedMemoryChunkQueue
 def make_chunk(task_id: str, is_final: int, text: str):
     """Helper to create test data in the expected format."""
     chunk_type = "final_result" if is_final else "streaming_chunk"
-    key = "result" if is_final else "chunk"
     return (
-        "worker",
+        "worker_id",
         task_id,
-        {
-            "type": chunk_type,
-            key: MockCompletionStreamChunk(text=text),
-            "task_id": task_id,
-        },
+        CompletionOutput(
+            type=chunk_type,
+            data=CompletionResult(text=text),
+        ),
     )
 
 

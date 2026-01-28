@@ -7,12 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from domain.completion_request import CompletionRequest
-from domain.completion_response import CompletionStreamChunk
 from tt_model_runners.vllm_runner import VLLMRunner
 
 
 @dataclass
-class CompletionOutput:
+class VLLMCompletionOutput:
     """Matches vllm.outputs.CompletionOutput interface used by the runner."""
 
     text: str
@@ -23,7 +22,7 @@ class CompletionOutput:
 class RequestOutput:
     """Matches vllm.outputs.RequestOutput interface used by the runner."""
 
-    outputs: list[CompletionOutput]
+    outputs: list[VLLMCompletionOutput]
     request_id: str = "test-id"
 
 
@@ -35,7 +34,7 @@ class MockAsyncLLMEngine:
 
     async def generate(self, prompt, sampling_params, task_id):
         for token in self.tokens:
-            yield RequestOutput(outputs=[CompletionOutput(text=token)])
+            yield RequestOutput(outputs=[VLLMCompletionOutput(text=token)])
 
 
 @pytest.mark.asyncio
@@ -74,10 +73,9 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
     result = await runner._run_async([request])
 
     assert len(result) == 1
-    assert isinstance(result[0], CompletionStreamChunk)
-    assert (
-        result[0].text == "! I'm a new user of this platform. I'm trying to learn how"
-    )
+    assert isinstance(result[0], dict)
+    assert result[0]["type"] == "final_result"
+    assert result[0]["data"].text == "! I'm a new user of this platform. I'm trying to learn how"
 
 
 @pytest.mark.asyncio
@@ -114,19 +112,23 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
     )
     generator = await runner._run_async([request])
 
-    # ✅ Expected tuples: (task_id, is_final, text)
-    expected_chunks = [
-        (request._task_id, 0, token)  # ✅ is_final=0 for streaming chunks
-        for token in tokens
-    ]
-    final_chunk = (request._task_id, 1, "final_text")  # ✅ is_final=1 for final
-    expected_chunks.append(final_chunk)
-
-    index = 0
+    # Collect chunks from generator
+    received_chunks = []
     async for item in generator:
-        assert item == expected_chunks[index], (
-            f"Expected {expected_chunks[index]}, got {item}"
-        )
-        index += 1
+        received_chunks.append(item)
 
-    assert index == len(tokens) + 1, f"Expected {len(tokens) + 1} chunks, got {index}"
+    # Should have one chunk per token plus a final chunk
+    assert len(received_chunks) == len(tokens) + 1, (
+        f"Expected {len(tokens) + 1} chunks, got {len(received_chunks)}"
+    )
+
+    # Verify streaming chunks
+    for i, token in enumerate(tokens):
+        assert received_chunks[i]["type"] == "streaming_chunk"
+        assert received_chunks[i]["data"].text == token
+
+    # Verify final chunk contains concatenated text
+    final_chunk = received_chunks[-1]
+    assert final_chunk["type"] == "final_result"
+    expected_full_text = "! I'm a new user of this platform. I'm trying to learn how"
+    assert final_chunk["data"].text == expected_full_text

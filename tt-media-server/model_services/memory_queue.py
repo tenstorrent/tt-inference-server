@@ -158,7 +158,7 @@ class SharedMemoryChunkQueue:
 
         Accepts (worker_id, task_id, data) tuple where data is a dict with:
         - type: "streaming_chunk" or "final_result"
-        - chunk/result: CompletionStreamChunk with .text attribute
+        - chunk/result: CompletionResult with .text attribute
         - task_id: str
         """
         # Extract from tuple: (worker_id, task_id, data_dict)
@@ -273,7 +273,7 @@ class SharedMemoryChunkQueue:
         text = str(data["text"]).rstrip("\x00")
         is_final = int(data["is_final"])
 
-        chunk = CompletionStreamChunk(
+        chunk = CompletionResult(
             text=text,
             index=None,
             finish_reason=None,

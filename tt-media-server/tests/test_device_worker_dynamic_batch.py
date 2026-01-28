@@ -6,6 +6,7 @@ import asyncio
 import sys
 from unittest.mock import Mock, patch
 
+from domain.completion_response import CompletionOutput, CompletionResult
 import pytest
 
 # Mock all external dependencies before importing
@@ -100,8 +101,8 @@ class TestDeviceWorkerDynamicBatch:
         # Track results
         results_captured = []
 
-        def capture_put(*args):
-            results_captured.append(args)
+        def capture_put(item):
+            results_captured.append(item)
 
         result_queue.put = capture_put
 
@@ -123,9 +124,21 @@ class TestDeviceWorkerDynamicBatch:
 
         # Create async generator that yields tuples (task_id, is_final, text)
         async def mock_async_generator():
-            yield ("stream_task_1", 0, "token_0")
-            yield ("stream_task_1", 0, "token_1")
-            yield ("stream_task_1", 1, "[DONE]")  # ✅ is_final=1
+            yield CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_0"),
+                task_id="stream_task_1",
+            )
+            yield CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_1"),
+                task_id="stream_task_1",
+            )
+            yield CompletionOutput(
+                type="final_result",
+                data=CompletionResult(text="[DONE]"),
+                task_id="stream_task_1",
+            )
 
         async def mock_run_async(requests):
             return mock_async_generator()
@@ -149,13 +162,25 @@ class TestDeviceWorkerDynamicBatch:
         assert len(results_captured) >= 3, (
             f"Expected at least 3 results, got {len(results_captured)}: {results_captured}"
         )
-        assert results_captured[0] == ("stream_task_1", 0, "token_0"), (
+        assert results_captured[0] == (("worker_0", "stream_task_1", CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_0"),
+                task_id="stream_task_1",
+            ))), (
             f"Got {results_captured[0]}"
         )
-        assert results_captured[1] == ("stream_task_1", 0, "token_1"), (
+        assert results_captured[1] == (("worker_0", "stream_task_1", CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_1"),
+                task_id="stream_task_1",
+            ))), (
             f"Got {results_captured[1]}"
         )
-        assert results_captured[2] == ("stream_task_1", 1, "[DONE]"), (
+        assert results_captured[2] == (("worker_0", "stream_task_1", CompletionOutput(
+                type="final_result",
+                data=CompletionResult(text="[DONE]"),
+                task_id="stream_task_1",
+            ))), (
             f"Got {results_captured[2]}"
         )
 
@@ -188,7 +213,9 @@ class TestDeviceWorkerDynamicBatch:
         fresh_device_runner.warmup = mock_warmup
 
         mock_response = Mock()
-        fresh_device_runner.run.return_value = [mock_response]
+        async def mock_run_async(requests):
+            return [mock_response]
+        fresh_device_runner._run_async = mock_run_async
 
         with patch(
             "device_workers.device_worker_dynamic_batch.initialize_device_worker",
