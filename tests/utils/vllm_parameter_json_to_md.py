@@ -29,13 +29,12 @@ def analyze_report(report_data):
     """Analyzes test results to create a detailed summary object."""
     summary = {}
 
-    if "parameter_support" not in report_data or not isinstance(
-        report_data["parameter_support"], dict
+    if "results" not in report_data or not isinstance(
+        report_data["results"], dict
     ):
-        print("Warning: 'parameter_support' key missing or invalid in report.json.")
-        return summary
+        raise AttributeError("'results' field missing or invalid in report.json")
 
-    for test_case, tests in report_data["parameter_support"].items():
+    for test_case, tests in report_data["results"].items():
         if not tests:
             summary[test_case] = {
                 "status": "SKIP",
