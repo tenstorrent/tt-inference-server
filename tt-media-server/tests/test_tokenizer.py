@@ -4,26 +4,12 @@
 
 """Tests for tokenizer API endpoints."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-# Mock modules before importing
-sys.modules["utils.logger"] = MagicMock()
-
-# Mock settings before importing domain classes that use it
-# The domain classes access settings.vllm.model at class definition time
 from config.constants import SupportedModels
-
-mock_vllm_settings = MagicMock()
-mock_vllm_settings.model = SupportedModels.QWEN_3_4B.value
-mock_settings_instance = MagicMock()
-mock_settings_instance.vllm = mock_vllm_settings
-
-sys.modules["config.settings"].settings = mock_settings_instance
-
 from domain.detokenize_request import DetokenizeRequest
 from domain.tokenize_request import TokenizeCompletionRequest
 from open_ai_api.tokenizer import detokenize, tokenize
@@ -64,10 +50,6 @@ class TestTokenizeEndpoint:
     @pytest.fixture
     def mock_llama_tokenizer(self):
         """Create a mock Llama tokenizer with real token values."""
-        # Real values from Llama 3.2 3B for "Hello world"
-        # with special tokens: [128000, 9906, 1917]
-        # without special tokens: [9906, 1917]
-        # token strs: ['<|begin_of_text|>', 'Hello', 'Ġworld']
         tokenizer = MagicMock()
         tokenizer.encode = MagicMock(return_value=[128000, 9906, 1917])
         tokenizer.model_max_length = 131072
@@ -79,10 +61,6 @@ class TestTokenizeEndpoint:
     @pytest.fixture
     def mock_qwen_tokenizer(self):
         """Create a mock Qwen tokenizer with real token values."""
-        # Real values from Qwen 3 4B for "Hello world"
-        # with special tokens: [9707, 1879]
-        # without special tokens: [9707, 1879]
-        # token strs: ['Hello', 'Ġworld']
         tokenizer = MagicMock()
         tokenizer.encode = MagicMock(return_value=[9707, 1879])
         tokenizer.model_max_length = 131072
@@ -98,13 +76,16 @@ class TestTokenizeEndpoint:
                 return mock_llama_tokenizer
             elif model_name == SupportedModels.QWEN_3_4B.value:
                 return mock_qwen_tokenizer
-            return mock_llama_tokenizer  # default
+            return mock_llama_tokenizer
 
         with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = from_pretrained_side_effect
             yield mock_auto
 
-    def test_tokenize_basic_request(self, mock_auto_tokenizer, mock_llama_tokenizer):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_tokenize_basic_request(
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
+    ):
         """Test basic tokenization request."""
         request = TokenizeCompletionRequest(
             model=SupportedModels.LLAMA_3_2_3B.value,
@@ -126,7 +107,10 @@ class TestTokenizeEndpoint:
             SupportedModels.LLAMA_3_2_3B.value
         )
 
-    def test_tokenize_with_token_strs(self, mock_auto_tokenizer, mock_llama_tokenizer):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_tokenize_with_token_strs(
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
+    ):
         """Test tokenization with return_token_strs=True."""
         request = TokenizeCompletionRequest(
             model=SupportedModels.LLAMA_3_2_3B.value,
@@ -144,11 +128,11 @@ class TestTokenizeEndpoint:
             [128000, 9906, 1917]
         )
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_tokenize_without_special_tokens(
-        self, mock_auto_tokenizer, mock_llama_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
     ):
         """Test tokenization without special tokens."""
-        # Update mock to return tokens without special tokens
         mock_llama_tokenizer.encode.return_value = [9906, 1917]
         request = TokenizeCompletionRequest(
             model=SupportedModels.LLAMA_3_2_3B.value,
@@ -165,11 +149,13 @@ class TestTokenizeEndpoint:
             "Hello world", add_special_tokens=False
         )
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_tokenize_with_default_model(
-        self, mock_auto_tokenizer, mock_qwen_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_qwen_tokenizer
     ):
-        """Test that default model is used when model is not specified."""
+        """Test tokenization with Qwen model (configured as default)."""
         request = TokenizeCompletionRequest(
+            model=SupportedModels.QWEN_3_4B.value,
             prompt="Hello world",
         )
 
@@ -195,8 +181,9 @@ class TestTokenizeEndpoint:
             tokenize(request)
         assert exc_info.value.status_code == 400
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_tokenize_with_tokenizer_error_raises_exception(
-        self, mock_auto_tokenizer, mock_llama_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
     ):
         """Test that tokenizer errors are handled properly."""
         mock_llama_tokenizer.encode.side_effect = Exception("Tokenizer error")
@@ -210,7 +197,8 @@ class TestTokenizeEndpoint:
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail == "Tokenization failed"
 
-    def test_tokenize_with_tokenizer_loading_error_raises_exception(self):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_tokenize_with_tokenizer_loading_error_raises_exception(self, mock_logger):
         """Test that tokenizer loading errors are handled properly."""
         with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = Exception("Loading failed")
@@ -224,10 +212,11 @@ class TestTokenizeEndpoint:
             assert exc_info.value.status_code == 500
             assert exc_info.value.detail == "Tokenization failed"
 
-    def test_tokenize_with_qwen_model(self, mock_auto_tokenizer, mock_qwen_tokenizer):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_tokenize_with_qwen_model(
+        self, mock_logger, mock_auto_tokenizer, mock_qwen_tokenizer
+    ):
         """Test tokenization with Qwen model."""
-        # For "Test prompt", we'll use a different mock return value
-        # But for consistency, let's test with "Hello world" which we have real values for
         request = TokenizeCompletionRequest(
             model=SupportedModels.QWEN_3_4B.value,
             prompt="Hello world",
@@ -248,7 +237,6 @@ class TestDetokenizeEndpoint:
     @pytest.fixture
     def mock_llama_tokenizer(self):
         """Create a mock Llama tokenizer with real decode values."""
-        # Real decode from Llama 3.2 3B for [128000, 9906, 1917]: '<|begin_of_text|>Hello world'
         tokenizer = MagicMock()
         tokenizer.decode = MagicMock(return_value="<|begin_of_text|>Hello world")
         return tokenizer
@@ -256,7 +244,6 @@ class TestDetokenizeEndpoint:
     @pytest.fixture
     def mock_qwen_tokenizer(self):
         """Create a mock Qwen tokenizer with real decode values."""
-        # Real decode from Qwen 3 4B for [9707, 1879]: 'Hello world'
         tokenizer = MagicMock()
         tokenizer.decode = MagicMock(return_value="Hello world")
         return tokenizer
@@ -270,15 +257,17 @@ class TestDetokenizeEndpoint:
                 return mock_llama_tokenizer
             elif model_name == SupportedModels.QWEN_3_4B.value:
                 return mock_qwen_tokenizer
-            return mock_llama_tokenizer  # default
+            return mock_llama_tokenizer
 
         with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = from_pretrained_side_effect
             yield mock_auto
 
-    def test_detokenize_basic_request(self, mock_auto_tokenizer, mock_llama_tokenizer):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_detokenize_basic_request(
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
+    ):
         """Test basic detokenization request."""
-        # Use real token values from Llama
         request = DetokenizeRequest(
             model=SupportedModels.LLAMA_3_2_3B.value,
             tokens=[128000, 9906, 1917],
@@ -294,8 +283,9 @@ class TestDetokenizeEndpoint:
             SupportedModels.LLAMA_3_2_3B.value
         )
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_detokenize_with_empty_tokens(
-        self, mock_auto_tokenizer, mock_llama_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
     ):
         """Test detokenization with empty token list."""
         mock_llama_tokenizer.decode.return_value = ""
@@ -311,12 +301,13 @@ class TestDetokenizeEndpoint:
             [], skip_special_tokens=False
         )
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_detokenize_with_default_model(
-        self, mock_auto_tokenizer, mock_qwen_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_qwen_tokenizer
     ):
-        """Test that default model is used when model is not specified."""
-        # Use real token values from Qwen
+        """Test detokenization with Qwen model (configured as default)."""
         request = DetokenizeRequest(
+            model=SupportedModels.QWEN_3_4B.value,
             tokens=[9707, 1879],
         )
 
@@ -341,8 +332,9 @@ class TestDetokenizeEndpoint:
             detokenize(request)
         assert exc_info.value.status_code == 400
 
+    @patch("open_ai_api.tokenizer.logger")
     def test_detokenize_with_tokenizer_error_raises_exception(
-        self, mock_auto_tokenizer, mock_llama_tokenizer
+        self, mock_logger, mock_auto_tokenizer, mock_llama_tokenizer
     ):
         """Test that tokenizer errors are handled properly."""
         mock_llama_tokenizer.decode.side_effect = Exception("Tokenizer error")
@@ -356,7 +348,10 @@ class TestDetokenizeEndpoint:
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail == "Detokenization failed"
 
-    def test_detokenize_with_tokenizer_loading_error_raises_exception(self):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_detokenize_with_tokenizer_loading_error_raises_exception(
+        self, mock_logger
+    ):
         """Test that tokenizer loading errors are handled properly."""
         with patch("utils.tokenizer_utils.AutoTokenizer") as mock_auto:
             mock_auto.from_pretrained.side_effect = Exception("Loading failed")
@@ -370,9 +365,11 @@ class TestDetokenizeEndpoint:
             assert exc_info.value.status_code == 500
             assert exc_info.value.detail == "Detokenization failed"
 
-    def test_detokenize_with_qwen_model(self, mock_auto_tokenizer, mock_qwen_tokenizer):
+    @patch("open_ai_api.tokenizer.logger")
+    def test_detokenize_with_qwen_model(
+        self, mock_logger, mock_auto_tokenizer, mock_qwen_tokenizer
+    ):
         """Test detokenization with Qwen model."""
-        # Use real token values from Qwen
         request = DetokenizeRequest(
             model=SupportedModels.QWEN_3_4B.value,
             tokens=[9707, 1879],

@@ -5,15 +5,15 @@
 import asyncio
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Dict, Optional
+from pathlib import Path
 
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
-
 from utils.logger import TTLogger
 
 
@@ -22,17 +22,20 @@ class JobStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    CANCELLING = "cancelling"
 
 
 @dataclass
 class Job:
     id: str
-    object: str
+    job_type: str
     model: str
+    request_parameters: dict = field(default_factory=dict)
     status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
-    result: Optional[Any] = None
+    result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
 
@@ -43,10 +46,17 @@ class Job:
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
 
-    def mark_completed(self, result: Any):
+    def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
         self.status = JobStatus.COMPLETED
-        self.result = result
+        self.result_path = result_path
+
+    def mark_cancelling(self):
+        self.status = JobStatus.CANCELLING
+
+    def mark_cancelled(self):
+        self.status = JobStatus.CANCELLED
+        self.completed_at = int(time.time())
 
     def mark_failed(self, error_code: str, error_message: str):
         self.completed_at = int(time.time())
@@ -60,15 +70,20 @@ class Job:
         return self.status == JobStatus.COMPLETED
 
     def is_terminal(self) -> bool:
-        return self.status in [JobStatus.COMPLETED, JobStatus.FAILED]
+        return self.status in [
+            JobStatus.COMPLETED,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        ]
 
     def to_public_dict(self) -> dict:
         data = {
             "id": self.id,
-            "object": self.object,
+            "job_type": self.job_type,
             "status": self.status.value,
             "created_at": self.created_at,
             "model": self.model,
+            "request_parameters": self.request_parameters,
         }
         if self.completed_at:
             data["completed_at"] = self.completed_at
@@ -90,7 +105,7 @@ class JobManager:
         if self._settings.enable_job_persistence:
             from utils.job_database import JobDatabase
 
-            self.db = JobDatabase()
+            self.db = JobDatabase(db_path=Path(self._settings.job_database_path))
             self._logger.info("Job persistence enabled with database")
             self._restore_jobs_from_db()
 
@@ -112,20 +127,30 @@ class JobManager:
                 raise Exception("Maximum job limit reached")
             job = Job(
                 id=job_id,
-                object=job_type.value,
+                job_type=job_type.value,
                 model=model,
+                request_parameters=request.model_dump(mode="json"),
             )
-            self._jobs[job_id] = job
-            self._logger.info(f"Job {job_id} created.")
 
             if self.db:
-                self.db.insert_job(
-                    job_id=job.id,
-                    object=job.object,
-                    model=job.model,
-                    status=job.status.value,
-                    created_at=job.created_at,
-                )
+                try:
+                    self.db.insert_job(
+                        job_id=job.id,
+                        job_type=job.job_type,
+                        model=job.model,
+                        request_parameters=job.request_parameters,
+                        status=job.status.value,
+                        created_at=job.created_at,
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to insert job {job_id} into database: {e}"
+                    )
+                    raise
+
+            # we only add the job to the in-memory storage if the database insert was successful
+            self._jobs[job_id] = job
+            self._logger.info(f"Job {job_id} created.")
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
@@ -137,7 +162,7 @@ class JobManager:
             return [
                 job.to_public_dict()
                 for job in self._jobs.values()
-                if job_type is None or job.object == job_type.value
+                if job_type is None or job.job_type == job_type.value
             ]
 
     def get_job_metadata(self, job_id: str) -> Optional[dict]:
@@ -148,12 +173,12 @@ class JobManager:
                 return job.to_public_dict()
             return None
 
-    def get_job_result(self, job_id: str) -> Optional[Any]:
-        """Get job result if completed."""
+    def get_job_result_path(self, job_id: str) -> Optional[str]:
+        """Get job result path if completed."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
             if job and job.is_terminal():
-                return job.result if job.is_completed() else job.error
+                return job.result_path if job.is_completed() else None
             return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -161,20 +186,31 @@ class JobManager:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
             if not job:
+                self._logger.warning(f"Cancel failed: Job {job_id} not found.")
                 return False
+
+            if job.is_terminal():
+                self._logger.warning(
+                    f"Cancel failed: Job {job_id} is already {job.status.value}."
+                )
+                return False
+
+            job.mark_cancelling()
+            if self.db:
+                try:
+                    self.db.update_job_status(job.id, job.status.value)
+                except Exception as e:
+                    self._logger.error(
+                        f"DB update failed, but proceeding with task cancellation: {e}"
+                    )
 
             self._cleanup_job(job)
 
-            self._jobs.pop(job_id)
-            self._logger.info(f"Job {job_id} cancelled.")
-
-            if self.db:
-                self.db.delete_job(job_id)
-
+            self._logger.info(f"Job {job_id} cancellation initiated.")
             return True
 
     async def shutdown(self):
-        """Gracefully shutdown job manager and cleanup task."""
+        """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
 
         if self._cleanup_task:
@@ -186,46 +222,92 @@ class JobManager:
 
         running_tasks = []
         with self._jobs_lock:
-            for job in list(self._jobs.values()):
-                task = self._cleanup_job(job)
-                if task:
-                    running_tasks.append(task)
+            for job_id in list(self._jobs.keys()):
+                job = self._jobs[job_id]
+
+                if not job.is_terminal():
+                    self._logger.info(
+                        f"Terminating active job {job_id} during shutdown."
+                    )
+
+                    job.mark_cancelling()
+                    if self.db:
+                        try:
+                            self.db.update_job_status(job.id, job.status.value)
+                        except Exception as e:
+                            self._logger.error(
+                                f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}"
+                            )
+
+                    task = self._cleanup_job(job)
+                    if task:
+                        running_tasks.append(task)
+
+                # Always remove from memory tracking during shutdown
+                self._jobs.pop(job_id)
 
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
-
         self._logger.info("Job manager shutdown complete")
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
             job.mark_in_progress()
             if self.db:
-                self.db.update_job_status(job.id, job.status.value)
+                try:
+                    self.db.update_job_status(job.id, job.status.value)
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
+                    )
 
-            result = await task_function(request)
+            result_path = await task_function(request)
 
-            job.mark_completed(result=result)
+            if result_path is not None and not isinstance(result_path, str):
+                raise TypeError(f"result_path must be str, not {type(result_path)}")
+
+            job.mark_completed(result_path=result_path)
             if self.db:
-                self.db.update_job_status(
-                    job.id,
-                    job.status.value,
-                    completed_at=job.completed_at,
-                    result=result,
-                )
+                try:
+                    self.db.update_job_status(
+                        job.id,
+                        job.status.value,
+                        completed_at=job.completed_at,
+                        result_path=job.result_path,
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to sync 'completed' to DB for {job.id}: {e}"
+                    )
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
+            job.mark_cancelled()
+            if self.db:
+                try:
+                    self.db.update_job_status(
+                        job.id, job.status.value, completed_at=job.completed_at
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
+                    )
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
             job.mark_failed(error_code="processing_error", error_message=str(e))
             if self.db:
-                self.db.update_job_status(
-                    job.id,
-                    job.status.value,
-                    completed_at=job.completed_at,
-                    error={"code": "processing_error", "message": str(e)},
-                )
+                try:
+                    self.db.update_job_status(
+                        job.id,
+                        job.status.value,
+                        completed_at=job.completed_at,
+                        error_message=job.error,
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to sync 'failed' to DB for {job.id}: {e}"
+                    )
         finally:
             job._task = None
 
@@ -247,7 +329,7 @@ class JobManager:
         self._logger.info("Job cleanup task started")
 
     def _cleanup_old_jobs(self):
-        """Remove old completed, failed and stuck in-progress jobs."""
+        """Remove old completed/failed/cancelled and stuck in-progress jobs."""
         current_time = time.time()
         cutoff_time = current_time - self._settings.job_retention_seconds
         stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
@@ -269,7 +351,12 @@ class JobManager:
                 for job_id in jobs_to_remove:
                     self._jobs.pop(job_id, None)
                     if self.db:
-                        self.db.delete_job(job_id)
+                        try:
+                            self.db.delete_job(job_id)
+                        except Exception as e:
+                            self._logger.error(
+                                f"Database deletion failed for job {job_id} during cleanup: {e}"
+                            )
 
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
@@ -282,49 +369,83 @@ class JobManager:
             job._task.cancel()
             running_task = job._task
 
-        # Delete result file if it's a file path
-        if job.result and isinstance(job.result, str):
+        if job.result_path and isinstance(job.result_path, str):
             try:
-                if os.path.exists(job.result):
-                    os.remove(job.result)
-                    self._logger.debug(f"Deleted file for job {job.id}: {job.result}")
+                if os.path.exists(job.result_path):
+                    os.remove(job.result_path)
+                    self._logger.debug(
+                        f"Deleted file for job {job.id}: {job.result_path}"
+                    )
             except Exception as e:
                 self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
         return running_task
 
     def _restore_jobs_from_db(self):
-        """Restore all jobs from database on server restart."""
+        """
+        Restore all jobs from database on server restart.
+        Mark stuck jobs as failed or cancelled.
+        """
         if not self.db:
             return
 
         try:
             db_jobs = self.db.get_all_jobs()
-
+            restored_jobs = {}
             for db_job in db_jobs:
+                original_status = db_job["status"]
+
                 job = Job(
                     id=db_job["id"],
-                    object=db_job["object"],
+                    job_type=db_job["job_type"],
                     model=db_job["model"],
-                    status=JobStatus(db_job["status"]),
+                    request_parameters=db_job["request_parameters"],
+                    status=JobStatus(original_status),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),
-                    error=db_job.get("error"),
+                    result_path=db_job.get("result_path"),
+                    error=db_job.get("error_message"),
                 )
 
-                if db_job.get("result"):
-                    job.result = db_job["result"]
+                # If job was stuck, mark it as failed or cancelled and sync to database
+                if not job.is_terminal():
+                    if original_status == "cancelling":
+                        job.mark_cancelled()
+                    else:
+                        job.mark_failed(
+                            "server_restart", "Job interrupted by system restart"
+                        )
 
-                with self._jobs_lock:
-                    self._jobs[job.id] = job
+                    # we override the completed_at time with the creation time, since we don't know the time of the system restart
+                    job.completed_at = db_job["created_at"]
 
-                self._logger.debug(
-                    f"Restored job {job.id} from database (status: {job.status.value})"
-                )
+                    self._logger.warning(
+                        f"Job {db_job['id']} was stuck in '{original_status}'. "
+                        f"Syncing to '{job.status.value}'."
+                    )
+                    try:
+                        self.db.update_job_status(
+                            job.id,
+                            job.status.value,
+                            completed_at=job.completed_at,
+                            error_message=job.error,
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to sync corrected status for job {job.id} to DB: {e}"
+                        )
+                else:
+                    self._logger.debug(
+                        f"Restored job {job.id} from database (status: {job.status.value})"
+                    )
 
-            restored_count = len(db_jobs)
-            if restored_count > 0:
-                self._logger.info(f"Restored {restored_count} job(s) from database")
+                restored_jobs[job.id] = job
+
+            with self._jobs_lock:
+                self._jobs.update(restored_jobs)
+            if restored_jobs:
+                self._logger.info(f"Restored {len(restored_jobs)} job(s) from database")
+
         except Exception as e:
             self._logger.error(f"Failed to restore jobs from database: {e}")
 

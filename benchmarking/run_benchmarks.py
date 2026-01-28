@@ -54,6 +54,8 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.CNN,
     ModelType.AUDIO,
     ModelType.EMBEDDING,
+    ModelType.TEXT_TO_SPEECH,
+    ModelType.VIDEO,
 ]
 
 
@@ -128,19 +130,22 @@ def build_benchmark_command(
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    dataset_name = "random-mm" if params.task_type == "image" else "random"
+    backend = "vllm" if params.task_type == "text" else "openai-chat"
+
     # fmt: off
     cmd = [
-        str(task_venv_config.venv_python), str(benchmark_script),
-        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        str(benchmark_script),
+        "bench",
+        "serve",
+        "--backend", backend,
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
-        "--dataset-name", "cleaned-random",
+        "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
         "--random-output-len", str(osl),
-        "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
@@ -150,9 +155,8 @@ def build_benchmark_command(
     if params.task_type == "image":
         if params.image_height and params.image_width:
             cmd.extend([
-                "--random-images-per-prompt", str(params.images_per_prompt),
-                "--random-image-height", str(params.image_height),
-                "--random-image-width", str(params.image_width),
+                "--random-mm-base-items-per-request", str(params.images_per_prompt),
+                "--random-mm-bucket-config", str({(params.image_height, params.image_width, 1): 1.0}),
                 "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
@@ -296,7 +300,7 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
-        benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
+        benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
             context_lens = [(params.isl, params.osl) for params in params_list]
@@ -354,8 +358,7 @@ def main():
 
 def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
-    Run benchmarks for the given model and device. Here we are running IMAGE, CNN
-    and AUDIO benchmarks.
+    Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
     logger.info(
         f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"

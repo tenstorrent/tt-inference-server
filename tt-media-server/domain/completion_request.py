@@ -2,10 +2,13 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Union
+from typing import Union, Annotated
 
 from domain.base_request import BaseRequest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+import torch
+
+_LONG_INFO = torch.iinfo(torch.long)
 
 
 class StreamOptions(BaseModel):
@@ -24,31 +27,47 @@ class CompletionRequest(BaseRequest):
     # Model identifier
     model: str | None = None
 
-    prompt: str
+    # prompt can be a string or a list of token ids
+    prompt: str | list[int]
 
     # Response configuration
     echo: bool | None = False
     max_tokens: int | None = 16
     n: int = 1
+    presence_penalty: float | None = 0.0
+    frequency_penalty: float | None = 0.0
     suffix: str | None = None
     stream: bool | None = False
     stream_options: StreamOptions | None = None
-
-    # Sampling parameters
-    temperature: float | None = None
-    top_p: float | None = None
-    frequency_penalty: float | None = 0.0
-    presence_penalty: float | None = 0.0
-    logit_bias: dict[str, float] | None = None
-
-    # Logging and debugging
-    logprobs: int | None = None
-
     # Stopping criteria
     stop: Union[str, list[str], None] = []
 
     # Reproducibility
     seed: int | None = None
 
+    # sampling-params
+    temperature: float | None = None
+    top_p: float | None = None
+
+    # Logging and debugging
+    logprobs: int | None = None
     # User identifier (for monitoring/abuse prevention)
     user: str | None = None
+
+    # completion-sampling-params
+    use_beam_search: bool = False
+    top_k: int | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
+    length_penalty: float = 1.0
+    stop_token_ids: list[int] | None = []
+    include_stop_str_in_output: bool = False
+    ignore_eos: bool = False
+    min_tokens: int = 0
+    skip_special_tokens: bool = True
+    spaces_between_special_tokens: bool = True
+    allowed_token_ids: list[int] | None = None
+    prompt_logprobs: int | None = None
+    truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_LONG_INFO.max)] | None = (
+        None
+    )
