@@ -4,6 +4,8 @@
 
 import pytest
 import numpy as np
+import io
+import wave
 from unittest.mock import patch
 
 from utils.audio_manager import AudioManager
@@ -22,8 +24,6 @@ class DummySettings:
 
 @patch("utils.audio_manager.settings", new=DummySettings())
 def generate_dummy_wav_bytes():
-    import io, wave
-
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wf:
         wf.setnchannels(1)
