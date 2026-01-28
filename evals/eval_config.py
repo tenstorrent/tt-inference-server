@@ -2605,6 +2605,10 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                },
                 use_chat_api=False,
                 apply_chat_template=False,
                 max_concurrent=32,
@@ -2619,6 +2623,10 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                },
                 use_chat_api=False,
                 apply_chat_template=False,
                 max_concurrent=32,
