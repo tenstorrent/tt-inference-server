@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 import yaml
 
+from workflows.bootstrap_uv import UV_EXEC
 from workflows.model_spec import ModelType
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -64,20 +65,33 @@ class VenvConfig:
         if self.venv_pip is None:
             object.__setattr__(self, "venv_pip", self.venv_path / "bin" / "pip")
 
-    def setup(self, model_spec: "ModelSpec", uv_exec: Path) -> None:  # noqa: F821
+    def setup(self, model_spec: "ModelSpec") -> bool:  # noqa: F821
         """Run the setup using the instance's provided setup_function."""
-        # NOTE: the uv_exec is not seeded
-        return self.setup_function(self, model_spec=model_spec, uv_exec=uv_exec)
+        # setup venv using uv if not exists
+        if not self.venv_path.exists():
+            # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
+            # --python: set the python interpreter version in venv
+            # --allow-existing: if venv exists, check if it has correct package versions
+            # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
+            # --managed-python: explicitly use uv managed python versions
+            run_command(
+                f"{str(UV_EXEC)} venv --managed-python --python={self.python_version} {self.venv_path} --allow-existing",
+                logger=logger,
+            )
+        # uv will verify deps if venv exists
+        venv_setup_completed = self.setup_function(self, model_spec=model_spec)
+        if not venv_setup_completed:
+            raise RuntimeError(f"Failed to setup venv: {self.venv_type.name}")
+        return venv_setup_completed
 
 
 def setup_evals_common(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
         "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
@@ -107,7 +121,6 @@ def setup_venv(venv_config: VenvConfig) -> bool:
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     if (
         model_spec.model_type == ModelType.AUDIO
@@ -131,23 +144,23 @@ def setup_evals_meta(
         run_command(clone_cmd, logger=logger)
         # Upgrade pip and setuptools
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
             logger=logger,
         )
         # Install the package in editable mode
         os.chdir(cookbook_dir)
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -e .",
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -e .",
             logger=logger,
         )
         # Install specific dependencies
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U antlr4_python3_runtime==4.11",
             logger=logger,
         )
         logger.warning("this might take 5 to 15+ minutes to install on first run ...")
         run_command(
-            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
             "--index-strategy unsafe-best-match "
             "--extra-index-url https://download.pytorch.org/whl/cpu "
             "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
@@ -188,10 +201,15 @@ def setup_evals_meta(
             yaml.safe_dump(config, f)
 
         # this requires HF AUTH
-        run_command(
+        return_code = run_command(
             f"{venv_config.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml",
             logger=logger,
+            check=False,
         )
+        if return_code != 0:
+            logger.warning(
+                f"Failed to prepare meta eval datasets for: {meta_eval_data_dir}, continuing..."
+            )
     # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
     # to deal with this and make downstream simpler, hotswap dirs
     work_dir = venv_config.venv_path / "work_dir"
@@ -206,7 +224,6 @@ def setup_evals_meta(
 def setup_benchmarks_vllm(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_benchmarks_vllm() ...")
     work_dir = venv_config.venv_path / "work_dir"
@@ -217,7 +234,7 @@ def setup_benchmarks_vllm(
         logger.info(f"work_dir already exists for generic server testing: {work_dir}")
     # pin vllm==0.13.0 for reproducibility and potential regressions
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} -U pip vllm==0.13.0 torch",
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip vllm==0.13.0 torch",
         logger=logger,
     )
 
@@ -227,7 +244,6 @@ def setup_benchmarks_vllm(
 def setup_benchmarks_video(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     """Setup video benchmarking environment."""
     logger.info("running setup_benchmarks_video() ...")
@@ -237,13 +253,12 @@ def setup_benchmarks_video(
 def setup_evals_vision(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     # use https://github.com/tstescoTT/lm-evaluation-harness/tree/tstesco/add-local-multimodal
     # for local-mm-completions model
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1 pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1 pyjwt==2.7.0 pillow==11.1 qwen_vl_utils",
         logger=logger,
     )
     return True
@@ -252,7 +267,6 @@ def setup_evals_vision(
 def setup_evals_audio(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     """
     Setup audio evaluation environment on HOST using lmms-eval.
@@ -262,7 +276,7 @@ def setup_evals_audio(
         "Installing lmms-eval for audio - this might take 5 to 15+ minutes on first run ..."
     )
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
         f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
         f"pyjwt==2.7.0 pillow==11.1",
         logger=logger,
@@ -273,11 +287,10 @@ def setup_evals_audio(
 def setup_evals_embedding(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_evals_embedding() ...")
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'mteb>=2.6.6' openai",
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} 'mteb>=2.6.6' openai",
         logger=logger,
     )
     return True
@@ -286,7 +299,6 @@ def setup_evals_embedding(
 def setup_evals_video(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     """
     Setup video evaluation environment on HOST.
@@ -299,15 +311,14 @@ def setup_evals_video(
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_stress_tests_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
+        command=f"{UV_EXEC} pip install --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch numpy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1 aiohttp",
+        command=f"{UV_EXEC} pip install --python {venv_config.venv_python} requests transformers datasets pyjwt==2.7.0 pillow==11.1 aiohttp",
         logger=logger,
     )
     # Remove the redundant download section since we now use stress_tests/stress_tests_benchmarking_script.py
@@ -318,23 +329,22 @@ def setup_stress_tests_run_script(
 def setup_evals_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:  # noqa: F821
     logger.info("running setup_evals_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     run_command(
-        f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
         f"--extra-index-url https://download.pytorch.org/whl/cpu "
         f"'mteb[openai]>=2.6.6' tiktoken openai",
         logger=logger,
@@ -345,19 +355,18 @@ def setup_evals_run_script(
 def setup_benchmarks_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_benchmarks_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} numpy scipy",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
         logger=logger,
     )
     return True
@@ -366,11 +375,10 @@ def setup_benchmarks_run_script(
 def setup_reports_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_reports_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} requests numpy",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests numpy",
         logger=logger,
     )
     return True
@@ -379,12 +387,11 @@ def setup_reports_run_script(
 def setup_hf_setup(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_hf_setup() ...")
     # Install a modern version that provides the 'hf' CLI entrypoint
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'huggingface_hub>=1.0.0'",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} 'huggingface_hub>=1.0.0'",
         logger=logger,
     )
     return True
@@ -393,7 +400,6 @@ def setup_hf_setup(
 def setup_benchmarks_genai_perf(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     """Setup for genai-perf benchmarks (Docker-based, minimal local setup)."""
     logger.info("running setup_benchmarks_genai_perf() ...")
@@ -408,7 +414,6 @@ def setup_benchmarks_genai_perf(
 def setup_benchmarks_aiperf(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     """Setup for aiperf benchmarks (pip-based installation).
 
@@ -419,19 +424,19 @@ def setup_benchmarks_aiperf(
 
     # Install torch CPU for dependencies that require it (like prompt_client)
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
         logger=logger,
     )
 
     # Install aiperf from PyPI
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} aiperf",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} aiperf",
         logger=logger,
     )
 
     # Install additional dependencies for tokenization and prompt client
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} transformers pyjwt requests datasets",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} transformers pyjwt requests datasets",
         logger=logger,
     )
 
@@ -442,45 +447,54 @@ def setup_benchmarks_aiperf(
     return True
 
 
-def create_local_setup_venv(
-    uv_exec: Path,
+def setup_system_software_validation(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    venv_config = VenvConfig(
-        venv_type=WorkflowVenvType.LOCAL_SETUP_VALIDATION,
-    )
-    logger.info("running setup_local_setup_validation() ...")
-    if not venv_config.venv_path.exists():
-        # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
-        # --managed-python: explicitly use uv managed python versions
-        # --python: set the python interpreter version in venv
-        # --allow-existing: if venv exists, check if it has correct package versions
-        # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
-        run_command(
-            f"{str(uv_exec)} venv --managed-python --python={venv_config.python_version} {venv_config.venv_path} --allow-existing",
-            logger=logger,
-        )
+    logger.info("running setup_system_software_validation() ...")
 
-    # NOTE: Install latest version of {tt-smi, tt-topology} but pin packaging
-    # this is to test for regressions in tt-smi and tt-topology
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} tt-smi==3.0.34 tt-topology==1.2.15 packaging==25.0",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} packaging==25.0 PyYAML",
         logger=logger,
     )
-    return venv_config.venv_python
+    return True
+
+
+def setup_tt_smi(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    logger.info("running setup_tt_smi() ...")
+    run_command(
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} tt-smi==3.0.39",
+        logger=logger,
+    )
+    return True
+
+
+def setup_tt_topology(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    logger.info("running setup_tt_topology() ...")
+    run_command(
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} tt-topology==1.2.16",
+        logger=logger,
+    )
+    return True
 
 
 def setup_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
-    uv_exec: Path,
 ) -> bool:
     logger.info("running setup_tests_run_script() ...")
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
         logger=logger,
     )
     run_command(
-        command=f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} datasets transformers==4.57.1 pyyaml==6.0.3 pytest==8.3.5 pytest-asyncio==1.3.0 requests==2.32.5 pyjwt==2.7.0",
         logger=logger,
     )
     return True
@@ -549,6 +563,19 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,
         setup_function=setup_benchmarks_genai_perf,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION,
+        setup_function=setup_system_software_validation,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TT_SMI,
+        setup_function=setup_tt_smi,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.TT_TOPOLOGY,
+        setup_function=setup_tt_topology,
     ),
 ]
 

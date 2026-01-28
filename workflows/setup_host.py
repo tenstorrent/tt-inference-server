@@ -27,7 +27,6 @@ from workflows.model_spec import (
     ModelSpec,
     ModelSource,
 )
-from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
@@ -117,9 +116,9 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert self.model_source == ModelSource.HUGGINGFACE.value, (
-            "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
-        )
+        assert (
+            self.model_source == ModelSource.HUGGINGFACE.value
+        ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
                 self.host_model_weights_snapshot_dir = (
@@ -145,9 +144,9 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert self.model_source == ModelSource.LOCAL.value, (
-            "⛔ update_host_model_weights_mount_dir only supported for local model source."
-        )
+        assert (
+            self.model_source == ModelSource.LOCAL.value
+        ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
         if self.host_model_weights_mount_dir.exists():
             self.container_model_weights_mount_dir = (
@@ -306,9 +305,9 @@ class HostSetupManager:
         hf_home.mkdir(parents=True, exist_ok=True)
         # set HF_HOME so that huggingface cache is used correctly
         os.environ["HF_HOME"] = str(hf_home)
-        assert os.access(hf_home, os.W_OK), (
-            f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
-        )
+        assert os.access(
+            hf_home, os.W_OK
+        ), f"⛔ HOST_HF_HOME={self.setup_config.host_hf_home} is not writable."
         logger.info(f"✅ HOST_HF_HOME set to {self.setup_config.host_hf_home}")
 
     def check_hf_access(self, token: str) -> int:
@@ -385,9 +384,7 @@ class HostSetupManager:
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
-                assert _host_model_weights_mount_dir, (
-                    "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
-                )
+                assert _host_model_weights_mount_dir, "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
             else:
                 _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
@@ -461,41 +458,26 @@ class HostSetupManager:
         logger.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
-        assert self.hf_token and self.setup_config.host_hf_home, (
-            "⛔ HF_TOKEN or HOST_HF_HOME not set."
-        )
+        assert (
+            self.hf_token and self.setup_config.host_hf_home
+        ), "⛔ HF_TOKEN or HOST_HF_HOME not set."
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
-        # Bootstrap uv and create/use the managed HF setup venv
-        WorkflowSetup.bootstrap_uv()
-        uv_exec = WorkflowSetup.uv_exec
+        # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
-        if not venv_config.venv_path.exists():
-            subprocess.run(
-                [
-                    str(uv_exec),
-                    "venv",
-                    "--managed-python",
-                    f"--python={venv_config.python_version}",
-                    str(venv_config.venv_path),
-                    "--allow-existing",
-                ],
-                check=True,
-            )
-        # Ensure required packages are present in the venv
-        venv_config.setup(model_spec=self.model_spec, uv_exec=uv_exec)
+        venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
         hf_exec = venv_config.venv_path / "bin" / "hf"
-        assert hf_exec.exists(), (
-            f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
-        )
-        base_cmd = [str(hf_exec)]
+        assert (
+            hf_exec.exists()
+        ), f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         hf_repo = self.model_spec.hf_weights_repo
         # use default huggingface repo
         # fmt: off
-        cmd = base_cmd + [
+        cmd = [
+            str(hf_exec),
             "download", hf_repo,
             "--exclude", "original/**"
         ]
