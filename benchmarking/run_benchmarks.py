@@ -119,7 +119,7 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    if params.task_type == "image":
+    if params.task_type in ("image", "vlm"):
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json"
@@ -152,7 +152,7 @@ def build_benchmark_command(
     ]
 
     # Add multimodal parameters if the model supports it
-    if params.task_type == "image":
+    if params.task_type in ("image", "vlm"):
         if params.image_height and params.image_width:
             cmd.extend([
                 "--random-mm-base-items-per-request", str(params.images_per_prompt),
@@ -273,7 +273,7 @@ def main():
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12}\n"
         for i, param in enumerate(all_params, 1):
-            if param.task_type == "image":
+            if param.task_type in ("image", "vlm"):
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
