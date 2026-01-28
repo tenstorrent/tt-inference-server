@@ -130,15 +130,18 @@ def build_benchmark_command(
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
+    dataset_name = "random-mm" if params.task_type == "image" else "random"
+    backend = "vllm" if params.task_type == "text" else "openai-chat"
+
     # fmt: off
     cmd = [
         str(benchmark_script),
         "bench",
         "serve",
-        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        "--backend", backend,
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
-        "--dataset-name", "random",
+        "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
@@ -152,9 +155,8 @@ def build_benchmark_command(
     if params.task_type == "image":
         if params.image_height and params.image_width:
             cmd.extend([
-                "--random-images-per-prompt", str(params.images_per_prompt),
-                "--random-image-height", str(params.image_height),
-                "--random-image-width", str(params.image_width),
+                "--random-mm-base-items-per-request", str(params.images_per_prompt),
+                "--random-mm-bucket-config", str({(params.image_height, params.image_width, 1): 1.0}),
                 "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
