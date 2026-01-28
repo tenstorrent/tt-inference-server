@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-from telnetlib import STATUS
 import tempfile
 
 from config.constants import JobTypes
