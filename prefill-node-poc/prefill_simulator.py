@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple, Union, Protocol
 from enum import Enum
+from typing import Callable, List, Optional, Protocol, Tuple, Union
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 class KVCacheState(Enum):
@@ -203,6 +206,12 @@ class DeepSeekPrefillSimulator:
             self._kv_caches.append(cache_ref)
 
         self._is_initialized = True
+        logger.info(
+            "allocate_kv_cache num_layers=%d cache_shape=%s dtype=%s",
+            len(self._kv_caches),
+            cache_shape,
+            dtype,
+        )
         return self._kv_caches
 
     def _allocate_device_tensor(
@@ -275,6 +284,7 @@ class DeepSeekPrefillSimulator:
             )
 
         if all(length == 0 for length in lengths_list):
+            logger.debug("prefill_forward all prompt_lens are 0, returning zeros")
             return torch.zeros(
                 tokens.shape[0],
                 self.config.vocab_size,
@@ -294,6 +304,13 @@ class DeepSeekPrefillSimulator:
             else 0
         )
         num_of_users = tokens.shape[0]
+        logger.info(
+            "prefill_forward start batch_size=%d num_layers=%d max_padded_len=%d prompt_lens=%s",
+            num_of_users,
+            self.config.num_layers,
+            max_padded_len,
+            lengths_list,
+        )
 
         tokens_padded = _pad_tokens(
             tokens[:, :max_prompt_len], pad_value=pad_value, block_size=pad_block_size
@@ -319,6 +336,7 @@ class DeepSeekPrefillSimulator:
             self._fill_kv_cache_batch(cache_ref, lengths_list)
             if self.on_kv_cache_ready is not None:
                 self.on_kv_cache_ready(layer_idx, cache_ref)
+            logger.debug("prefill_forward layer %d KV filled for batch", layer_idx)
 
         logits_batch = self._simulate_lm_head_batch(hidden_states)
 
@@ -342,7 +360,9 @@ class DeepSeekPrefillSimulator:
                 user_logits = torch.cat([user_logits, pad_logits], dim=0)
             last_logits.append(user_logits)
 
-        return torch.stack(last_logits)
+        out = torch.stack(last_logits)
+        logger.info("prefill_forward done logits_shape=%s", tuple(out.shape))
+        return out
 
     def _set_kv_cache_from_list(self, kv_cache_list: List[object]) -> None:
         """Set internal KV cache tensors from external list (e.g. from decode node)."""
@@ -400,6 +420,7 @@ class DeepSeekPrefillSimulator:
 
     def cleanup(self) -> None:
         """Release all allocated resources."""
+        num_freed = len(self._kv_caches)
         for cache_ref in self._kv_caches:
             if self.mesh_device is not None:
                 try:
@@ -410,6 +431,7 @@ class DeepSeekPrefillSimulator:
                     pass
         self._kv_caches = []
         self._is_initialized = False
+        logger.info("simulator cleanup num_layers_freed=%d", num_freed)
 
 
 class DisaggregatedPrefillServer:

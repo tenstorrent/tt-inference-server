@@ -11,9 +11,12 @@ expected by tt_model_runner (tokens, prompt_lens, page_table, kv_cache, start_po
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, List, Optional
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 from prefill_simulator import (
     DeepSeekPrefillSimulator,
@@ -103,6 +106,9 @@ class PrefillModelRunner:
     def allocate_kv_cache(self, dtype: str = "bfloat8_b") -> List[KVCacheReference]:
         """Allocate KV cache on device; call once before running prefills."""
         self._kv_caches = self.simulator.allocate_kv_cache(dtype=dtype)
+        logger.info(
+            "kv_cache allocated num_layers=%d dtype=%s", len(self._kv_caches), dtype
+        )
         return self._kv_caches
 
     def prepare_prefill(
@@ -156,6 +162,13 @@ class PrefillModelRunner:
 
         start_pos = torch.zeros(batch_size, dtype=torch.int32)
 
+        logger.debug(
+            "prepare_prefill batch_size=%d max_prompt_len=%d max_num_blocks=%d prompt_lens=%s",
+            batch_size,
+            max_prompt_len,
+            max_num_blocks,
+            prompt_lens,
+        )
         return tokens, prompt_lens, page_table, kv_cache, start_pos
 
     def run_prefill(self, seqs: List[PrefillSequence]) -> torch.Tensor:
@@ -168,6 +181,11 @@ class PrefillModelRunner:
         if not seqs:
             return torch.empty(0, 0, self.prefill_config.vocab_size)
 
+        logger.info(
+            "run_prefill start num_seqs=%d req_ids=%s",
+            len(seqs),
+            [s.req_id for s in seqs],
+        )
         self._current_seqs = seqs
         try:
             tokens, prompt_lens, page_table, kv_cache, start_pos = self.prepare_prefill(
@@ -180,6 +198,10 @@ class PrefillModelRunner:
                 kv_cache=kv_cache,
                 start_pos=start_pos,
             )
+            logger.info(
+                "run_prefill done logits_shape=%s",
+                tuple(logits.shape),
+            )
             return logits
         finally:
             self._current_seqs = []
@@ -187,3 +209,4 @@ class PrefillModelRunner:
     def cleanup(self) -> None:
         self.simulator.cleanup()
         self._kv_caches = None
+        logger.info("model_runner cleanup")

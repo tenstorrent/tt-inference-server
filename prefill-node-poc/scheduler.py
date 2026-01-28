@@ -12,11 +12,14 @@ deallocated and handed off (e.g. to decode node).
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import dataclass
 
 from block_manager import BlockManager
 from sequence import PrefillSequence
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,6 +53,12 @@ class PrefillScheduler:
 
     def add(self, seq: PrefillSequence) -> None:
         self.waiting.append(seq)
+        logger.info(
+            "request added req_id=%s prompt_len=%d waiting=%d",
+            seq.req_id,
+            len(seq),
+            len(self.waiting),
+        )
 
     def schedule(self) -> list[PrefillSequence]:
         """
@@ -64,13 +73,38 @@ class PrefillScheduler:
             seq = self.waiting[0]
             prompt_tokens = len(seq) - seq.num_cached_tokens
             if num_batched_tokens + prompt_tokens > self.max_num_batched_tokens:
+                logger.debug(
+                    "batch token limit seq req_id=%s prompt_tokens=%d would exceed max=%d",
+                    seq.req_id,
+                    prompt_tokens,
+                    self.max_num_batched_tokens,
+                )
                 break
             if not self.block_manager.can_allocate(seq):
+                logger.debug(
+                    "not enough blocks for req_id=%s num_blocks=%d",
+                    seq.req_id,
+                    seq.num_blocks,
+                )
                 break
             self.block_manager.allocate(seq)
             num_batched_tokens += prompt_tokens
             self.waiting.popleft()
             scheduled.append(seq)
+
+        if scheduled:
+            logger.info(
+                "scheduled batch num_seqs=%d num_batched_tokens=%d req_ids=%s waiting_left=%d",
+                len(scheduled),
+                num_batched_tokens,
+                [s.req_id for s in scheduled],
+                len(self.waiting),
+            )
+        elif self.waiting:
+            logger.debug(
+                "schedule produced empty batch (limits hit), waiting=%d",
+                len(self.waiting),
+            )
 
         return scheduled
 
@@ -79,5 +113,9 @@ class PrefillScheduler:
         Release blocks for the given sequences (e.g. after prefill is done and
         KV cache has been streamed to decode node).
         """
+        if seqs:
+            logger.info(
+                "releasing seqs num=%d req_ids=%s", len(seqs), [s.req_id for s in seqs]
+            )
         for seq in seqs:
             self.block_manager.deallocate(seq)

@@ -11,9 +11,12 @@ free block IDs for its prompt length.
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 
 from sequence import PrefillSequence
+
+logger = logging.getLogger(__name__)
 
 
 class BlockManager:
@@ -39,15 +42,32 @@ class BlockManager:
         """
         assert not seq.block_table, "Sequence already has blocks"
         assert self.can_allocate(seq), "Not enough free blocks"
-        for _ in range(seq.num_blocks):
+        num_blocks = seq.num_blocks
+        for _ in range(num_blocks):
             block_id = self.free_block_ids.popleft()
             self.used_block_ids.add(block_id)
             seq.block_table.append(block_id)
+        free_after = len(self.free_block_ids)
+        logger.info(
+            "allocated blocks req_id=%s num_blocks=%d block_ids=%s free_after=%d",
+            getattr(seq, "req_id", "?"),
+            num_blocks,
+            seq.block_table[:5] if len(seq.block_table) > 5 else seq.block_table,
+            free_after,
+        )
 
     def deallocate(self, seq: PrefillSequence) -> None:
         """Return the sequence's blocks to the free pool and clear seq.block_table."""
+        num_blocks = len(seq.block_table)
         for block_id in seq.block_table:
             self.used_block_ids.discard(block_id)
             self.free_block_ids.append(block_id)
         seq.block_table.clear()
         seq.num_cached_tokens = 0
+        free_after = len(self.free_block_ids)
+        logger.info(
+            "deallocated blocks req_id=%s num_blocks=%d free_after=%d",
+            getattr(seq, "req_id", "?"),
+            num_blocks,
+            free_after,
+        )

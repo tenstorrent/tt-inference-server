@@ -8,6 +8,7 @@ schedule and run prefill, then release sequences (e.g. for D2D handoff to decode
 
 from __future__ import annotations
 
+import logging
 from typing import Callable, Optional
 
 import torch
@@ -16,6 +17,8 @@ from model_runner import PrefillModelRunner
 from prefill_simulator import KVCacheReference, PrefillConfig
 from scheduler import PrefillScheduler, SchedulerConfig
 from sequence import PrefillSequence
+
+logger = logging.getLogger(__name__)
 
 
 class PrefillEngine:
@@ -41,12 +44,20 @@ class PrefillEngine:
             on_kv_cache_blocks_ready=on_kv_cache_blocks_ready,
         )
         self.model_runner.allocate_kv_cache()
+        logger.info(
+            "engine init max_num_seqs=%d max_num_batched_tokens=%d num_kvcache_blocks=%d num_layers=%d",
+            scheduler_config.max_num_seqs,
+            scheduler_config.max_num_batched_tokens,
+            scheduler_config.num_kvcache_blocks,
+            prefill_config.num_layers,
+        )
 
     def add_request(self, token_ids: list[int], req_id: str | None = None) -> None:
         """Add a prefill request (prompt token IDs) to the waiting queue."""
         block_size = self.scheduler.block_manager.block_size
         seq = PrefillSequence(token_ids=token_ids, req_id=req_id, block_size=block_size)
         self.scheduler.add(seq)
+        logger.info("add_request req_id=%s prompt_len=%d", seq.req_id, len(seq))
 
     def step(self) -> tuple[torch.Tensor, list[PrefillSequence]]:
         """
@@ -56,12 +67,25 @@ class PrefillEngine:
         """
         scheduled = self.scheduler.schedule()
         if not scheduled:
+            logger.debug("step no batch scheduled (waiting empty or limits hit)")
             return torch.empty(0, 0, self.model_runner.prefill_config.vocab_size), []
         logits = self.model_runner.run_prefill(scheduled)
+        logger.info(
+            "step done num_seqs=%d logits_shape=%s req_ids=%s",
+            len(scheduled),
+            tuple(logits.shape),
+            [s.req_id for s in scheduled],
+        )
         return logits, scheduled
 
     def release_after_prefill(self, seqs: list[PrefillSequence]) -> None:
         """Release block allocations for sequences after prefill/KV stream is done."""
+        if seqs:
+            logger.info(
+                "release_after_prefill num_seqs=%d req_ids=%s",
+                len(seqs),
+                [s.req_id for s in seqs],
+            )
         self.scheduler.release(seqs)
 
     def is_finished(self) -> bool:
@@ -69,9 +93,14 @@ class PrefillEngine:
 
     def cleanup(self) -> None:
         self.model_runner.cleanup()
+        logger.info("engine cleanup")
 
 
 if __name__ == "__main__":
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+
     # Example: run from prefill-node-poc directory: python prefill_engine.py
     def on_kv_ready(layer_idx: int, ref: KVCacheReference) -> None:
         print(f"  KV layer {layer_idx} ready for whole batch")
