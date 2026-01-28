@@ -33,8 +33,8 @@ class VideoManager:
 
         # Auto-generate path in videos directory
         video_id = str(uuid.uuid4())
-        os.makedirs("videos", exist_ok=True)
-        output_path = f"videos/{video_id}.mp4"
+        os.makedirs("/tmp/videos", exist_ok=True)
+        output_path = f"/tmp/videos/{video_id}.mp4"
         self._logger.info(f"Generated output path: {output_path}")
 
         try:
