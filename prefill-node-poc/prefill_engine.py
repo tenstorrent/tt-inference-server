@@ -8,7 +8,7 @@ schedule and run prefill, then release sequences (e.g. for D2D handoff to decode
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import torch
 
@@ -31,12 +31,14 @@ class PrefillEngine:
         prefill_config: PrefillConfig,
         mesh_device: object = None,
         on_kv_cache_ready: Optional[Callable[[int, KVCacheReference], None]] = None,
+        on_kv_cache_blocks_ready: Optional[Callable[[int, object, list], None]] = None,
     ):
         self.scheduler = PrefillScheduler(scheduler_config)
         self.model_runner = PrefillModelRunner(
             prefill_config=prefill_config,
             mesh_device=mesh_device,
             on_kv_cache_ready=on_kv_cache_ready,
+            on_kv_cache_blocks_ready=on_kv_cache_blocks_ready,
         )
         self.model_runner.allocate_kv_cache()
 
@@ -72,7 +74,12 @@ class PrefillEngine:
 if __name__ == "__main__":
     # Example: run from prefill-node-poc directory: python prefill_engine.py
     def on_kv_ready(layer_idx: int, ref: KVCacheReference) -> None:
-        print(f"  KV layer {layer_idx} ready (user_id={ref.user_id})")
+        print(f"  KV layer {layer_idx} ready for whole batch")
+
+    def on_blocks_ready(layer_idx: int, req_id: object, blocks: list) -> None:
+        print(
+            f"  KV layer {layer_idx} blocks ready for req_id={req_id}, num_blocks={len(blocks)}"
+        )
 
     sched_config = SchedulerConfig(
         max_num_seqs=4,
@@ -85,6 +92,7 @@ if __name__ == "__main__":
         scheduler_config=sched_config,
         prefill_config=prefill_config,
         on_kv_cache_ready=on_kv_ready,
+        on_kv_cache_blocks_ready=on_blocks_ready,
     )
 
     engine.add_request(list(range(0, 128)), req_id="req_0")

@@ -27,14 +27,18 @@ class KVCacheReference:
     This is passed to the callback when KV cache is ready for streaming.
     The consumer can use this reference to initiate D2D transfer.
 
+    In batch-layer mode (layer-by-layer for the whole batch), when the callback
+    is invoked the ref's tensor covers the full layer for the entire batch;
+    user_id is not used for the "ready" signal.
+
     Attributes:
         layer_idx: The transformer layer index this cache belongs to
         tensor: The actual KV cache tensor on device (ttnn.Tensor or mock)
         shape: Shape of the KV cache (num_blocks, num_heads, block_size, kvpe_dim)
         dtype: Data type of the cache
         state: Current state of the cache
-        seq_len: Sequence length that was filled
-        user_id: User/batch ID this cache belongs to
+        seq_len: Sequence length that was filled (batch-layer: not per-user)
+        user_id: Deprecated in batch-layer mode; ref = full layer for batch
     """
 
     layer_idx: int
@@ -51,10 +55,16 @@ class KVCacheReference:
 
 
 class KVCacheCallback(Protocol):
-    """Protocol for KV cache ready callback."""
+    """
+    Protocol for KV cache ready callback.
+
+    In batch-layer mode the callback is invoked once per layer when that layer
+    is filled for the whole batch. kv_cache_ref.tensor covers the full layer;
+    user_id on the ref is not used.
+    """
 
     def __call__(self, layer_idx: int, kv_cache_ref: KVCacheReference) -> None:
-        """Called when KV cache for a layer is ready for streaming."""
+        """Called when KV cache for a layer is ready for streaming (whole batch)."""
         ...
 
 
@@ -110,7 +120,9 @@ def _pad_tokens(
     padded_len = ((seq_len + block_size - 1) // block_size) * block_size
     if padded_len == seq_len:
         return tokens
-    padded_tokens = torch.full((batch_size, padded_len), pad_value, dtype=tokens.dtype, device=tokens.device)
+    padded_tokens = torch.full(
+        (batch_size, padded_len), pad_value, dtype=tokens.dtype, device=tokens.device
+    )
     padded_tokens[:, :seq_len] = tokens
     return padded_tokens
 
@@ -247,7 +259,9 @@ class DeepSeekPrefillSimulator:
             last_logits: [num_of_users, max_padded_len, vocab_size], same as vLLM generator.
         """
         if not all(x == 0 for x in start_pos):
-            raise AssertionError(f"Prefix caching is not supported, got start_pos: {start_pos}")
+            raise AssertionError(
+                f"Prefix caching is not supported, got start_pos: {start_pos}"
+            )
 
         # Runner may pass prompt_lens as numpy or list; normalize for iteration/max.
         lengths = prompt_lens
@@ -256,7 +270,9 @@ class DeepSeekPrefillSimulator:
         else:
             lengths_list = list(lengths)
         if not self._is_initialized:
-            raise RuntimeError("KV cache not allocated. Call allocate_kv_cache() first.")
+            raise RuntimeError(
+                "KV cache not allocated. Call allocate_kv_cache() first."
+            )
 
         if all(length == 0 for length in lengths_list):
             return torch.zeros(
@@ -273,17 +289,41 @@ class DeepSeekPrefillSimulator:
         pad_block_size = self.config.block_size
         max_prompt_len = int(max(lengths_list)) if lengths_list else 0
         max_padded_len = (
-            ((max_prompt_len + pad_block_size - 1) // pad_block_size) * pad_block_size if max_prompt_len > 0 else 0
+            ((max_prompt_len + pad_block_size - 1) // pad_block_size) * pad_block_size
+            if max_prompt_len > 0
+            else 0
         )
         num_of_users = tokens.shape[0]
-        last_logits = []
 
+        tokens_padded = _pad_tokens(
+            tokens[:, :max_prompt_len], pad_value=pad_value, block_size=pad_block_size
+        )
+        if tokens_padded.shape[1] < max_padded_len:
+            padding = torch.full(
+                (num_of_users, max_padded_len - tokens_padded.shape[1]),
+                pad_value,
+                dtype=tokens.dtype,
+                device=tokens.device,
+            )
+            tokens_padded = torch.cat([tokens_padded, padding], dim=1)
+        else:
+            tokens_padded = tokens_padded[:, :max_padded_len]
+
+        hidden_states = self._simulate_embedding_batch(tokens_padded)
+
+        for layer_idx in range(self.config.num_layers):
+            hidden_states = self._simulate_transformer_layer_batch(
+                hidden_states, layer_idx
+            )
+            cache_ref = self._kv_caches[layer_idx]
+            self._fill_kv_cache_batch(cache_ref, lengths_list)
+            if self.on_kv_cache_ready is not None:
+                self.on_kv_cache_ready(layer_idx, cache_ref)
+
+        logits_batch = self._simulate_lm_head_batch(hidden_states)
+
+        last_logits = []
         for i in range(num_of_users):
-            if empty_slots is not None:
-                slot = empty_slots[i]
-                user_id = int(slot.item() if hasattr(slot, "item") else slot)
-            else:
-                user_id = i
             prompt_len = int(lengths_list[i])
             if prompt_len == 0:
                 last_logits.append(
@@ -295,12 +335,7 @@ class DeepSeekPrefillSimulator:
                     )
                 )
                 continue
-            user_tokens = tokens[i, :prompt_len].unsqueeze(0)
-            user_tokens = _pad_tokens(user_tokens, pad_value=pad_value, block_size=pad_block_size).squeeze(0)
-            user_out = self._prefill_single_user(user_tokens, user_id=user_id, page_table=page_table, local_user_id=i)
-            user_logits = user_out.squeeze(0).squeeze(0)
-            if user_logits.shape[0] > prompt_len:
-                user_logits = user_logits[:prompt_len]
+            user_logits = logits_batch[i, :prompt_len, :].clone()
             if user_logits.shape[0] < max_padded_len:
                 pad_len = max_padded_len - user_logits.shape[0]
                 pad_logits = user_logits[-1:].expand(pad_len, -1)
@@ -312,63 +347,46 @@ class DeepSeekPrefillSimulator:
     def _set_kv_cache_from_list(self, kv_cache_list: List[object]) -> None:
         """Set internal KV cache tensors from external list (e.g. from decode node)."""
         if len(kv_cache_list) != len(self._kv_caches):
-            raise ValueError(f"kv_cache_list length {len(kv_cache_list)} != num layers {len(self._kv_caches)}")
+            raise ValueError(
+                f"kv_cache_list length {len(kv_cache_list)} != num layers {len(self._kv_caches)}"
+            )
         for ref, ext_tensor in zip(self._kv_caches, kv_cache_list):
             ref.tensor = ext_tensor
 
-    def _prefill_single_user(
-        self,
-        tokens: torch.Tensor,
-        user_id: int,
-        page_table: Optional[torch.Tensor] = None,
-        local_user_id: Optional[int] = None,
-    ) -> torch.Tensor:
-        """Run prefill for a single user; returns logits [1, 1, seq_len, vocab_size]."""
-        if tokens.dim() == 1:
-            tokens = tokens.unsqueeze(0)
+    def _simulate_embedding_batch(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Simulate embedding lookup for batch. tokens [B, S] -> [B, S, H]."""
         batch_size, seq_len = tokens.shape
+        return torch.randn(
+            batch_size, seq_len, self.config.hidden_size, device=tokens.device
+        )
 
-        hidden_states = self._simulate_embedding(tokens)
-
-        for layer_idx in range(self.config.num_layers):
-            hidden_states = self._simulate_transformer_layer(hidden_states, layer_idx, seq_len)
-            cache_ref = self._kv_caches[layer_idx]
-            self._fill_kv_cache(cache_ref, seq_len, user_id)
-            if self.on_kv_cache_ready is not None:
-                self.on_kv_cache_ready(layer_idx, cache_ref)
-
-        logits = self._simulate_lm_head(hidden_states)
-        return logits
-
-    def _simulate_embedding(self, tokens: torch.Tensor) -> torch.Tensor:
-        """Simulate embedding lookup."""
-        batch_size, seq_len = tokens.shape
-        return torch.randn(1, 1, seq_len, self.config.hidden_size)
-
-    def _simulate_transformer_layer(
+    def _simulate_transformer_layer_batch(
         self,
         hidden_states: torch.Tensor,
         layer_idx: int,
-        seq_len: int,
     ) -> torch.Tensor:
-        """Simulate a single transformer layer."""
-        return hidden_states + torch.randn_like(hidden_states) * 0.01
+        """Simulate a single transformer layer for the whole batch. [B, S, H] -> [B, S, H]."""
+        return (
+            hidden_states
+            + torch.randn_like(hidden_states, device=hidden_states.device) * 0.01
+        )
 
-    def _fill_kv_cache(
+    def _fill_kv_cache_batch(
         self,
         cache_ref: KVCacheReference,
-        seq_len: int,
-        user_id: int,
+        prompt_lens: List[int],
     ) -> None:
-        """Fill KV cache for a layer."""
-        cache_ref.seq_len = seq_len
-        cache_ref.user_id = user_id
+        """Mark KV cache for a layer as filled for the whole batch."""
         cache_ref.state = KVCacheState.FILLED
 
-    def _simulate_lm_head(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Simulate final norm + LM head projection. Returns [1, 1, seq_len, vocab_size]."""
-        seq_len = hidden_states.shape[2]
-        return torch.randn(1, 1, seq_len, self.config.vocab_size)
+    def _simulate_lm_head_batch(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Simulate final norm + LM head. [B, S, H] -> [B, S, vocab_size]."""
+        return torch.randn(
+            hidden_states.shape[0],
+            hidden_states.shape[1],
+            self.config.vocab_size,
+            device=hidden_states.device,
+        )
 
     def get_kv_cache(self, layer_idx: int) -> Optional[KVCacheReference]:
         """Get KV cache reference for a specific layer."""
@@ -486,7 +504,7 @@ if __name__ == "__main__":
 
     def example_callback(layer_idx: int, kv_cache_ref: KVCacheReference):
         print(
-            f"[Callback] Layer {layer_idx:2d} KV cache ready, shape: {kv_cache_ref.shape}, user_id={kv_cache_ref.user_id}"
+            f"[Callback] Layer {layer_idx:2d} KV cache ready for whole batch, shape: {kv_cache_ref.shape}"
         )
 
     config = PrefillConfig(
@@ -533,7 +551,9 @@ if __name__ == "__main__":
     )
 
     print("\n--- Prefill Complete ---")
-    print(f"last_logits shape: {last_logits.shape}  (num_of_users, max_padded_len, vocab_size)")
+    print(
+        f"last_logits shape: {last_logits.shape}  (num_of_users, max_padded_len, vocab_size)"
+    )
 
     simulator.cleanup()
     print("\n--- Demo Complete ---")

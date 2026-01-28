@@ -11,7 +11,7 @@ expected by tt_model_runner (tokens, prompt_lens, page_table, kv_cache, start_po
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 import torch
 
@@ -23,11 +23,33 @@ from prefill_simulator import (
 from sequence import PrefillSequence
 
 
+def extract_blocks_from_layer(
+    layer_tensor: torch.Tensor,
+    block_table: List[int],
+    block_size: int,
+) -> List[Any]:
+    """
+    Extract KV blocks for a single request from a layer tensor.
+
+    Layer tensor shape: (num_blocks, num_heads, block_size, kvpe_dim).
+    block_table lists physical block IDs for this request.
+    Returns a list of block tensors (views or copies depending on backend).
+    """
+    if not block_table:
+        return []
+    blocks = []
+    for block_id in block_table:
+        block = layer_tensor[block_id]
+        blocks.append(block)
+    return blocks
+
+
 class PrefillModelRunner:
     """
     Runs prefill for batches of sequences produced by PrefillScheduler.
     Prepares inputs from sequences (tokens, prompt_lens, block_tables) and
-    calls the prefill simulator.
+    calls the prefill simulator. On each layer-ready callback, extracts blocks
+    per request and invokes on_kv_cache_blocks_ready(layer_idx, req_id, blocks).
     """
 
     def __init__(
@@ -35,14 +57,48 @@ class PrefillModelRunner:
         prefill_config: PrefillConfig,
         mesh_device: object = None,
         on_kv_cache_ready: Optional[Callable[[int, KVCacheReference], None]] = None,
+        on_kv_cache_blocks_ready: Optional[
+            Callable[[int, Any, List[Any]], None]
+        ] = None,
     ):
         self.prefill_config = prefill_config
+        self._current_seqs: List[PrefillSequence] = []
+        self._on_kv_cache_blocks_ready = on_kv_cache_blocks_ready
+        self._on_kv_cache_ready_user = on_kv_cache_ready
+
+        def _callback(layer_idx: int, ref: KVCacheReference) -> None:
+            if self._on_kv_cache_blocks_ready is not None:
+                self._on_kv_cache_ready_internal(layer_idx, ref)
+            if self._on_kv_cache_ready_user is not None:
+                self._on_kv_cache_ready_user(layer_idx, ref)
+
         self.simulator = DeepSeekPrefillSimulator(
             config=prefill_config,
             mesh_device=mesh_device,
-            on_kv_cache_ready=on_kv_cache_ready,
+            on_kv_cache_ready=_callback
+            if (on_kv_cache_blocks_ready or on_kv_cache_ready)
+            else None,
         )
         self._kv_caches: Optional[List[KVCacheReference]] = None
+
+    def _on_kv_cache_ready_internal(
+        self, layer_idx: int, ref: KVCacheReference
+    ) -> None:
+        if (
+            self._on_kv_cache_blocks_ready is None
+            or not self._current_seqs
+            or self._kv_caches is None
+        ):
+            return
+        layer_tensor = ref.tensor
+        if not isinstance(layer_tensor, torch.Tensor):
+            return
+        block_size = self.prefill_config.block_size
+        for seq in self._current_seqs:
+            blocks = extract_blocks_from_layer(
+                layer_tensor, seq.block_table, block_size
+            )
+            self._on_kv_cache_blocks_ready(layer_idx, seq.req_id, blocks)
 
     def allocate_kv_cache(self, dtype: str = "bfloat8_b") -> List[KVCacheReference]:
         """Allocate KV cache on device; call once before running prefills."""
@@ -106,21 +162,27 @@ class PrefillModelRunner:
         """
         Run prefill for the given scheduled sequences. Prepares inputs and
         calls the simulator. Returns logits [batch_size, max_padded_len, vocab_size].
+        Holds _current_seqs for the duration so layer-ready callbacks can extract
+        blocks per request.
         """
         if not seqs:
             return torch.empty(0, 0, self.prefill_config.vocab_size)
 
-        tokens, prompt_lens, page_table, kv_cache, start_pos = self.prepare_prefill(
-            seqs
-        )
-        logits = self.simulator.prefill_forward(
-            tokens=tokens,
-            prompt_lens=prompt_lens,
-            page_table=page_table,
-            kv_cache=kv_cache,
-            start_pos=start_pos,
-        )
-        return logits
+        self._current_seqs = seqs
+        try:
+            tokens, prompt_lens, page_table, kv_cache, start_pos = self.prepare_prefill(
+                seqs
+            )
+            logits = self.simulator.prefill_forward(
+                tokens=tokens,
+                prompt_lens=prompt_lens,
+                page_table=page_table,
+                kv_cache=kv_cache,
+                start_pos=start_pos,
+            )
+            return logits
+        finally:
+            self._current_seqs = []
 
     def cleanup(self) -> None:
         self.simulator.cleanup()
