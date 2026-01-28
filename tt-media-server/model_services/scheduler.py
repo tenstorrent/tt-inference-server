@@ -226,7 +226,7 @@ class Scheduler:
                             continue
 
                         result_found = True
-                        _, result_key, input_data = result
+                        worker_id, result_key, input_data = result
 
                         if result_key is None:
                             self.listener_running = False

@@ -13,12 +13,11 @@ class LLMService(BaseService):
         chunk = chunk["data"]
         if chunk and chunk.text:
             return chunk
+        return None
 
     def handle_final_result(self, result):
-        result = result["data"]
-        if result and result.text:
-            return result
-        return None
+        # acts the same as handle_streaming_chunk
+        return self.handle_streaming_chunk(result)
 
 
     async def post_process(self, result, input_request=None):
