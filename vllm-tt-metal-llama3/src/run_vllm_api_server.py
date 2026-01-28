@@ -72,68 +72,22 @@ def register_tt_models(impl_id=None):
 
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
-        path_llama_text = (
-            "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
-        )
+        os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
     elif impl_id == "llama2_70b":
-        path_llama_text = (
-            "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
-        )
+        os.environ["TT_LLAMA_TEXT_VER"] = "llama2_70b"
     else:  # default: tt_transformers
-        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
+        os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
 
-    # Llama3.1/3.2 - Text
-    ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
-
-    # Llama3.2 - Vision
-    ModelRegistry.register_model(
-        "TTMllamaForConditionalGeneration",
-        "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
-    )
-
-    # Qwen2.5 - Text
-    ModelRegistry.register_model(
-        "TTQwen2ForCausalLM",
-        "models.tt_transformers.tt.generator_vllm:QwenForCausalLM",
-    )
-
-    # Qwen3 path selection based on impl_id
+    # Qwen3 env var setting based on impl_id
     if impl_id == "qwen3_32b_galaxy":
-        path_qwen3_text = (
-            "models.demos.llama3_70b_galaxy.tt.generator_vllm:QwenForCausalLM"
-        )
+        os.environ["TT_QWEN3_TEXT_VER"] = "qwen3_32b_galaxy"
     else:
-        path_qwen3_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
-
-    ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen3_text)
-
-    # Mistral
-    ModelRegistry.register_model(
-        "TTMistralForCausalLM",
-        "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
-    )
-
-    ModelRegistry.register_model(
-        "TTGemma3ForConditionalGeneration",
-        "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration",
-    )
+        os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
-    )
-
-    # Note: vLLM custom model architecture registry must happen at import time, before runtime    # Qwen2.5 - Vision
-    ModelRegistry.register_model(
-        "TTQwen2_5_VLForConditionalGeneration",
-        "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
-    )
-
-    # DeepseekV3
-    ModelRegistry.register_model(
-        "TTDeepseekV3ForCausalLM",
-        "models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM",
     )
 
 
