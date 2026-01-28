@@ -40,32 +40,35 @@ def bootstrap_uv():
     # Check if venv needs to be created or recreated (e.g., if pip is missing)
     needs_venv_creation = not UV_VENV_PATH.exists() or not pip_exec.exists()
 
-    if needs_venv_creation:
-        logger.info("Creating virtual environment in '%s'...", UV_VENV_PATH)
-        # Clear existing venv if it exists but is broken (missing pip)
-        if UV_VENV_PATH.exists():
-            shutil.rmtree(UV_VENV_PATH)
+    if not needs_venv_creation:
+        logger.info(f"uv bootstrap venv already exists at: {UV_VENV_PATH}")
+        return
 
-        # Create venv - some systems (PEP 668 externally-managed) may not include pip
+    logger.info(f"Creating uv bootstrap venv at: {UV_VENV_PATH}")
+    # Clear existing venv if it exists but is broken (missing pip)
+    if UV_VENV_PATH.exists():
+        shutil.rmtree(UV_VENV_PATH)
+
+    # Create venv - some systems (PEP 668 externally-managed) may not include pip
+    run_command(
+        f"{sys.executable} -m venv {UV_VENV_PATH}",
+        logger=logger,
+    )
+
+    # Ensure pip is installed using ensurepip (works even on externally-managed Python)
+    if not pip_exec.exists():
+        logger.info("Installing pip using ensurepip...")
         run_command(
-            f"{sys.executable} -m venv {UV_VENV_PATH}",
+            f"{venv_python} -m ensurepip --upgrade",
             logger=logger,
         )
 
-        # Ensure pip is installed using ensurepip (works even on externally-managed Python)
-        if not pip_exec.exists():
-            logger.info("Installing pip using ensurepip...")
-            run_command(
-                f"{venv_python} -m ensurepip --upgrade",
-                logger=logger,
-            )
+    # Step 3: Install 'uv' using pip
+    # Note: Activating the virtual environment in a script doesn't affect the current shell,
+    # so we directly use the pip executable from the venv.
+    logger.info("Installing 'uv' using pip...")
+    run_command(f"{pip_exec} install uv", logger=logger)
 
-        # Step 3: Install 'uv' using pip
-        # Note: Activating the virtual environment in a script doesn't affect the current shell,
-        # so we directly use the pip executable from the venv.
-        logger.info("Installing 'uv' using pip...")
-        run_command(f"{pip_exec} install uv", logger=logger)
-
-        logger.info("uv bootstrap installation complete.")
-        # check version
-        run_command(f"{str(UV_EXEC)} --version", logger=logger)
+    logger.info("uv bootstrap installation complete.")
+    # check version
+    run_command(f"{str(UV_EXEC)} --version", logger=logger)
