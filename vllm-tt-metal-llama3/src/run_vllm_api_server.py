@@ -61,7 +61,7 @@ def _load_model_spec_json():
 
 
 def register_tt_models(impl_id=None):
-    """Register TT models with vLLM ModelRegistry.
+    """Configure vLLM ModelRegistry according to ModelSpec.impl.impl_id.
 
     Args:
         impl_id: Implementation ID from ModelSpec JSON (e.g., "tt_transformers",
