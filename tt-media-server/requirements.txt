@@ -1,23 +1,21 @@
 aiohttp
 asyncio
 colorama
-diffusers>=0.35.0
 fastapi
+faster_fifo
 httpx
+huggingface_hub
 imageio-ffmpeg
 loguru
-numpy
 prometheus-client
 prometheus-fastapi-instrumentator
 psutil
-pybind11
-pydantic
 pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-torch
+silero_vad
 tqdm
-transformers==4.55.0
 uvicorn
 whisperx
+--extra-index-url https://download.pytorch.org/whl/cpu
