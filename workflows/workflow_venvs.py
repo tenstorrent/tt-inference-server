@@ -81,7 +81,7 @@ class VenvConfig:
         # uv will verify deps if venv exists
         venv_setup_completed = self.setup_function(self, model_spec=model_spec)
         if not venv_setup_completed:
-            logger.error(f"Failed to setup venv: {self.venv_type.name}")
+            raise RuntimeError(f"Failed to setup venv: {self.venv_type.name}")
         return venv_setup_completed
 
 
