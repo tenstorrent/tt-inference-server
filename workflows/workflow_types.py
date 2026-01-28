@@ -24,7 +24,7 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
-    LOCAL_SETUP_VALIDATION = auto()
+    SYSTEM_SOFTWARE_VALIDATION = auto()
     STRESS_TESTS_RUN_SCRIPT = auto()
     STRESS_TESTS = auto()
     EVALS_RUN_SCRIPT = auto()
@@ -45,6 +45,8 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
     SERVER = auto()
+    TT_SMI = auto()
+    TT_TOPOLOGY = auto()
 
 
 class BenchmarkTaskType(IntEnum):
