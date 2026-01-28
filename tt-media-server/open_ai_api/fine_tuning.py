@@ -7,9 +7,9 @@ from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 
 router = APIRouter()
 
@@ -17,7 +17,7 @@ router = APIRouter()
 @router.post("/jobs")
 async def submit_fine_tuning_request(
     request: TrainingRequest,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -42,7 +42,7 @@ async def submit_fine_tuning_request(
 
 @router.get("/jobs")
 async def list_fine_tuning_jobs(
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -64,7 +64,7 @@ async def list_fine_tuning_jobs(
 @router.get("/jobs/{job_id}")
 async def get_fine_tuning_job_metadata(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -86,7 +86,7 @@ async def get_fine_tuning_job_metadata(
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -116,7 +116,7 @@ async def cancel_fine_tuning_job(
 @router.get("/jobs/{job_id}/checkpoints")
 async def list_fine_tuning_checkpoints(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
