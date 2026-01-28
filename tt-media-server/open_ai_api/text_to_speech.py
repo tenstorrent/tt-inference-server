@@ -7,7 +7,7 @@ from domain.text_to_speech_request import TextToSpeechRequest
 from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 
 router = APIRouter()
 
