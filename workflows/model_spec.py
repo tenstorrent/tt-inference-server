@@ -1391,7 +1391,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1400,12 +1400,18 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1713,7 +1719,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1724,6 +1730,9 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 71045120,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
@@ -1747,7 +1756,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1758,6 +1767,9 @@ spec_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 71045120,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
@@ -1953,7 +1965,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1978,7 +1990,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1991,6 +2003,9 @@ spec_templates = [
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 42000000,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
@@ -2009,7 +2024,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="18ad9aeb",
+        tt_metal_commit="7665133",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2021,6 +2036,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
