@@ -201,10 +201,15 @@ def setup_evals_meta(
             yaml.safe_dump(config, f)
 
         # this requires HF AUTH
-        run_command(
+        return_code = run_command(
             f"{venv_config.venv_python} prepare_meta_eval.py --config_path ./eval_config.yaml",
             logger=logger,
+            check=False,
         )
+        if return_code != 0:
+            logger.warning(
+                f"Failed to prepare meta eval datasets for: {meta_eval_data_dir}, continuing..."
+            )
     # Note: likely a bug, some evals, e.g. IFEval always look for the default ./work_dir
     # to deal with this and make downstream simpler, hotswap dirs
     work_dir = venv_config.venv_path / "work_dir"
