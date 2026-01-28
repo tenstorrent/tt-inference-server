@@ -16,11 +16,11 @@ class TrainingRequest(BaseRequest):
     val_steps_freq: int = 50
     steps_freq: int = 10
 
-    dtype: str = "bfloat16"
+    dtype: str = "torch.bfloat16"
 
     lora_r: int = 4
     lora_alpha: int = 8
     lora_target_modules: list[str] = ["q_proj", "v_proj"]
     lora_task_type: str = "CAUSAL_LM"
 
-    ignored_index: -100
+    ignored_index: int = -100

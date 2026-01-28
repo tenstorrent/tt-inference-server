@@ -24,12 +24,12 @@ from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        super().__init__(device_id, num_torch_threads)
         self.model_name = "google/gemma-1.1-2b-it"
 
     @log_execution_time("Setting up Gemma Lora training")
-    def warmup(self) -> bool:
+    async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora training...")
         
         # TODO: add repro manager setup
@@ -130,7 +130,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         avg_loss = running_loss / request.steps_freq if global_step > 0 else running_loss
                         self.logger.info(f"Step {global_step} | train/loss: {avg_loss:.4f}")
                         running_loss = 0.0
-                        
+
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info(f"Model checkpoint saved.")
 

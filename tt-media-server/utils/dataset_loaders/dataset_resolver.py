@@ -11,7 +11,7 @@ AVAILABLE_DATASET_LOADERS = {
     DatasetLoaders.SST2: lambda model_name, split, collate_fn: __import__(
         "utils.dataset_loaders.sst2.sst2_dataset",
         fromlist=["SSTDataset"],
-    ).SST2Loader(model_name, split, collate_fn),
+    ).SSTDataset(model_name, split, collate_fn),
 }
 
 def get_dataset_loader(model_name: str, split: str, collate_fn=None) -> BaseDataset:

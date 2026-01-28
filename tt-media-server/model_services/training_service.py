@@ -19,14 +19,14 @@ class TrainingService(BaseService):
             raise ValueError("The dataset loader must be set")
         
         dataset_dict = {} 
-        dataset_dict["dataset_loader"] = self.settings.dataset_loader.value
+        dataset_dict["dataset_loader"] = self.settings.dataset_loader
         dataset_dict["dataset_max_length"] = self.settings.dataset_max_length
         # TODO: place dataset_dict into job request parameters
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
-            model=self.settings.model_runner.value,
+            model=self.settings.model_runner,
             request=request,
             task_function=self.process_request,
         )
