@@ -296,9 +296,9 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                "⛔ validating system software dependencies failed. See errors above"
-                "for required version, and System Info section above for current system versions."
-                f"\nTo skip system software validation, use the flag: --skip-system-sw-validation"
+                "⛔ validating system software dependencies failed. See errors above for "
+                "required version, and System Info section above for current system versions."
+                "\nTo skip system software validation, use the flag: --skip-system-sw-validation"
             )
         logger.info("✅ validating system software dependencies completed")
 
