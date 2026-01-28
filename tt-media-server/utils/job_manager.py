@@ -89,6 +89,8 @@ class Job:
             data["completed_at"] = self.completed_at
         if self.error:
             data["error"] = self.error
+        if self.result_path:
+            data["result_path"] = self.result_path
         return data
 
 
