@@ -4,11 +4,13 @@
 """
 Prefill-only engine: scheduler + model runner. Add requests, call step() to
 schedule and run prefill, then release sequences (e.g. for D2D handoff to decode).
+run_loop(stop_event) runs until stop_event is set, draining the waiting queue.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Callable, Optional
 
 import torch
@@ -91,48 +93,20 @@ class PrefillEngine:
     def is_finished(self) -> bool:
         return self.scheduler.is_finished()
 
+    def run_loop(self, stop_event: threading.Event) -> None:
+        """
+        Run step() in a loop until stop_event is set. Drains the waiting queue.
+        When the queue is empty, waits on stop_event (timeout 0.05s) to avoid spinning.
+        """
+        while not stop_event.is_set():
+            if self.is_finished():
+                stop_event.wait(timeout=0.05)
+                continue
+            logits, scheduled = self.step()
+            if not scheduled:
+                continue
+            self.release_after_prefill(scheduled)
+
     def cleanup(self) -> None:
         self.model_runner.cleanup()
         logger.info("engine cleanup")
-
-
-if __name__ == "__main__":
-    import logging
-
-    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
-
-    # Example: run from prefill-node-poc directory: python prefill_engine.py
-    def on_kv_ready(layer_idx: int, ref: KVCacheReference) -> None:
-        print(f"  KV layer {layer_idx} ready for whole batch")
-
-    def on_blocks_ready(layer_idx: int, req_id: object, blocks: list) -> None:
-        print(
-            f"  KV layer {layer_idx} blocks ready for req_id={req_id}, num_blocks={len(blocks)}"
-        )
-
-    sched_config = SchedulerConfig(
-        max_num_seqs=4,
-        max_num_batched_tokens=512,
-        num_kvcache_blocks=64,
-        block_size=32,
-    )
-    prefill_config = PrefillConfig(num_layers=4, vocab_size=1000, block_size=32)
-    engine = PrefillEngine(
-        scheduler_config=sched_config,
-        prefill_config=prefill_config,
-        on_kv_cache_ready=on_kv_ready,
-        on_kv_cache_blocks_ready=on_blocks_ready,
-    )
-
-    engine.add_request(list(range(0, 128)), req_id="req_0")
-    engine.add_request(list(range(100, 200)), req_id="req_1")
-    print("Added 2 requests; running step()...")
-    logits, scheduled = engine.step()
-    # Same as tt_model_runner: full logits [batch, max_padded_len, vocab_size]
-    print(f"Full logits shape: {logits.shape}, scheduled: {len(scheduled)} seqs")
-    # Last-position logits for sampling (one 1000-dim vector per request)
-    last_logits = logits[:, -1, :]
-    print(f"Last-position logits shape: {last_logits.shape}  (for sampling)")
-    engine.release_after_prefill(scheduled)
-    print("Released. Done.")
-    engine.cleanup()
