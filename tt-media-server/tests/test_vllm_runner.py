@@ -75,7 +75,10 @@ async def test_run_async_non_streaming_concatenates_output_tokens_correctly(
     assert len(result) == 1
     assert isinstance(result[0], dict)
     assert result[0]["type"] == "final_result"
-    assert result[0]["data"].text == "! I'm a new user of this platform. I'm trying to learn how"
+    assert (
+        result[0]["data"].text
+        == "! I'm a new user of this platform. I'm trying to learn how"
+    )
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 CHUNK_TYPE = "streaming_chunk"
 FINAL_TYPE = "final_result"
 
+
 class VLLMRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
@@ -131,7 +132,9 @@ class VLLMRunner(BaseDeviceRunner):
             data=CompletionResult(text=final_text),
         )
 
-    async def process_request_non_streaming(self, request: CompletionRequest) -> CompletionOutput:
+    async def process_request_non_streaming(
+        self, request: CompletionRequest
+    ) -> CompletionOutput:
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
         sampling_params = build_sampling_params(request)

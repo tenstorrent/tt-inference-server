@@ -19,7 +19,6 @@ class LLMService(BaseService):
         # acts the same as handle_streaming_chunk
         return self.handle_streaming_chunk(result)
 
-
     async def post_process(self, result, input_request=None):
         if isinstance(result, dict):
             return result["data"]

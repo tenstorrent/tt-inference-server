@@ -162,27 +162,39 @@ class TestDeviceWorkerDynamicBatch:
         assert len(results_captured) >= 3, (
             f"Expected at least 3 results, got {len(results_captured)}: {results_captured}"
         )
-        assert results_captured[0] == (("worker_0", "stream_task_1", CompletionOutput(
-                type="streaming_chunk",
-                data=CompletionResult(text="token_0"),
-                task_id="stream_task_1",
-            ))), (
-            f"Got {results_captured[0]}"
-        )
-        assert results_captured[1] == (("worker_0", "stream_task_1", CompletionOutput(
-                type="streaming_chunk",
-                data=CompletionResult(text="token_1"),
-                task_id="stream_task_1",
-            ))), (
-            f"Got {results_captured[1]}"
-        )
-        assert results_captured[2] == (("worker_0", "stream_task_1", CompletionOutput(
-                type="final_result",
-                data=CompletionResult(text="[DONE]"),
-                task_id="stream_task_1",
-            ))), (
-            f"Got {results_captured[2]}"
-        )
+        assert results_captured[0] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="streaming_chunk",
+                    data=CompletionResult(text="token_0"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[0]}"
+        assert results_captured[1] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="streaming_chunk",
+                    data=CompletionResult(text="token_1"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[1]}"
+        assert results_captured[2] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="final_result",
+                    data=CompletionResult(text="[DONE]"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[2]}"
 
     def test_device_worker_non_streaming_request(self, mock_queues):
         """✅ Test handling of non-streaming requests"""
@@ -213,8 +225,10 @@ class TestDeviceWorkerDynamicBatch:
         fresh_device_runner.warmup = mock_warmup
 
         mock_response = Mock()
+
         async def mock_run_async(requests):
             return [mock_response]
+
         fresh_device_runner._run_async = mock_run_async
 
         with patch(

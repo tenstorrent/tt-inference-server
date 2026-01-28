@@ -158,6 +158,7 @@ class BaseService(ABC):
         if formatted_chunk and formatted_chunk.text:
             return formatted_chunk
         return None
+
     def handle_final_result(self, result):
         if result.get("return", False):
             return result.get("result")

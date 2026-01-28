@@ -29,9 +29,7 @@ if "domain.completion_response" not in sys.modules:
     sys.modules["domain.completion_response"] = mock_completion_response
 else:
     # Update the existing mock with our MockCompletionResult
-    sys.modules[
-        "domain.completion_response"
-    ].CompletionResult = MockCompletionResult
+    sys.modules["domain.completion_response"].CompletionResult = MockCompletionResult
 
 # DO NOT mock utils.logger here - let conftest.py handle it
 # The logger in conftest.py is already properly configured
