@@ -10,6 +10,8 @@ from typing import Callable, List, Optional, Protocol, Tuple, Union
 
 import torch
 
+from timing import timed
+
 logger = logging.getLogger(__name__)
 
 
@@ -234,6 +236,7 @@ class DeepSeekPrefillSimulator:
         except ImportError:
             return torch.zeros(shape)
 
+    @timed()
     def prefill_forward(
         self,
         tokens: torch.Tensor,

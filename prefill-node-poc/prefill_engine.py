@@ -19,6 +19,7 @@ from model_runner import PrefillModelRunner
 from prefill_simulator import KVCacheReference, PrefillConfig
 from scheduler import PrefillScheduler, SchedulerConfig
 from sequence import PrefillSequence
+from timing import timed
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class PrefillEngine:
         self.scheduler.add(seq)
         logger.info("add_request req_id=%s prompt_len=%d", seq.req_id, len(seq))
 
+    @timed()
     def step(self) -> tuple[torch.Tensor, list[PrefillSequence]]:
         """
         Schedule a batch of waiting sequences, run prefill, return logits and
@@ -80,6 +82,7 @@ class PrefillEngine:
         )
         return logits, scheduled
 
+    @timed()
     def release_after_prefill(self, seqs: list[PrefillSequence]) -> None:
         """Release block allocations for sequences after prefill/KV stream is done."""
         if seqs:

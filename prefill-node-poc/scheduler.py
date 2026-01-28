@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from block_manager import BlockManager
 from sequence import PrefillSequence
+from timing import timed
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class PrefillScheduler:
             len(self.waiting),
         )
 
+    @timed()
     def schedule(self) -> list[PrefillSequence]:
         """
         Select a batch of sequences from waiting to prefill. Allocates blocks for
@@ -108,6 +110,7 @@ class PrefillScheduler:
 
         return scheduled
 
+    @timed()
     def release(self, seqs: list[PrefillSequence]) -> None:
         """
         Release blocks for the given sequences (e.g. after prefill is done and

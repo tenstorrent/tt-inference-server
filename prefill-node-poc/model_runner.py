@@ -24,6 +24,7 @@ from prefill_simulator import (
     PrefillConfig,
 )
 from sequence import PrefillSequence
+from timing import timed
 
 
 def extract_blocks_from_layer(
@@ -111,6 +112,7 @@ class PrefillModelRunner:
         )
         return self._kv_caches
 
+    @timed()
     def prepare_prefill(
         self,
         seqs: List[PrefillSequence],
@@ -171,6 +173,7 @@ class PrefillModelRunner:
         )
         return tokens, prompt_lens, page_table, kv_cache, start_pos
 
+    @timed()
     def run_prefill(self, seqs: List[PrefillSequence]) -> torch.Tensor:
         """
         Run prefill for the given scheduled sequences. Prepares inputs and
