@@ -16,6 +16,7 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
+    QueueType,
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
@@ -50,7 +51,7 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
     use_queue_per_worker: bool = False
-    use_memory_queue: bool = False
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Queue and batch settings
     max_queue_size: int = 5000

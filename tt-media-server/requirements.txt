@@ -21,3 +21,4 @@ tqdm
 transformers==4.55.0
 uvicorn
 whisperx
+faster_fifo
