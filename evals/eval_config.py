@@ -2254,6 +2254,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Embedding-8B",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=70.58,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-8B",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-Embedding-4B",
         tasks=[
             EvalTask(
@@ -2403,6 +2420,152 @@ _eval_config_list = [
                     published_score_ref="https://arxiv.org/abs/2110.07205",
                     score_func=lambda results: 0.0,
                 ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="openai/gpt-oss-20b",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=0,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                },
+                score=EvalTaskScore(
+                    published_score=71.5,  # GPQA Diamond score
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=85.3,  # MMLU Pro score
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=92.1,  # AIME 2024 score (without tools)
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="openai/gpt-oss-120b",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=0,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                },
+                score=EvalTaskScore(
+                    published_score=80.1,  # GPQA Diamond score
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=90.0,  # MMLU Pro score
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=95.8,  # AIME 2024 score (without tools)
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # "max_length": 131072,  # Support long context as recommended for RULER
+                    "max_length": 65536,  # Support long context as recommended for RULER
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),

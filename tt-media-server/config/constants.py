@@ -97,6 +97,7 @@ class ModelServices(Enum):
     VIDEO = "video"
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
+    EMBEDDING = "embedding"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -113,10 +114,12 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
+        ModelRunners.LLM_TEST,
+    },
+    ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.VLLM_QWEN_EMBEDDING_8B,
         ModelRunners.VLLMBGELargeEN_V1_5,
-        ModelRunners.LLM_TEST,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,

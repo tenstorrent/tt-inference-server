@@ -3,16 +3,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
-import subprocess
 import json
 import logging
 import os
-from packaging.specifiers import SpecifierSet
-from packaging.version import Version
-from pathlib import Path
 import re
 import signal
+import subprocess
 import sys
+from pathlib import Path
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,8 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, VersionRequirement
-from workflows.workflow_types import SystemTopology, VersionMode
+from workflows.workflow_types import SystemTopology, VersionMode, WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 
 class SystemResourceService:
@@ -32,9 +34,8 @@ class SystemResourceService:
     @staticmethod
     def get_tt_smi_data(timeout=10):
         """Get raw tt-smi data with timeout handling"""
-        import sys
-
-        tt_smi_executable = os.path.join(sys.prefix, "bin", "tt-smi")
+        venv_config = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
+        tt_smi_executable = str(venv_config.venv_path / "bin" / "tt-smi")
         try:
             logger.info("Running tt-smi -s to get device telemetry")
 
@@ -88,9 +89,8 @@ class SystemResourceService:
     @staticmethod
     def get_tt_topology_data(timeout=10):
         """Get raw tt-topology data with timeout handling"""
-        import sys
-
-        tt_topology_executable = os.path.join(sys.prefix, "bin", "tt-topology")
+        venv_config = VENV_CONFIGS[WorkflowVenvType.TT_TOPOLOGY]
+        tt_topology_executable = str(venv_config.venv_path / "bin" / "tt-topology")
         try:
             logger.info("Running tt-topology -ls to get system topology")
 
@@ -186,8 +186,10 @@ def main():
     # create ModelSpec
     model_spec = ModelSpec.from_json(args.model_spec_json)
 
-    # parse tt-smi FW & KMD version data
+    # Setup TT_SMI venv and parse tt-smi FW & KMD version data
     # also get board type for all devices
+    venv_tt_smi = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
+    venv_tt_smi.setup(model_spec=model_spec)
     tt_smi_data = SystemResourceService.get_tt_smi_data()
     fw_bundle_versions = []
     board_types = []
@@ -215,6 +217,9 @@ def main():
         compat_board_type in unique_board_type
         for compat_board_type in compat_board_types
     ):
+        # Only setup TT_TOPOLOGY venv when needed for WH board types
+        venv_tt_topology = VENV_CONFIGS[WorkflowVenvType.TT_TOPOLOGY]
+        venv_tt_topology.setup(model_spec=model_spec)
         topology = SystemResourceService.get_system_topology()
 
     # enforce matching FW bundle versions across all devices

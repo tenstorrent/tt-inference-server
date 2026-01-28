@@ -1389,5 +1389,134 @@
                 }
             }
         ]
-    }
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "embedding_time": 0.1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "Qwen3-Embedding-8B"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "tests.server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "Qwen/Qwen3-Embedding-8B"
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
 ]
