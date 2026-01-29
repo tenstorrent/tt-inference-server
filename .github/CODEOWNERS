@@ -2,5 +2,45 @@
 # the repo. Unless a later match takes precedence. This will be
 # requested for review when someone opens a pull request.
 *       @tenstorrent/tt-inference-server-codeowners
-workflows/run_reports.py @tenstorrent/tt-inference-server-codeowners @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT
+
+# tt-media-server
+tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic
+
+# tt-vllm-plugin
+tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT
+
+# vllm-tt-metal
+vllm-tt-metal-llama3/ @tstescoTT @bgoelTT @stisiTT
+
+# docker entrypoint
+docker-entrypoint.sh @tstescoTT @bgoelTT @idjuricTT @acvejicTT
+
+# workflows
+run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
+workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners
+workflows/model_spec.py @tstescoTT @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
+workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
+
+# benchmarking
+benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
+
+# evals
+evals/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
+
+# utils
+utils/ @tenstorrent/tt-inference-server-codeowners
+
+# tests
+tests/ @tenstorrent/tt-inference-server-codeowners
+
+# scripts
+scripts/* @tstescoTT @tenstorrent/tt-inference-server-codeowners
+scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
+
+# github actions
+.github/workflows/ @tstescoTT @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @tenstorrent/tt-inference-server-codeowners
+
+# docs
+docs/ @tenstorrent/tt-inference-server-codeowners
+README.md @tstescoTT @bgoelTT @idjuricTT
