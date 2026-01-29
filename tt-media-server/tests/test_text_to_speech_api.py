@@ -342,7 +342,6 @@ class TestTTSWorkerFunction:
 
     def test_worker_mp3_uses_encode_wav_to(self):
         """tts_worker_function for mp3 calls encode_wav_to and returns result."""
-        import base64
 
         from model_services.text_to_speech_service import tts_worker_function
 
@@ -356,7 +355,6 @@ class TestTTSWorkerFunction:
 
     def test_worker_ogg_uses_encode_wav_to(self):
         """tts_worker_function for ogg calls encode_wav_to and returns result."""
-        import base64
 
         from model_services.text_to_speech_service import tts_worker_function
 
