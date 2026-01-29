@@ -14,17 +14,22 @@ class TestTrainingGemmaLoraRunner:
     def mock_training_request(self):
         """Creates a mock TrainingRequest object with necessary attributes."""
         request = MagicMock()
+
         request.batch_size = 4
+        request.learning_rate = 1e-4
+        request.num_epochs = 1
+        request.val_steps_freq = 50
+        request.steps_freq = 10
+
+        request.dtype = "torch.bfloat16"
+
         request.lora_r = 4
         request.lora_alpha = 8
         request.lora_target_modules = ["q_proj", "v_proj"]
         request.lora_task_type = "CAUSAL_LM"
-        request.dtype = "torch.bfloat16"
-        request.learning_rate = 1e-4
+
         request.ignored_index = -100
-        request.num_epochs = 1
-        request.val_steps_freq = 50
-        request.steps_freq = 10
+
         return request
 
     @pytest.fixture
@@ -34,9 +39,9 @@ class TestTrainingGemmaLoraRunner:
              patch("tt_model_runners.base_device_runner.TTLogger"):
             return TrainingGemmaLoraRunner(device_id="test_device_0")
 
-    @patch("tt_model_runners.training.training_gemma_runner.AutoModelForCausalLM")
-    @patch("tt_model_runners.training.training_gemma_runner.get_dataset_loader")
-    @patch("tt_model_runners.training.training_gemma_runner.xr")
+    @patch("tt_model_runners.forge_training_runners.training_gemma_lora_runner.AutoModelForCausalLM")
+    @patch("tt_model_runners.forge_training_runners.training_gemma_lora_runner.get_dataset_loader")
+    @patch("tt_model_runners.forge_training_runners.training_gemma_lora_runner.xr")
     def test_warmup_configures_hardware_and_loading(self, mock_xr, mock_get_dataset, mock_hf, runner):
         """Verifies that warmup sets correct environment variables and loads components."""
         # Setup mocks
@@ -59,8 +64,8 @@ class TestTrainingGemmaLoraRunner:
         assert mock_get_dataset.call_count == 2
         mock_get_dataset.assert_any_call(runner.model_name, split="train", collate_fn=pytest.any)
 
-    @patch("tt_model_runners.training.training_gemma_runner.get_peft_model")
-    @patch("tt_model_runners.training.training_gemma_runner.torch_xla.sync")
+    @patch("tt_model_runners.forge_training_runners.training_gemma_lora_runner.get_peft_model")
+    @patch("tt_model_runners.forge_training_runners.training_gemma_lora_runner.torch_xla.sync")
     def test_run_training_loop_execution(self, mock_sync, mock_get_peft, runner, mock_training_request):
         """Tests that the training loop processes batches and calls sync."""
         # Setup Mock Model
