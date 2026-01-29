@@ -38,7 +38,9 @@ class TTSLoadTest(BaseTest):
             if not base.is_absolute():
                 base = self._find_repo_root() / base
             self._dataset_dir = base / "libritts_subset"
-            logger.info(f"TTS load test using output_path from config: {self._dataset_dir}")
+            logger.info(
+                f"TTS load test using output_path from config: {self._dataset_dir}"
+            )
         else:
             self._dataset_dir = Path(DATASET_DIR)
 
