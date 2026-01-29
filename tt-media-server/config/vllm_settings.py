@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 
 class VLLMSettings(BaseModel):
-    model: str = SupportedModels.QWEN_3_4B.value
+    model: str = SupportedModels.BGE_LARGE_EN_V1_5.value
     min_context_length: int = 32
     max_model_length: int = 2048
     max_num_batched_tokens: int = 2048

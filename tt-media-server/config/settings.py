@@ -10,7 +10,6 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
-    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -32,8 +31,9 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
+
+    device_ids: str = "(1)"
+    is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -41,20 +41,20 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.VLLMBGELargeEN_V1_5.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = True
+    download_weights_from_service: bool = False
     use_queue_per_worker: bool = False
     use_memory_queue: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 1
+    max_batch_size: int = 8
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
 
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    default_throttle_level: str = ""
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
+    use_vllm_bge: bool = False  # If True, use VLLM implementation; if False, use TTNN implementation
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
@@ -92,7 +93,7 @@ class Settings(BaseSettings):
     audio_language: str = "English"
 
     # Telemetry settings
-    enable_telemetry: bool = True
+    enable_telemetry: bool = False
     prometheus_endpoint: str = "/metrics"
 
     model_config = SettingsConfigDict(env_file=".env")
