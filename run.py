@@ -3,35 +3,36 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
-import sys
 import argparse
 import getpass
 import logging
-import subprocess
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from evals.eval_config import EVAL_CONFIGS
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
+from workflows.bootstrap_uv import bootstrap_uv
+from workflows.log_setup import setup_run_logger
+from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.run_docker_server import run_docker_server
+from workflows.run_workflows import run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    get_run_id,
     load_dotenv,
     run_command,
     write_dotenv,
-    get_run_id,
 )
-from workflows.run_workflows import run_workflows, WorkflowSetup
-from workflows.run_docker_server import run_docker_server
-from workflows.log_setup import setup_run_logger
-from workflows.workflow_types import DeviceTypes, WorkflowType
-from workflows.workflow_venvs import create_local_setup_venv
+from workflows.workflow_types import DeviceTypes, WorkflowType, WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -274,16 +275,19 @@ def validate_local_setup(model_spec, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
-    WorkflowSetup.bootstrap_uv()
 
-    def _validate_system_software_deps():
+    if (
+        WorkflowType.from_string(model_spec.cli_args.workflow)
+        in (WorkflowType.SERVER, WorkflowType.RELEASE)
+    ) and (not model_spec.cli_args.skip_system_sw_validation):
         # check, and enforce if necessary, system software dependency versions
-        venv_python = create_local_setup_venv(WorkflowSetup.uv_exec)
+        venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
+        venv_config.setup(model_spec=model_spec)
 
         # fmt: off
         cmd = [
-            str(venv_python),
-            str(get_repo_root_path() / "workflows" / "run_local_setup_validation.py"),
+            str(venv_config.venv_python),
+            str(get_repo_root_path() / "workflows" / "run_system_software_validation.py"),
             "--model-spec-json", str(json_fpath),
         ]
         # fmt: on
@@ -292,16 +296,13 @@ def validate_local_setup(model_spec, json_fpath):
 
         if return_code != 0:
             raise ValueError(
-                "⛔ validating local setup failed. See ValueErrors above for required version, and System Info section above for current system versions."
+                "⛔ validating system software dependencies failed. See errors above for "
+                "required version, and System Info section above for current system versions."
+                "\nTo skip system software validation, use the flag: --skip-system-sw-validation"
             )
-        else:
-            logger.info("✅ validating local setup completed")
+        logger.info("✅ validating system software dependencies completed")
 
-    if (
-        WorkflowType.from_string(model_spec.cli_args.workflow)
-        in (WorkflowType.SERVER, WorkflowType.RELEASE)
-    ) and (not model_spec.cli_args.skip_system_sw_validation):
-        _validate_system_software_deps()
+    logger.info("✅ validating local setup completed")
 
 
 def format_cli_args_summary(args, model_spec):
@@ -437,9 +438,12 @@ def handle_maintenance_args(args):
 
 
 def main():
+    # step 00: handle maintenance args
     args = parse_arguments()
-    # step 0: handle maintenance args
     handle_maintenance_args(args)
+
+    # step 0: bootstrap uv
+    bootstrap_uv()
 
     # step 1: determine model spec
     if args.model_spec_json:

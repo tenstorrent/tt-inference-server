@@ -2,9 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from model_services.base_job_service import BaseJobService
+from model_services.base_service import BaseService
 
 
-class TrainingService(BaseJobService):
+class EmbeddingService(BaseService):
     def __init__(self):
         super().__init__()

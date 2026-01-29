@@ -24,10 +24,9 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import (
-    ModelSpec,
     ModelSource,
+    ModelSpec,
 )
-from workflows.run_workflows import WorkflowSetup
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
@@ -466,24 +465,9 @@ class HostSetupManager:
         )
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
-        # Bootstrap uv and create/use the managed HF setup venv
-        WorkflowSetup.bootstrap_uv()
-        uv_exec = WorkflowSetup.uv_exec
+        # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
-        if not venv_config.venv_path.exists():
-            subprocess.run(
-                [
-                    str(uv_exec),
-                    "venv",
-                    "--managed-python",
-                    f"--python={venv_config.python_version}",
-                    str(venv_config.venv_path),
-                    "--allow-existing",
-                ],
-                check=True,
-            )
-        # Ensure required packages are present in the venv
-        venv_config.setup(model_spec=self.model_spec, uv_exec=uv_exec)
+        venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
@@ -491,11 +475,11 @@ class HostSetupManager:
         assert hf_exec.exists(), (
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
-        base_cmd = [str(hf_exec)]
         hf_repo = self.model_spec.hf_weights_repo
         # use default huggingface repo
         # fmt: off
-        cmd = base_cmd + [
+        cmd = [
+            str(hf_exec),
             "download", hf_repo,
             "--exclude", "original/**"
         ]
