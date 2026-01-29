@@ -588,3 +588,6 @@ _DEFAULT_SAMPLING_PARAMS = {
     "guided_decoding": None,
     "extra_args": None,
 }
+
+# Sentinel object for worker shutdown signaling
+SHUTDOWN_SIGNAL = {"__shutdown__": True}

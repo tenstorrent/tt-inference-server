@@ -8,7 +8,7 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
-from config.constants import QueueType
+from config.constants import SHUTDOWN_SIGNAL, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
@@ -361,7 +361,7 @@ class Scheduler:
 
             for _ in self.worker_info:
                 try:
-                    self.task_queue.put(None, timeout=2.0)
+                    self.task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
                 except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 
