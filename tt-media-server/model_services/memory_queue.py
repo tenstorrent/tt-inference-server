@@ -69,15 +69,26 @@ class SharedMemoryChunkQueue:
         else:
             self.shm = shared_memory.SharedMemory(name=name)
 
+            # Calculate capacity from existing shared memory size
+            actual_capacity = (self.shm.size - self.header_size) // self.chunk_size
+            if capacity != 200000 and capacity != actual_capacity:
+                self.logger.warning(
+                    f"[MemoryQueue] Capacity mismatch: requested={capacity}, "
+                    f"actual={actual_capacity}. Using actual capacity."
+                )
+            self.capacity = actual_capacity
+
             # Create buffer reference
             self.buffer = np.ndarray(
-                (capacity,),
+                (self.capacity,),
                 dtype=chunk_dtype,
                 buffer=self.shm.buf,
                 offset=self.header_size,
             )
 
-            self.logger.info(f"[MemoryQueue] Attached: {name}")
+            self.logger.info(
+                f"[MemoryQueue] Attached: {name}, capacity={self.capacity}"
+            )
 
     def _initialize_header(self):
         """Initialize header indices and locks"""
@@ -134,6 +145,12 @@ class SharedMemoryChunkQueue:
             return write_idx - read_idx
         else:
             return (self.capacity - read_idx) + write_idx
+
+    def full(self) -> bool:
+        """Check if the queue is full (or nearly full)."""
+        return (
+            self._get_size() >= self.capacity - 10
+        )  # Same margin as _get_next_write_slot
 
     def _get_next_write_slot(self) -> int:
         # Rough size check without lock (acceptable race)
@@ -282,18 +299,98 @@ class SharedMemoryChunkQueue:
         if is_final == 1:
             chunk_dict = {
                 "type": "final_result",
-                "result": chunk,
-                "task_id": task_id,
-                "return_result": False,
+                "data": chunk,
             }
         else:
             chunk_dict = {
                 "type": "streaming_chunk",
-                "chunk": chunk,
-                "task_id": task_id,
+                "data": chunk,
             }
 
         return ("1", task_id, chunk_dict)
+
+    def get_many(
+        self,
+        max_messages_to_get: int = 100,
+        block: bool = True,
+        timeout: float = None,
+    ) -> list:
+        """
+        Get multiple items at once - more efficient than individual gets.
+
+        Args:
+            max_messages_to_get: Maximum number of items to retrieve
+            block: If True, wait for at least one item
+            timeout: Maximum time to wait (only used if block=True)
+
+        Returns:
+            List of items (may be empty if block=False and queue is empty)
+        """
+        results = []
+        start_time = time.time() if timeout else None
+
+        # Get first item (blocking if requested)
+        while True:
+            if timeout and (time.time() - start_time) > timeout:
+                if not results:
+                    raise TimeoutError(f"Queue get_many timed out after {timeout}s")
+                return results
+
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
+
+            if read_idx == write_idx:
+                if not block:
+                    return results
+                time.sleep(0.0001)
+                continue
+
+            # We have at least one item, break out of the waiting loop
+            break
+
+        # Now read as many items as available, up to max_messages_to_get
+        items_read = 0
+        while items_read < max_messages_to_get:
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
+
+            if read_idx == write_idx:
+                break
+
+            if read_idx < 0 or read_idx >= self.capacity:
+                self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+                break
+
+            slot_idx = read_idx
+            data = self.buffer[slot_idx].copy()
+            self.buffer[slot_idx]["item_available"] = 0
+            self._set_read_idx(read_idx + 1)
+
+            task_id = str(data["task_id"]).rstrip("\x00")
+            text = str(data["text"]).rstrip("\x00")
+            is_final = int(data["is_final"])
+
+            chunk = CompletionResult(
+                text=text,
+                index=None,
+                finish_reason=None,
+            )
+
+            if is_final == 1:
+                chunk_dict = {
+                    "type": "final_result",
+                    "data": chunk,
+                }
+            else:
+                chunk_dict = {
+                    "type": "streaming_chunk",
+                    "data": chunk,
+                }
+
+            results.append(("1", task_id, chunk_dict))
+            items_read += 1
+
+        return results
 
     def close(self):
         try:

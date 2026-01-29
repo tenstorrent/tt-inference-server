@@ -6,6 +6,8 @@ from typing import List, Optional
 
 from faster_fifo import Queue as FasterFifoQueue
 
+from queue import Empty
+
 
 class TTFasterFifoQueue:
     """
@@ -45,10 +47,13 @@ class TTFasterFifoQueue:
 
     def get(self, block: bool = True, timeout: Optional[float] = None):
         """Get a single item from the queue."""
-        if timeout is not None:
-            return self._queue.get(block=block, timeout=timeout)
-        else:
-            return self._queue.get(block=block)
+        try:
+            if timeout is not None:
+                return self._queue.get(block=block, timeout=timeout)
+            else:
+                return self._queue.get(block=block)
+        except Empty:
+            return None
 
     def get_nowait(self):
         """Non-blocking get."""
@@ -84,7 +89,7 @@ class TTFasterFifoQueue:
                 return self._queue.get_many(
                     max_messages_to_get=max_messages_to_get, block=block
                 )
-        except Exception:
+        except Empty:
             return []
 
     def qsize(self) -> int:

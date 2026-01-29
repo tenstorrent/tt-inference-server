@@ -29,7 +29,7 @@ class LLMTestRunner(BaseDeviceRunner):
         self.num_torch_threads = num_torch_threads
         # Frequency is set via TEST_RUNNER_FREQUENCY_MS env var, configured in
         # performance_tests/conftest.py which is the single source of truth
-        self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "1"))
 
         self.logger.info(
             f"LLMTestRunner initialized for device {self.device_id}: "
