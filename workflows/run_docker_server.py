@@ -145,7 +145,7 @@ def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    pull_return_code = run_command(cmd, logger=logger)
+    pull_return_code = run_command(cmd, logger=logger, check=False)
     if pull_return_code != 0:
         logger.error(
             f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
