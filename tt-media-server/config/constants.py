@@ -479,14 +479,14 @@ ModelConfigs = {
         "use_queue_per_worker": True,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
