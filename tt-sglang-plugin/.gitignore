@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+
+# Build artifacts
+dist/
+build/
+
+# Model cache (large tensor files)
+model_cache/
+generated/
+
+# PTH files
+*.pth
+
+# IDE
+.vscode/
+.idea/
