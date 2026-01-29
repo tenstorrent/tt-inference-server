@@ -474,7 +474,7 @@ class VideoGenerationEvalsTest(BaseTest):
         try:
             # Use lazy iteration to avoid loading entire video into memory
             total_frames = 0
-            for frame_idx, frame in enumerate(iio.imiter(video_path, plugin="ffmpeg")):
+            for frame_idx, frame in enumerate(iio.imiter(video_path)):
                 total_frames += 1
 
                 # Sample frames at specified rate (every Nth frame)
