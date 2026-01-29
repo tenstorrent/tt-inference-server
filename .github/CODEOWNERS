@@ -8,7 +8,7 @@ tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic
 
 # tt-vllm-plugin
-tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT
+tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT 
 
 # vllm-tt-metal
 vllm-tt-metal-llama3/ @tstescoTT @bgoelTT @stisiTT
