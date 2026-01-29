@@ -30,9 +30,7 @@ async def handle_tts_request(tts_request, service):
         result = await service.process_request(tts_request)
         fmt = tts_request.response_format.lower()
         if fmt in TTS_BINARY_FORMATS:
-            content = getattr(result, "output_bytes", None) or getattr(
-                result, "wav_bytes", None
-            )
+            content = getattr(result, "output_bytes", None)
             if not content:
                 raise HTTPException(
                     status_code=500,
