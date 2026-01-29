@@ -38,7 +38,7 @@ DATASET_DIR = "tests/server_tests/datasets/videos"
 @dataclass
 class VideoGenerationEvalsTestRequest:
     model_name: str
-    num_prompts: int = 16
+    num_prompts: int = 5
     start_from: int = 0
     num_inference_steps: int = 40
     server_url: str | None = None

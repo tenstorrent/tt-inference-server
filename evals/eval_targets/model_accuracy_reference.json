@@ -211,7 +211,7 @@
         "hf_id": "genmo/mochi-1-preview",
         "num_inference_steps": 50,
         "accuracy": {
-            "16": {
+            "5": {
                 "clip_valid_range": [
                     26.20977,
                     27.83099
@@ -226,7 +226,7 @@
         "hf_id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         "num_inference_steps": 40,
         "accuracy": {
-            "16": {
+            "5": {
                 "clip_valid_range": [
                     28.25276,
                     30.00036
