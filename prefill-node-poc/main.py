@@ -13,6 +13,9 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from ttnn import MeshDevice
+import ttnn
+
 from prefill_engine import PrefillEngine
 from prefill_simulator import KVCacheReference, PrefillConfig
 from scheduler import SchedulerConfig
@@ -25,11 +28,18 @@ class AppConfig:
     # Scheduler
     max_num_seqs: int = 4
     max_num_batched_tokens: int = 512
-    num_kvcache_blocks: int = 64
+    num_kvcache_blocks: int | None = None
     block_size: int = 32
+    # KV cache memory (used when num_kvcache_blocks is None)
+    available_kv_cache_memory_gb: float = 12.0
+    num_layers: int = 61  # full model layers for KV memory calc
+    kvpe_dim: int = 576
+    kv_cache_dtype_bytes: int = 1  # bfloat8 for DeepSeek; use 2 for bfloat16
+    kv_tensors_per_layer: int = (
+        1  # 1 for DeepSeek (combined KV/MLA); 2 for separate K and V
+    )
 
     # Simulator / model
-    num_layers: int = 4
     vocab_size: int = 129280
     num_layers_sim: int = 4
     vocab_size_sim: int = 1000
@@ -79,22 +89,34 @@ def main() -> None:
                 f"  KV layer {layer_idx} blocks ready for req_id={req_id}, num_blocks={len(blocks)}"
             )
 
+    mesh_device = ttnn.open_mesh_device(
+        ttnn.MeshShape(1, 2),
+    )
+
     sched_config = SchedulerConfig(
         max_num_seqs=cfg.max_num_seqs,
         max_num_batched_tokens=cfg.max_num_batched_tokens,
         num_kvcache_blocks=cfg.num_kvcache_blocks,
         block_size=cfg.block_size,
+        available_kv_cache_memory_gb=cfg.available_kv_cache_memory_gb,
+        num_layers=cfg.num_layers,
+        kvpe_dim=cfg.kvpe_dim,
+        kv_cache_dtype_bytes=cfg.kv_cache_dtype_bytes,
+        kv_tensors_per_layer=cfg.kv_tensors_per_layer,
     )
+    num_kvcache_blocks = sched_config.get_num_kvcache_blocks()
     prefill_config = PrefillConfig(
         num_layers=cfg.num_layers_sim,
         vocab_size=cfg.vocab_size_sim,
         block_size=cfg.block_size,
+        num_kvcache_blocks=num_kvcache_blocks,
     )
     engine = PrefillEngine(
         scheduler_config=sched_config,
         prefill_config=prefill_config,
         on_kv_cache_ready=on_kv_ready,
         on_kv_cache_blocks_ready=on_blocks_ready,
+        mesh_device=mesh_device,
     )
 
     if tokenizer is not None:

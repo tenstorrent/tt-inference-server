@@ -94,6 +94,7 @@ class PrefillConfig:
     block_size: int = 32
     vocab_size: int = 129280
     pad_token_id: int = 0
+    num_kvcache_blocks: int | None = None
 
     @property
     def kvpe_dim(self) -> int:
@@ -102,13 +103,18 @@ class PrefillConfig:
 
     @property
     def max_num_blocks(self) -> int:
-        """Maximum number of blocks for paged attention."""
+        """Maximum number of blocks for paged attention (from seq_len * batch)."""
         return (self.max_seq_len * self.batch_size) // self.block_size
 
     def get_kv_cache_shape(self, dp_factor: int = 1) -> Tuple[int, int, int, int]:
-        """Get the shape of KV cache for a single layer."""
+        """Get the shape of KV cache for a single layer. First dim = block pool size (must match scheduler)."""
+        num_blocks = (
+            self.num_kvcache_blocks
+            if self.num_kvcache_blocks is not None
+            else self.max_num_blocks
+        )
         return (
-            self.max_num_blocks * dp_factor,
+            num_blocks * dp_factor,
             1,
             self.block_size,
             self.kvpe_dim,
@@ -176,6 +182,7 @@ class DeepSeekPrefillSimulator:
         self._kv_caches: List[KVCacheReference] = []
         self._is_initialized = False
 
+    @timed()
     def allocate_kv_cache(
         self,
         dtype: str = "bfloat8_b",
@@ -216,6 +223,7 @@ class DeepSeekPrefillSimulator:
         )
         return self._kv_caches
 
+    @timed()
     def _allocate_device_tensor(
         self,
         shape: Tuple[int, ...],
@@ -435,150 +443,3 @@ class DeepSeekPrefillSimulator:
         self._kv_caches = []
         self._is_initialized = False
         logger.info("simulator cleanup num_layers_freed=%d", num_freed)
-
-
-class DisaggregatedPrefillServer:
-    """
-    Example server wrapper for disaggregated prefill node.
-
-    Demonstrates how to use DeepSeekPrefillSimulator in a
-    disaggregated setup where prefill and decode run on separate nodes.
-    """
-
-    def __init__(
-        self,
-        config: PrefillConfig,
-        mesh_device: object = None,
-        d2d_transfer_fn: Optional[Callable[[int, KVCacheReference], None]] = None,
-    ):
-        """
-        Initialize the disaggregated prefill server.
-
-        Args:
-            config: Model configuration
-            mesh_device: TTNN mesh device
-            d2d_transfer_fn: Function to transfer KV cache to decode node
-        """
-        self.config = config
-        self.d2d_transfer_fn = d2d_transfer_fn
-        self._pending_transfers: List[KVCacheReference] = []
-
-        self.simulator = DeepSeekPrefillSimulator(
-            config=config,
-            mesh_device=mesh_device,
-            on_kv_cache_ready=self._on_kv_cache_ready,
-        )
-
-    def _on_kv_cache_ready(
-        self,
-        layer_idx: int,
-        kv_cache_ref: KVCacheReference,
-    ) -> None:
-        """Internal callback when KV cache is ready."""
-        self._pending_transfers.append(kv_cache_ref)
-
-        if self.d2d_transfer_fn is not None:
-            self.d2d_transfer_fn(layer_idx, kv_cache_ref)
-            kv_cache_ref.mark_streamed()
-
-    def initialize(self) -> None:
-        """Initialize and allocate resources."""
-        self.simulator.allocate_kv_cache()
-
-    def process_prefill_request(
-        self,
-        tokens: torch.Tensor,
-        prompt_lens: Union[torch.Tensor, List[int]],
-        page_table: torch.Tensor,
-        kv_cache: List[object],
-        start_pos: torch.Tensor,
-        *,
-        enable_trace: bool = False,
-        empty_slots: Optional[Union[torch.Tensor, List[int]]] = None,
-        **kwargs: object,
-    ) -> torch.Tensor:
-        """
-        Process a prefill request. Same interface as tt_model_runner (mandatory + optional).
-
-        Returns:
-            last_logits: [num_of_users, max_padded_len, vocab_size]
-        """
-        self._pending_transfers.clear()
-
-        return self.simulator.prefill_forward(
-            tokens=tokens,
-            prompt_lens=prompt_lens,
-            page_table=page_table,
-            kv_cache=kv_cache,
-            start_pos=start_pos,
-            enable_trace=enable_trace,
-            empty_slots=empty_slots,
-            **kwargs,
-        )
-
-    def get_pending_transfers(self) -> List[KVCacheReference]:
-        """Get list of KV caches pending D2D transfer."""
-        return self._pending_transfers.copy()
-
-    def shutdown(self) -> None:
-        """Clean up resources."""
-        self.simulator.cleanup()
-
-
-if __name__ == "__main__":
-
-    def example_callback(layer_idx: int, kv_cache_ref: KVCacheReference):
-        print(
-            f"[Callback] Layer {layer_idx:2d} KV cache ready for whole batch, shape: {kv_cache_ref.shape}"
-        )
-
-    config = PrefillConfig(
-        num_layers=4,
-        hidden_size=256,
-        num_attention_heads=8,
-        kv_lora_rank=64,
-        qk_rope_head_dim=32,
-        max_seq_len=512,
-        batch_size=4,
-        vocab_size=1000,
-    )
-
-    print("=" * 60)
-    print("DeepSeek V3 Prefill Simulator Demo")
-    print("=" * 60)
-    print(f"\nConfig: num_layers={config.num_layers}, kvpe_dim={config.kvpe_dim}")
-    print("empty_slots: maps batch index i -> slot/user_id for KV cache")
-
-    simulator = DeepSeekPrefillSimulator(
-        config=config,
-        on_kv_cache_ready=example_callback,
-    )
-
-    print("\n--- Allocating KV Cache ---")
-    kv_caches = simulator.allocate_kv_cache()
-    print(f"Allocated {len(kv_caches)} KV caches")
-
-    print("\n--- Running Prefill Forward (same interface as tt_model_runner) ---")
-    batch_size = 1
-    tokens = torch.randint(0, config.vocab_size, (batch_size, 128))
-    prompt_lens = [128]  # one int per request: actual token count before padding
-    max_blocks = (config.max_seq_len * batch_size) // config.block_size
-    page_table = torch.zeros(batch_size, max_blocks, dtype=torch.int32)
-    kv_cache = [ref.tensor for ref in kv_caches]
-    start_pos = torch.zeros(batch_size, dtype=torch.int32)
-
-    last_logits = simulator.prefill_forward(
-        tokens=tokens,
-        prompt_lens=prompt_lens,
-        page_table=page_table,
-        kv_cache=kv_cache,
-        start_pos=start_pos,
-    )
-
-    print("\n--- Prefill Complete ---")
-    print(
-        f"last_logits shape: {last_logits.shape}  (num_of_users, max_padded_len, vocab_size)"
-    )
-
-    simulator.cleanup()
-    print("\n--- Demo Complete ---")

@@ -8,6 +8,9 @@ Inspired by nano-vllm Scheduler; only the prefill branch. No decode, no running
 queue for generation. Sequences are added to waiting; schedule() returns a batch
 of sequences to prefill (and allocates their blocks). After prefill they are
 deallocated and handed off (e.g. to decode node).
+
+num_kvcache_blocks can be set explicitly or computed from available KV cache
+memory (num_layers, block_size, kvpe_dim, dtype, etc.).
 """
 
 from __future__ import annotations
@@ -23,14 +26,67 @@ from timing import timed
 logger = logging.getLogger(__name__)
 
 
+def compute_num_kvcache_blocks(
+    available_memory_bytes: int,
+    num_layers: int,
+    block_size: int,
+    kvpe_dim: int,
+    dtype_bytes: int = 1,
+    tensors_per_layer: int = 1,
+) -> int:
+    """
+    Compute max number of KV cache blocks that fit in available memory.
+
+    Memory per block (across all layers): num_layers * tensors_per_layer
+    * block_size * kvpe_dim * dtype_bytes.
+    tensors_per_layer=1 for DeepSeek (combined KV/MLA); use 2 for separate K and V.
+    dtype_bytes=1 for bfloat8 (DeepSeek).
+    """
+    bytes_per_block = (
+        num_layers * tensors_per_layer * block_size * kvpe_dim * dtype_bytes
+    )
+    if bytes_per_block <= 0:
+        return 0
+    return max(0, available_memory_bytes // bytes_per_block)
+
+
 @dataclass
 class SchedulerConfig:
     """Configuration for the prefill scheduler."""
 
     max_num_seqs: int = 32
     max_num_batched_tokens: int = 8192
-    num_kvcache_blocks: int = 1024
+    num_kvcache_blocks: int | None = None
     block_size: int = 32
+
+    # KV cache memory (used when num_kvcache_blocks is None)
+    available_kv_cache_memory_gb: float = 2.0
+    num_layers: int = 61
+    kvpe_dim: int = 576
+    kv_cache_dtype_bytes: int = 1  # bfloat8 for DeepSeek; use 2 for bfloat16
+    kv_tensors_per_layer: int = (
+        1  # 1 for DeepSeek (combined KV/MLA); 2 for separate K and V
+    )
+
+    def get_num_kvcache_blocks(self) -> int:
+        if self.num_kvcache_blocks is not None:
+            return self.num_kvcache_blocks
+        available_bytes = int(self.available_kv_cache_memory_gb * (1024**3))
+        num_blocks = compute_num_kvcache_blocks(
+            available_memory_bytes=available_bytes,
+            num_layers=self.num_layers,
+            block_size=self.block_size,
+            kvpe_dim=self.kvpe_dim,
+            dtype_bytes=self.kv_cache_dtype_bytes,
+            tensors_per_layer=self.kv_tensors_per_layer,
+        )
+        logger.info(
+            "kv_cache memory calc available_gb=%.2f num_layers=%d -> num_blocks=%d",
+            self.available_kv_cache_memory_gb,
+            self.num_layers,
+            num_blocks,
+        )
+        return num_blocks
 
 
 class PrefillScheduler:
@@ -43,8 +99,14 @@ class PrefillScheduler:
     def __init__(self, config: SchedulerConfig):
         self.max_num_seqs = config.max_num_seqs
         self.max_num_batched_tokens = config.max_num_batched_tokens
+        num_blocks = config.get_num_kvcache_blocks()
+        logger.info(
+            "block_manager num_blocks=%d (from %s)",
+            num_blocks,
+            "config" if config.num_kvcache_blocks is not None else "memory calc",
+        )
         self.block_manager = BlockManager(
-            num_blocks=config.num_kvcache_blocks,
+            num_blocks=num_blocks,
             block_size=config.block_size,
         )
         self.waiting: deque[PrefillSequence] = deque()

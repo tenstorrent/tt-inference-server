@@ -47,12 +47,24 @@ class PrefillEngine:
             on_kv_cache_blocks_ready=on_kv_cache_blocks_ready,
         )
         self.model_runner.allocate_kv_cache()
+        num_blocks = scheduler_config.get_num_kvcache_blocks()
+        max_seqs = (
+            scheduler_config.max_num_seqs
+            if scheduler_config.max_num_seqs is not None
+            else 0
+        )
+        max_tokens = (
+            scheduler_config.max_num_batched_tokens
+            if scheduler_config.max_num_batched_tokens is not None
+            else 0
+        )
+        num_layers = getattr(prefill_config, "num_layers", 0) or 0
         logger.info(
             "engine init max_num_seqs=%d max_num_batched_tokens=%d num_kvcache_blocks=%d num_layers=%d",
-            scheduler_config.max_num_seqs,
-            scheduler_config.max_num_batched_tokens,
-            scheduler_config.num_kvcache_blocks,
-            prefill_config.num_layers,
+            max_seqs,
+            max_tokens,
+            num_blocks,
+            num_layers,
         )
 
     def add_request(self, token_ids: list[int], req_id: str | None = None) -> None:

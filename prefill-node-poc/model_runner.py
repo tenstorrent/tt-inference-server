@@ -104,6 +104,7 @@ class PrefillModelRunner:
             )
             self._on_kv_cache_blocks_ready(layer_idx, seq.req_id, blocks)
 
+    @timed()
     def allocate_kv_cache(self, dtype: str = "bfloat8_b") -> List[KVCacheReference]:
         """Allocate KV cache on device; call once before running prefills."""
         self._kv_caches = self.simulator.allocate_kv_cache(dtype=dtype)
