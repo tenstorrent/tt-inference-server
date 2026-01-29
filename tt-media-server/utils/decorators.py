@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import inspect
+import os
 import time
 from functools import wraps
 
@@ -12,8 +13,15 @@ from utils.logger import TTLogger
 
 logger = TTLogger()
 
+log_time = os.getenv("LOG_LEVEL", "INFO").upper() in [
+    "DEBUG",
+    "INFO",
+    "ERROR",
+    "WARNING",
+]
 
-def log_execution_time(
+
+def debug_execution_time(
     message=None, telemetry_event_name: TelemetryEvent = None, device_id=None
 ):
     def decorator(func):
@@ -130,3 +138,15 @@ def log_execution_time(
         return sync_wrapper
 
     return decorator
+
+
+def log_execution_time(*args, **kwargs):
+    """Only log execution time when in debug mode"""
+    if log_time:
+        return debug_execution_time(*args, **kwargs)
+    else:
+        # Return identity decorator (no-op)
+        def identity(func):
+            return func
+
+        return identity
