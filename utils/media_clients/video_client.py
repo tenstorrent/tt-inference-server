@@ -261,7 +261,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info(f"Downloading video for job: {job_id}")
 
         try:
-            output_dir = Path(self.output_path) / "videos"
+            output_dir = Path("/tmp/videos")
             output_dir.mkdir(parents=True, exist_ok=True)
 
             video_path = output_dir / f"{job_id}.mp4"
