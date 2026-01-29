@@ -5,7 +5,6 @@ fastapi
 faster_fifo
 httpx
 huggingface_hub
-imageio
 imageio-ffmpeg
 loguru
 prometheus-client
