@@ -73,105 +73,96 @@ def mock_settings():
 
 
 @pytest.fixture
-def base_service(mock_scheduler, mock_job_manager, mock_settings):
+def base_service(mock_scheduler, mock_settings):
     """Create a BaseService instance with all dependencies mocked"""
     with patch(
         "model_services.base_service.get_scheduler", return_value=mock_scheduler
     ):
+        with patch("model_services.base_service.settings", mock_settings):
+            with patch("model_services.base_service.TTLogger") as mock_logger_cls:
+                mock_logger = Mock()
+                mock_logger_cls.return_value = mock_logger
+                with patch("model_services.base_service.HuggingFaceUtils"):
+                    # Import inside the patch context
+                    from model_services.base_service import BaseService
+
+                    # Create a concrete implementation
+                    class ConcreteService(BaseService):
+                        pass
+
+                    service = ConcreteService()
+                    service._mock_logger = mock_logger
+                    return service
+
+
+@pytest.fixture
+def base_job_service(mock_scheduler, mock_job_manager, mock_settings):
+    """Create a BaseJobService instance with all dependencies mocked"""
+    with patch(
+        "model_services.base_service.get_scheduler", return_value=mock_scheduler
+    ):
         with patch(
-            "model_services.base_service.get_job_manager", return_value=mock_job_manager
+            "model_services.base_job_service.get_job_manager",
+            return_value=mock_job_manager,
         ):
             with patch("model_services.base_service.settings", mock_settings):
-                with patch("model_services.base_service.TTLogger") as mock_logger_cls:
-                    mock_logger = Mock()
-                    mock_logger_cls.return_value = mock_logger
-                    with patch("model_services.base_service.HuggingFaceUtils"):
-                        # Import inside the patch context
-                        from model_services.base_service import BaseService
-
-                        # Create a concrete implementation
-                        class ConcreteService(BaseService):
-                            pass
-
-                        service = ConcreteService()
-                        service._mock_logger = mock_logger
-                        return service
-
-
-class TestBaseServiceInitialization:
-    """Test BaseService initialization"""
-
-    def test_init_creates_scheduler(
-        self, mock_scheduler, mock_job_manager, mock_settings
-    ):
-        """Test that __init__ creates scheduler instance"""
-        with patch(
-            "model_services.base_service.get_scheduler", return_value=mock_scheduler
-        ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
-                    with patch("model_services.base_service.TTLogger"):
-                        with patch("model_services.base_service.HuggingFaceUtils"):
-                            from model_services.base_service import BaseService
-
-                            class ConcreteService(BaseService):
-                                pass
-
-                            service = ConcreteService()
-                            assert service.scheduler == mock_scheduler
-
-    def test_init_creates_logger(self, mock_scheduler, mock_job_manager, mock_settings):
-        """Test that __init__ creates logger instance"""
-        with patch(
-            "model_services.base_service.get_scheduler", return_value=mock_scheduler
-        ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_job_service.settings", mock_settings):
                     with patch(
                         "model_services.base_service.TTLogger"
                     ) as mock_logger_cls:
                         mock_logger = Mock()
                         mock_logger_cls.return_value = mock_logger
                         with patch("model_services.base_service.HuggingFaceUtils"):
-                            from model_services.base_service import BaseService
+                            # Import inside the patch context
+                            from model_services.base_job_service import BaseJobService
 
-                            class ConcreteService(BaseService):
+                            # Create a concrete implementation
+                            class ConcreteJobService(BaseJobService):
                                 pass
 
-                            service = ConcreteService()
-                            assert service.logger == mock_logger
+                            service = ConcreteJobService()
+                            service._mock_logger = mock_logger
+                            return service
 
-    def test_init_gets_job_manager(
-        self, mock_scheduler, mock_job_manager, mock_settings
-    ):
-        """Test that __init__ gets job manager"""
+
+class TestBaseServiceInitialization:
+    """Test BaseService initialization"""
+
+    def test_init_creates_scheduler(self, mock_scheduler, mock_settings):
+        """Test that __init__ creates scheduler instance"""
         with patch(
             "model_services.base_service.get_scheduler", return_value=mock_scheduler
         ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
-                    with patch("model_services.base_service.TTLogger"):
-                        with patch("model_services.base_service.HuggingFaceUtils"):
-                            from model_services.base_service import BaseService
+            with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_service.TTLogger"):
+                    with patch("model_services.base_service.HuggingFaceUtils"):
+                        from model_services.base_service import BaseService
 
-                            class ConcreteService(BaseService):
-                                pass
+                        class ConcreteService(BaseService):
+                            pass
 
-                            service = ConcreteService()
-                            assert service._job_manager == mock_job_manager
+                        service = ConcreteService()
+                        assert service.scheduler == mock_scheduler
 
-    def test_init_downloads_weights_when_enabled(
-        self, mock_scheduler, mock_job_manager
-    ):
+    def test_init_creates_logger(self, mock_scheduler, mock_settings):
+        """Test that __init__ creates logger instance"""
+        with patch(
+            "model_services.base_service.get_scheduler", return_value=mock_scheduler
+        ):
+            with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_service.TTLogger") as mock_logger_cls:
+                    mock_logger = Mock()
+                    mock_logger_cls.return_value = mock_logger
+                    with patch("model_services.base_service.HuggingFaceUtils"):
+                        from model_services.base_service import BaseService
+
+                        class ConcreteService(BaseService):
+                            pass
+
+                        service = ConcreteService()
+                        assert service.logger == mock_logger
+
+    def test_init_downloads_weights_when_enabled(self, mock_scheduler):
         """Test that __init__ downloads weights when enabled in settings"""
         mock_settings = Mock()
         mock_settings.download_weights_from_service = True
@@ -179,24 +170,20 @@ class TestBaseServiceInitialization:
         with patch(
             "model_services.base_service.get_scheduler", return_value=mock_scheduler
         ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
-                    with patch("model_services.base_service.TTLogger"):
-                        with patch(
-                            "model_services.base_service.HuggingFaceUtils"
-                        ) as mock_hf:
-                            mock_hf_instance = Mock()
-                            mock_hf.return_value = mock_hf_instance
-                            from model_services.base_service import BaseService
+            with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_service.TTLogger"):
+                    with patch(
+                        "model_services.base_service.HuggingFaceUtils"
+                    ) as mock_hf:
+                        mock_hf_instance = Mock()
+                        mock_hf.return_value = mock_hf_instance
+                        from model_services.base_service import BaseService
 
-                            class ConcreteService(BaseService):
-                                pass
+                        class ConcreteService(BaseService):
+                            pass
 
-                            ConcreteService()
-                            mock_hf_instance.download_weights.assert_called_once()
+                        ConcreteService()
+                        mock_hf_instance.download_weights.assert_called_once()
 
 
 class TestCheckIsModelReady:
@@ -228,7 +215,7 @@ class TestCheckIsModelReady:
             mock_scheduler.get_worker_info.assert_called_once()
 
     def test_check_is_model_ready_queue_without_qsize(
-        self, mock_scheduler, mock_job_manager, mock_settings
+        self, mock_scheduler, mock_settings
     ):
         """Test check_is_model_ready when queue doesn't have qsize method"""
         # Remove qsize method
@@ -237,25 +224,19 @@ class TestCheckIsModelReady:
         with patch(
             "model_services.base_service.get_scheduler", return_value=mock_scheduler
         ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
-                    with patch("model_services.base_service.TTLogger"):
-                        with patch("model_services.base_service.HuggingFaceUtils"):
-                            from model_services.base_service import BaseService
+            with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_service.TTLogger"):
+                    with patch("model_services.base_service.HuggingFaceUtils"):
+                        from model_services.base_service import BaseService
 
-                            class ConcreteService(BaseService):
-                                pass
+                        class ConcreteService(BaseService):
+                            pass
 
-                            service = ConcreteService()
-                            result = service.check_is_model_ready()
-                            assert result["queue_size"] == "unknown"
+                        service = ConcreteService()
+                        result = service.check_is_model_ready()
+                        assert result["queue_size"] == "unknown"
 
-    def test_check_is_model_ready_device_not_defined(
-        self, mock_scheduler, mock_job_manager
-    ):
+    def test_check_is_model_ready_device_not_defined(self, mock_scheduler):
         """Test check_is_model_ready when device is None"""
         mock_settings = Mock()
         mock_settings.download_weights_from_service = False
@@ -267,21 +248,17 @@ class TestCheckIsModelReady:
         with patch(
             "model_services.base_service.get_scheduler", return_value=mock_scheduler
         ):
-            with patch(
-                "model_services.base_service.get_job_manager",
-                return_value=mock_job_manager,
-            ):
-                with patch("model_services.base_service.settings", mock_settings):
-                    with patch("model_services.base_service.TTLogger"):
-                        with patch("model_services.base_service.HuggingFaceUtils"):
-                            from model_services.base_service import BaseService
+            with patch("model_services.base_service.settings", mock_settings):
+                with patch("model_services.base_service.TTLogger"):
+                    with patch("model_services.base_service.HuggingFaceUtils"):
+                        from model_services.base_service import BaseService
 
-                            class ConcreteService(BaseService):
-                                pass
+                        class ConcreteService(BaseService):
+                            pass
 
-                            service = ConcreteService()
-                            result = service.check_is_model_ready()
-                            assert result["device"] == "Not defined"
+                        service = ConcreteService()
+                        result = service.check_is_model_ready()
+                        assert result["device"] == "Not defined"
 
 
 class TestWorkerManagement:
@@ -707,16 +684,16 @@ class TestProcessStreamingRequest:
 
 
 class TestJobManagement:
-    """Test job management methods"""
+    """Test job management methods - tests BaseJobService"""
 
     @pytest.mark.asyncio
-    async def test_create_job(self, base_service, mock_job_manager, mock_settings):
+    async def test_create_job(self, base_job_service, mock_job_manager, mock_settings):
         """Test create_job delegates to job manager"""
         mock_job_type = Mock()
         mock_request = MockRequest(task_id="job_1")
 
-        with patch("model_services.base_service.settings", mock_settings):
-            result = await base_service.create_job(mock_job_type, mock_request)
+        with patch("model_services.base_job_service.settings", mock_settings):
+            result = await base_job_service.create_job(mock_job_type, mock_request)
 
         mock_job_manager.create_job.assert_called_once()
         call_kwargs = mock_job_manager.create_job.call_args[1]
@@ -725,37 +702,37 @@ class TestJobManagement:
         assert call_kwargs["request"] == mock_request
         assert result == {"job_id": "job_1", "status": "created"}
 
-    def test_get_all_jobs_metadata(self, base_service, mock_job_manager):
+    def test_get_all_jobs_metadata(self, base_job_service, mock_job_manager):
         """Test get_all_jobs_metadata delegates to job manager"""
-        result = base_service.get_all_jobs_metadata()
+        result = base_job_service.get_all_jobs_metadata()
 
         mock_job_manager.get_all_jobs_metadata.assert_called_once_with(None)
         assert result == [{"job_id": "job_1"}]
 
-    def test_get_all_jobs_metadata_with_type(self, base_service, mock_job_manager):
+    def test_get_all_jobs_metadata_with_type(self, base_job_service, mock_job_manager):
         """Test get_all_jobs_metadata with job type filter"""
         mock_job_type = Mock()
-        base_service.get_all_jobs_metadata(mock_job_type)
+        base_job_service.get_all_jobs_metadata(mock_job_type)
 
         mock_job_manager.get_all_jobs_metadata.assert_called_once_with(mock_job_type)
 
-    def test_get_job_metadata(self, base_service, mock_job_manager):
+    def test_get_job_metadata(self, base_job_service, mock_job_manager):
         """Test get_job_metadata delegates to job manager"""
-        result = base_service.get_job_metadata("job_1")
+        result = base_job_service.get_job_metadata("job_1")
 
         mock_job_manager.get_job_metadata.assert_called_once_with("job_1")
         assert result == {"job_id": "job_1", "status": "running"}
 
-    def test_get_job_result_path(self, base_service, mock_job_manager):
+    def test_get_job_result_path(self, base_job_service, mock_job_manager):
         """Test get_job_result_path delegates to job manager"""
-        result = base_service.get_job_result_path("job_1")
+        result = base_job_service.get_job_result_path("job_1")
 
         mock_job_manager.get_job_result_path.assert_called_once_with("job_1")
         assert result == "/tmp/result.json"
 
-    def test_cancel_job(self, base_service, mock_job_manager):
+    def test_cancel_job(self, base_job_service, mock_job_manager):
         """Test cancel_job delegates to job manager"""
-        result = base_service.cancel_job("job_1")
+        result = base_job_service.cancel_job("job_1")
 
         mock_job_manager.cancel_job.assert_called_once_with("job_1")
         assert result is True
