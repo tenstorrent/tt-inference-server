@@ -4,11 +4,11 @@
 *       @tenstorrent/tt-inference-server-codeowners
 
 # tt-media-server
-tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT
+tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic
 
 # tt-vllm-plugin
-tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT 
+tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT
 
 # vllm-tt-metal
 vllm-tt-metal-llama3/ @tstescoTT @bgoelTT @stisiTT
