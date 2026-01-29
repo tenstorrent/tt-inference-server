@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """
 Integration tests for SpeechT5 TTS API endpoint on N150 hardware.
@@ -42,6 +42,7 @@ from tests.server_tests.base_test import BaseTest
 
 # Test configuration
 BASE_URL = "http://localhost:8000"
+TTS_ENDPOINT = f"{BASE_URL}/audio/speech"
 API_KEY = "your-secret-key"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
@@ -80,7 +81,7 @@ class TestTTSAuthentication(BaseTest):
 
     def test_missing_auth_token(self):
         """Request without auth token should fail"""
-        response = requests.post(f"{BASE_URL}/tts/tts", json={"text": "Test"})
+        response = requests.post(TTS_ENDPOINT, json={"text": "Test"})
         assert response.status_code == 401 or response.status_code == 403
 
     def test_invalid_auth_token(self):
@@ -90,7 +91,7 @@ class TestTTSAuthentication(BaseTest):
             "Content-Type": "application/json",
         }
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=headers,
             json={"text": "Test"},
         )
@@ -99,7 +100,7 @@ class TestTTSAuthentication(BaseTest):
     def test_valid_auth_token(self):
         """Request with valid auth token should succeed"""
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": "Test"},
         )
@@ -114,7 +115,7 @@ class TestTTS(BaseTest):
         """Generate speech from simple text"""
         text = "Hello world"
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=30,
@@ -149,7 +150,7 @@ class TestTTS(BaseTest):
         """Generate speech from longer text"""
         text = "The quick brown fox jumps over the lazy dog. This is a longer sentence to test TTS generation."
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=60,
@@ -168,7 +169,7 @@ class TestTTS(BaseTest):
         """Test text with various punctuation"""
         text = "Hello! How are you? I'm fine, thank you. Great to meet you."
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=30,
@@ -183,7 +184,7 @@ class TestTTS(BaseTest):
 
         for speaker_id in [0, 100, 1000]:
             response = requests.post(
-                f"{BASE_URL}/tts/tts",
+                TTS_ENDPOINT,
                 headers=HEADERS,
                 json={"text": text, "speaker_id": speaker_id},
                 timeout=30,
@@ -192,6 +193,50 @@ class TestTTS(BaseTest):
             assert response.status_code == 200, f"Failed for speaker_id {speaker_id}"
             assert len(response.content) > 0
 
+    def test_response_format_verbose_json(self):
+        """Test response_format=verbose_json returns JSON with base64 audio."""
+        response = requests.post(
+            TTS_ENDPOINT,
+            headers=HEADERS,
+            json={"text": "Hello", "response_format": "verbose_json"},
+            timeout=30,
+        )
+        assert response.status_code == 200
+        assert response.headers.get("content-type", "").startswith("application/json")
+        data = response.json()
+        assert "audio" in data
+        assert "duration" in data
+        assert "sample_rate" in data
+        assert "format" in data
+
+    def test_response_format_mp3(self):
+        """Test response_format=mp3 returns binary with Content-Type audio/mpeg (requires ffmpeg)."""
+        response = requests.post(
+            TTS_ENDPOINT,
+            headers=HEADERS,
+            json={"text": "Hello", "response_format": "mp3"},
+            timeout=30,
+        )
+        if response.status_code == 500 and "ffmpeg" in response.text:
+            pytest.skip("ffmpeg not available; skip mp3 test")
+        assert response.status_code == 200, f"Unexpected: {response.status_code} {response.text[:200]}"
+        assert response.headers.get("content-type") == "audio/mpeg"
+        assert len(response.content) > 0
+
+    def test_response_format_ogg(self):
+        """Test response_format=ogg returns binary with Content-Type audio/ogg (requires ffmpeg)."""
+        response = requests.post(
+            TTS_ENDPOINT,
+            headers=HEADERS,
+            json={"text": "Hello", "response_format": "ogg"},
+            timeout=30,
+        )
+        if response.status_code == 500 and "ffmpeg" in response.text:
+            pytest.skip("ffmpeg not available; skip ogg test")
+        assert response.status_code == 200, f"Unexpected: {response.status_code} {response.text[:200]}"
+        assert response.headers.get("content-type") == "audio/ogg"
+        assert len(response.content) > 0
+
 
 class TestTTSErrorHandling(BaseTest):
     """Test error handling for invalid inputs"""
@@ -199,20 +244,20 @@ class TestTTSErrorHandling(BaseTest):
     def test_empty_text(self):
         """Empty text should return error"""
         response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, json={"text": ""}
+            TTS_ENDPOINT, headers=HEADERS, json={"text": ""}
         )
         # Should fail validation
         assert response.status_code in [400, 422]
 
     def test_missing_text_field(self):
         """Missing required text field should return error"""
-        response = requests.post(f"{BASE_URL}/tts/tts", headers=HEADERS, json={})
+        response = requests.post(TTS_ENDPOINT, headers=HEADERS, json={})
         assert response.status_code in [400, 422]
 
     def test_invalid_json(self):
         """Invalid JSON should return error"""
         response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, data="invalid json"
+            TTS_ENDPOINT, headers=HEADERS, data="invalid json"
         )
         assert response.status_code in [400, 422]
 
@@ -220,7 +265,7 @@ class TestTTSErrorHandling(BaseTest):
         """Very long text should either work or return clear error"""
         text = "word " * 1000  # Very long text
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=120,
@@ -231,7 +276,7 @@ class TestTTSErrorHandling(BaseTest):
     def test_invalid_speaker_id(self):
         """Invalid speaker ID should handle gracefully"""
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": "Test", "speaker_id": -1},
         )
@@ -248,7 +293,7 @@ class TestTTSPerformance(BaseTest):
 
         start_time = time.time()
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=30,
@@ -269,7 +314,7 @@ class TestTTSPerformance(BaseTest):
         responses = []
         for i in range(3):
             response = requests.post(
-                f"{BASE_URL}/tts/tts",
+                TTS_ENDPOINT,
                 headers=HEADERS,
                 json={"text": f"{text} {i}"},
                 timeout=60,
@@ -288,7 +333,7 @@ class TestTTSAudioQuality(BaseTest):
         """Verify generated audio is not silent"""
         text = "Audio quality test"
         response = requests.post(
-            f"{BASE_URL}/tts/tts",
+            TTS_ENDPOINT,
             headers=HEADERS,
             json={"text": text},
             timeout=30,
@@ -315,7 +360,7 @@ class TestTTSAudioQuality(BaseTest):
 
         for i in range(3):
             response = requests.post(
-                f"{BASE_URL}/tts/tts",
+                TTS_ENDPOINT,
                 headers=HEADERS,
                 json={"text": f"Test {i}"},
                 timeout=30,
