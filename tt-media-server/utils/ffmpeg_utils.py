@@ -33,9 +33,7 @@ def run_ffmpeg_stdin_stdout(input_bytes: bytes, ffmpeg_args: List[str]) -> bytes
         error_msg = (
             error_output.decode("utf-8") if error_output else "Unknown ffmpeg error"
         )
-        raise subprocess.CalledProcessError(
-            process.returncode, "ffmpeg", error_msg
-        )
+        raise subprocess.CalledProcessError(process.returncode, "ffmpeg", error_msg)
     return output_bytes
 
 
@@ -45,11 +43,16 @@ def decode_to_wav(audio_bytes: bytes, sample_rate: int = 16000) -> bytes:
     Same args as audio_manager._decode_audio_file.
     """
     args = [
-        "-i", "pipe:0",
-        "-acodec", "pcm_s16le",
-        "-ar", str(sample_rate),
-        "-ac", "1",
-        "-f", "wav",
+        "-i",
+        "pipe:0",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        str(sample_rate),
+        "-ac",
+        "1",
+        "-f",
+        "wav",
         "-y",
         "pipe:1",
     ]
@@ -64,9 +67,12 @@ def encode_wav_to(wav_bytes: bytes, output_format: str) -> bytes:
         args = ["-i", "pipe:0", "-f", "mp3", "-y", "pipe:1"]
     elif output_format == "ogg":
         args = [
-            "-i", "pipe:0",
-            "-acodec", "libvorbis",
-            "-f", "ogg",
+            "-i",
+            "pipe:0",
+            "-acodec",
+            "libvorbis",
+            "-f",
+            "ogg",
             "-y",
             "pipe:1",
         ]
