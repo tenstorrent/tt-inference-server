@@ -7,6 +7,7 @@ from abc import ABC
 
 from config.settings import settings
 from domain.base_request import BaseRequest
+from domain.completion_response import CompletionStreamChunk
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
@@ -174,26 +175,51 @@ class BaseService(ABC):
                     # Wait only when queue is empty
                     chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
-                # Type-based dispatch (faster than isinstance)
-                chunk_type = chunk.get("type")
+                # Handle new tuple format: (task_id, is_final, text)
+                if isinstance(chunk, tuple) and len(chunk) == 3:
+                    task_id_chunk, is_final, chunk_text = chunk
+                    if is_final == 0:
+                        # Streaming chunk
+                        if chunk_text:
+                            yield CompletionStreamChunk(text=chunk_text)
+                    elif is_final == 1:
+                        # Final result - break loop
+                        break
+                    else:
+                        self.logger.error(
+                            f"Received unexpected is_final value for task {request._task_id}: {is_final}"
+                        )
+                        raise ValueError(
+                            f"Streaming protocol violation: invalid is_final value {is_final}"
+                        )
+                # Handle old dict format for backward compatibility
+                elif isinstance(chunk, dict):
+                    chunk_type = chunk.get("type")
 
-                if chunk_type == "streaming_chunk":
-                    formatted_chunk = chunk["chunk"]
-                    # Inline the check - no function calls
-                    if formatted_chunk and formatted_chunk.text:
-                        yield formatted_chunk
+                    if chunk_type == "streaming_chunk":
+                        formatted_chunk = chunk["chunk"]
+                        # Inline the check - no function calls
+                        if formatted_chunk and formatted_chunk.text:
+                            yield formatted_chunk
 
-                elif chunk_type == "final_result":
-                    if chunk.get("return", False):
-                        final_result = chunk["result"]
-                        if final_result is not None:
-                            yield final_result
-                    break
+                    elif chunk_type == "final_result":
+                        if chunk.get("return", False):
+                            final_result = chunk["result"]
+                            if final_result is not None:
+                                yield final_result
+                        break
+                    else:
+                        self.logger.error(
+                            f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
+                        )
+                        raise ValueError(f"Streaming protocol violation: {chunk_type}")
                 else:
                     self.logger.error(
-                        f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
+                        f"Received unexpected chunk type for task {request._task_id}: {type(chunk)}"
                     )
-                    raise ValueError(f"Streaming protocol violation: {chunk_type}")
+                    raise ValueError(
+                        f"Streaming protocol violation: unexpected chunk type {type(chunk)}"
+                    )
 
         except asyncio.TimeoutError:
             self.logger.error(
