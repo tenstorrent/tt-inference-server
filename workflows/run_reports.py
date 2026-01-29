@@ -124,6 +124,21 @@ def generate_image_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
+def generate_tts_report_data(model_spec, eval_run_id):
+    """Generate TTS-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for TTS evaluation results
+    """
+    # TTS models use results_*.json pattern (same as image/cnn)
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
 def get_embedding_benchmark_targets(model_spec, device_str, logger):
     """Get embedding-specific benchmark targets.
 
@@ -2525,8 +2540,20 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.VIDEO:
         file_name_pattern = generate_video_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
@@ -2557,6 +2584,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         or model_spec.model_type.name == ModelType.IMAGE.name
         or model_spec.model_type.name == ModelType.EMBEDDING.name
         or model_spec.model_type.name == ModelType.VIDEO.name
+        or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"

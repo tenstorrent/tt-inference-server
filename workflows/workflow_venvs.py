@@ -127,6 +127,7 @@ def setup_evals_meta(
         or model_spec.model_type == ModelType.CNN
         or model_spec.model_type == ModelType.IMAGE
         or model_spec.model_type == ModelType.EMBEDDING
+        or model_spec.model_type == ModelType.TEXT_TO_SPEECH
     ):
         return setup_venv(venv_config)
 

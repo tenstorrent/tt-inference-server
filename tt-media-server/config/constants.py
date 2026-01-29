@@ -56,7 +56,7 @@ class ModelNames(Enum):
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     QWEN_3_4B = "Qwen3-4B"
-    SPEECHT5_TTS = "speecht5-tts"
+    SPEECHT5_TTS = "speecht5_tts"
 
 
 class ModelRunners(Enum):
