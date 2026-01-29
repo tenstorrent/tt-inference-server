@@ -32,6 +32,15 @@ class TTSLoadTest(BaseTest):
 
     def __init__(self, config, targets=None, **kwargs):
         super().__init__(config, targets)
+        # Align with audio/whisper: use output_path from config when set (e.g. workflow_logs/spec_tests_output)
+        if config and config.get("output_path"):
+            base = Path(config.get("output_path"))
+            if not base.is_absolute():
+                base = self._find_repo_root() / base
+            self._dataset_dir = base / "libritts_subset"
+            logger.info(f"TTS load test using output_path from config: {self._dataset_dir}")
+        else:
+            self._dataset_dir = Path(DATASET_DIR)
 
     def _format_response_values(self, results: dict) -> dict:
         """Format response values for consistency (round floats to appropriate decimals)."""
@@ -178,7 +187,7 @@ class TTSLoadTest(BaseTest):
                     count = len(dataset)
                 dataset_subset = dataset.select(range(count))
 
-            output_path = Path(DATASET_DIR)
+            output_path = self._dataset_dir
             if output_path.exists():
                 shutil.rmtree(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -211,7 +220,7 @@ class TTSLoadTest(BaseTest):
 
     def _load_metadata(self) -> list[dict]:
         """Load metadata from saved JSON file."""
-        metadata_path = Path(DATASET_DIR) / METADATA_FILE
+        metadata_path = self._dataset_dir / METADATA_FILE
         if not metadata_path.exists():
             logger.warning(f"Metadata file not found: {metadata_path}")
             return []
@@ -324,10 +333,19 @@ class TTSLoadTest(BaseTest):
 
     def _cleanup_samples(self) -> None:
         """Clean up downloaded samples directory."""
-        dataset_path = Path(DATASET_DIR)
+        dataset_path = self._dataset_dir
         if dataset_path.exists():
             try:
                 shutil.rmtree(dataset_path)
                 logger.debug(f"Cleaned up dataset directory: {dataset_path}")
             except Exception as e:
                 logger.warning(f"Failed to clean up dataset directory: {e}")
+
+    def _find_repo_root(self) -> Path:
+        """Find repo root (same pattern as whisper_eval_test)."""
+        current = Path(__file__).resolve()
+        while current.parent != current:
+            if (current / "workflows").exists() and (current / "workflows").is_dir():
+                return current
+            current = current.parent
+        return Path.cwd()
