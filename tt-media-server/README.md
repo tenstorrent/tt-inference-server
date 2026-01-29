@@ -633,7 +633,8 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
 | `MAX_BATCH_DELAY_TIME_MS` | `None` | Maximum wait time in milliseconds after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency |
 | `USE_DYNAMIC_BATCHER` | `False` | Boolean flag to enable dynamic batching for improved throughput. When enabled, the server attempts to batch multiple requests together for more efficient processing |
-| `QUEUE_FOR_MULTIPROCESSING` | `TTQueue` | Selects the queue implementation for inter-process communication. Options: `TTQueue` (default, Python's multiprocessing.Queue), `TTFasterFifoQueue` (high-performance, uses faster-fifo). |
+| `USE_QUEUE_PER_WORKER` | `False` | Boolean flag to enable per-worker result queues. When enabled, each worker has its own dedicated result queue instead of a shared queue, which can improve performance in high-concurrency scenarios by reducing queue contention |
+| `QUEUE_FOR_MULTIPROCESSING` | `TTQueue` | Selects the queue implementation for inter-process communication. Options: `TTQueue` (default, Python's multiprocessing.Queue), `FasterFifo` (high-performance, uses faster-fifo library). |
 
 ### Dynamic Batching
 
