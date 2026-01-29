@@ -3,7 +3,7 @@ import time
 from multiprocessing import shared_memory
 
 import numpy as np
-from domain.completion_response import CompletionStreamChunk
+from domain.completion_response import CompletionResult
 from utils.logger import TTLogger
 
 MAX_TEXT_LEN = 450
@@ -153,7 +153,25 @@ class SharedMemoryChunkQueue:
         self._set_write_idx(next_write_idx)
         return write_idx
 
-    def put(self, task_id: str, is_final: int, text: str) -> bool:
+    def put(self, obj, block=True, timeout=None) -> bool:
+        """Match multiprocessing.Queue interface.
+
+        Accepts (worker_id, task_id, data) tuple where data is a dict with:
+        - type: "streaming_chunk" or "final_result"
+        - chunk/result: CompletionResult with .text attribute
+        - task_id: str
+        """
+        # Extract from tuple: (worker_id, task_id, data_dict)
+        _, task_id, data = obj
+
+        # Extract fields from the dict
+        chunk_type = data.get("type", "streaming_chunk")
+        is_final = 1 if chunk_type == "final_result" else 0
+
+        # Get text from chunk or result
+        chunk_obj = data.get("data")
+        text = chunk_obj.text if chunk_obj else ""
+
         slot_idx = self._get_next_write_slot()
 
         if slot_idx == -1:
@@ -199,7 +217,7 @@ class SharedMemoryChunkQueue:
 
             is_final = int(data["is_final"])
 
-            chunk = CompletionStreamChunk(
+            chunk = CompletionResult(
                 text=text,
                 index=None,
                 finish_reason=None,
@@ -208,15 +226,12 @@ class SharedMemoryChunkQueue:
             if is_final == 1:
                 chunk_dict = {
                     "type": "final_result",
-                    "result": chunk,
-                    "task_id": task_id,
-                    "return_result": False,
+                    "data": chunk,
                 }
             else:
                 chunk_dict = {
                     "type": "streaming_chunk",
-                    "chunk": chunk,
-                    "task_id": task_id,
+                    "data": chunk,
                 }
 
             return ("1", task_id, chunk_dict)
@@ -258,7 +273,7 @@ class SharedMemoryChunkQueue:
         text = str(data["text"]).rstrip("\x00")
         is_final = int(data["is_final"])
 
-        chunk = CompletionStreamChunk(
+        chunk = CompletionResult(
             text=text,
             index=None,
             finish_reason=None,
