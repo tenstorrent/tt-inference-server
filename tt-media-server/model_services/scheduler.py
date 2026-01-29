@@ -8,19 +8,19 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
+import utils.simple_queue_factory as simple_queue_factory
 from config.constants import QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from device_workers.device_worker_slot import device_worker as device_worker_slot
 from fastapi import HTTPException
-from model_services.memory_queue import SharedMemoryChunkQueue
 from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
-import utils.simple_queue_factory as simple_queue_factory
 
 
 class Scheduler:
@@ -54,8 +54,8 @@ class Scheduler:
 
     def _get_task_queue(self, size: int):
         """Get task queue - falls back to TTQueue if MemoryQueue is configured.
-        
-        MemoryQueue (SharedMemoryChunkQueue) only works for the specific chunk 
+
+        MemoryQueue (SharedMemoryChunkQueue) only works for the specific chunk
         tuple format, not arbitrary request objects.
         """
         queue_type = self.settings.queue_for_multiprocessing
@@ -67,7 +67,9 @@ class Scheduler:
             return TTQueue(size)
 
     def _get_queue(self, name: str, create: bool, size: int):
-        return simple_queue_factory.get_queue(self.settings.queue_for_multiprocessing, size, name, create)
+        return simple_queue_factory.get_queue(
+            self.settings.queue_for_multiprocessing, size, name, create
+        )
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -120,7 +122,10 @@ class Scheduler:
         return True
 
     @log_execution_time("Scheduler - starting workers")
-    async def start_workers(self):
+    async def start_workers(self, slot_manager=None):
+        # Store slot_manager's slots list for passing to workers
+        self._slots = slot_manager._slots if slot_manager else None
+
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -150,7 +155,7 @@ class Scheduler:
 
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self, worker_id=None):
+    def _start_worker(self, worker_id=None, slot_manager=None):
         """Start a single worker process"""
         if worker_id is None:
             worker_id = (
@@ -172,24 +177,37 @@ class Scheduler:
             result_queue = self.result_queues_by_worker[0]
 
         result_queue_capacity = 10000  # Must match size used in _start_queues
-        p = Process(
-            target=device_worker_dynamic_batch
-            if self.settings.use_dynamic_batcher
-            else device_worker,
-            args=(
-                worker_id,
-                self.task_queue,
-                result_queue,
-                self.warmup_signals_queue,
-                self.error_queue,
-                result_queue.name
-                if self.settings.queue_for_multiprocessing
-                == QueueType.MemoryQueue.value
-                else None,
-                result_queue_capacity,
-            ),
-            name=f"DeviceWorker-{worker_id}",
-        )
+        if self.settings.use_slot_manager:
+            p = Process(
+                target=device_worker_slot,
+                args=(
+                    worker_id,
+                    self.task_queue,
+                    self._slots,
+                    self.warmup_signals_queue,
+                    self.error_queue,
+                ),
+                name=f"DeviceWorker-{worker_id}",
+            )
+        else:
+            p = Process(
+                target=device_worker_dynamic_batch
+                if self.settings.use_dynamic_batcher
+                else device_worker,
+                args=(
+                    worker_id,
+                    self.task_queue,
+                    result_queue,
+                    self.warmup_signals_queue,
+                    self.error_queue,
+                    result_queue.name
+                    if self.settings.queue_for_multiprocessing
+                    == QueueType.MemoryQueue.value
+                    else None,
+                    result_queue_capacity,
+                ),
+                name=f"DeviceWorker-{worker_id}",
+            )
         p.start()
 
         self.worker_info[worker_id] = {

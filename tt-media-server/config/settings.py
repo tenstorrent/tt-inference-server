@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.LLM_TEST.value
+    model_runner: str = ModelRunners.VLLM.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -51,13 +51,16 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
     download_weights_from_service: bool = False
     use_queue_per_worker: bool = False
-    queue_for_multiprocessing: str = QueueType.MemoryQueue.value
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
-    use_dynamic_batcher: bool = False
+    use_dynamic_batcher: bool = True
+
+
+    use_slot_manager: bool = True
 
     # Worker management settings
     new_device_delay_seconds: int = 0
@@ -65,7 +68,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    default_throttle_level: str = "0"
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
