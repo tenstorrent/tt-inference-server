@@ -4,9 +4,7 @@
 
 import asyncio
 from abc import ABC
-from typing import Any, Optional
 
-from config.constants import JobTypes
 from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
@@ -14,7 +12,6 @@ from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.hugging_face_utils import HuggingFaceUtils
-from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
 
@@ -23,7 +20,6 @@ class BaseService(ABC):
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
-        self._job_manager = get_job_manager()
         if settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
 
@@ -116,7 +112,15 @@ class BaseService(ABC):
 
     @log_execution_time("Starting workers")
     def start_workers(self):
-        self.scheduler.start_workers()
+        # Create task for async start_workers, don't await it
+        asyncio.create_task(self._start_workers_async())
+
+    async def _start_workers_async(self):
+        """Internal async wrapper for scheduler.start_workers()"""
+        try:
+            await self.scheduler.start_workers()
+        except Exception as e:
+            self.logger.error(f"Failed to start workers: {e}")
 
     @log_execution_time("Stopping workers")
     def stop_workers(self):
@@ -128,9 +132,6 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
 
-    @log_execution_time(
-        "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
-    )
     async def process(self, request):
         queue = asyncio.Queue()
         self.scheduler.result_queues[request._task_id] = queue
@@ -219,24 +220,3 @@ class BaseService(ABC):
             raise
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
-
-    async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
-        return await self._job_manager.create_job(
-            job_id=request._task_id,
-            job_type=job_type,
-            model=settings.model_weights_path,
-            request=request,
-            task_function=self.process_request,
-        )
-
-    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
-        return self._job_manager.get_all_jobs_metadata(job_type)
-
-    def get_job_metadata(self, job_id: str) -> Optional[dict]:
-        return self._job_manager.get_job_metadata(job_id)
-
-    def get_job_result_path(self, job_id: str) -> Optional[Any]:
-        return self._job_manager.get_job_result_path(job_id)
-
-    def cancel_job(self, job_id: str) -> bool:
-        return self._job_manager.cancel_job(job_id)

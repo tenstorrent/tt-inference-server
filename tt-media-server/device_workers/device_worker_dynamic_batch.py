@@ -5,6 +5,7 @@
 import asyncio
 from multiprocessing import Queue
 
+from config.constants import SHUTDOWN_SIGNAL
 from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
@@ -98,7 +99,7 @@ def device_worker(
             # Run blocking queue.get() in thread pool to not block event loop
             request = await loop.run_in_executor(None, task_queue.get)
 
-            if request is None:  # Sentinel to shut down
+            if request == SHUTDOWN_SIGNAL:
                 logger.info(f"Worker {worker_id} received shutdown signal")
                 return
 
