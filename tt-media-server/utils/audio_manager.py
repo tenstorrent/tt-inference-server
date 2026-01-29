@@ -20,24 +20,8 @@ from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
     import torch
+    from silero_vad import get_speech_timestamps, load_silero_vad
     from whisperx.diarize import DiarizationPipeline
-    from whisperx.vads import Silero
-
-# Add safe globals for pyannote models
-import pyannote.audio.core.task
-import pyannote.core
-
-torch.serialization.add_safe_globals(
-    [
-        torch.torch_version.TorchVersion,
-        pyannote.audio.core.task.Specifications,
-        pyannote.audio.core.task.Problem,
-        pyannote.audio.core.task.Resolution,
-        pyannote.core.Segment,
-        pyannote.core.Timeline,
-        pyannote.core.Annotation,
-    ]
-)
 
 
 class AudioManager:
@@ -125,8 +109,8 @@ class AudioManager:
                 for i, vad_seg in enumerate(vad_speech_segments):
                     vad_segments.append(
                         {
-                            "start": getattr(vad_seg, "start", 0),
-                            "end": getattr(vad_seg, "end", 0),
+                            "start": vad_seg.get("start", 0),
+                            "end": vad_seg.get("end", 0),
                             "text": "",  # TT-Metal will fill this
                             "speaker": "SPEAKER_00",  # Default speaker for VAD-only mode
                         }
@@ -263,9 +247,7 @@ class AudioManager:
                 # VAD requires vad_onset and chunk_size parameters
                 # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
                 # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-                self._vad_model = Silero(
-                    vad_onset=0.500, chunk_size=settings.audio_chunk_duration_seconds
-                )
+                self._vad_model = load_silero_vad()
 
                 self._logger.info("VAD model loaded successfully")
                 return  # Success - exit the retry loop
@@ -317,13 +299,11 @@ class AudioManager:
         self._logger.info("Applying VAD to detect speech segments...")
 
         try:
-            # Convert numpy array to dict format expected by WhisperX VAD
-            audio_dict = {
-                "waveform": torch.from_numpy(audio_array).float(),
-                "sample_rate": settings.default_sample_rate,
-            }
-
-            vad_segments = self._vad_model(audio_dict)
+            # Silero VAD expects a torch tensor (float32)
+            audio_tensor = torch.from_numpy(audio_array).float()
+            vad_segments = get_speech_timestamps(
+                audio_tensor, self._vad_model, threshold=0.5, return_seconds=True
+            )
         except Exception as e:
             self._logger.error(f"Error during VAD processing: {e}")
             return None
