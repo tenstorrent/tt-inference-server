@@ -434,7 +434,6 @@ class PromptClient:
             completions_url = self.completions_url
 
         if force_max_tokens:
-            json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
