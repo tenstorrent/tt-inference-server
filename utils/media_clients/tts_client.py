@@ -224,12 +224,8 @@ class TtsClientStrategy(BaseMediaStrategy):
                 "num_requests": len(status_list),
                 "ttft": ttft_value / 1000,
                 "rtr": rtr_value,
-                "ttft_p90": p90_ttft / 1000
-                if p90_ttft
-                else None,  # Convert ms to seconds
-                "ttft_p95": p95_ttft / 1000
-                if p95_ttft
-                else None,  # Convert ms to seconds
+                "ttft_p90": p90_ttft / 1000,  # ms to seconds; 0.0 when no data
+                "ttft_p95": p95_ttft / 1000,  # ms to seconds; 0.0 when no data
             },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -263,9 +259,16 @@ class TtsClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer = (
-                asyncio.run(self._generate_speech(calculate_wer=calculate_wer))
+            result = asyncio.run(
+                self._generate_speech(calculate_wer=calculate_wer)
             )
+            if len(result) == 4:
+                status, elapsed, ttft_ms, rtr = result
+                reference_text, audio_duration, wer = test_text, None, None
+            else:
+                status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer = (
+                    result
+                )
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
 
             status_list.append(
@@ -611,10 +614,8 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         sorted_ttft = sorted(valid_ttft_values)
         n = len(sorted_ttft)
-
         p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
         p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-
         p90_ttft = sorted_ttft[p90_index]
         p95_ttft = sorted_ttft[p95_index]
 
