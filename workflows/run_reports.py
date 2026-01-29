@@ -3159,6 +3159,15 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
+    if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+        benchmark_summary["ttft_p90"] = (
+            benchmark_summary_data.get("p90_ttft_ms", 0) / 1000
+        )
+        benchmark_summary["ttft_p95"] = (
+            benchmark_summary_data.get("p95_ttft_ms", 0) / 1000
+        )
+        benchmark_summary["rtr"] = benchmark_summary_data.get("rtr", 0)
+
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
         # Create a simple object that mimics what the utility functions expect

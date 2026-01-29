@@ -259,9 +259,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            result = asyncio.run(
-                self._generate_speech(calculate_wer=calculate_wer)
-            )
+            result = asyncio.run(self._generate_speech(calculate_wer=calculate_wer))
             if len(result) == 4:
                 status, elapsed, ttft_ms, rtr = result
                 reference_text, audio_duration, wer = test_text, None, None
