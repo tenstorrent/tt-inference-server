@@ -485,7 +485,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
 
         video_path = strategy._download_video("job123", {})
 
-        assert video_path == "/tmp/output/videos/job123.mp4"
+        assert video_path == "/tmp/videos/job123.mp4"
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
         # Verify file was written
