@@ -33,7 +33,11 @@ class TTFasterFifoQueue:
     def put_many(
         self, items: List, block: bool = True, timeout: Optional[float] = None
     ):
-        """Put multiple items at once - faster than individual puts."""
+        """
+        Put multiple items at once - faster than individual puts.
+
+        Note: The timeout applies to the entire batch, not to each item individually.
+        """
         if timeout is not None:
             self._queue.put_many(items, block=block, timeout=timeout)
         else:
@@ -58,6 +62,8 @@ class TTFasterFifoQueue:
     ) -> List:
         """
         Get multiple items at once - much faster than individual gets.
+
+        Note: The timeout applies to the entire batch, not to each item individually.
 
         Args:
             max_messages_to_get: Maximum number of items to retrieve

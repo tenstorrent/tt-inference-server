@@ -54,8 +54,6 @@ class Scheduler:
             return TTFasterFifoQueue(size)
         elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:
             return TTQueue(size)
-        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
-            return TTQueue(size)
         elif self.settings.queue_for_multiprocessing == QueueType.MemoryQueue.value:
             return SharedMemoryChunkQueue(capacity=size, name=name, create=create)
         else:
