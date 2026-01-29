@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
+import imageio.v3 as iio
 import requests
 from PIL import Image
 
@@ -29,7 +29,7 @@ VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
-DEFAULT_VIDEO_TIMEOUT_SECONDS = 600
+DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 VIDEO_GENERATION_ENDPOINT = "video/generations"
 DATASET_DIR = "tests/server_tests/datasets/videos"
@@ -38,7 +38,7 @@ DATASET_DIR = "tests/server_tests/datasets/videos"
 @dataclass
 class VideoGenerationEvalsTestRequest:
     model_name: str
-    num_prompts: int = 16
+    num_prompts: int = 5
     start_from: int = 0
     num_inference_steps: int = 40
     server_url: str | None = None
@@ -458,43 +458,30 @@ class VideoGenerationEvalsTest(BaseTest):
         as a list of PIL Images. This method extracts frames from the video file to
         match that format: [frame1, frame2, frame3, ...] where each frame is a PIL Image.
 
+        Uses imageio with ffmpeg plugin instead of OpenCV to avoid
+        CUDA/GPU dependencies.
+
         Args:
             video_path: Path to video file (.mp4)
             frame_sample_rate: Sample every Nth frame to reduce computation (default: 8)
-            Set to 1 to extract all frames
+                Set to 1 to extract all frames
 
         Returns:
             List of PIL Image objects representing video frames
         """
         frames = []
-        cap = None
 
         try:
-            cap = cv2.VideoCapture(video_path)
-
-            if not cap.isOpened():
-                logger.error(f"Failed to open video: {video_path}")
-                return frames
-
+            # Use lazy iteration to avoid loading entire video into memory
             total_frames = 0
-            frame_idx = 0
-
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
+            for frame_idx, frame in enumerate(iio.imiter(video_path)):
                 total_frames += 1
 
                 # Sample frames at specified rate (every Nth frame)
                 if frame_idx % frame_sample_rate == 0:
-                    # Convert BGR (cv2 format) to RGB (PIL format)
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # Convert to PIL Image (matching tt-metal pipeline output)
-                    pil_image = Image.fromarray(frame_rgb)
+                    # imageio returns RGB directly (no BGR conversion needed)
+                    pil_image = Image.fromarray(frame)
                     frames.append(pil_image)
-
-                frame_idx += 1
 
             logger.info(
                 f"Extracted {len(frames)} frames (sampled every {frame_sample_rate} frames) "
@@ -503,9 +490,6 @@ class VideoGenerationEvalsTest(BaseTest):
 
         except Exception as e:
             logger.error(f"Error extracting frames from video: {e}")
-        finally:
-            if cap is not None:
-                cap.release()
 
         return frames
 

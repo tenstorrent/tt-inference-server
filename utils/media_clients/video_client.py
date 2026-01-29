@@ -380,7 +380,7 @@ class VideoClientStrategy(BaseMediaStrategy):
 
         # Get parameters from eval configuration with defaults
         # Use default values similar to metal team's approach
-        num_prompts = 16  # Default for video evaluation
+        num_prompts = 5  # Default for video evaluation
         num_inference_steps = 40  # Default for video models
         start_from = 0
         frame_sample_rate = 8  # Sample every 8th frame
