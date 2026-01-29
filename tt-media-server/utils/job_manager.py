@@ -187,13 +187,13 @@ class JobManager:
             job = self._jobs.get(job_id)
             if not job:
                 self._logger.warning(f"Cancel failed: Job {job_id} not found.")
-                return False
+                return None
 
             if job.is_terminal():
                 self._logger.warning(
                     f"Cancel failed: Job {job_id} is already {job.status.value}."
                 )
-                return False
+                return None
 
             job.mark_cancelling()
             if self.db:
@@ -207,7 +207,7 @@ class JobManager:
             self._cleanup_job(job)
 
             self._logger.info(f"Job {job_id} cancellation initiated.")
-            return True
+            return job.to_public_dict()
 
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""

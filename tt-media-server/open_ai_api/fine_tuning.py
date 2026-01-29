@@ -98,19 +98,13 @@ async def cancel_fine_tuning_job(
     Raises:
         HTTPException: If job not found or cannot be cancelled.
     """
-    success = service.cancel_job(job_id)
-    if not success:
+    status = service.cancel_job(job_id)
+    if not status:
         raise HTTPException(
             status_code=400, detail="Job not found or cannot be cancelled"
         )
 
-    return JSONResponse(
-        content={
-            "id": job_id,
-            "object": JobTypes.TRAINING.value,
-            "cancelled": True,
-        }
-    )
+    return JSONResponse(content=status)
 
 
 @router.get("/jobs/{job_id}/checkpoints")

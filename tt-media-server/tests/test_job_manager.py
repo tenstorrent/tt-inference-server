@@ -695,8 +695,10 @@ class TestJobManager:
 
         await asyncio.sleep(0.1)
 
-        success = job_manager.cancel_job("job-123")
-        assert success is True
+        result = job_manager.cancel_job("job-123")
+        assert result is not None
+        assert isinstance(result, dict)
+        assert result["id"] == "job-123"
 
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is not None
@@ -721,7 +723,7 @@ class TestJobManager:
     async def test_cancel_job_not_found(self, job_manager):
         """Test deleting non-existent job"""
         result = job_manager.cancel_job("nonexistent")
-        assert result is False
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_cancel_job_cancels_task(self, job_manager, mock_request):
