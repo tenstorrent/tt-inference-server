@@ -469,7 +469,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
         model_spec.model_name = "test_model"
         device = MagicMock()
         device.name = "test_device"
-        return VideoClientStrategy({}, model_spec, device, "/tmp/output", 8000)
+        return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.video_client.requests.get")
     @patch("builtins.open", new_callable=mock_open)
