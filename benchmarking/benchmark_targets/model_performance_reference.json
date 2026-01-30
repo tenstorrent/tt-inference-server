@@ -10,12 +10,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 33,
-                        "tput_user": 56
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 33, "tput_user": 56}},
             }
         ],
         "n300": [
@@ -28,12 +23,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 54,
-                        "tput_user": 102
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 54, "tput_user": 102}},
             }
         ],
         "t3k": [
@@ -46,14 +36,9 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 22,
-                        "tput_user": 1009
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 22, "tput_user": 1009}},
             }
-        ]
+        ],
     },
     "Qwen2.5-VL-7B-Instruct": {
         "n150": [
@@ -66,12 +51,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 66,
-                        "tput_user": 24
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 66, "tput_user": 24}},
             }
         ],
         "n300": [
@@ -84,12 +64,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 80,
-                        "tput_user": 45
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 80, "tput_user": 45}},
             }
         ],
         "t3k": [
@@ -102,14 +77,9 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27,
-                        "tput_user": 538
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 27, "tput_user": 538}},
             }
-        ]
+        ],
     },
     "Qwen2.5-VL-32B-Instruct": {
         "t3k": [
@@ -122,12 +92,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 63,
-                        "tput_user": 42
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 63, "tput_user": 42}},
             }
         ]
     },
@@ -143,12 +108,8 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 312.0,
-                        "tput_user": 20.0,
-                        "tput": 581.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 312.0, "tput_user": 20.0, "tput": 581.0}
+                },
             }
         ],
         "galaxy": [
@@ -162,14 +123,10 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 136.0,
-                        "tput_user": 80.0,
-                        "tput": 2325.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 136.0, "tput_user": 80.0, "tput": 2325.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen3-32B": {
         "galaxy": [
@@ -183,12 +140,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 156.0,
-                        "tput": 5329.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 156.0, "tput": 5329.0}
+                },
             }
         ],
         "t3k": [
@@ -202,14 +155,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 62.0,
-                        "tput_user": 41.0,
-                        "tput": 1332.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 62.0, "tput_user": 41.0, "tput": 1332.0}
+                },
             }
-        ]
+        ],
     },
     "Mistral-Small-3.1-24B-Instruct-2503": {
         "t3k": [
@@ -223,12 +172,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 54.0,
-                        "tput": 1766.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 54.0, "tput": 1766.0}
+                },
             }
         ],
         "galaxy": [
@@ -242,12 +187,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 209.0,
-                        "tput": 7065.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 209.0, "tput": 7065.0}
+                },
             }
         ],
         "p150": [
@@ -261,14 +202,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 84.0,
-                        "tput_user": 12.0,
-                        "tput": 393.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 84.0, "tput_user": 12.0, "tput": 393.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-72B-Instruct": {
         "t3k": [
@@ -282,12 +219,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 115.0,
-                        "tput_user": 18.0,
-                        "tput": 593.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 115.0, "tput_user": 18.0, "tput": 593.0}
+                },
             }
         ],
         "galaxy": [
@@ -301,14 +234,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 71.0,
-                        "tput": 2371.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 71.0, "tput": 2371.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.1-8B-Instruct": {
         "t3k": [
@@ -322,12 +251,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 84.0,
-                        "tput": 5230.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 84.0, "tput": 5230.0}
+                },
             }
         ],
         "n300": [
@@ -341,12 +266,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 40.0,
-                        "tput_user": 41.0,
-                        "tput": 1307.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 40.0, "tput_user": 41.0, "tput": 1307.0}
+                },
             }
         ],
         "n150": [
@@ -360,12 +281,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 21.0,
-                        "tput": 654.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 21.0, "tput": 654.0}
+                },
             }
         ],
         "p100": [
@@ -379,12 +296,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 34.0,
-                        "tput_user": 33.0,
-                        "tput": 1017.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 34.0, "tput_user": 33.0, "tput": 1017.0}
+                },
             }
         ],
         "galaxy": [
@@ -401,9 +314,9 @@
                     "theoretical": {
                         "ttft_ms": 11.0,
                         "tput_user": 605.0,
-                        "tput": 20919.0
+                        "tput": 20919.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -417,14 +330,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1162.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1162.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-2-27b-it": {
         "galaxy": [
@@ -438,12 +347,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 25.0,
-                        "tput_user": 184.0,
-                        "tput": 6205.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 25.0, "tput_user": 184.0, "tput": 6205.0}
+                },
             }
         ],
         "t3k": [
@@ -457,14 +362,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 53.0,
-                        "tput_user": 48.0,
-                        "tput": 1551.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 53.0, "tput_user": 48.0, "tput": 1551.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.3-70B-Instruct": {
         "t3k": [
@@ -478,12 +379,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 113.0,
-                        "tput_user": 19.0,
-                        "tput": 610.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 113.0, "tput_user": 19.0, "tput": 610.0}
+                },
             }
         ],
         "galaxy": [
@@ -497,25 +394,16 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50.0,
-                        "tput_user": 73.0,
-                        "tput": 2438.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 50.0, "tput_user": 73.0, "tput": 2438.0}
+                },
             },
             {
                 "isl": 2048,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 800,
-                        "tput_user": 80
-                    }
-                }
-            }
+                "targets": {"theoretical": {"ttft_ms": 800, "tput_user": 80}},
+            },
         ],
         "p150x4": [
             {
@@ -523,14 +411,9 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 96, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "Qwen3-30B-A3B": {
         "galaxy": [
@@ -544,12 +427,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 15.0,
-                        "tput_user": 175.0,
-                        "tput": 5718.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 15.0, "tput_user": 175.0, "tput": 5718.0}
+                },
             }
         ],
         "t3k": [
@@ -563,14 +442,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 44.0,
-                        "tput": 1430.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 36.0, "tput_user": 44.0, "tput": 1430.0}
+                },
             }
-        ]
+        ],
     },
     "Mistral-7B-Instruct-v0.3": {
         "n150": [
@@ -584,12 +459,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 24.0,
-                        "tput": 744.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 24.0, "tput": 744.0}
+                },
             }
         ],
         "n300": [
@@ -603,12 +474,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 47.0,
-                        "tput": 1488.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 36.0, "tput_user": 47.0, "tput": 1488.0}
+                },
             }
         ],
         "t3k": [
@@ -622,12 +489,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 94.0,
-                        "tput": 5954.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 94.0, "tput": 5954.0}
+                },
             }
         ],
         "p150": [
@@ -641,12 +504,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27.0,
-                        "tput_user": 43.0,
-                        "tput": 1323.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 27.0, "tput_user": 43.0, "tput": 1323.0}
+                },
             }
         ],
         "p100": [
@@ -660,12 +519,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1158.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1158.0}
+                },
             }
         ],
         "galaxy": [
@@ -682,11 +537,11 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 687.0,
-                        "tput": 23815.0
+                        "tput": 23815.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Llama-3.1-70B": {
         "t3k": [
@@ -700,12 +555,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 119.0,
-                        "tput_user": 20.0,
-                        "tput": 610.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 119.0, "tput_user": 20.0, "tput": 610.0}
+                },
             }
         ],
         "galaxy": [
@@ -719,14 +570,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 46.0,
-                        "tput_user": 80.0,
-                        "tput": 2438.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 46.0, "tput_user": 80.0, "tput": 2438.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen3-8B": {
         "t3k": [
@@ -740,12 +587,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 22.0,
-                        "tput_user": 81.0,
-                        "tput": 5212.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 22.0, "tput_user": 81.0, "tput": 5212.0}
+                },
             }
         ],
         "n150": [
@@ -759,12 +602,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 21.0,
-                        "tput": 652.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 21.0, "tput": 652.0}
+                },
             }
         ],
         "n300": [
@@ -778,12 +617,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 42.0,
-                        "tput_user": 41.0,
-                        "tput": 1303.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 42.0, "tput_user": 41.0, "tput": 1303.0}
+                },
             }
         ],
         "p100": [
@@ -797,12 +632,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 34.0,
-                        "tput_user": 33.0,
-                        "tput": 1013.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 34.0, "tput_user": 33.0, "tput": 1013.0}
+                },
             }
         ],
         "galaxy": [
@@ -819,9 +650,9 @@
                     "theoretical": {
                         "ttft_ms": 12.0,
                         "tput_user": 600.0,
-                        "tput": 20848.0
+                        "tput": 20848.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -835,14 +666,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1158.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1158.0}
+                },
             }
-        ]
+        ],
     },
     "gpt-oss-120b": {
         "t3k": [
@@ -856,12 +683,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 27.0,
-                        "tput": 859.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 27.0, "tput": 859.0}
+                },
             }
         ],
         "galaxy": [
@@ -875,14 +698,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 106.0,
-                        "tput": 3435.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 106.0, "tput": 3435.0}
+                },
             }
-        ]
+        ],
     },
     "gpt-oss-20b": {
         "n300": [
@@ -896,12 +715,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 41.0,
-                        "tput_user": 33.0,
-                        "tput": 1069.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 41.0, "tput_user": 33.0, "tput": 1069.0}
+                },
             }
         ],
         "p100": [
@@ -915,12 +730,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 41.0,
-                        "tput_user": 26.0,
-                        "tput": 831.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 41.0, "tput_user": 26.0, "tput": 831.0}
+                },
             }
         ],
         "t3k": [
@@ -934,12 +745,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 18.0,
-                        "tput_user": 131.0,
-                        "tput": 4276.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 18.0, "tput_user": 131.0, "tput": 4276.0}
+                },
             }
         ],
         "galaxy": [
@@ -953,12 +760,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 507.0,
-                        "tput": 17102.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 507.0, "tput": 17102.0}
+                },
             }
         ],
         "p150": [
@@ -972,14 +775,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 30.0,
-                        "tput": 950.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 36.0, "tput_user": 30.0, "tput": 950.0}
+                },
             }
-        ]
+        ],
     },
     "QwQ-32B": {
         "t3k": [
@@ -993,12 +792,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 63.0,
-                        "tput_user": 41.0,
-                        "tput": 1325.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 63.0, "tput_user": 41.0, "tput": 1325.0}
+                },
             }
         ],
         "galaxy": [
@@ -1012,14 +807,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 156.0,
-                        "tput": 5302.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 156.0, "tput": 5302.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-Coder-32B-Instruct": {
         "t3k": [
@@ -1033,12 +824,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 63.0,
-                        "tput_user": 41.0,
-                        "tput": 1325.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 63.0, "tput_user": 41.0, "tput": 1325.0}
+                },
             }
         ],
         "galaxy": [
@@ -1052,14 +839,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 156.0,
-                        "tput": 5302.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 156.0, "tput": 5302.0}
+                },
             }
-        ]
+        ],
     },
     "Mistral-Small-3.2-24B-Instruct-2506": {
         "t3k": [
@@ -1073,12 +856,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 54.0,
-                        "tput": 1766.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 54.0, "tput": 1766.0}
+                },
             }
         ],
         "p150": [
@@ -1092,12 +871,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 84.0,
-                        "tput_user": 12.0,
-                        "tput": 393.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 84.0, "tput_user": 12.0, "tput": 393.0}
+                },
             }
         ],
         "galaxy": [
@@ -1111,14 +886,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 209.0,
-                        "tput": 7065.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 209.0, "tput": 7065.0}
+                },
             }
-        ]
+        ],
     },
     "Mistral-Small-24B-Instruct-2501": {
         "galaxy": [
@@ -1132,12 +903,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 209.0,
-                        "tput": 7065.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 209.0, "tput": 7065.0}
+                },
             }
         ],
         "p150": [
@@ -1151,12 +918,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 84.0,
-                        "tput_user": 12.0,
-                        "tput": 393.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 84.0, "tput_user": 12.0, "tput": 393.0}
+                },
             }
         ],
         "t3k": [
@@ -1170,14 +933,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 54.0,
-                        "tput": 1766.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 54.0, "tput": 1766.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.2-3B-Instruct": {
         "n150": [
@@ -1191,12 +950,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 56.0,
-                        "tput": 1682.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 56.0, "tput": 1682.0}
+                },
             }
         ],
         "t3k": [
@@ -1213,9 +968,9 @@
                     "theoretical": {
                         "ttft_ms": 12.0,
                         "tput_user": 167.0,
-                        "tput": 13458.0
+                        "tput": 13458.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -1229,12 +984,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 20.0,
-                        "tput_user": 109.0,
-                        "tput": 3364.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 20.0, "tput_user": 109.0, "tput": 3364.0}
+                },
             }
         ],
         "p150": [
@@ -1248,12 +999,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13.0,
-                        "tput_user": 99.0,
-                        "tput": 2991.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 13.0, "tput_user": 99.0, "tput": 2991.0}
+                },
             }
         ],
         "p100": [
@@ -1267,12 +1014,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 14.0,
-                        "tput_user": 87.0,
-                        "tput": 2617.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 14.0, "tput_user": 87.0, "tput": 2617.0}
+                },
             }
         ],
         "galaxy": [
@@ -1289,11 +1032,11 @@
                     "theoretical": {
                         "ttft_ms": 8.0,
                         "tput_user": 1506.0,
-                        "tput": 53832.0
+                        "tput": 53832.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Qwen3-14B": {
         "n300": [
@@ -1307,12 +1050,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 66.0,
-                        "tput_user": 24.0,
-                        "tput": 753.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 66.0, "tput_user": 24.0, "tput": 753.0}
+                },
             }
         ],
         "t3k": [
@@ -1326,12 +1065,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 32.0,
-                        "tput_user": 92.0,
-                        "tput": 3012.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 32.0, "tput_user": 92.0, "tput": 3012.0}
+                },
             }
         ],
         "galaxy": [
@@ -1348,9 +1083,9 @@
                     "theoretical": {
                         "ttft_ms": 16.0,
                         "tput_user": 351.0,
-                        "tput": 12047.0
+                        "tput": 12047.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -1364,12 +1099,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 21.0,
-                        "tput": 669.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 21.0, "tput": 669.0}
+                },
             }
         ],
         "p100": [
@@ -1383,14 +1114,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 57.0,
-                        "tput_user": 19.0,
-                        "tput": 586.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 57.0, "tput_user": 19.0, "tput": 586.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen3-4B": {
         "galaxy": [
@@ -1407,9 +1134,9 @@
                     "theoretical": {
                         "ttft_ms": 9.0,
                         "tput_user": 1144.0,
-                        "tput": 41381.0
+                        "tput": 41381.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -1423,12 +1150,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 82.0,
-                        "tput": 2586.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 82.0, "tput": 2586.0}
+                },
             }
         ],
         "t3k": [
@@ -1445,9 +1168,9 @@
                     "theoretical": {
                         "ttft_ms": 16.0,
                         "tput_user": 132.0,
-                        "tput": 10345.0
+                        "tput": 10345.0,
                     }
-                }
+                },
             }
         ],
         "n150": [
@@ -1461,12 +1184,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27.0,
-                        "tput_user": 42.0,
-                        "tput": 1293.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 27.0, "tput_user": 42.0, "tput": 1293.0}
+                },
             }
         ],
         "p150": [
@@ -1480,12 +1199,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 17.0,
-                        "tput_user": 75.0,
-                        "tput": 2299.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 17.0, "tput_user": 75.0, "tput": 2299.0}
+                },
             }
         ],
         "p100": [
@@ -1499,14 +1214,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 65.0,
-                        "tput": 2012.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 65.0, "tput": 2012.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen3-1.7B": {
         "galaxy": [
@@ -1523,9 +1234,9 @@
                     "theoretical": {
                         "ttft_ms": 6.0,
                         "tput_user": 2501.0,
-                        "tput": 90747.0
+                        "tput": 90747.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -1539,12 +1250,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 153.0,
-                        "tput": 4411.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 153.0, "tput": 4411.0}
+                },
             }
         ],
         "t3k": [
@@ -1561,9 +1268,9 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 238.0,
-                        "tput": 22687.0
+                        "tput": 22687.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -1577,12 +1284,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 15.0,
-                        "tput_user": 191.0,
-                        "tput": 5672.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 15.0, "tput_user": 191.0, "tput": 5672.0}
+                },
             }
         ],
         "n150": [
@@ -1596,12 +1299,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13.0,
-                        "tput_user": 98.0,
-                        "tput": 2836.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 13.0, "tput_user": 98.0, "tput": 2836.0}
+                },
             }
         ],
         "p150": [
@@ -1615,14 +1314,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 175.0,
-                        "tput": 5041.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 175.0, "tput": 5041.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen3-0.6B": {
         "t3k": [
@@ -1636,12 +1331,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 432.0,
-                        "tput": 61628.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 432.0, "tput": 61628.0}
+                },
             }
         ],
         "n150": [
@@ -1655,12 +1346,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6.0,
-                        "tput_user": 279.0,
-                        "tput": 7703.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 6.0, "tput_user": 279.0, "tput": 7703.0}
+                },
             }
         ],
         "n300": [
@@ -1674,12 +1361,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 526.0,
-                        "tput": 15407.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 526.0, "tput": 15407.0}
+                },
             }
         ],
         "p150": [
@@ -1693,12 +1376,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5.0,
-                        "tput_user": 495.0,
-                        "tput": 13695.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 5.0, "tput_user": 495.0, "tput": 13695.0}
+                },
             }
         ],
         "p100": [
@@ -1712,12 +1391,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5.0,
-                        "tput_user": 433.0,
-                        "tput": 11983.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 5.0, "tput_user": 433.0, "tput": 11983.0}
+                },
             }
         ],
         "galaxy": [
@@ -1734,11 +1409,11 @@
                     "theoretical": {
                         "ttft_ms": 5.0,
                         "tput_user": 6062.0,
-                        "tput": 246511.0
+                        "tput": 246511.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "gemma-2-9b-it": {
         "t3k": [
@@ -1752,12 +1427,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 69.0,
-                        "tput": 4521.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 69.0, "tput": 4521.0}
+                },
             }
         ],
         "n150": [
@@ -1771,12 +1442,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 58.0,
-                        "tput_user": 19.0,
-                        "tput": 565.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 58.0, "tput_user": 19.0, "tput": 565.0}
+                },
             }
         ],
         "n300": [
@@ -1790,12 +1457,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 48.0,
-                        "tput_user": 37.0,
-                        "tput": 1130.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 48.0, "tput_user": 37.0, "tput": 1130.0}
+                },
             }
         ],
         "p100": [
@@ -1809,12 +1472,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 38.0,
-                        "tput_user": 29.0,
-                        "tput": 879.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 38.0, "tput_user": 29.0, "tput": 879.0}
+                },
             }
         ],
         "p150": [
@@ -1828,12 +1487,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 34.0,
-                        "tput_user": 33.0,
-                        "tput": 1005.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 34.0, "tput_user": 33.0, "tput": 1005.0}
+                },
             }
         ],
         "galaxy": [
@@ -1850,11 +1505,11 @@
                     "theoretical": {
                         "ttft_ms": 14.0,
                         "tput_user": 529.0,
-                        "tput": 18082.0
+                        "tput": 18082.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Mistral-Nemo-Instruct-2407": {
         "p100": [
@@ -1868,12 +1523,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50.0,
-                        "tput_user": 21.0,
-                        "tput": 666.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 50.0, "tput_user": 21.0, "tput": 666.0}
+                },
             }
         ],
         "p150": [
@@ -1887,12 +1538,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 24.0,
-                        "tput": 762.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 24.0, "tput": 762.0}
+                },
             }
         ],
         "t3k": [
@@ -1906,12 +1553,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 29.0,
-                        "tput_user": 105.0,
-                        "tput": 3427.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 29.0, "tput_user": 105.0, "tput": 3427.0}
+                },
             }
         ],
         "galaxy": [
@@ -1928,9 +1571,9 @@
                     "theoretical": {
                         "ttft_ms": 15.0,
                         "tput_user": 400.0,
-                        "tput": 13708.0
+                        "tput": 13708.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -1944,14 +1587,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 59.0,
-                        "tput_user": 27.0,
-                        "tput": 857.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 59.0, "tput_user": 27.0, "tput": 857.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-0.5B-Instruct": {
         "n300": [
@@ -1965,12 +1604,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 627.0,
-                        "tput": 20638.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 627.0, "tput": 20638.0}
+                },
             }
         ],
         "n150": [
@@ -1984,12 +1619,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6.0,
-                        "tput_user": 336.0,
-                        "tput": 10319.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 6.0, "tput_user": 336.0, "tput": 10319.0}
+                },
             }
         ],
         "p100": [
@@ -2003,12 +1634,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 4.0,
-                        "tput_user": 522.0,
-                        "tput": 16052.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 4.0, "tput_user": 522.0, "tput": 16052.0}
+                },
             }
         ],
         "galaxy": [
@@ -2025,9 +1652,9 @@
                     "theoretical": {
                         "ttft_ms": 5.0,
                         "tput_user": 6879.0,
-                        "tput": 330214.0
+                        "tput": 330214.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -2041,12 +1668,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 4.0,
-                        "tput_user": 597.0,
-                        "tput": 18345.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 4.0, "tput_user": 597.0, "tput": 18345.0}
+                },
             }
         ],
         "t3k": [
@@ -2060,14 +1683,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 449.0,
-                        "tput": 82553.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 449.0, "tput": 82553.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-1.5B-Instruct": {
         "n150": [
@@ -2081,12 +1700,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12.0,
-                        "tput_user": 112.0,
-                        "tput": 3471.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 12.0, "tput_user": 112.0, "tput": 3471.0}
+                },
             }
         ],
         "n300": [
@@ -2100,12 +1715,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 14.0,
-                        "tput_user": 216.0,
-                        "tput": 6942.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 14.0, "tput_user": 216.0, "tput": 6942.0}
+                },
             }
         ],
         "galaxy": [
@@ -2122,9 +1733,9 @@
                     "theoretical": {
                         "ttft_ms": 6.0,
                         "tput_user": 2750.0,
-                        "tput": 111065.0
+                        "tput": 111065.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -2141,9 +1752,9 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 242.0,
-                        "tput": 27766.0
+                        "tput": 27766.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -2157,12 +1768,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 199.0,
-                        "tput": 6170.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 199.0, "tput": 6170.0}
+                },
             }
         ],
         "p100": [
@@ -2176,14 +1783,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 174.0,
-                        "tput": 5399.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 174.0, "tput": 5399.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-3B-Instruct": {
         "t3k": [
@@ -2200,9 +1803,9 @@
                     "theoretical": {
                         "ttft_ms": 14.0,
                         "tput_user": 150.0,
-                        "tput": 14042.0
+                        "tput": 14042.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -2216,12 +1819,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 15.0,
-                        "tput_user": 87.0,
-                        "tput": 2730.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 15.0, "tput_user": 87.0, "tput": 2730.0}
+                },
             }
         ],
         "galaxy": [
@@ -2238,9 +1837,9 @@
                     "theoretical": {
                         "ttft_ms": 9.0,
                         "tput_user": 1465.0,
-                        "tput": 56166.0
+                        "tput": 56166.0,
                     }
-                }
+                },
             }
         ],
         "n150": [
@@ -2254,12 +1853,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 56.0,
-                        "tput": 1755.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 56.0, "tput": 1755.0}
+                },
             }
         ],
         "p150": [
@@ -2273,12 +1868,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13.0,
-                        "tput_user": 99.0,
-                        "tput": 3120.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 13.0, "tput_user": 99.0, "tput": 3120.0}
+                },
             }
         ],
         "n300": [
@@ -2292,14 +1883,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 22.0,
-                        "tput_user": 109.0,
-                        "tput": 3510.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 22.0, "tput_user": 109.0, "tput": 3510.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-7B-Instruct": {
         "n300": [
@@ -2313,12 +1900,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 37.0,
-                        "tput_user": 47.0,
-                        "tput": 1515.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 37.0, "tput_user": 47.0, "tput": 1515.0}
+                },
             }
         ],
         "n150": [
@@ -2332,12 +1915,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 44.0,
-                        "tput_user": 24.0,
-                        "tput": 757.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 44.0, "tput_user": 24.0, "tput": 757.0}
+                },
             }
         ],
         "p150": [
@@ -2351,12 +1930,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 43.0,
-                        "tput": 1347.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 43.0, "tput": 1347.0}
+                },
             }
         ],
         "p100": [
@@ -2370,12 +1945,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1178.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1178.0}
+                },
             }
         ],
         "t3k": [
@@ -2389,12 +1960,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 92.0,
-                        "tput": 6059.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 92.0, "tput": 6059.0}
+                },
             }
         ],
         "galaxy": [
@@ -2411,11 +1978,11 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 684.0,
-                        "tput": 24237.0
+                        "tput": 24237.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-14B-Instruct": {
         "n300": [
@@ -2429,12 +1996,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 68.0,
-                        "tput_user": 24.0,
-                        "tput": 750.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 68.0, "tput_user": 24.0, "tput": 750.0}
+                },
             }
         ],
         "galaxy": [
@@ -2451,9 +2014,9 @@
                     "theoretical": {
                         "ttft_ms": 18.0,
                         "tput_user": 348.0,
-                        "tput": 12000.0
+                        "tput": 12000.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -2467,12 +2030,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 34.0,
-                        "tput_user": 92.0,
-                        "tput": 3000.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 34.0, "tput_user": 92.0, "tput": 3000.0}
+                },
             }
         ],
         "p100": [
@@ -2486,12 +2045,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 58.0,
-                        "tput_user": 19.0,
-                        "tput": 583.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 58.0, "tput_user": 19.0, "tput": 583.0}
+                },
             }
         ],
         "p150": [
@@ -2505,14 +2060,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 51.0,
-                        "tput_user": 21.0,
-                        "tput": 667.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 51.0, "tput_user": 21.0, "tput": 667.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-32B-Instruct": {
         "galaxy": [
@@ -2526,12 +2077,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 156.0,
-                        "tput": 5302.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 156.0, "tput": 5302.0}
+                },
             }
         ],
         "t3k": [
@@ -2545,14 +2092,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 63.0,
-                        "tput_user": 41.0,
-                        "tput": 1325.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 63.0, "tput_user": 41.0, "tput": 1325.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.2-1B-Instruct": {
         "n300": [
@@ -2569,9 +2112,9 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 323.0,
-                        "tput": 10183.0
+                        "tput": 10183.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -2585,12 +2128,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5.0,
-                        "tput_user": 298.0,
-                        "tput": 9051.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 5.0, "tput_user": 298.0, "tput": 9051.0}
+                },
             }
         ],
         "p100": [
@@ -2604,12 +2143,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6.0,
-                        "tput_user": 261.0,
-                        "tput": 7920.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 6.0, "tput_user": 261.0, "tput": 7920.0}
+                },
             }
         ],
         "t3k": [
@@ -2623,12 +2158,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 358.0,
-                        "tput": 40730.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 358.0, "tput": 40730.0}
+                },
             }
         ],
         "galaxy": [
@@ -2645,9 +2176,9 @@
                     "theoretical": {
                         "ttft_ms": 4.0,
                         "tput_user": 4104.0,
-                        "tput": 162921.0
+                        "tput": 162921.0,
                     }
-                }
+                },
             }
         ],
         "n150": [
@@ -2661,14 +2192,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 168.0,
-                        "tput": 5091.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 168.0, "tput": 5091.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-1.1-2b-it": {
         "n150": [
@@ -2682,12 +2209,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 17.0,
-                        "tput_user": 84.0,
-                        "tput": 2646.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 17.0, "tput_user": 84.0, "tput": 2646.0}
+                },
             }
         ],
         "n300": [
@@ -2701,12 +2224,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 18.0,
-                        "tput_user": 162.0,
-                        "tput": 5293.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 18.0, "tput_user": 162.0, "tput": 5293.0}
+                },
             }
         ],
         "p150": [
@@ -2720,12 +2239,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 149.0,
-                        "tput": 4705.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 149.0, "tput": 4705.0}
+                },
             }
         ],
         "t3k": [
@@ -2742,9 +2257,9 @@
                     "theoretical": {
                         "ttft_ms": 11.0,
                         "tput_user": 197.0,
-                        "tput": 21171.0
+                        "tput": 21171.0,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -2761,9 +2276,9 @@
                     "theoretical": {
                         "ttft_ms": 6.0,
                         "tput_user": 2117.0,
-                        "tput": 84684.0
+                        "tput": 84684.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -2777,14 +2292,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 10.0,
-                        "tput_user": 131.0,
-                        "tput": 4117.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 10.0, "tput_user": 131.0, "tput": 4117.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-1.1-7b-it": {
         "galaxy": [
@@ -2801,9 +2312,9 @@
                     "theoretical": {
                         "ttft_ms": 12.0,
                         "tput_user": 671.0,
-                        "tput": 22674.0
+                        "tput": 22674.0,
                     }
-                }
+                },
             }
         ],
         "n150": [
@@ -2817,12 +2328,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 47.0,
-                        "tput_user": 24.0,
-                        "tput": 709.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 47.0, "tput_user": 24.0, "tput": 709.0}
+                },
             }
         ],
         "t3k": [
@@ -2836,12 +2343,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 22.0,
-                        "tput_user": 84.0,
-                        "tput": 5668.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 22.0, "tput_user": 84.0, "tput": 5668.0}
+                },
             }
         ],
         "p100": [
@@ -2855,12 +2358,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1102.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1102.0}
+                },
             }
         ],
         "n300": [
@@ -2874,12 +2373,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 40.0,
-                        "tput_user": 47.0,
-                        "tput": 1417.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 40.0, "tput_user": 47.0, "tput": 1417.0}
+                },
             }
         ],
         "p150": [
@@ -2893,14 +2388,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 43.0,
-                        "tput": 1260.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 43.0, "tput": 1260.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-2-2b-it": {
         "t3k": [
@@ -2917,9 +2408,9 @@
                     "theoretical": {
                         "ttft_ms": 12.0,
                         "tput_user": 187.0,
-                        "tput": 19509.0
+                        "tput": 19509.0,
                     }
-                }
+                },
             }
         ],
         "n150": [
@@ -2933,12 +2424,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 84.0,
-                        "tput": 2439.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 84.0, "tput": 2439.0}
+                },
             }
         ],
         "p100": [
@@ -2952,12 +2439,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 10.0,
-                        "tput_user": 130.0,
-                        "tput": 3794.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 10.0, "tput_user": 130.0, "tput": 3794.0}
+                },
             }
         ],
         "n300": [
@@ -2971,12 +2454,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 162.0,
-                        "tput": 4877.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 162.0, "tput": 4877.0}
+                },
             }
         ],
         "galaxy": [
@@ -2993,9 +2472,9 @@
                     "theoretical": {
                         "ttft_ms": 7.0,
                         "tput_user": 2080.0,
-                        "tput": 78038.0
+                        "tput": 78038.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -3009,14 +2488,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 9.0,
-                        "tput_user": 149.0,
-                        "tput": 4335.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 9.0, "tput_user": 149.0, "tput": 4335.0}
+                },
             }
-        ]
+        ],
     },
     "phi-1": {
         "p100": [
@@ -3030,12 +2505,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 183.0,
-                        "tput": 4764.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 183.0, "tput": 4764.0}
+                },
             }
         ],
         "n150": [
@@ -3049,12 +2520,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11.0,
-                        "tput_user": 117.0,
-                        "tput": 3062.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 11.0, "tput_user": 117.0, "tput": 3062.0}
+                },
             }
         ],
         "t3k": [
@@ -3068,12 +2535,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 291.0,
-                        "tput": 24498.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 291.0, "tput": 24498.0}
+                },
             }
         ],
         "n300": [
@@ -3087,12 +2550,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12.0,
-                        "tput_user": 228.0,
-                        "tput": 6125.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 12.0, "tput_user": 228.0, "tput": 6125.0}
+                },
             }
         ],
         "galaxy": [
@@ -3109,9 +2568,9 @@
                     "theoretical": {
                         "ttft_ms": 5.0,
                         "tput_user": 3007.0,
-                        "tput": 97994.0
+                        "tput": 97994.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -3125,14 +2584,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 209.0,
-                        "tput": 5444.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 209.0, "tput": 5444.0}
+                },
             }
-        ]
+        ],
     },
     "phi-1_5": {
         "n150": [
@@ -3146,12 +2601,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11.0,
-                        "tput_user": 117.0,
-                        "tput": 3062.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 11.0, "tput_user": 117.0, "tput": 3062.0}
+                },
             }
         ],
         "n300": [
@@ -3165,12 +2616,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12.0,
-                        "tput_user": 228.0,
-                        "tput": 6125.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 12.0, "tput_user": 228.0, "tput": 6125.0}
+                },
             }
         ],
         "galaxy": [
@@ -3187,9 +2634,9 @@
                     "theoretical": {
                         "ttft_ms": 5.0,
                         "tput_user": 3007.0,
-                        "tput": 97994.0
+                        "tput": 97994.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -3203,12 +2650,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 209.0,
-                        "tput": 5444.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 209.0, "tput": 5444.0}
+                },
             }
         ],
         "p100": [
@@ -3222,12 +2665,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 183.0,
-                        "tput": 4764.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 183.0, "tput": 4764.0}
+                },
             }
         ],
         "t3k": [
@@ -3241,14 +2680,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 8.0,
-                        "tput_user": 291.0,
-                        "tput": 24498.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 8.0, "tput_user": 291.0, "tput": 24498.0}
+                },
             }
-        ]
+        ],
     },
     "phi-2": {
         "n300": [
@@ -3262,12 +2697,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 117.0,
-                        "tput": 3220.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 117.0, "tput": 3220.0}
+                },
             }
         ],
         "n150": [
@@ -3281,12 +2712,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 60.0,
-                        "tput": 1610.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 21.0, "tput_user": 60.0, "tput": 1610.0}
+                },
             }
         ],
         "galaxy": [
@@ -3303,9 +2730,9 @@
                     "theoretical": {
                         "ttft_ms": 8.0,
                         "tput_user": 1598.0,
-                        "tput": 51518.0
+                        "tput": 51518.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -3322,9 +2749,9 @@
                     "theoretical": {
                         "ttft_ms": 13.0,
                         "tput_user": 171.0,
-                        "tput": 12880.0
+                        "tput": 12880.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -3338,12 +2765,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 14.0,
-                        "tput_user": 93.0,
-                        "tput": 2504.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 14.0, "tput_user": 93.0, "tput": 2504.0}
+                },
             }
         ],
         "p150": [
@@ -3357,14 +2780,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12.0,
-                        "tput_user": 107.0,
-                        "tput": 2862.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 12.0, "tput_user": 107.0, "tput": 2862.0}
+                },
             }
-        ]
+        ],
     },
     "Phi-3-mini-4k-instruct": {
         "t3k": [
@@ -3378,12 +2797,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13.0,
-                        "tput_user": 152.0,
-                        "tput": 9576.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 13.0, "tput_user": 152.0, "tput": 9576.0}
+                },
             }
         ],
         "galaxy": [
@@ -3400,9 +2815,9 @@
                     "theoretical": {
                         "ttft_ms": 8.0,
                         "tput_user": 1222.0,
-                        "tput": 38305.0
+                        "tput": 38305.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -3416,12 +2831,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 23.0,
-                        "tput_user": 86.0,
-                        "tput": 2394.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 23.0, "tput_user": 86.0, "tput": 2394.0}
+                },
             }
         ],
         "p100": [
@@ -3435,12 +2846,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 18.0,
-                        "tput_user": 68.0,
-                        "tput": 1862.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 18.0, "tput_user": 68.0, "tput": 1862.0}
+                },
             }
         ],
         "n150": [
@@ -3454,12 +2861,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 44.0,
-                        "tput": 1197.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 44.0, "tput": 1197.0}
+                },
             }
         ],
         "p150": [
@@ -3473,14 +2876,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 16.0,
-                        "tput_user": 78.0,
-                        "tput": 2128.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 16.0, "tput_user": 78.0, "tput": 2128.0}
+                },
             }
-        ]
+        ],
     },
     "Phi-3.5-mini-instruct": {
         "p100": [
@@ -3494,12 +2893,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 18.0,
-                        "tput_user": 68.0,
-                        "tput": 1862.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 18.0, "tput_user": 68.0, "tput": 1862.0}
+                },
             }
         ],
         "n150": [
@@ -3513,12 +2908,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 44.0,
-                        "tput": 1197.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 44.0, "tput": 1197.0}
+                },
             }
         ],
         "n300": [
@@ -3532,12 +2923,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 23.0,
-                        "tput_user": 86.0,
-                        "tput": 2394.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 23.0, "tput_user": 86.0, "tput": 2394.0}
+                },
             }
         ],
         "galaxy": [
@@ -3554,9 +2941,9 @@
                     "theoretical": {
                         "ttft_ms": 8.0,
                         "tput_user": 1222.0,
-                        "tput": 38305.0
+                        "tput": 38305.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -3570,12 +2957,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13.0,
-                        "tput_user": 152.0,
-                        "tput": 9576.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 13.0, "tput_user": 152.0, "tput": 9576.0}
+                },
             }
         ],
         "p150": [
@@ -3589,14 +2972,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 16.0,
-                        "tput_user": 78.0,
-                        "tput": 2128.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 16.0, "tput_user": 78.0, "tput": 2128.0}
+                },
             }
-        ]
+        ],
     },
     "phi-4": {
         "p100": [
@@ -3610,12 +2989,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 60.0,
-                        "tput_user": 18.0,
-                        "tput": 556.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 60.0, "tput_user": 18.0, "tput": 556.0}
+                },
             }
         ],
         "n300": [
@@ -3629,12 +3004,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 67.0,
-                        "tput_user": 23.0,
-                        "tput": 714.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 67.0, "tput_user": 23.0, "tput": 714.0}
+                },
             }
         ],
         "galaxy": [
@@ -3651,9 +3022,9 @@
                     "theoretical": {
                         "ttft_ms": 16.0,
                         "tput_user": 336.0,
-                        "tput": 11431.0
+                        "tput": 11431.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -3667,12 +3038,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 32.0,
-                        "tput_user": 88.0,
-                        "tput": 2858.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 32.0, "tput_user": 88.0, "tput": 2858.0}
+                },
             }
         ],
         "p150": [
@@ -3686,14 +3053,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 53.0,
-                        "tput_user": 20.0,
-                        "tput": 635.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 53.0, "tput_user": 20.0, "tput": 635.0}
+                },
             }
-        ]
+        ],
     },
     "Ministral-8B-Instruct-2410": {
         "n150": [
@@ -3707,12 +3070,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 94.0,
-                        "tput_user": 21.0,
-                        "tput": 652.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 94.0, "tput_user": 21.0, "tput": 652.0}
+                },
             }
         ],
         "p150": [
@@ -3726,12 +3085,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 53.0,
-                        "tput_user": 40.0,
-                        "tput": 1158.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 53.0, "tput_user": 40.0, "tput": 1158.0}
+                },
             }
         ],
         "n300": [
@@ -3745,12 +3100,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 61.0,
-                        "tput_user": 42.0,
-                        "tput": 1303.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 61.0, "tput_user": 42.0, "tput": 1303.0}
+                },
             }
         ],
         "t3k": [
@@ -3764,12 +3115,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 24.0,
-                        "tput_user": 170.0,
-                        "tput": 5212.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 24.0, "tput_user": 170.0, "tput": 5212.0}
+                },
             }
         ],
         "galaxy": [
@@ -3786,9 +3133,9 @@
                     "theoretical": {
                         "ttft_ms": 10.0,
                         "tput_user": 672.0,
-                        "tput": 20848.0
+                        "tput": 20848.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -3802,14 +3149,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 61.0,
-                        "tput_user": 33.0,
-                        "tput": 1013.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 61.0, "tput_user": 33.0, "tput": 1013.0}
+                },
             }
-        ]
+        ],
     },
     "Mistral-Large-Instruct-2411": {
         "galaxy": [
@@ -3823,12 +3166,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 42.0,
-                        "tput": 1392.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 72.0, "tput_user": 42.0, "tput": 1392.0}
+                },
             }
         ]
     },
@@ -3844,12 +3183,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 55.0,
-                        "tput_user": 31.0,
-                        "tput": 974.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 55.0, "tput_user": 31.0, "tput": 974.0}
+                },
             }
         ],
         "t3k": [
@@ -3863,12 +3198,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 28.0,
-                        "tput_user": 119.0,
-                        "tput": 3897.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 28.0, "tput_user": 119.0, "tput": 3897.0}
+                },
             }
         ],
         "p150": [
@@ -3882,12 +3213,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 40.0,
-                        "tput_user": 28.0,
-                        "tput": 866.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 40.0, "tput_user": 28.0, "tput": 866.0}
+                },
             }
         ],
         "galaxy": [
@@ -3904,9 +3231,9 @@
                     "theoretical": {
                         "ttft_ms": 15.0,
                         "tput_user": 451.0,
-                        "tput": 15589.0
+                        "tput": 15589.0,
                     }
-                }
+                },
             }
         ],
         "p100": [
@@ -3920,14 +3247,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 24.0,
-                        "tput": 758.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 45.0, "tput_user": 24.0, "tput": 758.0}
+                },
             }
-        ]
+        ],
     },
     "Falcon3-1B-Base": {
         "n150": [
@@ -3941,12 +3264,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 10.0,
-                        "tput_user": 167.0,
-                        "tput": 4775.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 10.0, "tput_user": 167.0, "tput": 4775.0}
+                },
             }
         ],
         "n300": [
@@ -3960,12 +3279,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11.0,
-                        "tput_user": 321.0,
-                        "tput": 9550.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 11.0, "tput_user": 321.0, "tput": 9550.0}
+                },
             }
         ],
         "p150": [
@@ -3979,12 +3294,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5.0,
-                        "tput_user": 297.0,
-                        "tput": 8489.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 5.0, "tput_user": 297.0, "tput": 8489.0}
+                },
             }
         ],
         "p100": [
@@ -3998,12 +3309,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6.0,
-                        "tput_user": 260.0,
-                        "tput": 7428.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 6.0, "tput_user": 260.0, "tput": 7428.0}
+                },
             }
         ],
         "t3k": [
@@ -4017,12 +3324,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 7.0,
-                        "tput_user": 335.0,
-                        "tput": 38201.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 7.0, "tput_user": 335.0, "tput": 38201.0}
+                },
             }
         ],
         "galaxy": [
@@ -4039,11 +3342,11 @@
                     "theoretical": {
                         "ttft_ms": 5.0,
                         "tput_user": 4010.0,
-                        "tput": 152805.0
+                        "tput": 152805.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Falcon3-3B-Base": {
         "n150": [
@@ -4057,12 +3360,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 20.0,
-                        "tput_user": 56.0,
-                        "tput": 1705.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 20.0, "tput_user": 56.0, "tput": 1705.0}
+                },
             }
         ],
         "p100": [
@@ -4076,12 +3375,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 14.0,
-                        "tput_user": 87.0,
-                        "tput": 2652.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 14.0, "tput_user": 87.0, "tput": 2652.0}
+                },
             }
         ],
         "t3k": [
@@ -4098,9 +3393,9 @@
                     "theoretical": {
                         "ttft_ms": 11.0,
                         "tput_user": 184.0,
-                        "tput": 13637.0
+                        "tput": 13637.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -4114,12 +3409,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12.0,
-                        "tput_user": 99.0,
-                        "tput": 3030.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 12.0, "tput_user": 99.0, "tput": 3030.0}
+                },
             }
         ],
         "galaxy": [
@@ -4136,9 +3427,9 @@
                     "theoretical": {
                         "ttft_ms": 6.0,
                         "tput_user": 1542.0,
-                        "tput": 54548.0
+                        "tput": 54548.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -4152,14 +3443,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 110.0,
-                        "tput": 3409.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 19.0, "tput_user": 110.0, "tput": 3409.0}
+                },
             }
-        ]
+        ],
     },
     "Falcon3-7B-Base": {
         "n150": [
@@ -4173,12 +3460,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 44.0,
-                        "tput_user": 24.0,
-                        "tput": 747.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 44.0, "tput_user": 24.0, "tput": 747.0}
+                },
             }
         ],
         "galaxy": [
@@ -4195,9 +3478,9 @@
                     "theoretical": {
                         "ttft_ms": 11.0,
                         "tput_user": 682.0,
-                        "tput": 23907.0
+                        "tput": 23907.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -4211,12 +3494,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 20.0,
-                        "tput_user": 91.0,
-                        "tput": 5977.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 20.0, "tput_user": 91.0, "tput": 5977.0}
+                },
             }
         ],
         "p100": [
@@ -4230,12 +3509,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1162.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 30.0, "tput_user": 37.0, "tput": 1162.0}
+                },
             }
         ],
         "p150": [
@@ -4249,12 +3524,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 26.0,
-                        "tput_user": 43.0,
-                        "tput": 1328.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 26.0, "tput_user": 43.0, "tput": 1328.0}
+                },
             }
         ],
         "n300": [
@@ -4268,14 +3539,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 37.0,
-                        "tput_user": 47.0,
-                        "tput": 1494.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 37.0, "tput_user": 47.0, "tput": 1494.0}
+                },
             }
-        ]
+        ],
     },
     "Falcon3-10B-Base": {
         "t3k": [
@@ -4289,12 +3556,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27.0,
-                        "tput_user": 127.0,
-                        "tput": 4184.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 27.0, "tput_user": 127.0, "tput": 4184.0}
+                },
             }
         ],
         "p100": [
@@ -4308,12 +3571,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 42.0,
-                        "tput_user": 26.0,
-                        "tput": 814.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 42.0, "tput_user": 26.0, "tput": 814.0}
+                },
             }
         ],
         "galaxy": [
@@ -4330,9 +3589,9 @@
                     "theoretical": {
                         "ttft_ms": 15.0,
                         "tput_user": 479.0,
-                        "tput": 16735.0
+                        "tput": 16735.0,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -4346,12 +3605,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 52.0,
-                        "tput_user": 33.0,
-                        "tput": 1046.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 52.0, "tput_user": 33.0, "tput": 1046.0}
+                },
             }
         ],
         "p150": [
@@ -4365,14 +3620,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 37.0,
-                        "tput_user": 30.0,
-                        "tput": 930.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 37.0, "tput_user": 30.0, "tput": 930.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.1-70B-Instruct": {
         "t3k": [
@@ -4386,12 +3637,8 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 113.0,
-                        "tput_user": 19.0,
-                        "tput": 610.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 113.0, "tput_user": 19.0, "tput": 610.0}
+                },
             }
         ],
         "galaxy": [
@@ -4405,14 +3652,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50.0,
-                        "tput_user": 73.0,
-                        "tput": 2438.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 50.0, "tput_user": 73.0, "tput": 2438.0}
+                },
             }
-        ]
+        ],
     },
     "Llama-3.2-11B-Vision-Instruct": {
         "n300": [
@@ -4426,12 +3669,8 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 357.0,
-                        "tput_user": 31.0,
-                        "tput": 762.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 357.0, "tput_user": 31.0, "tput": 762.0}
+                },
             }
         ],
         "p150": [
@@ -4445,12 +3684,8 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 363.0,
-                        "tput_user": 30.0,
-                        "tput": 677.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 363.0, "tput_user": 30.0, "tput": 677.0}
+                },
             }
         ],
         "p100": [
@@ -4464,12 +3699,8 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 414.0,
-                        "tput_user": 24.0,
-                        "tput": 593.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 414.0, "tput_user": 24.0, "tput": 593.0}
+                },
             }
         ],
         "t3k": [
@@ -4486,9 +3717,9 @@
                     "theoretical": {
                         "ttft_ms": 102.0,
                         "tput_user": 122.0,
-                        "tput": 3047.0
+                        "tput": 3047.0,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -4505,11 +3736,11 @@
                     "theoretical": {
                         "ttft_ms": 31.0,
                         "tput_user": 490.0,
-                        "tput": 12190.0
+                        "tput": 12190.0,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Llama-3.2-90B-Vision-Instruct": {
         "t3k": [
@@ -4523,12 +3754,8 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 322.0,
-                        "tput_user": 20.0,
-                        "tput": 520.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 322.0, "tput_user": 20.0, "tput": 520.0}
+                },
             }
         ],
         "galaxy": [
@@ -4542,14 +3769,10 @@
                 "image_width": 512,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 105.0,
-                        "tput_user": 72.0,
-                        "tput": 2078.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 105.0, "tput_user": 72.0, "tput": 2078.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-3-4b-it": {
         "n300": [
@@ -4563,12 +3786,8 @@
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 133.0,
-                        "tput_user": 84.0,
-                        "tput": 2688.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 133.0, "tput_user": 84.0, "tput": 2688.0}
+                },
             }
         ],
         "n150": [
@@ -4582,12 +3801,8 @@
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 198.0,
-                        "tput_user": 42.0,
-                        "tput": 1344.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 198.0, "tput_user": 42.0, "tput": 1344.0}
+                },
             }
         ],
         "t3k": [
@@ -4604,9 +3819,9 @@
                     "theoretical": {
                         "ttft_ms": 55.0,
                         "tput_user": 340.0,
-                        "tput": 10752.0
+                        "tput": 10752.0,
                     }
-                }
+                },
             }
         ],
         "p100": [],
@@ -4616,14 +3831,9 @@
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 35,
-                        "tput_user": 72
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 35, "tput_user": 72}},
             }
-        ]
+        ],
     },
     "Mistral-7B-Instruct-v0.3": {
         "n150": [
@@ -4637,12 +3847,8 @@
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 78.0,
-                        "tput_user": 70.0,
-                        "tput": 2091.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 78.0, "tput_user": 70.0, "tput": 2091.0}
+                },
             }
         ],
         "galaxy": [
@@ -4659,9 +3865,9 @@
                     "theoretical": {
                         "ttft_ms": 23.0,
                         "tput_user": 1344.0,
-                        "tput": 43008.0
+                        "tput": 43008.0,
                     }
-                }
+                },
             }
         ],
         "p150": [
@@ -4675,14 +3881,10 @@
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 80.0,
-                        "tput": 2389.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 72.0, "tput_user": 80.0, "tput": 2389.0}
+                },
             }
-        ]
+        ],
     },
     "gemma-3-27b-it": {
         "galaxy": [
@@ -4699,9 +3901,9 @@
                     "theoretical": {
                         "ttft_ms": 235.0,
                         "tput_user": 200.0,
-                        "tput": 3093.0
+                        "tput": 3093.0,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -4715,14 +3917,10 @@
                 "image_width": 896,
                 "images_per_prompt": 1,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 828.0,
-                        "tput_user": 50.0,
-                        "tput": 773.0
-                    }
-                }
+                    "theoretical": {"ttft_ms": 828.0, "tput_user": 50.0, "tput": 773.0}
+                },
             }
-        ]
+        ],
     },
     "Qwen2.5-72B": {
         "t3k": [
@@ -4731,12 +3929,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 121,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 121, "tput_user": 20}},
             },
             {
                 "isl": 128,
@@ -4744,13 +3937,9 @@
                 "max_concurrency": 32,
                 "num_prompts": 64,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 3872,
-                        "tput_user": 20,
-                        "tput": 640
-                    }
-                }
-            }
+                    "theoretical": {"ttft_ms": 3872, "tput_user": 20, "tput": 640}
+                },
+            },
         ],
         "galaxy": [
             {
@@ -4758,12 +3947,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13,
-                        "tput_user": 82
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 13, "tput_user": 82}},
             },
             {
                 "isl": 128,
@@ -4771,14 +3955,10 @@
                 "max_concurrency": 32,
                 "num_prompts": 64,
                 "targets": {
-                    "theoretical": {
-                        "ttft_ms": 13,
-                        "tput_user": 82,
-                        "tput": 2624
-                    }
-                }
-            }
-        ]
+                    "theoretical": {"ttft_ms": 13, "tput_user": 82, "tput": 2624}
+                },
+            },
+        ],
     },
     "Qwen2.5-7B": {
         "n300": [
@@ -4787,12 +3967,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 16,
-                        "tput_user": 66
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 16, "tput_user": 66}},
             }
         ],
         "t3k": [
@@ -4801,14 +3976,9 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 4,
-                        "tput_user": 264
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 4, "tput_user": 264}},
             }
-        ]
+        ],
     },
     "Llama-3.2-90B-Vision": {
         "t3k": [
@@ -4821,12 +3991,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 303,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 303, "tput_user": 20}},
             }
         ]
     },
@@ -4841,12 +4006,7 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 339,
-                        "tput_user": 31
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 339, "tput_user": 31}},
             }
         ],
         "t3k": [
@@ -4859,14 +4019,9 @@
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 95,
-                        "tput_user": 122
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 95, "tput_user": 122}},
             }
-        ]
+        ],
     },
     "Llama-3.2-1B": {
         "n150": [
@@ -4875,12 +4030,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6,
-                        "tput_user": 183
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 6, "tput_user": 183}},
             }
         ],
         "n300": [
@@ -4889,12 +4039,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6,
-                        "tput_user": 183
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 6, "tput_user": 183}},
             }
         ],
         "t3k": [
@@ -4903,14 +4048,9 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 6,
-                        "tput_user": 183
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 6, "tput_user": 183}},
             }
-        ]
+        ],
     },
     "Llama-3.2-3B": {
         "n150": [
@@ -4919,12 +4059,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 17,
-                        "tput_user": 61
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 17, "tput_user": 61}},
             }
         ],
         "n300": [
@@ -4933,12 +4068,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 17,
-                        "tput_user": 61
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 17, "tput_user": 61}},
             }
         ],
         "t3k": [
@@ -4947,14 +4077,9 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 17,
-                        "tput_user": 61
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 17, "tput_user": 61}},
             }
-        ]
+        ],
     },
     "Llama-3.3-70B-Instruct": {
         "p150x4": [
@@ -4963,12 +4088,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 96, "tput_user": 20}},
             }
         ],
         "p150x8": [
@@ -4977,12 +4097,7 @@
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 64,
-                        "tput_user": 18
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 64, "tput_user": 18}},
             }
         ],
         "t3k": [
@@ -4991,12 +4106,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 38,
-                        "tput_user": 28
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 38, "tput_user": 28}},
             }
         ],
         "galaxy": [
@@ -5005,26 +4115,16 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 80
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 80}},
             },
             {
                 "isl": 2048,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 800,
-                        "tput_user": 80
-                    }
-                }
-            }
-        ]
+                "targets": {"theoretical": {"ttft_ms": 800, "tput_user": 80}},
+            },
+        ],
     },
     "Llama-3.1-8B": {
         "n150": [
@@ -5033,12 +4133,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 89,
-                        "tput_user": 21
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 89, "tput_user": 21}},
             }
         ],
         "n300": [
@@ -5047,12 +4142,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 58,
-                        "tput_user": 42
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 58, "tput_user": 42}},
             }
         ],
         "p100": [
@@ -5061,12 +4151,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 57,
-                        "tput_user": 33
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 57, "tput_user": 33}},
             }
         ],
         "p150": [
@@ -5075,12 +4160,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30,
-                        "tput_user": 37
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 30, "tput_user": 37}},
             }
         ],
         "t3k": [
@@ -5089,12 +4169,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 23,
-                        "tput_user": 170
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 23, "tput_user": 170}},
             },
             {
                 "isl": 128,
@@ -5105,13 +4180,8 @@
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 1088.0,
-                        "tput_user": 66.82
-                    }
-                }
-            }
+                "targets": {"theoretical": {"ttft_ms": 1088.0, "tput_user": 66.82}},
+            },
         ],
         "p150x4": [
             {
@@ -5119,12 +4189,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 40
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 40}},
             }
         ],
         "p150x8": [
@@ -5133,12 +4198,7 @@
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12,
-                        "tput_user": 158
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 12, "tput_user": 158}},
             }
         ],
         "galaxy": [
@@ -5147,14 +4207,9 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11,
-                        "tput_user": 170
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 11, "tput_user": 170}},
             }
-        ]
+        ],
     },
     "stable-diffusion-xl-base-1.0": {
         "n150": [
@@ -5162,12 +4217,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12500,
-                        "tput_user": 0.08
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 12500, "tput_user": 0.08}},
             }
         ],
         "n300": [
@@ -5175,12 +4225,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12500,
-                        "tput_user": 0.08
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 12500, "tput_user": 0.08}},
             }
         ],
         "t3k": [
@@ -5188,12 +4233,7 @@
                 "max_concurrency": 4,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12500,
-                        "tput_user": 0.08
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 12500, "tput_user": 0.08}},
             }
         ],
         "galaxy": [
@@ -5201,14 +4241,9 @@
                 "max_concurrency": 32,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 12500,
-                        "tput_user": 0.08
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 12500, "tput_user": 0.08}},
             }
-        ]
+        ],
     },
     "stable-diffusion-3.5-large": {
         "t3k": [
@@ -5216,12 +4251,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11000,
-                        "tput_user": 0.091
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 11000, "tput_user": 0.091}},
             }
         ],
         "galaxy": [
@@ -5229,14 +4259,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 5000,
-                        "tput_user": 0.2
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 5000, "tput_user": 0.2}},
             }
-        ]
+        ],
     },
     "stable-diffusion-xl-base-1.0-img-2-img": {
         "n150": [
@@ -5244,12 +4269,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11000,
-                        "tput_user": 0.091
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 11000, "tput_user": 0.091}},
             }
         ]
     },
@@ -5259,12 +4279,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "vlm",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 11000,
-                        "tput_user": 0.091
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 11000, "tput_user": 0.091}},
             }
         ]
     },
@@ -5280,9 +4295,9 @@
                         "ttft_streaming_ms": 1684.6,
                         "tput_user": 56.31,
                         "rtr": 7.805,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -5296,9 +4311,9 @@
                         "ttft_streaming_ms": 1310.0,
                         "tput_user": 53.80,
                         "rtr": 8.315,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5312,11 +4327,11 @@
                         "ttft_streaming_ms": 900,
                         "tput_user": 65.55,
                         "rtr": 10.905,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "distil-large-v3": {
         "n150": [
@@ -5330,9 +4345,9 @@
                         "ttft_streaming_ms": 842.3,
                         "tput_user": 112.62,
                         "rtr": 15.61,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -5346,9 +4361,9 @@
                         "ttft_streaming_ms": 655.0,
                         "tput_user": 107.60,
                         "rtr": 16.63,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5362,11 +4377,11 @@
                         "ttft_streaming_ms": 450,
                         "tput_user": 131.10,
                         "rtr": 21.81,
-                        "tolerance": 0.05
+                        "tolerance": 0.05,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "mochi-1-preview": {
         "t3k": [
@@ -5374,12 +4389,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 50,
                 "task_type": "video",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 540000,
-                        "tput_user": 0.0019
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 540000, "tput_user": 0.0019}},
             }
         ],
         "galaxy": [
@@ -5387,14 +4397,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 50,
                 "task_type": "video",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 330000,
-                        "tput_user": 0.003
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 330000, "tput_user": 0.003}},
             }
-        ]
+        ],
     },
     "Wan2.2-T2V-A14B-Diffusers": {
         "t3k": [
@@ -5407,9 +4412,9 @@
                         "ttft_ms": 540000,
                         "end_to_end_latency_ms": 971590,
                         "inference_steps_per_second": 0.0412,
-                        "tput_user": 0.00103
+                        "tput_user": 0.00103,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5422,11 +4427,11 @@
                         "ttft_ms": 330000,
                         "end_to_end_latency_ms": 321490,
                         "inference_steps_per_second": 0.1244,
-                        "tput_user": 0.00311
+                        "tput_user": 0.00311,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "mobilenetv2": {
         "n150": [
@@ -5434,12 +4439,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 600,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 600, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5447,14 +4447,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "segformer": {
         "n150": [
@@ -5462,12 +4457,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5475,14 +4465,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "unet": {
         "n150": [
@@ -5490,12 +4475,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5503,14 +4483,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "vit": {
         "n150": [
@@ -5518,12 +4493,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5531,14 +4501,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "bge-large-en-v1.5": {
         "n150": [
@@ -5549,9 +4514,9 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 5000,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -5562,9 +4527,9 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 5000,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -5575,9 +4540,9 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 5000,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5588,11 +4553,11 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 5000,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Qwen3-Embedding-8B": {
         "n150": [
@@ -5603,9 +4568,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -5616,9 +4581,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -5629,9 +4594,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5642,11 +4607,11 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "Qwen3-Embedding-4B": {
         "n150": [
@@ -5657,9 +4622,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "n300": [
@@ -5670,9 +4635,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "t3k": [
@@ -5683,9 +4648,9 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
         ],
         "galaxy": [
@@ -5696,11 +4661,11 @@
                     "theoretical": {
                         "tput_user": 6000,
                         "tput_prefill": 6000,
-                        "e2el_ms": 100
+                        "e2el_ms": 100,
                     }
-                }
+                },
             }
-        ]
+        ],
     },
     "resnet-50": {
         "n150": [
@@ -5708,12 +4673,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5721,14 +4681,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "vovnet": {
         "n150": [
@@ -5736,12 +4691,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5749,14 +4699,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "efficientnet": {
         "n150": [
@@ -5764,12 +4709,7 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
         ],
         "n300": [
@@ -5777,14 +4717,9 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 1,
                 "task_type": "cnn",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 50, "tput_user": 20}},
             }
-        ]
+        ],
     },
     "speecht5_tts": {
         "n150": [
@@ -5792,12 +4727,7 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "text_to_speech",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 166,
-                        "rtr": 1.97
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 166, "rtr": 1.97}},
             }
         ],
         "n300": [
@@ -5805,13 +4735,8 @@
                 "max_concurrency": 1,
                 "num_prompts": 8,
                 "task_type": "text_to_speech",
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 180,
-                        "rtr": 1.97
-                    }
-                }
+                "targets": {"theoretical": {"ttft_ms": 180, "rtr": 1.97}},
             }
-        ]
-    }
+        ],
+    },
 }

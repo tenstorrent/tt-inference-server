@@ -860,7 +860,7 @@ def aiperf_benchmark_generate_report(
                 mean_tps = 1000.0 / mean_tpot_ms
             else:
                 mean_tps = 0
-            
+
             actual_max_con = min(concurrency, num_requests)
             tps_decode_throughput = mean_tps * actual_max_con if mean_tps else 0
 
@@ -2191,9 +2191,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         vlm_release_raw_targets = [v for k, v in sorted_vlm_perf_results.items()]
 
         flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
-        vlm_section = (
-            f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
-        )
+        vlm_section = f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
             vlm_section += benchmark_image_release_markdown(
                 flat_vlm_release_raw,
