@@ -413,7 +413,7 @@ private:
         from_device_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
             from_device_end - from_device_start
         ).count();
-        
+
         Py_DECREF(from_device_func);
 
         if (!host_tensor) {
