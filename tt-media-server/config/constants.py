@@ -478,6 +478,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            "max_model_length": 1024,
+            "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
@@ -486,6 +493,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
@@ -494,6 +508,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -502,6 +523,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            "max_model_length": 4096,
+            "max_num_batched_tokens": 4096,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),

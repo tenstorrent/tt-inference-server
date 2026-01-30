@@ -72,6 +72,6 @@ class VLLMBGELargeENRunner(VLLMEmbeddingRunner):
 class VLLMQwen3Embedding8BRunner(VLLMEmbeddingRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
-        self.max_model_len = 4096 * self.settings.device_mesh_shape[0]
-        self.max_num_seqs = self.settings.device_mesh_shape[0]
+        self.max_model_len = self.settings.vllm.max_model_length
+        self.max_num_seqs = self.settings.vllm.max_num_seqs
         self.model = SupportedModels.QWEN_3_EMBEDDING_8B.value
