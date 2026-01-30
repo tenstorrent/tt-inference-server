@@ -1368,7 +1368,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1384,7 +1384,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "video_generation_target_time": 370
                 }
             },
@@ -1424,7 +1424,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1440,7 +1440,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "video_generation_target_time": 370
                 }
             },
@@ -1480,7 +1480,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1496,7 +1496,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "video_generation_target_time": 480,
                     "num_inference_steps": 50
                 }
@@ -1537,7 +1537,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1553,7 +1553,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "video_generation_target_time": 480,
                     "num_inference_steps": 50
                 }
