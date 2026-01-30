@@ -7,10 +7,10 @@
 #      srun -p wh_pod_8x16_2 -N 2 --nodelist=wh-glx-a05u02,wh-glx-a05u08 --pty /bin/bash
 #
 #   2. Run this script:
-#      ./slurm/run_deepseek_interactive.sh "Your prompt here"
+#      ./exabox/run_deepseek_interactive.sh "Your prompt here"
 #
 #   3. Or with a prompts file:
-#      ./slurm/run_deepseek_interactive.sh --prompts-file ${TT_METAL_HOME}/models/demos/deepseek_v3/demo/test_prompts.json
+#      ./exabox/run_deepseek_interactive.sh --prompts-file ${TT_METAL_HOME}/models/demos/deepseek_v3/demo/test_prompts.json
 # =============================================================================
 
 set -e
@@ -20,8 +20,8 @@ export TT_METAL_HOME="/data/dmadic/tt-metal"
 export PYTHONPATH="${TT_METAL_HOME}"
 
 # Model paths
-export DEEPSEEK_V3_HF_MODEL="/data/models/deepseek-ai/DeepSeek-R1-0528"
-export DEEPSEEK_V3_CACHE="/data/dmadic/deepseek_cache"
+export DEEPSEEK_V3_HF_MODEL="/mnt/models/deepseek-ai/DeepSeek-R1-0528"
+export DEEPSEEK_V3_CACHE="/data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache"
 
 # Mesh configuration
 export MESH_DEVICE="DUAL"
@@ -56,7 +56,7 @@ fi
 cd ${TT_METAL_HOME}
 source python_env/bin/activate
 
-RANK_BINDING="${POC_DIR}/slurm/exabox_dual_galaxy_rank_bindings.yaml"
+RANK_BINDING="${POC_DIR}/exabox/exabox_dual_galaxy_rank_bindings.yaml"
 MPI_ARGS="--host ${HOSTS} --map-by ppr:1:node --mca btl self,tcp --mca btl_tcp_if_exclude docker0,lo --bind-to none --tag-output"
 
 # === Parse arguments ===
