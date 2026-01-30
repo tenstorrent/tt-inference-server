@@ -20,9 +20,10 @@ events:
     names:
       - "uname"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -35,16 +36,17 @@ events:
       - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand/"
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
-      - "/opt/venv/bin/uname"
+      - "/localdev/idjuric/tt-metal/python_env/bin/uname"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/uname"
       - "/home/idjuric/.local/bin/uname"
+      - "/opt/venv/bin/uname"
       - "/usr/local/sbin/uname"
       - "/usr/local/bin/uname"
       - "/usr/sbin/uname"
     found: "/usr/bin/uname"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -87,9 +89,10 @@ events:
       - "make"
       - "smake"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -102,16 +105,17 @@ events:
       - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand/"
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
-      - "/opt/venv/bin/gmake"
+      - "/localdev/idjuric/tt-metal/python_env/bin/gmake"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/gmake"
       - "/home/idjuric/.local/bin/gmake"
+      - "/opt/venv/bin/gmake"
       - "/usr/local/sbin/gmake"
       - "/usr/local/bin/gmake"
       - "/usr/sbin/gmake"
     found: "/usr/bin/gmake"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -155,9 +159,10 @@ events:
       - "icx"
       - "clang++"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -170,16 +175,17 @@ events:
       - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand/"
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
-      - "/opt/venv/bin/c++"
+      - "/localdev/idjuric/tt-metal/python_env/bin/c++"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/c++"
       - "/home/idjuric/.local/bin/c++"
+      - "/opt/venv/bin/c++"
       - "/usr/local/sbin/c++"
       - "/usr/local/bin/c++"
       - "/usr/sbin/c++"
     found: "/usr/bin/c++"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -221,7 +227,7 @@ events:
     found: "/usr/share/cmake-4.2/Modules/CMakeCXXCompilerId.cpp.in"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -279,9 +285,10 @@ events:
       - "ar"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -295,7 +302,7 @@ events:
     found: "/usr/bin/ar"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -331,9 +338,10 @@ events:
       - "ranlib"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -347,7 +355,7 @@ events:
     found: "/usr/bin/ranlib"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -383,9 +391,10 @@ events:
       - "strip"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -399,7 +408,7 @@ events:
     found: "/usr/bin/strip"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -435,9 +444,10 @@ events:
       - "ld"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -451,7 +461,7 @@ events:
     found: "/usr/bin/ld"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -487,9 +497,10 @@ events:
       - "nm"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -503,7 +514,7 @@ events:
     found: "/usr/bin/nm"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -539,9 +550,10 @@ events:
       - "objdump"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -555,7 +567,7 @@ events:
     found: "/usr/bin/objdump"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -591,9 +603,10 @@ events:
       - "objcopy"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -607,7 +620,7 @@ events:
     found: "/usr/bin/objcopy"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -643,9 +656,10 @@ events:
       - "readelf"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -659,7 +673,7 @@ events:
     found: "/usr/bin/readelf"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -695,9 +709,10 @@ events:
       - "dlltool"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -710,9 +725,10 @@ events:
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
       - "/usr/bin/dlltool"
-      - "/opt/venv/bin/dlltool"
+      - "/localdev/idjuric/tt-metal/python_env/bin/dlltool"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/dlltool"
       - "/home/idjuric/.local/bin/dlltool"
+      - "/opt/venv/bin/dlltool"
       - "/usr/local/sbin/dlltool"
       - "/usr/local/bin/dlltool"
       - "/usr/sbin/dlltool"
@@ -726,7 +742,7 @@ events:
     found: false
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -762,9 +778,10 @@ events:
       - "addr2line"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -778,7 +795,7 @@ events:
     found: "/usr/bin/addr2line"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -814,9 +831,10 @@ events:
       - "tapi"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -829,9 +847,10 @@ events:
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
       - "/usr/bin/tapi"
-      - "/opt/venv/bin/tapi"
+      - "/localdev/idjuric/tt-metal/python_env/bin/tapi"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/tapi"
       - "/home/idjuric/.local/bin/tapi"
+      - "/opt/venv/bin/tapi"
       - "/usr/local/sbin/tapi"
       - "/usr/local/bin/tapi"
       - "/usr/sbin/tapi"
@@ -845,7 +864,7 @@ events:
     found: false
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -884,9 +903,10 @@ events:
       - "gcc-ar"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -899,9 +919,10 @@ events:
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
       - "/usr/bin/gcc-ar-11.4"
-      - "/opt/venv/bin/gcc-ar-11.4"
+      - "/localdev/idjuric/tt-metal/python_env/bin/gcc-ar-11.4"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/gcc-ar-11.4"
       - "/home/idjuric/.local/bin/gcc-ar-11.4"
+      - "/opt/venv/bin/gcc-ar-11.4"
       - "/usr/local/sbin/gcc-ar-11.4"
       - "/usr/local/bin/gcc-ar-11.4"
       - "/usr/sbin/gcc-ar-11.4"
@@ -915,7 +936,7 @@ events:
     found: "/usr/bin/gcc-ar-11"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -954,9 +975,10 @@ events:
       - "gcc-ranlib"
     candidate_directories:
       - "/usr/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -969,9 +991,10 @@ events:
       - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts/"
     searched_directories:
       - "/usr/bin/gcc-ranlib-11.4"
-      - "/opt/venv/bin/gcc-ranlib-11.4"
+      - "/localdev/idjuric/tt-metal/python_env/bin/gcc-ranlib-11.4"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/gcc-ranlib-11.4"
       - "/home/idjuric/.local/bin/gcc-ranlib-11.4"
+      - "/opt/venv/bin/gcc-ranlib-11.4"
       - "/usr/local/sbin/gcc-ranlib-11.4"
       - "/usr/local/bin/gcc-ranlib-11.4"
       - "/usr/sbin/gcc-ranlib-11.4"
@@ -985,7 +1008,7 @@ events:
     found: "/usr/bin/gcc-ranlib-11"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1009,8 +1032,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e"
-      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e"
+      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR"
+      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -1020,13 +1043,13 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e'
+        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR'
         
-        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_287c3/fast
-        /usr/bin/gmake  -f CMakeFiles/cmTC_287c3.dir/build.make CMakeFiles/cmTC_287c3.dir/build
-        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e'
-        Building CXX object CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o
-        /usr/bin/c++   -v -o CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_19df2/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_19df2.dir/build.make CMakeFiles/cmTC_19df2.dir/build
+        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR'
+        Building CXX object CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o
+        /usr/bin/c++   -v -o CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp
         Using built-in specs.
         COLLECT_GCC=/usr/bin/c++
         OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
@@ -1036,8 +1059,8 @@ events:
         Thread model: posix
         Supported LTO compression algorithms: zlib zstd
         gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.2) 
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/'
-         /usr/lib/gcc/x86_64-linux-gnu/11/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_287c3.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/cc9iUIcd.s
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/'
+         /usr/lib/gcc/x86_64-linux-gnu/11/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_19df2.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccxItyrW.s
         GNU C++17 (Ubuntu 11.4.0-1ubuntu1~22.04.2) version 11.4.0 (x86_64-linux-gnu)
         	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version isl-0.24-GMP
         
@@ -1061,14 +1084,14 @@ events:
         
         GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
         Compiler executable checksum: 6c87588fc345655b93b8c25f48f88886
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/'
-         as -v --64 -o CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o /tmp/cc9iUIcd.s
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/'
+         as -v --64 -o CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccxItyrW.s
         GNU assembler version 2.38 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.38
         COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/
         LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.'
-        Linking CXX executable cmTC_287c3
-        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_287c3.dir/link.txt --verbose=1
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.'
+        Linking CXX executable cmTC_19df2
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_19df2.dir/link.txt --verbose=1
         Using built-in specs.
         COLLECT_GCC=/usr/bin/c++
         COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper
@@ -1081,14 +1104,14 @@ events:
         gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.2) 
         COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/
         LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/
-        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_287c3' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_287c3.'
-         /usr/lib/gcc/x86_64-linux-gnu/11/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/cc8flINB.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_287c3 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_19df2' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_19df2.'
+         /usr/lib/gcc/x86_64-linux-gnu/11/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/ccwZfgyn.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_19df2 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
         collect2 version 11.4.0
-        /usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/cc8flINB.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_287c3 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
+        /usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/ccwZfgyn.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_19df2 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o
         GNU ld (GNU Binutils for Ubuntu) 2.38
-        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_287c3' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_287c3.'
-        /usr/bin/c++  -v -Wl,-v CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_287c3
-        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e'
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_19df2' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_19df2.'
+        /usr/bin/c++  -v -Wl,-v CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_19df2
+        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR'
         
       exitCode: 0
   -
@@ -1129,13 +1152,13 @@ events:
       Parsed CXX implicit link information:
         link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
         linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
-        ignore line: [Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e']
+        ignore line: [Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR']
         ignore line: []
-        ignore line: [Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_287c3/fast]
-        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_287c3.dir/build.make CMakeFiles/cmTC_287c3.dir/build]
-        ignore line: [gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-zofV9e']
-        ignore line: [Building CXX object CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o]
-        ignore line: [/usr/bin/c++   -v -o CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_19df2/fast]
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_19df2.dir/build.make CMakeFiles/cmTC_19df2.dir/build]
+        ignore line: [gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-rqoFIR']
+        ignore line: [Building CXX object CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o]
+        ignore line: [/usr/bin/c++   -v -o CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp]
         ignore line: [Using built-in specs.]
         ignore line: [COLLECT_GCC=/usr/bin/c++]
         ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
@@ -1145,8 +1168,8 @@ events:
         ignore line: [Thread model: posix]
         ignore line: [Supported LTO compression algorithms: zlib zstd]
         ignore line: [gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.2) ]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/']
-        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/11/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_287c3.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/cc9iUIcd.s]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/']
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/11/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_19df2.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccxItyrW.s]
         ignore line: [GNU C++17 (Ubuntu 11.4.0-1ubuntu1~22.04.2) version 11.4.0 (x86_64-linux-gnu)]
         ignore line: [	compiled by GNU C version 11.4.0  GMP version 6.2.1  MPFR version 4.1.0  MPC version 1.2.1  isl version isl-0.24-GMP]
         ignore line: []
@@ -1170,14 +1193,14 @@ events:
         ignore line: []
         ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
         ignore line: [Compiler executable checksum: 6c87588fc345655b93b8c25f48f88886]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/']
-        ignore line: [ as -v --64 -o CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o /tmp/cc9iUIcd.s]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/']
+        ignore line: [ as -v --64 -o CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccxItyrW.s]
         ignore line: [GNU assembler version 2.38 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.38]
         ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/]
         ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.']
-        ignore line: [Linking CXX executable cmTC_287c3]
-        ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_287c3.dir/link.txt --verbose=1]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.']
+        ignore line: [Linking CXX executable cmTC_19df2]
+        ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_19df2.dir/link.txt --verbose=1]
         ignore line: [Using built-in specs.]
         ignore line: [COLLECT_GCC=/usr/bin/c++]
         ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper]
@@ -1190,13 +1213,13 @@ events:
         ignore line: [gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.2) ]
         ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/]
         ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/11/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/11/../../../:/lib/:/usr/lib/]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_287c3' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_287c3.']
-        link line: [ /usr/lib/gcc/x86_64-linux-gnu/11/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/cc8flINB.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_287c3 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_19df2' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_19df2.']
+        link line: [ /usr/lib/gcc/x86_64-linux-gnu/11/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/ccwZfgyn.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_19df2 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/collect2] ==> ignore
           arg [-plugin] ==> ignore
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so] ==> ignore
           arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper] ==> ignore
-          arg [-plugin-opt=-fresolution=/tmp/cc8flINB.res] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccwZfgyn.res] ==> ignore
           arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
           arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
           arg [-plugin-opt=-pass-through=-lc] ==> ignore
@@ -1214,7 +1237,7 @@ events:
           arg [-znow] ==> ignore
           arg [-zrelro] ==> ignore
           arg [-o] ==> ignore
-          arg [cmTC_287c3] ==> ignore
+          arg [cmTC_19df2] ==> ignore
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o]
@@ -1227,7 +1250,7 @@ events:
           arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
           arg [-L/usr/lib/gcc/x86_64-linux-gnu/11/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/11/../../..]
           arg [-v] ==> ignore
-          arg [CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
           arg [-lstdc++] ==> lib [stdc++]
           arg [-lm] ==> lib [m]
           arg [-lgcc_s] ==> lib [gcc_s]
@@ -1238,7 +1261,7 @@ events:
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o]
         ignore line: [collect2 version 11.4.0]
-        ignore line: [/usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/cc8flINB.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_287c3 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_287c3.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [/usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/11/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/11/lto-wrapper -plugin-opt=-fresolution=/tmp/ccwZfgyn.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_19df2 /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/11/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/11 -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/11/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/11/../../.. -v CMakeFiles/cmTC_19df2.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/11/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crtn.o]
         linker tool for 'CXX': /usr/bin/ld
         collapse obj [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
         collapse obj [/usr/lib/gcc/x86_64-linux-gnu/11/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
@@ -1274,7 +1297,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:39 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "JSONCPP_INCLUDE_DIRS"
     description: "jsoncpp include dir"
@@ -1289,12 +1312,14 @@ events:
     names:
       - "json/json.h"
     candidate_directories:
-      - "/opt/venv/bin/jsoncpp/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/jsoncpp/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/jsoncpp/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/jsoncpp/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/jsoncpp/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/jsoncpp/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/jsoncpp/"
@@ -1354,12 +1379,14 @@ events:
       - "/usr/include/X11/jsoncpp/"
       - "/usr/include/X11/"
     searched_directories:
-      - "/opt/venv/bin/jsoncpp/json/json.h"
-      - "/opt/venv/bin/json/json.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/jsoncpp/json/json.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/json/json.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/jsoncpp/json/json.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/json/json.h"
       - "/home/idjuric/.local/bin/jsoncpp/json/json.h"
       - "/home/idjuric/.local/bin/json/json.h"
+      - "/opt/venv/bin/jsoncpp/json/json.h"
+      - "/opt/venv/bin/json/json.h"
       - "/usr/local/sbin/jsoncpp/json/json.h"
       - "/usr/local/sbin/json/json.h"
       - "/usr/local/bin/jsoncpp/json/json.h"
@@ -1393,7 +1420,7 @@ events:
     found: "/usr/include/jsoncpp/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1427,7 +1454,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:39 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "JSONCPP_LIBRARIES"
     description: "jsoncpp library"
@@ -1442,9 +1469,10 @@ events:
     names:
       - "jsoncpp"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -1475,9 +1503,10 @@ events:
       - "/opt/"
       - "/usr/lib/X11/"
     searched_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -1495,7 +1524,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libjsoncpp.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1533,7 +1562,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "program"
     variable: "PKG_CONFIG_EXECUTABLE"
     description: "pkg-config executable"
@@ -1549,9 +1578,10 @@ events:
       - "pkg-config"
       - "pkgconf"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -1581,12 +1611,14 @@ events:
       - "/opt/sbin/"
       - "/opt/"
     searched_directories:
-      - "/opt/venv/bin/pkg-config"
-      - "/opt/venv/bin/pkgconf"
+      - "/localdev/idjuric/tt-metal/python_env/bin/pkg-config"
+      - "/localdev/idjuric/tt-metal/python_env/bin/pkgconf"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/pkg-config"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/pkgconf"
       - "/home/idjuric/.local/bin/pkg-config"
       - "/home/idjuric/.local/bin/pkgconf"
+      - "/opt/venv/bin/pkg-config"
+      - "/opt/venv/bin/pkgconf"
       - "/usr/local/sbin/pkg-config"
       - "/usr/local/sbin/pkgconf"
       - "/usr/local/bin/pkg-config"
@@ -1596,7 +1628,7 @@ events:
     found: "/usr/bin/pkg-config"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1635,7 +1667,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "pkgcfg_lib__OPENSSL_ssl"
     description: "Path to a library."
@@ -1654,7 +1686,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libssl.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1695,7 +1727,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "pkgcfg_lib__OPENSSL_crypto"
     description: "Path to a library."
@@ -1714,7 +1746,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libcrypto.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1751,7 +1783,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "OPENSSL_INCLUDE_DIR"
     description: "Path to a file."
@@ -1768,12 +1800,14 @@ events:
     candidate_directories:
       - "/usr/include/include/"
       - "/usr/include/"
-      - "/opt/venv/bin/include/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/include/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/include/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/include/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/include/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/include/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/include/"
@@ -1837,7 +1871,7 @@ events:
     found: "/usr/include/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -1874,7 +1908,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "OPENSSL_SSL_LIBRARY"
     description: "Path to a library."
@@ -1894,15 +1928,18 @@ events:
       - "/usr/lib/x86_64-linux-gnu/lib/"
       - "/usr/lib/x86_64-linux-gnu/lib64/"
       - "/usr/lib/x86_64-linux-gnu/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib64/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib64/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib64/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/lib/"
       - "/home/idjuric/.local/bin/lib64/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib64/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib64/"
       - "/usr/local/sbin/"
@@ -2000,7 +2037,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libssl.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2037,7 +2074,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "OPENSSL_CRYPTO_LIBRARY"
     description: "Path to a library."
@@ -2055,15 +2092,18 @@ events:
       - "/usr/lib/x86_64-linux-gnu/lib/"
       - "/usr/lib/x86_64-linux-gnu/lib64/"
       - "/usr/lib/x86_64-linux-gnu/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib64/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib64/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib64/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/lib/"
       - "/home/idjuric/.local/bin/lib64/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib64/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib64/"
       - "/usr/local/sbin/"
@@ -2157,7 +2197,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libcrypto.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2194,7 +2234,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "C-ARES_INCLUDE_DIRS"
     description: "Path to a file."
@@ -2209,9 +2249,10 @@ events:
     names:
       - "ares.h"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2242,9 +2283,10 @@ events:
       - "/opt/"
       - "/usr/include/X11/"
     searched_directories:
-      - "/opt/venv/bin/ares.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/ares.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/ares.h"
       - "/home/idjuric/.local/bin/ares.h"
+      - "/opt/venv/bin/ares.h"
       - "/usr/local/sbin/ares.h"
       - "/usr/local/bin/ares.h"
       - "/usr/sbin/ares.h"
@@ -2263,7 +2305,7 @@ events:
     found: "/usr/include/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2300,7 +2342,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "C-ARES_LIBRARIES"
     description: "Path to a library."
@@ -2315,9 +2357,10 @@ events:
     names:
       - "cares"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2348,9 +2391,10 @@ events:
       - "/opt/"
       - "/usr/lib/X11/"
     searched_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2368,7 +2412,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libcares.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2408,10 +2452,10 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     directories:
-      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH"
-      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH"
+      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI"
+      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -2421,17 +2465,17 @@ events:
       variable: "CMAKE_HAVE_LIBC_PTHREAD"
       cached: true
       stdout: |
-        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH'
+        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI'
         
-        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_2c87e/fast
-        /usr/bin/gmake  -f CMakeFiles/cmTC_2c87e.dir/build.make CMakeFiles/cmTC_2c87e.dir/build
-        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH'
-        Building CXX object CMakeFiles/cmTC_2c87e.dir/src.cxx.o
-        /usr/bin/c++ -DCMAKE_HAVE_LIBC_PTHREAD  -std=gnu++20 -o CMakeFiles/cmTC_2c87e.dir/src.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH/src.cxx
-        Linking CXX executable cmTC_2c87e
-        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2c87e.dir/link.txt --verbose=1
-        /usr/bin/c++ CMakeFiles/cmTC_2c87e.dir/src.cxx.o -o cmTC_2c87e
-        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-TK9PXH'
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_d9b0e/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_d9b0e.dir/build.make CMakeFiles/cmTC_d9b0e.dir/build
+        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI'
+        Building CXX object CMakeFiles/cmTC_d9b0e.dir/src.cxx.o
+        /usr/bin/c++ -DCMAKE_HAVE_LIBC_PTHREAD  -std=gnu++20 -o CMakeFiles/cmTC_d9b0e.dir/src.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI/src.cxx
+        Linking CXX executable cmTC_d9b0e
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d9b0e.dir/link.txt --verbose=1
+        /usr/bin/c++ CMakeFiles/cmTC_d9b0e.dir/src.cxx.o -o cmTC_d9b0e
+        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-1v0cZI'
         
       exitCode: 0
   -
@@ -2440,7 +2484,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:40 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     name: "Trantor"
     configs:
       -
@@ -2481,11 +2525,11 @@ events:
         mode: "config"
         reason: "no_exist"
       -
-        path: "/opt/venv/TrantorConfig.cmake"
+        path: "/localdev/idjuric/tt-metal/python_env/TrantorConfig.cmake"
         mode: "config"
         reason: "no_exist"
       -
-        path: "/opt/venv/trantor-config.cmake"
+        path: "/localdev/idjuric/tt-metal/python_env/trantor-config.cmake"
         mode: "config"
         reason: "no_exist"
       -
@@ -2505,6 +2549,14 @@ events:
         mode: "config"
         reason: "no_exist"
       -
+        path: "/opt/venv/TrantorConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/venv/trantor-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
         path: "/usr/local/TrantorConfig.cmake"
         mode: "config"
         reason: "no_exist"
@@ -2518,7 +2570,7 @@ events:
       version: "1.5.17"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2553,7 +2605,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:42 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "UUID_INCLUDE_DIR"
     description: "Path to a file."
@@ -2574,12 +2626,14 @@ events:
       - "/inc/"
       - "/ext/inc/uuid/"
       - "/ext/inc/"
-      - "/opt/venv/bin/uuid/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/uuid/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/uuid/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/uuid/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/uuid/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/uuid/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/uuid/"
@@ -2665,12 +2719,14 @@ events:
       - "/inc/uuid.h"
       - "/ext/inc/uuid/uuid.h"
       - "/ext/inc/uuid.h"
-      - "/opt/venv/bin/uuid/uuid.h"
-      - "/opt/venv/bin/uuid.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/uuid/uuid.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/uuid.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/uuid/uuid.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/uuid.h"
       - "/home/idjuric/.local/bin/uuid/uuid.h"
       - "/home/idjuric/.local/bin/uuid.h"
+      - "/opt/venv/bin/uuid/uuid.h"
+      - "/opt/venv/bin/uuid.h"
       - "/usr/local/sbin/uuid/uuid.h"
       - "/usr/local/sbin/uuid.h"
       - "/usr/local/bin/uuid/uuid.h"
@@ -2704,7 +2760,7 @@ events:
     found: "/usr/include/uuid/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2738,7 +2794,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:42 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "UUID_LIBRARY"
     description: "Path to a library."
@@ -2756,9 +2812,10 @@ events:
     candidate_directories:
       - "/lib/"
       - "/ext/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2800,9 +2857,10 @@ events:
     searched_directories:
       - "/lib/"
       - "/ext/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2820,7 +2878,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libuuid.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2854,7 +2912,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:42 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "UUID_LIBRARY_DEBUG"
     description: "Path to a library."
@@ -2871,9 +2929,10 @@ events:
     candidate_directories:
       - "/lib/"
       - "/ext/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2915,9 +2974,10 @@ events:
     searched_directories:
       - "/lib/"
       - "/ext/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -2959,7 +3019,7 @@ events:
     found: false
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -2993,7 +3053,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:44 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "ZLIB_INCLUDE_DIR"
     description: "Path to a file."
@@ -3008,12 +3068,14 @@ events:
     names:
       - "zlib.h"
     candidate_directories:
-      - "/opt/venv/bin/include/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/include/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/include/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/include/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/include/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/include/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/include/"
@@ -3075,12 +3137,14 @@ events:
       - "/zlib/include/"
       - "/zlib/"
     searched_directories:
-      - "/opt/venv/bin/include/zlib.h"
-      - "/opt/venv/bin/zlib.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/include/zlib.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/zlib.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/include/zlib.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/zlib.h"
       - "/home/idjuric/.local/bin/include/zlib.h"
       - "/home/idjuric/.local/bin/zlib.h"
+      - "/opt/venv/bin/include/zlib.h"
+      - "/opt/venv/bin/zlib.h"
       - "/usr/local/sbin/include/zlib.h"
       - "/usr/local/sbin/zlib.h"
       - "/usr/local/bin/include/zlib.h"
@@ -3115,7 +3179,7 @@ events:
     found: "/usr/include/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -3149,7 +3213,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:44 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "ZLIB_LIBRARY_RELEASE"
     description: "Path to a library."
@@ -3171,12 +3235,14 @@ events:
       - "zlibvc"
       - "zlibstat"
     candidate_directories:
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/lib/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/lib/"
@@ -3238,22 +3304,22 @@ events:
       - "/zlib/lib/"
       - "/zlib/"
     searched_directories:
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
@@ -3286,6 +3352,22 @@ events:
       - "/home/idjuric/.local/bin/"
       - "/home/idjuric/.local/bin/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib/"
@@ -3521,7 +3603,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libz.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -3555,7 +3637,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:44 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "ZLIB_LIBRARY_DEBUG"
     description: "Path to a library."
@@ -3578,12 +3660,14 @@ events:
       - "zlibvcd"
       - "zlibstatd"
     candidate_directories:
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/lib/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/lib/"
@@ -3645,24 +3729,24 @@ events:
       - "/zlib/lib/"
       - "/zlib/"
     searched_directories:
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/lib/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/lib/"
@@ -3699,6 +3783,24 @@ events:
       - "/home/idjuric/.local/bin/"
       - "/home/idjuric/.local/bin/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/lib/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib/"
       - "/usr/local/sbin/lib/"
@@ -4242,7 +4344,7 @@ events:
     found: false
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -4276,7 +4378,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:49 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "path"
     variable: "SQLITE3_INCLUDE_DIRS"
     description: "Path to a file."
@@ -4291,9 +4393,10 @@ events:
     names:
       - "sqlite3.h"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -4324,9 +4427,10 @@ events:
       - "/opt/"
       - "/usr/include/X11/"
     searched_directories:
-      - "/opt/venv/bin/sqlite3.h"
+      - "/localdev/idjuric/tt-metal/python_env/bin/sqlite3.h"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/sqlite3.h"
       - "/home/idjuric/.local/bin/sqlite3.h"
+      - "/opt/venv/bin/sqlite3.h"
       - "/usr/local/sbin/sqlite3.h"
       - "/usr/local/bin/sqlite3.h"
       - "/usr/sbin/sqlite3.h"
@@ -4345,7 +4449,7 @@ events:
     found: "/usr/include/"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -4379,7 +4483,7 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:49 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     mode: "library"
     variable: "SQLITE3_LIBRARIES"
     description: "Path to a library."
@@ -4394,9 +4498,10 @@ events:
     names:
       - "sqlite3"
     candidate_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -4427,9 +4532,10 @@ events:
       - "/opt/"
       - "/usr/lib/X11/"
     searched_directories:
-      - "/opt/venv/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
       - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli/"
       - "/home/idjuric/.local/bin/"
+      - "/opt/venv/bin/"
       - "/usr/local/sbin/"
       - "/usr/local/bin/"
       - "/usr/sbin/"
@@ -4447,7 +4553,7 @@ events:
     found: "/usr/lib/x86_64-linux-gnu/libsqlite3.so"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -4482,10 +4588,10 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:70 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     directories:
-      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK"
-      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK"
+      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA"
+      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -4495,17 +4601,17 @@ events:
       variable: "_CXX_FILESYSTEM_HAVE_HEADER"
       cached: true
       stdout: |
-        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK'
+        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA'
         
-        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_741cd/fast
-        /usr/bin/gmake  -f CMakeFiles/cmTC_741cd.dir/build.make CMakeFiles/cmTC_741cd.dir/build
-        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK'
-        Building CXX object CMakeFiles/cmTC_741cd.dir/CheckIncludeFile.cxx.o
-        /usr/bin/c++   -std=gnu++17 -o CMakeFiles/cmTC_741cd.dir/CheckIncludeFile.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK/CheckIncludeFile.cxx
-        Linking CXX executable cmTC_741cd
-        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_741cd.dir/link.txt --verbose=1
-        /usr/bin/c++ CMakeFiles/cmTC_741cd.dir/CheckIncludeFile.cxx.o -o cmTC_741cd
-        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-7hndEK'
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_91eaa/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_91eaa.dir/build.make CMakeFiles/cmTC_91eaa.dir/build
+        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA'
+        Building CXX object CMakeFiles/cmTC_91eaa.dir/CheckIncludeFile.cxx.o
+        /usr/bin/c++   -std=gnu++17 -o CMakeFiles/cmTC_91eaa.dir/CheckIncludeFile.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA/CheckIncludeFile.cxx
+        Linking CXX executable cmTC_91eaa
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_91eaa.dir/link.txt --verbose=1
+        /usr/bin/c++ CMakeFiles/cmTC_91eaa.dir/CheckIncludeFile.cxx.o -o cmTC_91eaa
+        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-eu2UtA'
         
       exitCode: 0
   -
@@ -4518,10 +4624,10 @@ events:
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:93 (find_package)"
       - "/usr/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake:125 (__find_dependency_common)"
       - "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake:70 (find_dependency)"
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     directories:
-      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4"
-      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4"
+      source: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr"
+      binary: "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -4531,17 +4637,17 @@ events:
       variable: "CXX_FILESYSTEM_NO_LINK_NEEDED_COMPILED"
       cached: true
       stdout: |
-        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4'
+        Change Dir: '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr'
         
-        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f654e/fast
-        /usr/bin/gmake  -f CMakeFiles/cmTC_f654e.dir/build.make CMakeFiles/cmTC_f654e.dir/build
-        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4'
-        Building CXX object CMakeFiles/cmTC_f654e.dir/src.cxx.o
-        /usr/bin/c++ -DCXX_FILESYSTEM_NO_LINK_NEEDED  -std=gnu++17 -o CMakeFiles/cmTC_f654e.dir/src.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4/src.cxx
-        Linking CXX executable cmTC_f654e
-        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f654e.dir/link.txt --verbose=1
-        /usr/bin/c++ CMakeFiles/cmTC_f654e.dir/src.cxx.o -o cmTC_f654e
-        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-YVVwi4'
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f9b00/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f9b00.dir/build.make CMakeFiles/cmTC_f9b00.dir/build
+        gmake[1]: Entering directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr'
+        Building CXX object CMakeFiles/cmTC_f9b00.dir/src.cxx.o
+        /usr/bin/c++ -DCXX_FILESYSTEM_NO_LINK_NEEDED  -std=gnu++17 -o CMakeFiles/cmTC_f9b00.dir/src.cxx.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr/src.cxx
+        Linking CXX executable cmTC_f9b00
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f9b00.dir/link.txt --verbose=1
+        /usr/bin/c++ CMakeFiles/cmTC_f9b00.dir/src.cxx.o -o cmTC_f9b00
+        gmake[1]: Leaving directory '/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles/CMakeScratch/TryCompile-B0mWQr'
         
       exitCode: 0
     runResult:
@@ -4554,7 +4660,7 @@ events:
   -
     kind: "find_package-v1"
     backtrace:
-      - "CMakeLists.txt:12 (find_package)"
+      - "CMakeLists.txt:15 (find_package)"
     name: "Drogon"
     configs:
       -
@@ -4595,11 +4701,11 @@ events:
         mode: "config"
         reason: "no_exist"
       -
-        path: "/opt/venv/DrogonConfig.cmake"
+        path: "/localdev/idjuric/tt-metal/python_env/DrogonConfig.cmake"
         mode: "config"
         reason: "no_exist"
       -
-        path: "/opt/venv/drogon-config.cmake"
+        path: "/localdev/idjuric/tt-metal/python_env/drogon-config.cmake"
         mode: "config"
         reason: "no_exist"
       -
@@ -4619,6 +4725,14 @@ events:
         mode: "config"
         reason: "no_exist"
       -
+        path: "/opt/venv/DrogonConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/venv/drogon-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
         path: "/usr/local/DrogonConfig.cmake"
         mode: "config"
         reason: "no_exist"
@@ -4632,7 +4746,7 @@ events:
       version: "1.9.3"
     search_context:
       ENV{PATH}:
-        - "/opt/venv/bin"
+        - "/localdev/idjuric/tt-metal/python_env/bin"
         - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
         - "/home/idjuric/.local/bin"
         - "/opt/venv/bin"
@@ -4660,4 +4774,364 @@ events:
       CMAKE_MODULE_PATH:
         - "/usr/local/lib/cmake/Drogon"
         - "/usr/local/lib/cmake/Trantor"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.2/Modules/FindPython/Support.cmake:2022 (find_program)"
+      - "/usr/share/cmake-4.2/Modules/FindPython3.cmake:671 (include)"
+      - "CMakeLists.txt:56 (find_package)"
+    mode: "program"
+    variable: "_Python3_EXECUTABLE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: false
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "python3.15mu"
+      - "python3.15m"
+      - "python3.15u"
+      - "python3.15"
+      - "python3.15dmu"
+      - "python3.15dm"
+      - "python3.15du"
+      - "python3.15d"
+      - "python3.14mu"
+      - "python3.14m"
+      - "python3.14u"
+      - "python3.14"
+      - "python3.14dmu"
+      - "python3.14dm"
+      - "python3.14du"
+      - "python3.14d"
+      - "python3.13mu"
+      - "python3.13m"
+      - "python3.13u"
+      - "python3.13"
+      - "python3.13dmu"
+      - "python3.13dm"
+      - "python3.13du"
+      - "python3.13d"
+      - "python3.12mu"
+      - "python3.12m"
+      - "python3.12u"
+      - "python3.12"
+      - "python3.12dmu"
+      - "python3.12dm"
+      - "python3.12du"
+      - "python3.12d"
+      - "python3.11mu"
+      - "python3.11m"
+      - "python3.11u"
+      - "python3.11"
+      - "python3.11dmu"
+      - "python3.11dm"
+      - "python3.11du"
+      - "python3.11d"
+      - "python3.10mu"
+      - "python3.10m"
+      - "python3.10u"
+      - "python3.10"
+      - "python3.10dmu"
+      - "python3.10dm"
+      - "python3.10du"
+      - "python3.10d"
+      - "python3.9mu"
+      - "python3.9m"
+      - "python3.9u"
+      - "python3.9"
+      - "python3.9dmu"
+      - "python3.9dm"
+      - "python3.9du"
+      - "python3.9d"
+      - "python3.8mu"
+      - "python3.8m"
+      - "python3.8u"
+      - "python3.8"
+      - "python3.8dmu"
+      - "python3.8dm"
+      - "python3.8du"
+      - "python3.8d"
+      - "python3.7mu"
+      - "python3.7m"
+      - "python3.7u"
+      - "python3.7"
+      - "python3.7dmu"
+      - "python3.7dm"
+      - "python3.7du"
+      - "python3.7d"
+      - "python3.6mu"
+      - "python3.6m"
+      - "python3.6u"
+      - "python3.6"
+      - "python3.6dmu"
+      - "python3.6dm"
+      - "python3.6du"
+      - "python3.6d"
+      - "python3.5mu"
+      - "python3.5m"
+      - "python3.5u"
+      - "python3.5"
+      - "python3.5dmu"
+      - "python3.5dm"
+      - "python3.5du"
+      - "python3.5d"
+      - "python3.4mu"
+      - "python3.4m"
+      - "python3.4u"
+      - "python3.4"
+      - "python3.4dmu"
+      - "python3.4dm"
+      - "python3.4du"
+      - "python3.4d"
+      - "python3.3mu"
+      - "python3.3m"
+      - "python3.3u"
+      - "python3.3"
+      - "python3.3dmu"
+      - "python3.3dm"
+      - "python3.3du"
+      - "python3.3d"
+      - "python3.2mu"
+      - "python3.2m"
+      - "python3.2u"
+      - "python3.2"
+      - "python3.2dmu"
+      - "python3.2dm"
+      - "python3.2du"
+      - "python3.2d"
+      - "python3.1mu"
+      - "python3.1m"
+      - "python3.1u"
+      - "python3.1"
+      - "python3.1dmu"
+      - "python3.1dm"
+      - "python3.1du"
+      - "python3.1d"
+      - "python3.0mu"
+      - "python3.0m"
+      - "python3.0u"
+      - "python3.0"
+      - "python3.0dmu"
+      - "python3.0dm"
+      - "python3.0du"
+      - "python3.0d"
+      - "python3"
+      - "python"
+    candidate_directories:
+      - "/localdev/idjuric/tt-metal/python_env/bin/"
+      - "/localdev/idjuric/tt-metal/python_env/Scripts/"
+      - "/localdev/idjuric/tt-metal/python_env/"
+    searched_directories:
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15u"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15dmu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15dm"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15du"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.15d"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14u"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14dmu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14dm"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14du"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.14d"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13u"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13dmu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13dm"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13du"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.13d"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12u"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12dmu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12dm"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12du"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.12d"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11u"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11dmu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11dm"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11du"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.11d"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.10mu"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.10m"
+      - "/localdev/idjuric/tt-metal/python_env/bin/python3.10u"
+    found: "/localdev/idjuric/tt-metal/python_env/bin/python3.10"
+    search_context:
+      ENV{PATH}:
+        - "/localdev/idjuric/tt-metal/python_env/bin"
+        - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
+        - "/home/idjuric/.local/bin"
+        - "/opt/venv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand"
+        - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.2/Modules/FindPython/Support.cmake:3201 (find_library)"
+      - "/usr/share/cmake-4.2/Modules/FindPython3.cmake:671 (include)"
+      - "CMakeLists.txt:56 (find_package)"
+    mode: "library"
+    variable: "_Python3_LIBRARY_RELEASE"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: false
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "python310"
+      - "python3.10"
+    candidate_directories:
+      - "/localdev/idjuric/tt-metal/python_env/lib/x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/libs/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10/"
+      - "/localdev/idjuric/tt-metal/python_env/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/libs/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/lib/x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/lib/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/libs/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/lib/python3.10/config-3.10/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+    searched_directories:
+      - "/localdev/idjuric/tt-metal/python_env/lib/x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/"
+      - "/localdev/idjuric/tt-metal/python_env/libs/"
+      - "/localdev/idjuric/tt-metal/python_env/libs/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10-x86_64-linux-gnu/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10/"
+      - "/localdev/idjuric/tt-metal/python_env/lib/python3.10/config-3.10/"
+      - "/localdev/idjuric/tt-metal/python_env/"
+      - "/localdev/idjuric/tt-metal/python_env/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/x86_64-linux-gnu/"
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/"
+    found: "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/libpython3.10.so"
+    search_context:
+      ENV{PATH}:
+        - "/localdev/idjuric/tt-metal/python_env/bin"
+        - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
+        - "/home/idjuric/.local/bin"
+        - "/opt/venv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand"
+        - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.2/Modules/FindPython/Support.cmake:3716 (find_path)"
+      - "/usr/share/cmake-4.2/Modules/FindPython3.cmake:671 (include)"
+      - "CMakeLists.txt:56 (find_package)"
+    mode: "path"
+    variable: "_Python3_INCLUDE_DIR"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: false
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "Python.h"
+    candidate_directories:
+      - "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/"
+    found: "/home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/"
+    search_context:
+      ENV{PATH}:
+        - "/localdev/idjuric/tt-metal/python_env/bin"
+        - "/home/idjuric/.vscode-server/cli/servers/Stable-6f17636121051a53c88d3e605c491d22af2ba755/server/bin/remote-cli"
+        - "/home/idjuric/.local/bin"
+        - "/opt/venv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/idjuric/.vscode-server/data/User/globalStorage/github.copilot-chat/debugCommand"
+        - "/home/idjuric/.vscode-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_INCLUDE_PATH:
+        - "/usr/include/X11"
 ...

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "services/base_service.hpp"
-#include "runners/llm_test_runner.hpp"
+#include "runners/runner_factory.hpp"
 
 #include <iostream>
 
@@ -11,10 +11,8 @@ namespace tt::services {
 BaseService::BaseService() {
     scheduler_ = std::make_shared<scheduler::Scheduler>();
 
-    // Set default runner factory to use test runner
-    scheduler_->set_runner_factory([](const std::string& device_id) {
-        return std::make_unique<runners::LLMTestRunner>(device_id);
-    });
+    // Set runner factory based on TT_RUNNER_TYPE environment variable
+    scheduler_->set_runner_factory(runners::RunnerFactory::get_factory());
 
     std::cout << "[BaseService] Initialized" << std::endl;
 }

@@ -253,5 +253,144 @@ CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o: \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/domain/completion_response.hpp \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/runners/base_device_runner.hpp \
  /usr/include/c++/11/coroutine \
+ /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/runners/runner_factory.hpp \
+ /usr/include/c++/11/iostream \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/runners/llm_test_runner.hpp \
- /usr/include/c++/11/iostream
+ /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/runners/ttnn_test_runner.hpp \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/Python.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/patchlevel.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pyconfig.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymacconfig.h \
+ /usr/include/c++/11/stdlib.h /usr/include/assert.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pyport.h \
+ /usr/include/inttypes.h /usr/include/c++/11/math.h \
+ /usr/include/c++/11/cmath /usr/include/math.h \
+ /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+ /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+ /usr/include/c++/11/bits/specfun.h /usr/include/c++/11/tr1/gamma.tcc \
+ /usr/include/c++/11/tr1/special_function_util.h \
+ /usr/include/c++/11/tr1/bessel_function.tcc \
+ /usr/include/c++/11/tr1/beta_function.tcc \
+ /usr/include/c++/11/tr1/ell_integral.tcc \
+ /usr/include/c++/11/tr1/exp_integral.tcc \
+ /usr/include/c++/11/tr1/hypergeometric.tcc \
+ /usr/include/c++/11/tr1/legendre_function.tcc \
+ /usr/include/c++/11/tr1/modified_bessel_func.tcc \
+ /usr/include/c++/11/tr1/poly_hermite.tcc \
+ /usr/include/c++/11/tr1/poly_laguerre.tcc \
+ /usr/include/c++/11/tr1/riemann_zeta.tcc \
+ /usr/include/x86_64-linux-gnu/sys/stat.h \
+ /usr/include/x86_64-linux-gnu/bits/stat.h \
+ /usr/include/x86_64-linux-gnu/bits/struct_stat.h \
+ /usr/include/x86_64-linux-gnu/bits/statx.h /usr/include/linux/stat.h \
+ /usr/include/linux/types.h /usr/include/x86_64-linux-gnu/asm/types.h \
+ /usr/include/asm-generic/types.h /usr/include/asm-generic/int-ll64.h \
+ /usr/include/x86_64-linux-gnu/asm/bitsperlong.h \
+ /usr/include/asm-generic/bitsperlong.h /usr/include/linux/posix_types.h \
+ /usr/include/linux/stddef.h \
+ /usr/include/x86_64-linux-gnu/asm/posix_types.h \
+ /usr/include/x86_64-linux-gnu/asm/posix_types_64.h \
+ /usr/include/asm-generic/posix_types.h \
+ /usr/include/x86_64-linux-gnu/bits/statx-generic.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/exports.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymacro.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymath.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymem.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pymem.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/object.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/object.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/objimpl.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/objimpl.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/typeslots.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pyhash.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pydebug.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/bytearrayobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/bytearrayobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/bytesobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/bytesobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/unicodeobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/unicodeobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/longobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/longintrepr.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/boolobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/floatobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/complexobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/rangeobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/memoryobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/tupleobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/tupleobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/listobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/listobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/dictobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/dictobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/odictobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/enumobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/setobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/methodobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/methodobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/moduleobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/funcobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/classobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/fileobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/fileobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pycapsule.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/code.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/code.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pyframe.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/traceback.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/traceback.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/sliceobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cellobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/iterobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/initconfig.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/genobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pystate.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pystate.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/abstract.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/abstract.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/descrobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/genericaliasobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/warnings.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/weakrefobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/structseq.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/namespaceobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/picklebufobject.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pytime.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/codecs.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pyerrors.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pyerrors.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pythread.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/context.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/modsupport.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/compile.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/compile.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pythonrun.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pythonrun.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pylifecycle.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pylifecycle.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/ceval.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/ceval.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/sysmodule.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/sysmodule.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/osmodule.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/intrcheck.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/import.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/import.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/bltinmodule.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/eval.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pyctype.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pystrtod.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pystrcmp.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/fileutils.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/fileutils.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/cpython/pyfpe.h \
+ /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/tracemalloc.h

@@ -8,6 +8,7 @@
 
 // Controllers are auto-registered via ADD_METHOD_TO macros
 #include "api/llm_controller.hpp"
+#include "runners/runner_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -43,7 +44,9 @@ int main(int argc, char* argv[]) {
                       << "  -h, --host HOST     Listen host (default: 0.0.0.0)\n"
                       << "  -p, --port PORT     Listen port (default: 8000)\n"
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
-                      << "  --help              Show this help message\n";
+                      << "  --help              Show this help message\n"
+                      << "\nEnvironment Variables:\n"
+                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default) or 'ttnn_test'\n";
             return 0;
         }
     }
@@ -52,13 +55,17 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
+    // Get runner info
+    auto runner_type = tt::runners::RunnerFactory::get_runner_type();
+    std::string runner_name = tt::runners::RunnerFactory::get_runner_name(runner_type);
+
     std::cout << "=================================================\n"
               << "  TT Media Server (C++ Drogon Implementation)\n"
               << "=================================================\n"
               << "  Host: " << host << "\n"
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
-              << "  LLM Test Runner: 120,000 tokens/sec\n"
+              << "  Runner: " << runner_name << "\n"
               << "=================================================\n"
               << std::endl;
 

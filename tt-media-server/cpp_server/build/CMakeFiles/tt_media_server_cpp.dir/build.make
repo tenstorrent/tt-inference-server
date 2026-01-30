@@ -160,6 +160,7 @@ tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/build.make
 tt_media_server_cpp: /usr/local/lib/libdrogon.a
+tt_media_server_cpp: /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/lib/libpython3.10.so
 tt_media_server_cpp: /usr/local/lib/libtrantor.a
 tt_media_server_cpp: /usr/lib/x86_64-linux-gnu/libssl.so
 tt_media_server_cpp: /usr/lib/x86_64-linux-gnu/libcrypto.so
