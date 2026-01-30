@@ -399,9 +399,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 11.0,
-                        "tput_user": 605.0,
-                        "tput": 20919.0
+                        "ttft_ms": 29.0,
+                        "tput_user": 73.0,
+                        "tput": 17932.0
                     }
                 }
             }
