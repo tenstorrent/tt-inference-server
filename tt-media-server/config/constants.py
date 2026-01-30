@@ -496,7 +496,6 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
-        "use_queue_per_worker": True,
         "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
@@ -510,7 +509,6 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
-        "use_queue_per_worker": True,
         "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
@@ -524,7 +522,6 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
-        "use_queue_per_worker": True,
         "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
@@ -538,7 +535,6 @@ ModelConfigs = {
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
-        "use_queue_per_worker": True,
         "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
