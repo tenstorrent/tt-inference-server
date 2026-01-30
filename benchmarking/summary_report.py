@@ -72,6 +72,10 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return "audio"
     if model_type == ModelType.IMAGE:
         return "image"
+    if model_type == ModelType.VLM:
+        return (
+            "vlm"  # VLMs (Vision-Language Models) use "vlm" task_type for benchmarking
+        )
     if model_type == ModelType.EMBEDDING:
         return "embedding"
     if model_type == ModelType.VIDEO:
@@ -110,8 +114,17 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     # Try AIPerf image pattern first
     match = re.search(aiperf_image_pattern, filename, re.VERBOSE)
     if match:
+        # Determine if this is VLM or image generation based on model name
+        model_name = match.group("model")
+        # Image generation models (SDXL, SD) vs VLM models (Qwen-VL, Llama-Vision, gemma-3)
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+
         return {
-            "model_name": match.group("model"),
+            "model_name": model_name,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
             "input_sequence_length": int(match.group("isl")),
@@ -121,7 +134,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "images_per_prompt": int(match.group("images_per_prompt")),
             "image_height": int(match.group("image_height")),
             "image_width": int(match.group("image_width")),
-            "task_type": "image",
+            "task_type": task_type,
             "backend": "aiperf",
         }
 
@@ -174,8 +187,17 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     if match:
         logger.info(f"Found image benchmark pattern in filename: {filename}")
         # Extract and convert numeric parameters for image benchmarks
+        # Determine if this is VLM or image generation based on model name
+        model_name = match.group("model")
+        # Image generation models (SDXL, SD) vs VLM models (Qwen-VL, Llama-Vision, gemma-3)
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+
         params = {
-            "model_name": match.group("model"),
+            "model_name": model_name,
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
             "input_sequence_length": int(match.group("isl")),
@@ -185,7 +207,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "images_per_prompt": int(match.group("images_per_prompt")),
             "image_height": int(match.group("image_height")),
             "image_width": int(match.group("image_width")),
-            "task_type": "image",
+            "task_type": task_type,
         }
         return params
 
@@ -329,8 +351,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": params["task_type"],
         }
 
-        # Add image-specific fields if this is an image benchmark
-        if params["task_type"] == "image":
+        # Add image-specific fields if this is an image or VLM benchmark
+        if params["task_type"] in ("image", "vlm"):
             metrics["images_per_prompt"] = params.get("images_per_prompt", 1)
             metrics["image_height"] = params.get("image_height", 0)
             metrics["image_width"] = params.get("image_width", 0)
@@ -549,8 +571,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "task_type": params["task_type"],
     }
 
-    # Add image-specific parameters if this is an image benchmark
-    if params["task_type"] == "image":
+    # Add image-specific parameters if this is an image or VLM benchmark
+    if params["task_type"] in ("image", "vlm"):
         metrics.update(
             {
                 "images_per_prompt": params["images_per_prompt"],
@@ -636,12 +658,12 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for image benchmarks
+def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for VLM benchmarks
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
-        ("input_sequence_length", "ISL"),
-        ("output_sequence_length", "OSL"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
         ("max_con", "Max Concurrency"),
         ("image_height", "Image Height"),
         ("image_width", "Image Width"),
@@ -658,7 +680,17 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     display_dict = {}
     for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
+        # Backward compatibility: try new key first, fall back to old key
+        if col_name == "isl":
+            value = result.get(
+                "isl", result.get("input_sequence_length", NOT_MEASURED_STR)
+            )
+        elif col_name == "osl":
+            value = result.get(
+                "osl", result.get("output_sequence_length", NOT_MEASURED_STR)
+            )
+        else:
+            value = result.get(col_name, NOT_MEASURED_STR)
         # Format backend value for display
         if col_name == "backend":
             value = format_backend_value(value)
@@ -1037,8 +1069,9 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, image, audio, embedding, cnn and video benchmarks
+    # Separate text, vlm, image, audio, embedding, cnn and video benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
+    vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
     tts_results = [r for r in results if r.get("task_type") == "tts"]
@@ -1055,29 +1088,21 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
 
-    # Generate image benchmarks section if any exist
-    # Separate VLM models from image generation models based on backend
+    # Generate VLM benchmarks section if any exist
+    if vlm_results:
+        vlm_display_results = [create_vlm_display_dict(res) for res in vlm_results]
+        vlm_markdown_str = get_markdown_table(vlm_display_results)
+        vlm_section = f"#### VLM Benchmark Sweeps for {model_name} on {device}\n\n{vlm_markdown_str}"
+        markdown_sections.append(vlm_section)
+
+    # Generate image generation benchmarks section if any exist
     if image_results:
-        vlm_results = [r for r in image_results if r.get("backend") != "image"]
-        image_gen_results = [r for r in image_results if r.get("backend") == "image"]
-
-        # VLM models (Qwen2.5-VL, etc.) - use standard image display
-        if vlm_results:
-            vlm_display_results = [
-                create_image_display_dict(res) for res in vlm_results
-            ]
-            vlm_markdown_str = get_markdown_table(vlm_display_results)
-            vlm_section = f"#### VLM Benchmark Sweeps for {model_name} on {device}\n\n{vlm_markdown_str}"
-            markdown_sections.append(vlm_section)
-
-        # Image generation models (SDXL, Flux, SD3.5) - use image generation display
-        if image_gen_results:
-            image_gen_display_results = [
-                create_image_generation_display_dict(res) for res in image_gen_results
-            ]
-            image_gen_markdown_str = get_markdown_table(image_gen_display_results)
-            image_gen_section = f"#### Image Generation Benchmark Sweeps for {model_name} on {device}\n\n{image_gen_markdown_str}"
-            markdown_sections.append(image_gen_section)
+        image_gen_display_results = [
+            create_image_generation_display_dict(res) for res in image_results
+        ]
+        image_gen_markdown_str = get_markdown_table(image_gen_display_results)
+        image_gen_section = f"#### Image Generation Benchmark Sweeps for {model_name} on {device}\n\n{image_gen_markdown_str}"
+        markdown_sections.append(image_gen_section)
 
     # Generate audio benchmarks section if any exist
     if audio_results:
