@@ -868,8 +868,6 @@ def aiperf_benchmark_generate_report(
                 "source": "vLLM",
                 "isl": isl,
                 "osl": osl,
-                "input_sequence_length": isl,
-                "output_sequence_length": osl,
                 "concurrency": concurrency,
                 "max_con": concurrency,
                 "num_requests": num_requests,
@@ -1596,7 +1594,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_audio_display_dict,
         create_display_dict,
         create_embedding_display_dict,
-        create_image_display_dict,
+        create_vlm_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
         get_markdown_table,
@@ -1640,14 +1638,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if vllm_vlm:
-            vllm_vlm_display = [create_image_display_dict(r) for r in vllm_vlm]
+            vllm_vlm_display = [create_vlm_display_dict(r) for r in vllm_vlm]
             vllm_vlm_md = get_markdown_table(vllm_vlm_display)
             image_sections.append(
                 f"#### vLLM VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_vlm_md}"
             )
 
         if vllm_image:
-            vllm_image_display = [create_image_display_dict(r) for r in vllm_image]
+            vllm_image_display = [create_image_generation_display_dict(r) for r in vllm_image]
             vllm_image_md = get_markdown_table(vllm_image_display)
             image_sections.append(
                 f"#### vLLM Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
@@ -1722,14 +1720,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if aiperf_vlm:
-            aiperf_vlm_display = [create_image_display_dict(r) for r in aiperf_vlm]
+            aiperf_vlm_display = [create_vlm_display_dict(r) for r in aiperf_vlm]
             aiperf_vlm_md = get_markdown_table(aiperf_vlm_display)
             image_sections.append(
                 f"#### AIPerf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_vlm_md}"
             )
 
         if aiperf_image:
-            aiperf_image_display = [create_image_display_dict(r) for r in aiperf_image]
+            aiperf_image_display = [create_image_generation_display_dict(r) for r in aiperf_image]
             aiperf_image_md = get_markdown_table(aiperf_image_display)
             image_sections.append(
                 f"#### AIPerf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
@@ -1801,14 +1799,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if genai_vlm:
-            genai_vlm_display = [create_image_display_dict(r) for r in genai_vlm]
+            genai_vlm_display = [create_vlm_display_dict(r) for r in genai_vlm]
             genai_vlm_md = get_markdown_table(genai_vlm_display)
             image_sections.append(
                 f"#### GenAI-Perf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_vlm_md}"
             )
 
         if genai_image:
-            genai_image_display = [create_image_display_dict(r) for r in genai_image]
+            genai_image_display = [create_image_generation_display_dict(r) for r in genai_image]
             genai_image_md = get_markdown_table(genai_image_display)
             image_sections.append(
                 f"#### GenAI-Perf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
@@ -2064,10 +2062,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         # VLM models (ModelType.VLM) now distinguished from image generation models (ModelType.IMAGE)
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
+        # Support both old (input_sequence_length) and new (isl) key names for backward compatibility
         vlm_res_dict = {
             (
-                r["input_sequence_length"],
-                r["output_sequence_length"],
+                r.get("isl", r.get("input_sequence_length", 0)),
+                r.get("osl", r.get("output_sequence_length", 0)),
                 r["image_height"],
                 r["image_width"],
                 r["images_per_prompt"],
@@ -2857,9 +2856,9 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+                value = row.get("isl", NOT_MEASURED_STR)
             elif col_name == "osl":
-                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+                value = row.get("osl", NOT_MEASURED_STR)
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -3004,9 +3003,9 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+                value = row.get("isl", NOT_MEASURED_STR)
             elif col_name == "osl":
-                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+                value = row.get("osl", NOT_MEASURED_STR)
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":

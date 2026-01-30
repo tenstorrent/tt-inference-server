@@ -1209,8 +1209,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-3B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="4b6ba0f",
-        vllm_commit="628d4dc",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -1244,8 +1244,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="4b6ba0f",
-        vllm_commit="628d4dc",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -1282,8 +1282,8 @@ spec_templates = [
             "Qwen/Qwen2.5-VL-32B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="e3747a5",
-        vllm_commit="3499ffa",
+        tt_metal_commit="c18569e",
+        vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[

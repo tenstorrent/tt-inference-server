@@ -658,12 +658,12 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for image benchmarks
+def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    # Define display columns mapping for VLM benchmarks
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
-        ("input_sequence_length", "ISL"),
-        ("output_sequence_length", "OSL"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
         ("max_con", "Max Concurrency"),
         ("image_height", "Image Height"),
         ("image_width", "Image Width"),
@@ -680,7 +680,13 @@ def create_image_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
     display_dict = {}
     for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
+        # Backward compatibility: try new key first, fall back to old key
+        if col_name == "isl":
+            value = result.get("isl", result.get("input_sequence_length", NOT_MEASURED_STR))
+        elif col_name == "osl":
+            value = result.get("osl", result.get("output_sequence_length", NOT_MEASURED_STR))
+        else:
+            value = result.get(col_name, NOT_MEASURED_STR)
         # Format backend value for display
         if col_name == "backend":
             value = format_backend_value(value)
@@ -1080,7 +1086,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
 
     # Generate VLM benchmarks section if any exist
     if vlm_results:
-        vlm_display_results = [create_image_display_dict(res) for res in vlm_results]
+        vlm_display_results = [create_vlm_display_dict(res) for res in vlm_results]
         vlm_markdown_str = get_markdown_table(vlm_display_results)
         vlm_section = f"#### VLM Benchmark Sweeps for {model_name} on {device}\n\n{vlm_markdown_str}"
         markdown_sections.append(vlm_section)
