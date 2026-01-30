@@ -1356,10 +1356,45 @@ spec_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="55fd115",
+        vllm_commit="aa4ae1e",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1626,7 +1661,10 @@ spec_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30000000,
+                    "trace_region_size": 71045120,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
@@ -1659,6 +1697,12 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 71045120,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1889,7 +1933,10 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 42000000,
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],
@@ -1920,6 +1967,9 @@ spec_templates = [
                 override_tt_config={
                     "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
+                },
+                env_vars={
+                    "VLLM_RPC_TIMEOUT": "3600000",  # 60 minutes
                 },
             ),
         ],

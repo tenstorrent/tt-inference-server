@@ -2923,6 +2923,83 @@
     "display_name": null,
     "has_builtin_warmup": false
   },
+  "id_tt-transformers_Qwen3-32B_p150x4": {
+    "model_id": "id_tt-transformers_Qwen3-32B_p150x4",
+    "impl": {
+      "impl_id": "tt_transformers",
+      "impl_name": "tt-transformers",
+      "repo_url": "https://github.com/tenstorrent/tt-metal",
+      "code_path": "models/tt_transformers"
+    },
+    "hf_model_repo": "Qwen/Qwen3-32B",
+    "model_name": "Qwen3-32B",
+    "inference_engine": "vLLM",
+    "device_type": "P150X4",
+    "tt_metal_commit": "55fd115",
+    "device_model_spec": {
+      "device": "P150X4",
+      "max_concurrency": 32,
+      "max_context": 131072,
+      "perf_targets_map": {},
+      "default_impl": true,
+      "perf_reference": [],
+      "vllm_args": {
+        "model": "Qwen/Qwen3-32B",
+        "block_size": "64",
+        "max_model_len": "131072",
+        "max_num_seqs": "32",
+        "max_num_batched_tokens": "131072",
+        "num_scheduler_steps": "10",
+        "max-log-len": "32",
+        "seed": "9472",
+        "override_tt_config": "{}"
+      },
+      "override_tt_config": {},
+      "env_vars": {
+        "MESH_DEVICE": "P150x4",
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
+      }
+    },
+    "system_requirements": {
+      "firmware": {
+        "specifier": ">=18.12.0",
+        "mode": "STRICT"
+      },
+      "kmd": {
+        "specifier": ">=2.4.1",
+        "mode": "STRICT"
+      }
+    },
+    "env_vars": {
+      "VLLM_CONFIGURE_LOGGING": "1",
+      "VLLM_RPC_TIMEOUT": "3600000",
+      "VLLM_TARGET_DEVICE": "tt",
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+      "MESH_DEVICE": "P150x4",
+      "ARCH_NAME": "blackhole"
+    },
+    "vllm_commit": "aa4ae1e",
+    "hf_weights_repo": "Qwen/Qwen3-32B",
+    "param_count": 32,
+    "min_disk_gb": 84,
+    "min_ram_gb": 128,
+    "model_type": "LLM",
+    "repacked": 0,
+    "version": "0.8.0",
+    "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
+    "status": "FUNCTIONAL",
+    "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+    "override_tt_config": {},
+    "supported_modalities": [
+      "text"
+    ],
+    "subdevice_type": null,
+    "uses_tensor_model_cache": true,
+    "cli_args": {},
+    "display_name": null,
+    "has_builtin_warmup": false
+  },
   "id_tt-transformers_Qwen3-32B_p150x8": {
     "model_id": "id_tt-transformers_Qwen3-32B_p150x8",
     "impl": {
@@ -2957,7 +3034,8 @@
       "override_tt_config": {},
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -2972,7 +3050,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
       "MESH_DEVICE": "P150x8",
@@ -5880,14 +5958,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30000000}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
       "override_tt_config": {
-        "trace_region_size": 30000000
+        "trace_region_size": 71045120
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -5902,7 +5981,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -5919,7 +5998,7 @@
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30000000
+      "trace_region_size": 71045120
     },
     "supported_modalities": [
       "text"
@@ -5998,14 +6077,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30000000}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
       "override_tt_config": {
-        "trace_region_size": 30000000
+        "trace_region_size": 71045120
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6020,7 +6100,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -6037,7 +6117,7 @@
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30000000
+      "trace_region_size": 71045120
     },
     "supported_modalities": [
       "text"
@@ -6116,14 +6196,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30000000}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
       "override_tt_config": {
-        "trace_region_size": 30000000
+        "trace_region_size": 71045120
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6138,7 +6219,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -6155,7 +6236,7 @@
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30000000
+      "trace_region_size": 71045120
     },
     "supported_modalities": [
       "text"
@@ -6234,14 +6315,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"trace_region_size\": 30000000}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
       "override_tt_config": {
-        "trace_region_size": 30000000
+        "trace_region_size": 71045120
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6256,7 +6338,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -6273,7 +6355,7 @@
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
     "override_tt_config": {
-      "trace_region_size": 30000000
+      "trace_region_size": 71045120
     },
     "supported_modalities": [
       "text"
@@ -6352,12 +6434,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "trace_region_size": 71045120
+      },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6372,7 +6457,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
@@ -6388,7 +6473,9 @@
     "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "trace_region_size": 71045120
+    },
     "supported_modalities": [
       "text"
     ],
@@ -6466,12 +6553,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "trace_region_size": 71045120
+      },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6486,7 +6576,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
@@ -6502,7 +6592,9 @@
     "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "trace_region_size": 71045120
+    },
     "supported_modalities": [
       "text"
     ],
@@ -6580,12 +6672,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "trace_region_size": 71045120
+      },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6600,7 +6695,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
@@ -6616,7 +6711,9 @@
     "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "trace_region_size": 71045120
+    },
     "supported_modalities": [
       "text"
     ],
@@ -6694,12 +6791,15 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{}"
+        "override_tt_config": "{\"trace_region_size\": 71045120}"
       },
-      "override_tt_config": {},
+      "override_tt_config": {
+        "trace_region_size": 71045120
+      },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -6714,7 +6814,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
@@ -6730,7 +6830,9 @@
     "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-55fd115-aa4ae1e",
     "status": "FUNCTIONAL",
     "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-    "override_tt_config": {},
+    "override_tt_config": {
+      "trace_region_size": 71045120
+    },
     "supported_modalities": [
       "text"
     ],
@@ -10384,22 +10486,23 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"data_parallel\": 4, \"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 33000000}"
+        "override_tt_config": "{\"data_parallel\": 4, \"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 42000000}"
       },
       "override_tt_config": {
         "data_parallel": 4,
         "sample_on_device_mode": "decode_only",
-        "trace_region_size": 33000000
+        "trace_region_size": 42000000
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": null,
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -10418,7 +10521,7 @@
     "override_tt_config": {
       "data_parallel": 4,
       "sample_on_device_mode": "decode_only",
-      "trace_region_size": 33000000
+      "trace_region_size": 42000000
     },
     "supported_modalities": [
       "text"
@@ -10497,22 +10600,23 @@
         "num_scheduler_steps": "10",
         "max-log-len": "32",
         "seed": "9472",
-        "override_tt_config": "{\"data_parallel\": 4, \"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 33000000}"
+        "override_tt_config": "{\"data_parallel\": 4, \"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 42000000}"
       },
       "override_tt_config": {
         "data_parallel": 4,
         "sample_on_device_mode": "decode_only",
-        "trace_region_size": 33000000
+        "trace_region_size": 42000000
       },
       "env_vars": {
         "MESH_DEVICE": "P150x4",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": null,
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x4",
       "ARCH_NAME": "blackhole"
@@ -10531,7 +10635,7 @@
     "override_tt_config": {
       "data_parallel": 4,
       "sample_on_device_mode": "decode_only",
-      "trace_region_size": 33000000
+      "trace_region_size": 42000000
     },
     "supported_modalities": [
       "text"
@@ -10618,7 +10722,8 @@
       },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -10633,7 +10738,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
@@ -10738,7 +10843,8 @@
       },
       "env_vars": {
         "MESH_DEVICE": "P150x8",
-        "ARCH_NAME": "blackhole"
+        "ARCH_NAME": "blackhole",
+        "VLLM_RPC_TIMEOUT": "3600000"
       }
     },
     "system_requirements": {
@@ -10753,7 +10859,7 @@
     },
     "env_vars": {
       "VLLM_CONFIGURE_LOGGING": "1",
-      "VLLM_RPC_TIMEOUT": "900000",
+      "VLLM_RPC_TIMEOUT": "3600000",
       "VLLM_TARGET_DEVICE": "tt",
       "MESH_DEVICE": "P150x8",
       "ARCH_NAME": "blackhole"
