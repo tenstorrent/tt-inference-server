@@ -263,6 +263,9 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
 
+**Prerequisite for MP3/OGG output:** Install ffmpeg so the server can return `response_format="mp3"` or `"ogg"`. From tt-media-server: `sudo apt update && sudo apt install -y ffmpeg`. 
+Same as in [For development running](#for-development-running) step 4.
+
 - JSON Request: Send a JSON POST request to `/audio/speech`
 
 **Default behavior:** Returns WAV file directly (default `response_format="audio"`)
@@ -290,6 +293,30 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
     "response_format": "audio"
   }' \
   --output output.wav \
+  --silent \
+  --show-error
+```
+
+**Request MP3 or OGG (binary):**
+
+You can request compressed audio formats; the server converts from WAV to the requested format in post-processing. Requires ffmpeg on the server.
+
+```bash
+# MP3 (Content-Type: audio/mpeg)
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello world", "response_format": "mp3"}' \
+  --output output.mp3 \
+  --silent \
+  --show-error
+
+# OGG (Content-Type: audio/ogg)
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello world", "response_format": "ogg"}' \
+  --output output.ogg \
   --silent \
   --show-error
 ```
@@ -332,6 +359,20 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 
 ```json
 {
+  "text": "Request MP3 output",
+  "response_format": "mp3"
+}
+```
+
+```json
+{
+  "text": "Request OGG output",
+  "response_format": "ogg"
+}
+```
+
+```json
+{
   "text": "This should return JSON",
   "response_format": "verbose_json"
 }
@@ -354,6 +395,8 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 
 **Available response formats:**
 - `"audio"` or `"wav"` (default) - Returns WAV file directly (binary, `Content-Type: audio/wav`)
+- `"mp3"` - Returns MP3 file (binary, `Content-Type: audio/mpeg`); requires ffmpeg on the server
+- `"ogg"` - Returns OGG file (binary, `Content-Type: audio/ogg`); requires ffmpeg on the server
 - `"verbose_json"` or `"json"` - Returns JSON with base64-encoded audio
 
 **Optional fields:**
