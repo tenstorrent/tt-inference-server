@@ -2540,7 +2540,7 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "8192",
-                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
                     "VLLM__MAX_NUM_SEQS": "2",
                 },
@@ -2552,7 +2552,7 @@ spec_templates = [
                 default_impl=True,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "8192",
-                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
                     "VLLM__MAX_NUM_SEQS": "2",
                 },
@@ -2563,8 +2563,8 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
                     "VLLM__MAX_NUM_SEQS": "1",
                 },
