@@ -2,101 +2,239 @@
     "stable-diffusion-xl-base-1.0": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [23.01085758, 23.95007626],
-                "clip_valid_range": [31.68631873, 31.81331801]
+                "fid_valid_range": [
+                    23.01085758,
+                    23.95007626
+                ],
+                "clip_valid_range": [
+                    31.68631873,
+                    31.81331801
+                ]
             },
             "100": {
-                "fid_valid_range": [182.78657778059338, 183.9511842650918],
-                "clip_valid_range": [31.70502465208177, 32.094664207879916]
+                "fid_valid_range": [
+                    182.78657778059338,
+                    183.9511842650918
+                ],
+                "clip_valid_range": [
+                    31.70502465208177,
+                    32.094664207879916
+                ]
             }
         }
     },
     "stable-diffusion-3.5-large": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [22.63592, 24.0361780112],
-                "clip_valid_range": [30.38525, 32.264881565]
+                "fid_valid_range": [
+                    22.63592,
+                    24.0361780112
+                ],
+                "clip_valid_range": [
+                    30.38525,
+                    32.264881565
+                ]
             },
             "500": {
-                "fid_valid_range": [79.734, 84.66634524],
-                "clip_valid_range": [30.423468, 32.30546373048]
+                "fid_valid_range": [
+                    79.734,
+                    84.66634524
+                ],
+                "clip_valid_range": [
+                    30.423468,
+                    32.30546373048
+                ]
             },
             "100": {
-                "fid_valid_range": [175.35951, 186.2072492886],
-                "clip_valid_range": [30.162635, 32.028495601100005]
+                "fid_valid_range": [
+                    175.35951,
+                    186.2072492886
+                ],
+                "clip_valid_range": [
+                    30.162635,
+                    32.028495601100005
+                ]
             }
         }
     },
     "stable-diffusion-xl-base-1.0-img-2-img": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [23.01085758, 23.95007626],
-                "clip_valid_range": [31.68631873, 31.81331801]
+                "fid_valid_range": [
+                    23.01085758,
+                    23.95007626
+                ],
+                "clip_valid_range": [
+                    31.68631873,
+                    31.81331801
+                ]
             },
             "100": {
-                "fid_valid_range": [182.78657778059338, 183.9511842650918],
-                "clip_valid_range": [31.70502465208177, 32.094664207879916]
+                "fid_valid_range": [
+                    182.78657778059338,
+                    183.9511842650918
+                ],
+                "clip_valid_range": [
+                    31.70502465208177,
+                    32.094664207879916
+                ]
             }
         }
     },
     "stable-diffusion-xl-1.0-inpainting-0.1": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [23.01085758, 23.95007626],
-                "clip_valid_range": [31.68631873, 31.81331801]
+                "fid_valid_range": [
+                    23.01085758,
+                    23.95007626
+                ],
+                "clip_valid_range": [
+                    31.68631873,
+                    31.81331801
+                ]
             },
             "100": {
-                "fid_valid_range": [182.78657778059338, 183.9511842650918],
-                "clip_valid_range": [31.70502465208177, 32.094664207879916]
+                "fid_valid_range": [
+                    182.78657778059338,
+                    183.9511842650918
+                ],
+                "clip_valid_range": [
+                    31.70502465208177,
+                    32.094664207879916
+                ]
             }
         }
     },
     "flux.1-dev": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [28.14067, 29.8814518462],
-                "clip_valid_range": [29.7014, 31.538728604]
+                "fid_valid_range": [
+                    28.14067,
+                    29.8814518462
+                ],
+                "clip_valid_range": [
+                    29.7014,
+                    31.538728604
+                ]
             },
             "500": {
-                "fid_valid_range": [82.37143, 87.46692665980001],
-                "clip_valid_range": [29.79258, 31.6355489988]
+                "fid_valid_range": [
+                    82.37143,
+                    87.46692665980001
+                ],
+                "clip_valid_range": [
+                    29.79258,
+                    31.6355489988
+                ]
             },
             "100": {
-                "fid_valid_range": [174.97054, 185.79421760440002],
-                "clip_valid_range": [29.86339, 31.7107393054]
+                "fid_valid_range": [
+                    174.97054,
+                    185.79421760440002
+                ],
+                "clip_valid_range": [
+                    29.86339,
+                    31.7107393054
+                ]
             }
         }
     },
     "flux.1-schnell": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [22.195637, 23.568659104820004],
-                "clip_valid_range": [30.010539, 31.866990942540003]
+                "fid_valid_range": [
+                    22.195637,
+                    23.568659104820004
+                ],
+                "clip_valid_range": [
+                    30.010539,
+                    31.866990942540003
+                ]
             },
             "500": {
-                "fid_valid_range": [77.21976, 81.9965743536],
-                "clip_valid_range": [30.19901, 32.067120758600005]
+                "fid_valid_range": [
+                    77.21976,
+                    81.9965743536
+                ],
+                "clip_valid_range": [
+                    30.19901,
+                    32.067120758600005
+                ]
             },
             "100": {
-                "fid_valid_range": [171.065611, 181.64772969646],
-                "clip_valid_range": [30.41629, 32.2978416994]
+                "fid_valid_range": [
+                    171.065611,
+                    181.64772969646
+                ],
+                "clip_valid_range": [
+                    30.41629,
+                    32.2978416994
+                ]
             }
         }
     },
     "motif-image-6b-preview": {
         "accuracy": {
             "5000": {
-                "fid_valid_range": [33.85203, 35.9461165758],
-                "clip_valid_range": [29.6529, 31.487228394]
+                "fid_valid_range": [
+                    33.85203,
+                    35.9461165758
+                ],
+                "clip_valid_range": [
+                    29.6529,
+                    31.487228394
+                ]
             },
             "500": {
-                "fid_valid_range": [86.02833, 91.3500424938],
-                "clip_valid_range": [29.65581, 31.4903184066]
+                "fid_valid_range": [
+                    86.02833,
+                    91.3500424938
+                ],
+                "clip_valid_range": [
+                    29.65581,
+                    31.4903184066
+                ]
             },
             "100": {
-                "fid_valid_range": [180.97872, 192.1740636192],
-                "clip_valid_range": [29.65581, 31.4903184066]
+                "fid_valid_range": [
+                    180.97872,
+                    192.1740636192
+                ],
+                "clip_valid_range": [
+                    29.65581,
+                    31.4903184066
+                ]
             }
+        }
+    },
+    "mochi-1-preview": {
+        "hf_id": "genmo/mochi-1-preview",
+        "num_inference_steps": 50,
+        "accuracy": {
+            "5": {
+                "clip_valid_range": [
+                    26.20977,
+                    27.83099
+                ]
+            }
+        },
+        "extra_args": {
+            "num_frames": 168
+        }
+    },
+    "Wan2.2-T2V-A14B-Diffusers": {
+        "hf_id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "num_inference_steps": 40,
+        "accuracy": {
+            "5": {
+                "clip_valid_range": [
+                    28.25276,
+                    30.00036
+                ]
+            }
+        },
+        "extra_args": {
+            "output_type": "pil"
         }
     }
 }
