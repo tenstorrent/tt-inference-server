@@ -5,18 +5,21 @@
 Prefill-only engine: scheduler + model runner. Add requests, call step() to
 schedule and run prefill, then release sequences (e.g. for D2D handoff to decode).
 run_loop(stop_event) runs until stop_event is set, draining the waiting queue.
+
+Works like vLLM interface with explicit KV cache allocation and access.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from typing import Callable, Optional
+from typing import List, Optional
 
 import torch
 
-from model_runner import PrefillModelRunner
-from prefill_simulator import KVCacheReference, PrefillConfig
+import ttnn
+
+from model_runner import KvCacheConfig, ModelConfig, PrefillModelRunner
 from scheduler import PrefillScheduler, SchedulerConfig
 from sequence import PrefillSequence
 from timing import timed
@@ -29,43 +32,77 @@ class PrefillEngine:
     Prefill-only engine. Add requests via add_request(); call step() to
     schedule a batch, run prefill, and return logits + scheduled sequences.
     Call release_after_prefill(seqs) after KV cache has been streamed to decode.
+    
+    Works like vLLM interface:
+    - Explicit KV cache allocation with configurable shape
+    - Access to KV cache tensors after prefill (for D2D transfer)
     """
 
     def __init__(
         self,
         scheduler_config: SchedulerConfig,
-        prefill_config: PrefillConfig,
-        mesh_device: object = None,
-        on_kv_cache_ready: Optional[Callable[[int, KVCacheReference], None]] = None,
-        on_kv_cache_blocks_ready: Optional[Callable[[int, object, list], None]] = None,
+        model_config: ModelConfig,
+        mesh_device: ttnn.MeshDevice,
+        kv_cache_config: Optional[KvCacheConfig] = None,
     ):
         self.scheduler = PrefillScheduler(scheduler_config)
+        self.model_config = model_config
+        self.kv_cache_config = kv_cache_config
+        
         self.model_runner = PrefillModelRunner(
-            prefill_config=prefill_config,
+            model_config=model_config,
             mesh_device=mesh_device,
-            on_kv_cache_ready=on_kv_cache_ready,
-            on_kv_cache_blocks_ready=on_kv_cache_blocks_ready,
+            kv_cache_config=kv_cache_config,
         )
-        self.model_runner.allocate_kv_cache()
+        
+        # Allocate KV cache (with optional explicit config)
+        self.model_runner.allocate_kv_cache(kv_cache_config)
+        
         num_blocks = scheduler_config.get_num_kvcache_blocks()
-        max_seqs = (
-            scheduler_config.max_num_seqs
-            if scheduler_config.max_num_seqs is not None
-            else 0
-        )
-        max_tokens = (
-            scheduler_config.max_num_batched_tokens
-            if scheduler_config.max_num_batched_tokens is not None
-            else 0
-        )
-        num_layers = getattr(prefill_config, "num_layers", 0) or 0
+        max_seqs = scheduler_config.max_num_seqs or 0
+        max_tokens = scheduler_config.max_num_batched_tokens or 0
         logger.info(
-            "engine init max_num_seqs=%d max_num_batched_tokens=%d num_kvcache_blocks=%d num_layers=%d",
+            "engine init max_num_seqs=%d max_num_batched_tokens=%d num_kvcache_blocks=%d",
             max_seqs,
             max_tokens,
             num_blocks,
-            num_layers,
         )
+
+    @property
+    def tokenizer(self):
+        """Access the tokenizer."""
+        return self.model_runner.tokenizer
+    
+    @property
+    def num_layers(self) -> int:
+        """Number of transformer layers."""
+        return self.model_runner.num_layers
+    
+    @property
+    def kv_cache(self) -> Optional[List[ttnn.Tensor]]:
+        """Access the KV cache tensors (one per layer)."""
+        return self.model_runner.kv_cache
+    
+    def get_kv_cache(self) -> List[ttnn.Tensor]:
+        """
+        Get the KV cache tensors (like vLLM interface).
+        
+        Returns:
+            List of KV cache tensors, one per layer.
+        """
+        return self.model_runner.get_kv_cache()
+    
+    def get_kv_cache_for_layer(self, layer_idx: int) -> ttnn.Tensor:
+        """
+        Get KV cache tensor for a specific layer.
+        
+        Args:
+            layer_idx: Layer index (0 to num_layers-1)
+            
+        Returns:
+            KV cache tensor for the specified layer.
+        """
+        return self.model_runner.get_kv_cache_for_layer(layer_idx)
 
     def add_request(self, token_ids: list[int], req_id: str | None = None) -> None:
         """Add a prefill request (prompt token IDs) to the waiting queue."""
@@ -78,13 +115,15 @@ class PrefillEngine:
     def step(self) -> tuple[torch.Tensor, list[PrefillSequence]]:
         """
         Schedule a batch of waiting sequences, run prefill, return logits and
-        the scheduled sequences. Caller should stream KV cache (via callback)
-        then call release_after_prefill(seqs).
+        the scheduled sequences.
+        
+        After this call, KV cache is updated and accessible via get_kv_cache().
+        Caller should stream KV cache then call release_after_prefill(seqs).
         """
         scheduled = self.scheduler.schedule()
         if not scheduled:
             logger.debug("step no batch scheduled (waiting empty or limits hit)")
-            return torch.empty(0, 0, self.model_runner.prefill_config.vocab_size), []
+            return torch.empty(0, 0, self.model_config.vocab_size), []
         logits = self.model_runner.run_prefill(scheduled)
         logger.info(
             "step done num_seqs=%d logits_shape=%s req_ids=%s",
