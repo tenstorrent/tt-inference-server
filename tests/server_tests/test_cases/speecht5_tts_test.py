@@ -37,11 +37,12 @@ class SpeechT5TTSTest(BaseTest):
         return results
 
     async def _test_basic_tts(self):
-        """Test basic text-to-speech generation"""
+        """Test basic text-to-speech generation (verbose_json to validate structure)."""
         url = f"http://localhost:{self.service_port}/audio/speech"
 
         payload = {
             "text": "Hello world, this is a test of SpeechT5 text to speech synthesis.",
+            "response_format": "verbose_json",
         }
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS

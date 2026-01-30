@@ -15,6 +15,7 @@ from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
 from utils.decorators import log_execution_time
+from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
 from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
@@ -482,55 +483,18 @@ class AudioManager:
 
     @log_execution_time("Decoding audio file")
     def _decode_audio_file(self, audio_bytes, format_name):
-        """Convert ffmpeg-supported audio formats (MP3, MP4, FLAC, OGG, etc.) to WAV using ffmpeg, then decode with _decode_wav_file."""
+        """Convert ffmpeg-supported audio formats (MP3, MP4, FLAC, OGG, etc.) to WAV using shared ffmpeg_utils, then decode with _decode_wav_file."""
         try:
             self._logger.info(
                 f"Converting {format_name} to WAV using ffmpeg (in-memory)..."
             )
-
-            # Use ffmpeg with pipes for in-memory processing - convert to WAV
-            process = subprocess.Popen(
-                [
-                    "ffmpeg",
-                    "-i",
-                    "pipe:0",  # Read from stdin
-                    "-acodec",
-                    "pcm_s16le",  # 16-bit PCM
-                    "-ar",
-                    str(settings.default_sample_rate),  # Target sample rate
-                    "-ac",
-                    "1",  # Mono
-                    "-f",
-                    "wav",  # Output WAV format
-                    "-y",  # Overwrite output
-                    "pipe:1",  # Write to stdout
-                ],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+            wav_bytes = ffmpeg_decode_to_wav(
+                audio_bytes, sample_rate=settings.default_sample_rate
             )
-
-            # Send audio bytes to ffmpeg and get WAV bytes back
-            wav_bytes, error_output = process.communicate(input=audio_bytes)
-
-            # Check if ffmpeg succeeded
-            if process.returncode != 0:
-                error_msg = (
-                    error_output.decode("utf-8")
-                    if error_output
-                    else "Unknown ffmpeg error"
-                )
-                raise subprocess.CalledProcessError(
-                    process.returncode, "ffmpeg", error_msg
-                )
-
             self._logger.info(
                 f"{format_name} to WAV conversion completed successfully (in-memory)"
             )
-
-            # Use our existing WAV decoder
             return self._decode_wav_file(wav_bytes)
-
         except subprocess.CalledProcessError as e:
             self._logger.error(f"ffmpeg conversion failed: {e}")
             raise ValueError(
