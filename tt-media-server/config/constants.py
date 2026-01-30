@@ -215,9 +215,29 @@ class JobTypes(Enum):
     TRAINING = "training"
 
 
+# Helper function to create vLLM configuration with late import to avoid circular imports
+def _vllm_config(
+    model: str,
+    max_model_length: int,
+    max_num_batched_tokens: int,
+    min_context_length: int = 32,
+    max_num_seqs: int = 1,
+):
+    from config.vllm_settings import VLLMSettings
+
+    return VLLMSettings(
+        model=model,
+        max_model_length=max_model_length,
+        max_num_batched_tokens=max_num_batched_tokens,
+        min_context_length=min_context_length,
+        max_num_seqs=max_num_seqs,
+    )
+
+
 # Combined model-device specific configurations
 # useful when whole device is being used by a single model type
 # also for CI testing
+
 ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
@@ -477,14 +497,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
+        "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
-        "vllm": {
-            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            "max_model_length": 1024,
-            "max_num_batched_tokens": 1024,
-            "min_context_length": 32,
-            "max_num_seqs": 1,
-        },
+        "vllm": _vllm_config(
+            model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            max_model_length=1024,
+            max_num_batched_tokens=1024,
+        ),
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
@@ -492,14 +511,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
+        "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
-        "vllm": {
-            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            "max_model_length": 8192,
-            "max_num_batched_tokens": 8192,
-            "min_context_length": 32,
-            "max_num_seqs": 1,
-        },
+        "vllm": _vllm_config(
+            model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            max_model_length=8192,
+            max_num_batched_tokens=8192,
+        ),
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
@@ -507,14 +525,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
+        "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
-        "vllm": {
-            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            "max_model_length": 8192,
-            "max_num_batched_tokens": 8192,
-            "min_context_length": 32,
-            "max_num_seqs": 1,
-        },
+        "vllm": _vllm_config(
+            model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            max_model_length=8192,
+            max_num_batched_tokens=8192,
+        ),
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -522,14 +539,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
+        "default_throttle_level": 0,
         "request_processing_timeout_seconds": 2000,
-        "vllm": {
-            "model": SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            "max_model_length": 4096,
-            "max_num_batched_tokens": 4096,
-            "min_context_length": 32,
-            "max_num_seqs": 1,
-        },
+        "vllm": _vllm_config(
+            model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
+            max_model_length=4096,
+            max_num_batched_tokens=4096,
+        ),
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
