@@ -6,7 +6,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -24,7 +24,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -42,7 +42,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -62,7 +62,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -80,7 +80,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -98,7 +98,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -118,7 +118,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -138,7 +138,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -157,7 +157,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4421,7 +4421,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4440,7 +4440,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4459,7 +4459,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4478,7 +4478,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4497,7 +4497,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4518,7 +4518,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4537,7 +4537,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4558,7 +4558,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4577,7 +4577,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4596,7 +4596,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4632,7 +4632,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4651,7 +4651,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4670,7 +4670,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4691,7 +4691,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4710,7 +4710,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4817,7 +4817,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4837,7 +4837,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4855,7 +4855,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -5372,7 +5372,7 @@
         "t3k": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 50,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
@@ -5385,7 +5385,7 @@
         "galaxy": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 50,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
@@ -5396,16 +5396,18 @@
             }
         ]
     },
-    "wan2.2-t2v-a14b-diffusers": {
+    "Wan2.2-T2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 40,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 540000,
-                        "tput_user": 0.0019
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
                     }
                 }
             }
@@ -5413,12 +5415,14 @@
         "galaxy": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 40,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 330000,
-                        "tput_user": 0.003
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
                     }
                 }
             }
@@ -5590,6 +5594,60 @@
             }
         ]
     },
+    "Qwen3-Embedding-8B": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-Embedding-4B": {
         "n150": [
             {
@@ -5728,7 +5786,7 @@
             }
         ]
     },
-    "speecht5-tts": {
+    "speecht5_tts": {
         "n150": [
             {
                 "max_concurrency": 1,

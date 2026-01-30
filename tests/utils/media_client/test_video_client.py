@@ -39,33 +39,24 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Multiple status entries to verify TTFT averaging
-        status_list = [
-            VideoGenerationTestStatus(
-                status=True,
-                elapsed=60.0,
-                num_inference_steps=20,
-                inference_steps_per_second=0.33,
-                job_id="job1",
-                video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
-            ),
-            VideoGenerationTestStatus(
-                status=True,
-                elapsed=70.0,
-                num_inference_steps=20,
-                inference_steps_per_second=0.29,
-                job_id="job2",
-                video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
-            ),
-        ]
+
+        mock_eval_result = {
+            "num_prompts": 2,
+            "num_inference_steps": 20,
+            "clip_results": {
+                "average_clip": 0.85,
+                "min_clip": 0.8,
+                "max_clip": 0.9,
+                "clip_standard_deviation": 0.05,
+            },
+            "accuracy_check": 1,
+        }
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-mochi")):
             with patch.object(
                 strategy,
-                "_run_video_generation_benchmark",
-                return_value=status_list,
+                "_run_video_generation_eval",
+                return_value=mock_eval_result,
             ):
                 strategy.run_eval()
 
@@ -99,7 +90,13 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
             "tolerance": 0.1,
             "published_score": 0.9,
             "published_score_ref": "ref",
-            "score": 65.0,  # TTFT average: (60.0 + 70.0) / 2
+            "num_prompts": 2,
+            "num_inference_steps": 20,
+            "average_clip": 0.85,
+            "min_clip": 0.8,
+            "max_clip": 0.9,
+            "clip_standard_deviation": 0.05,
+            "accuracy_check": 1,
         }
         for key, value in expected.items():
             assert eval_result[key] == value, f"Mismatch for {key}"
@@ -118,7 +115,7 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
         with patch.object(strategy, "get_health", return_value=(True, "tt-mochi")):
             with patch.object(
                 strategy,
-                "_run_video_generation_benchmark",
+                "_run_video_generation_eval",
                 side_effect=RuntimeError("Error"),
             ):
                 with pytest.raises(RuntimeError):
@@ -469,7 +466,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
         model_spec.model_name = "test_model"
         device = MagicMock()
         device.name = "test_device"
-        return VideoClientStrategy({}, model_spec, device, "/tmp/output", 8000)
+        return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.video_client.requests.get")
     @patch("builtins.open", new_callable=mock_open)
@@ -485,7 +482,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
 
         video_path = strategy._download_video("job123", {})
 
-        assert video_path == "/tmp/output/videos/job123.mp4"
+        assert video_path == "/tmp/videos/job123.mp4"
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
         # Verify file was written
@@ -528,6 +525,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         device.name = "test_device"
         return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
@@ -542,6 +540,7 @@ class TestVideoClientStrategyRunVideoGenerationBenchmark(unittest.TestCase):
         assert all(isinstance(s, VideoGenerationTestStatus) for s in result)
         assert mock_generate.call_count == 3
 
+    @patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test_model": 20})
     @patch.object(
         VideoClientStrategy,
         "_generate_video",
@@ -708,6 +707,7 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
     "num_calls",
     [1, 2, 5, 10],
 )
+@patch("utils.media_clients.video_client.INFERENCE_STEPS", {"test": 20})
 @patch.object(
     VideoClientStrategy,
     "_generate_video",

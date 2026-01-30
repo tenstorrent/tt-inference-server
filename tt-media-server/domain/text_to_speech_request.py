@@ -9,6 +9,9 @@ from config.constants import ResponseFormat
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
+# Default max text length (SpeechT5 limitation)
+DEFAULT_MAX_TTS_TEXT_LENGTH = 600
+
 
 class TextToSpeechRequest(BaseRequest):
     # Required fields
@@ -23,6 +26,11 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("Text must be a string")
         if not text.strip():
             raise ValueError("Text cannot be empty")
+        if len(text) > DEFAULT_MAX_TTS_TEXT_LENGTH:
+            raise ValueError(
+                f"Text exceeds maximum length of {DEFAULT_MAX_TTS_TEXT_LENGTH} characters. "
+                f"Received {len(text)} characters."
+            )
         return text
 
     # Optional fields for speaker embedding
