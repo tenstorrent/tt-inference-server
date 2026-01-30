@@ -325,8 +325,9 @@ def benchmark_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_image_generation_release_markdown(release_raw, target_checks=None):
-    # Define display columns mapping for image-generation-style benchmarks (VLM / image gen)
+def benchmark_vlm_release_markdown(release_raw, target_checks=None):
+    """Build markdown table for VLM benchmark results (isl, osl, image dimensions, etc.)."""
+    # Display columns for VLM benchmarks only
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
@@ -396,7 +397,7 @@ def benchmark_image_generation_release_markdown(release_raw, target_checks=None)
     return markdown_str
 
 
-def aiperf_release_markdown(release_raw, is_image_generation_benchmark=False):
+def aiperf_release_markdown(release_raw, is_vlm_benchmark=False):
     """Generate markdown table for AIPerf benchmarks with detailed metrics.
 
     This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
@@ -404,7 +405,7 @@ def aiperf_release_markdown(release_raw, is_image_generation_benchmark=False):
 
     Args:
         release_raw: Raw benchmark data
-        is_image_generation_benchmark: If True, includes image dimension columns (height, width, images per prompt)
+        is_vlm_benchmark: If True, table is for VLM results (includes image dimension columns).
     """
     # Define display columns mapping - NVIDIA style with detailed percentiles
     display_cols = [
@@ -413,8 +414,8 @@ def aiperf_release_markdown(release_raw, is_image_generation_benchmark=False):
         ("concurrency", "Concur"),
     ]
 
-    # Add image-dimension columns for VLM / image-generation benchmarks
-    if is_image_generation_benchmark:
+    # Add image-dimension columns for VLM benchmarks only
+    if is_vlm_benchmark:
         display_cols.extend(
             [
                 ("image_height", "Image Height"),
@@ -1156,7 +1157,7 @@ def aiperf_benchmark_generate_report(
 
             # Only show AIPerf-specific detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(
-                aiperf_vlm_results, is_image_generation_benchmark=True
+                aiperf_vlm_results, is_vlm_benchmark=True
             )
             release_str += nvidia_markdown_str
             release_str += "\n\n"
@@ -1199,7 +1200,7 @@ def aiperf_benchmark_generate_report(
 
     # Save CSV data for VLM benchmarks
     image_data_file_path = (
-        output_dir / "data" / f"aiperf_benchmark_image_generation_stats_{report_id}.csv"
+        output_dir / "data" / f"aiperf_benchmark_vlm_stats_{report_id}.csv"
     )
     if aiperf_vlm_results:
         headers = list(aiperf_vlm_results[0].keys())
@@ -1447,7 +1448,7 @@ def genai_perf_benchmark_generate_report(
 
             # Show GenAI-Perf detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(
-                genai_vlm_results, is_image_generation_benchmark=True
+                genai_vlm_results, is_vlm_benchmark=True
             )
             release_str += nvidia_markdown_str
             release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
@@ -1490,9 +1491,7 @@ def genai_perf_benchmark_generate_report(
 
     # Save CSV data for VLM benchmarks
     image_data_file_path = (
-        output_dir
-        / "data"
-        / f"genai_perf_benchmark_image_generation_stats_{report_id}.csv"
+        output_dir / "data" / f"genai_perf_benchmark_vlm_stats_{report_id}.csv"
     )
     if genai_vlm_results:
         headers = list(genai_vlm_results[0].keys())
@@ -2070,12 +2069,12 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
         vlm_section = f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
-            vlm_section += benchmark_image_generation_release_markdown(
+            vlm_section += benchmark_vlm_release_markdown(
                 flat_vlm_release_raw,
                 target_checks=vlm_release_raw_targets[0]["target_checks"],
             )
         else:
-            vlm_section += benchmark_image_generation_release_markdown(
+            vlm_section += benchmark_vlm_release_markdown(
                 flat_vlm_release_raw, target_checks=None
             )
         release_sections.append(vlm_section)
@@ -3134,13 +3133,11 @@ def benchmarks_release_data_format_embedding(
     ]
 
 
-def add_target_checks_cnn_image_generation_video(
+def add_target_checks_cnn_image_video(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
-    """Add target checks for CNN, image-generation and VIDEO models based on evals and benchmark data."""
-    logger.info(
-        "Adding target_checks to CNN, image-generation and VIDEO benchmark release data"
-    )
+    """Add target checks for CNN, IMAGE and VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN, IMAGE and VIDEO benchmark release data")
     tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
     benchmark_summary_data["tput_user"] = tput_user
 
@@ -3656,9 +3653,9 @@ def main():
                 or model_spec.model_type.name == ModelType.VIDEO.name
             ):
                 logger.info(
-                    "Adding target_checks for tput_user to CNN, image-generation and VIDEO benchmark release data"
+                    "Adding target_checks for tput_user to CNN, IMAGE and VIDEO benchmark release data"
                 )
-                target_checks = add_target_checks_cnn_image_generation_video(
+                target_checks = add_target_checks_cnn_image_video(
                     targets,
                     evals_release_data,
                     benchmark_summary_data,
