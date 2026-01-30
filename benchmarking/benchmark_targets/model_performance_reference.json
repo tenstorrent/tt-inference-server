@@ -467,44 +467,21 @@
         ]
     },
     "Llama-3.3-70B-Instruct": {
-        "p150x4": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
-            }
-        ],
-        "p150x8": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 64,
-                        "tput_user": 18
-                    }
-                }
-            }
-        ],
         "t3k": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 38,
-                        "tput_user": 28
+                        "ttft_ms": 113.0,
+                        "tput_user": 19.0,
+                        "tput": 610.0
                     }
                 }
             }
@@ -515,10 +492,15 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 80
+                        "ttft_ms": 50.0,
+                        "tput_user": 73.0,
+                        "tput": 2438.0
                     }
                 }
             },
@@ -531,6 +513,20 @@
                     "theoretical": {
                         "ttft_ms": 800,
                         "tput_user": 80
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
                     }
                 }
             }
@@ -583,34 +579,53 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 78.0,
-                        "tput_user": 70.0,
-                        "tput": 2091.0
+                        "ttft_ms": 45.0,
+                        "tput_user": 24.0,
+                        "tput": 744.0
                     }
                 }
             }
         ],
-        "galaxy": [
+        "n300": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 23.0,
-                        "tput_user": 1344.0,
-                        "tput": 43008.0
+                        "ttft_ms": 36.0,
+                        "tput_user": 47.0,
+                        "tput": 1488.0
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 19.0,
+                        "tput_user": 94.0,
+                        "tput": 5954.0
                     }
                 }
             }
@@ -621,15 +636,53 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 80.0,
-                        "tput": 2389.0
+                        "ttft_ms": 27.0,
+                        "tput_user": 43.0,
+                        "tput": 1323.0
+                    }
+                }
+            }
+        ],
+        "p100": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 30.0,
+                        "tput_user": 37.0,
+                        "tput": 1158.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 10.0,
+                        "tput_user": 687.0,
+                        "tput": 23815.0
                     }
                 }
             }
@@ -4572,6 +4625,65 @@
             }
         ]
     },
+    "Mistral-7B-Instruct-v0.3": {
+        "n150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 78.0,
+                        "tput_user": 70.0,
+                        "tput": 2091.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 23.0,
+                        "tput_user": 1344.0,
+                        "tput": 43008.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 80.0,
+                        "tput": 2389.0
+                    }
+                }
+            }
+        ]
+    },
     "gemma-3-27b-it": {
         "galaxy": [
             {
@@ -4844,6 +4956,76 @@
             }
         ]
     },
+    "Llama-3.3-70B-Instruct": {
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 64,
+                        "tput_user": 18
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 38,
+                        "tput_user": 28
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50,
+                        "tput_user": 80
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800,
+                        "tput_user": 80
+                    }
+                }
+            }
+        ]
+    },
     "Llama-3.1-8B": {
         "n150": [
             {
@@ -4979,7 +5161,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -4992,7 +5174,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5005,7 +5187,7 @@
             {
                 "max_concurrency": 4,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5018,7 +5200,7 @@
             {
                 "max_concurrency": 32,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12500,
@@ -5033,7 +5215,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 11000,
@@ -5046,7 +5228,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 5000,
@@ -5061,7 +5243,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 11000,
@@ -5076,7 +5258,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
-                "task_type": "image",
+                "task_type": "vlm",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 11000,
@@ -5112,7 +5294,7 @@
                     "theoretical": {
                         "ttft_ms": 800,
                         "ttft_streaming_ms": 1310.0,
-                        "tput_user": 53.8,
+                        "tput_user": 53.80,
                         "rtr": 8.315,
                         "tolerance": 0.05
                     }
@@ -5162,7 +5344,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 655.0,
-                        "tput_user": 107.6,
+                        "tput_user": 107.60,
                         "rtr": 16.63,
                         "tolerance": 0.05
                     }
@@ -5178,7 +5360,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 450,
-                        "tput_user": 131.1,
+                        "tput_user": 131.10,
                         "rtr": 21.81,
                         "tolerance": 0.05
                     }
