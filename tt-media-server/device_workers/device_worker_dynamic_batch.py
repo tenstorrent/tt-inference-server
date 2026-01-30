@@ -5,6 +5,7 @@
 import asyncio
 from multiprocessing import Queue
 
+from config.constants import SHUTDOWN_SIGNAL
 from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
@@ -96,21 +97,30 @@ def device_worker(
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
+        from config.settings import get_settings
+
+        settings = get_settings()
         """Continuously pull requests from queue and submit to async handlers"""
+        batch_size = settings.vllm.max_num_seqs
         while True:
             # Run blocking queue.get() in thread pool to not block event loop
-            request = await loop.run_in_executor(None, task_queue.get)
+            requests = await loop.run_in_executor(
+                None,
+                lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
+            )
 
-            if request is None:  # Sentinel to shut down
-                logger.info(f"Worker {worker_id} received shutdown signal")
-                return
-
-            if hasattr(request, "stream") and request.stream:
-                # Fire and forget streaming task - runs concurrently
-                asyncio.create_task(handle_streaming(request))
-            else:
-                # Fire and forget non-streaming task - runs concurrently in event loop
-                asyncio.create_task(handle_non_streaming(request))
+            for request in requests:
+                if request == SHUTDOWN_SIGNAL:
+                    logger.info(f"Worker {worker_id} received shutdown signal")
+                    return
+                if request is None:
+                    continue
+                if hasattr(request, "stream") and request.stream:
+                    # Fire and forget streaming task - runs concurrently
+                    asyncio.create_task(handle_streaming(request))
+                else:
+                    # Fire and forget non-streaming task - runs concurrently in event loop
+                    asyncio.create_task(handle_non_streaming(request))
 
     try:
         loop.run_until_complete(request_feeder())

@@ -7,30 +7,39 @@ from domain.text_to_speech_request import TextToSpeechRequest
 from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 
 router = APIRouter()
 
 
+TTS_BINARY_FORMATS = ("audio", "wav", "mp3", "ogg")
+TTS_MEDIA_TYPES = {
+    "audio": "audio/wav",
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "ogg": "audio/ogg",
+}
+
+
 async def handle_tts_request(tts_request, service):
     """
-    Handle TTS request with different response formats.
-
-    Returns:
-        If response_format is "audio" or "wav", returns WAV bytes directly.
-        Otherwise, returns JSON with base64-encoded audio.
+    Runner returns base64; post_process converts to requested format.
+    Here we return result.output_bytes (WAV/MP3/OGG) or JSON with base64.
     """
     try:
         result = await service.process_request(tts_request)
-        if tts_request.response_format.lower() in ("audio", "wav"):
-            # Return WAV bytes directly
-            if hasattr(result, "wav_bytes") and result.wav_bytes:
-                return Response(content=result.wav_bytes, media_type="audio/wav")
-            else:
+        fmt = tts_request.response_format.lower()
+        if fmt in TTS_BINARY_FORMATS:
+            content = getattr(result, "output_bytes", None)
+            if not content:
                 raise HTTPException(
                     status_code=500,
-                    detail="WAV bytes not available in response",
+                    detail="Binary audio not available in response",
                 )
+            return Response(
+                content=content,
+                media_type=TTS_MEDIA_TYPES.get(fmt, "audio/wav"),
+            )
         return get_dict_response(result)
     except HTTPException:
         raise
@@ -47,12 +56,19 @@ async def text_to_speech(
     """
     Convert text to speech using the provided request.
 
+    response_format controls the response type:
+        - "audio" or "wav": binary WAV (Content-Type: audio/wav).
+        - "mp3": binary MP3 (Content-Type: audio/mpeg); requires ffmpeg on the server.
+        - "ogg": binary OGG (Content-Type: audio/ogg); requires ffmpeg on the server.
+        - "json" or "verbose_json": JSON body with base64-encoded audio and metadata.
+
     Returns:
-        If response_format is "audio" or "wav", returns WAV bytes directly.
-        Otherwise, returns JSON with base64-encoded audio.
+        FastAPI Response: either binary audio bytes (for audio/wav/mp3/ogg) or
+        JSON with keys such as audio, duration, sample_rate, format (for json/verbose_json).
 
     Raises:
-        HTTPException: If text-to-speech fails.
+        HTTPException: If text-to-speech fails or binary format requested but
+        output not available (e.g. ffmpeg missing for mp3/ogg).
     """
     return await handle_tts_request(tts_request, service)
 

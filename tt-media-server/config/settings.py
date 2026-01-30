@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = False
+    download_weights_from_service: bool = True
     use_queue_per_worker: bool = False
     queue_for_multiprocessing: str = QueueType.TTQueue.value
 
@@ -57,10 +57,8 @@ class Settings(BaseSettings):
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
-    use_dynamic_batcher: bool = True
-
-
-    use_slot_manager: bool = True
+    use_dynamic_batcher: bool = False
+    use_slot_manager: bool = False
 
     # Worker management settings
     new_device_delay_seconds: int = 0

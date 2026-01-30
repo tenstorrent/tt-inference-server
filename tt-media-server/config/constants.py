@@ -16,7 +16,7 @@ class SupportedModels(Enum):
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     MOCHI_1 = "genmo/mochi-1-preview"
-    WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
+    WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -57,8 +57,7 @@ class ModelNames(Enum):
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     QWEN_3_4B = "Qwen3-4B"
-    SPEECHT5_TTS = "speecht5-tts"
-    LLAMA_3_2_1B = "Llama-3.2-1B"
+    SPEECHT5_TTS = "speecht5_tts"
 
 
 class ModelRunners(Enum):
@@ -437,6 +436,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -590,3 +595,6 @@ _DEFAULT_SAMPLING_PARAMS = {
     "guided_decoding": None,
     "extra_args": None,
 }
+
+# Sentinel object for worker shutdown signaling
+SHUTDOWN_SIGNAL = {"__shutdown__": True}

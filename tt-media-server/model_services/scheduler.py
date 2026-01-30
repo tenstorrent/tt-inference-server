@@ -9,7 +9,7 @@ from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
 import utils.simple_queue_factory as simple_queue_factory
-from config.constants import QueueType
+from config.constants import SHUTDOWN_SIGNAL, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
@@ -38,7 +38,7 @@ class Scheduler:
         self.task_queue = self._get_task_queue(size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
-        # Create one result queue per worker
+        # Create one result queue per worker (can use SharedMemoryChunkQueue)
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
@@ -59,9 +59,7 @@ class Scheduler:
         tuple format, not arbitrary request objects.
         """
         queue_type = self.settings.queue_for_multiprocessing
-        if queue_type == QueueType.MemoryQueue.value:
-            return TTQueue(size)
-        elif queue_type == QueueType.FasterFifo.value:
+        if queue_type == QueueType.FasterFifo.value:
             return TTFasterFifoQueue(size)
         else:
             return TTQueue(size)
@@ -389,7 +387,7 @@ class Scheduler:
 
             for _ in self.worker_info:
                 try:
-                    self.task_queue.put(None, timeout=2.0)
+                    self.task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
                 except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 

@@ -5786,7 +5786,7 @@
             }
         ]
     },
-    "speecht5-tts": {
+    "speecht5_tts": {
         "n150": [
             {
                 "max_concurrency": 1,

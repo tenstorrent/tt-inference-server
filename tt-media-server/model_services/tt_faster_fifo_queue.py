@@ -18,10 +18,11 @@ class TTFasterFifoQueue(TTQueueInterface):
         # faster-fifo uses max_size_bytes, estimate ~20KB per item
         # If max_size=0, use a large default
         max_bytes = max(max_size * 20240, 10 * 1024 * 1024)  # At least 10MB
-        self._queue: FasterFifoQueue = FasterFifoQueue(max_size_bytes=max_bytes)
+        self._queue = FasterFifoQueue(max_size_bytes=max_bytes)
         self._max_size = max_size
 
     def put(self, item, block: bool = True, timeout: Optional[float] = None):
+        """Put a single item into the queue."""
         if timeout is not None:
             self._queue.put(item, block=block, timeout=timeout)
         else:
@@ -29,24 +30,34 @@ class TTFasterFifoQueue(TTQueueInterface):
 
     def put_nowait(self, item):
         """Non-blocking put."""
-        self._queue.put_nowait(item)
+        self._queue.put(item, block=False)
 
     def put_many(
         self, items: List, block: bool = True, timeout: Optional[float] = None
     ):
+        """
+        Put multiple items at once - faster than individual puts.
+
+        Note: The timeout applies to the entire batch, not to each item individually.
+        """
         if timeout is not None:
             self._queue.put_many(items, block=block, timeout=timeout)
         else:
             self._queue.put_many(items, block=block)
 
     def get(self, block: bool = True, timeout: Optional[float] = None):
-        if timeout is not None:
-            return self._queue.get(block=block, timeout=timeout)
-        else:
-            return self._queue.get(block=block)
+        """Get a single item from the queue."""
+        try:
+            if timeout is not None:
+                return self._queue.get(block=block, timeout=timeout)
+            else:
+                return self._queue.get(block=block)
+        except Empty:
+            return None
 
     def get_nowait(self):
-        return self._queue.get_nowait()
+        """Non-blocking get."""
+        return self._queue.get(block=False)
 
     def get_many(
         self,
@@ -54,13 +65,32 @@ class TTFasterFifoQueue(TTQueueInterface):
         block: bool = True,
         timeout: Optional[float] = None,
     ) -> List:
-        if timeout is not None:
-            return self._queue.get_many(max_messages_to_get=max_messages_to_get, block=block, timeout=timeout)
-        else:
-            return self._queue.get_many(max_messages_to_get=max_messages_to_get, block=block)
+        """
+        Get multiple items at once - much faster than individual gets.
 
-    def get_many_nowait(self, max_messages_to_get: int = 100) -> List:
-        return self._queue.get_many_nowait(max_messages_to_get=max_messages_to_get)
+        Note: The timeout applies to the entire batch, not to each item individually.
+
+        Args:
+            max_messages_to_get: Maximum number of items to retrieve
+            block: If True, wait for at least one item
+            timeout: Maximum time to wait (only used if block=True)
+
+        Returns:
+            List of items (may be empty if block=False and queue is empty)
+        """
+        try:
+            if timeout is not None:
+                return self._queue.get_many(
+                    max_messages_to_get=max_messages_to_get,
+                    block=block,
+                    timeout=timeout,
+                )
+            else:
+                return self._queue.get_many(
+                    max_messages_to_get=max_messages_to_get, block=block
+                )
+        except Empty:
+            return []
 
     def qsize(self) -> int:
         """Approximate queue size."""

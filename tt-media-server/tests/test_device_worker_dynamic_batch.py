@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from domain.completion_response import CompletionOutput, CompletionResult
 import pytest
+from config.constants import SHUTDOWN_SIGNAL
 
 # Mock all external dependencies before importing
 sys.modules["ttnn"] = Mock()
@@ -75,7 +76,7 @@ from device_workers.device_worker_dynamic_batch import device_worker
 def mock_queues():
     """Create mock queues for testing"""
     task_queue = Mock()
-    task_queue.get = Mock()
+    task_queue.get_many = Mock()
 
     result_queue = Mock()
     result_queue.put = Mock()
@@ -108,8 +109,9 @@ class TestDeviceWorkerDynamicBatch:
         # Create streaming request
         streaming_request = create_test_request("stream_task_1", stream=True)
 
-        # Mock queue to return request then shutdown
-        task_queue.get.side_effect = [streaming_request, None]
+        # Mock queue to return batch of requests then shutdown signal
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[streaming_request], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -210,8 +212,9 @@ class TestDeviceWorkerDynamicBatch:
         # Create non-streaming request
         regular_request = create_test_request("task_1", stream=False)
 
-        # Mock queue to return request then shutdown
-        task_queue.get.side_effect = [regular_request, None]
+        # Mock queue to return batch of requests then shutdown signal
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[regular_request], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -255,7 +258,8 @@ class TestDeviceWorkerDynamicBatch:
         # Create streaming request that will fail
         failing_stream = create_test_request("stream_fail", stream=True)
 
-        task_queue.get.side_effect = [failing_stream, None]
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[failing_stream], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -298,7 +302,8 @@ class TestDeviceWorkerDynamicBatch:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Mock queue to raise KeyboardInterrupt
-        task_queue.get.side_effect = KeyboardInterrupt()
+        # get_many is called, not get
+        task_queue.get_many.side_effect = KeyboardInterrupt()
 
         # Create fresh device runner
         fresh_device_runner = Mock()

@@ -5,6 +5,7 @@
 import threading
 from multiprocessing import Queue
 
+from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
 from device_workers.worker_utils import (
     initialize_device_worker,
@@ -64,6 +65,13 @@ def device_worker(
         )
         if requests is None or len(requests) == 0:
             continue
+
+        # Check for shutdown sentinel
+        if requests[0] == SHUTDOWN_SIGNAL:
+            logger.info(f"Worker {worker_id} shutting down")
+            loop.close()
+            break
+
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None
 

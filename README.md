@@ -6,7 +6,7 @@
 
 ## Quickstart guide
 
-### Prequisites
+### Prerequisites
 
 This guide assumes you have already:
 1. Set up Tenstorrent hardware
@@ -22,7 +22,7 @@ For these steps please see https://docs.tenstorrent.com/index.html
 Model implementations supported in tt-inference-server have one of the following statuses:
 - 🟢 Complete: passing accuracy evals, performance is optimized on Tenstorrent hardware.
 - 🟡 Functional: passing accuracy evals, performance is order-of-magnitude ok on Tenstorrent hardware.
-- 🛠️ Experimental: Work in progess, added for developer testing. List of experimental models at [docs/experimental_models.md](docs/experimental_models.md)
+- 🛠️ Experimental: Work in progress, added for developer testing. List of experimental models at [docs/experimental_models.md](docs/experimental_models.md)
 
 Click on the `Model Name` name in the Model Support Tables below to be linked to the quickstart model inference deployment guide. 
 
@@ -86,7 +86,7 @@ See:
 - [Model Readiness Workflows User Guide](docs/workflows_user_guide.md).
 - [workflows/README.md](workflows/README.md)
 
-## Benchmarking 
+## Benchmarking
 
 For more details see [benchmarking/README.md](benchmarking/README.md)
 
