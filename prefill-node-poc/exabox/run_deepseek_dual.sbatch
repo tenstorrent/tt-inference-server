@@ -11,7 +11,7 @@
 # DeepSeek-V3/R1 Demo on Dual Galaxy (Exabox Slurm)
 # =============================================================================
 # Usage:
-#   sbatch slurm/run_deepseek_dual.sbatch
+#   sbatch exabox/run_deepseek_dual.sbatch
 #
 # Monitor:
 #   tail -f deepseek_<jobid>.out deepseek_<jobid>.err
@@ -24,8 +24,8 @@ export TT_METAL_HOME="/data/dmadic/tt-metal"
 export PYTHONPATH="${TT_METAL_HOME}"
 
 # Model paths - adjust to your model location on exabox
-export DEEPSEEK_V3_HF_MODEL="/data/models/deepseek-ai/DeepSeek-R1-0528"
-export DEEPSEEK_V3_CACHE="/data/dmadic/deepseek_cache"
+export DEEPSEEK_V3_HF_MODEL="/mnt/models/deepseek-ai/DeepSeek-R1-0528"
+export DEEPSEEK_V3_CACHE="/data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache"
 
 # Mesh configuration for Dual Galaxy (8x8 = 64 devices across 2 hosts)
 export MESH_DEVICE="DUAL"
@@ -34,7 +34,7 @@ export MESH_DEVICE="DUAL"
 POC_DIR="/data/dmadic/tt-inference-server/prefill-node-poc"
 
 # === Slurm host discovery ===
-HOSTFILE="${SLURM_JOB_ID}_hosts.txt"
+HOSTFILE="/tmp/${SLURM_JOB_ID}_hosts.txt"
 scontrol show hostnames $SLURM_JOB_NODELIST > ${HOSTFILE}
 HOSTS=$(cat ${HOSTFILE} | paste -sd,)
 
@@ -46,7 +46,7 @@ echo "MESH_DEVICE: ${MESH_DEVICE}"
 echo "=============================================="
 
 # Rank binding file (uses absolute path for MGD)
-RANK_BINDING="${POC_DIR}/slurm/exabox_dual_galaxy_rank_bindings.yaml"
+RANK_BINDING="${POC_DIR}/exabox/exabox_dual_galaxy_rank_bindings.yaml"
 
 # MPI arguments for multi-host execution
 MPI_ARGS="--hostfile ${HOSTFILE} --map-by ppr:1:node --mca btl self,tcp --mca btl_tcp_if_exclude docker0,lo --bind-to none --tag-output"
@@ -54,13 +54,6 @@ MPI_ARGS="--hostfile ${HOSTFILE} --map-by ppr:1:node --mca btl self,tcp --mca bt
 # === Activate environment ===
 cd ${TT_METAL_HOME}
 source python_env/bin/activate
-
-# === Reset devices on all nodes (optional but recommended) ===
-echo ""
-echo "=== Resetting devices on all nodes ==="
-mpirun -np 2 --hostfile ${HOSTFILE} --map-by ppr:1:node \
-    bash -c "tt-smi -r 2>/dev/null || echo 'Reset skipped on \$(hostname)'"
-sleep 5
 
 # === Run DeepSeek Demo ===
 echo ""
