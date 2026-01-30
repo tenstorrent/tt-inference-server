@@ -273,7 +273,14 @@ class TestCancelVideoJob:
     def test_cancel_video_job_success(self):
         """Test successful video job cancellation"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=True)
+        mock_service.cancel_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "object": JobTypes.VIDEO.value,
+                "status": "cancelling",
+                "created_at": 1000,
+            }
+        )
 
         response = cancel_video_job(
             job_id="job_123",
@@ -287,7 +294,7 @@ class TestCancelVideoJob:
     def test_cancel_video_job_not_found(self):
         """Test video job cancellation when job not found"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=False)
+        mock_service.cancel_job = MagicMock(return_value=None)
 
         with pytest.raises(Exception) as exc_info:
             cancel_video_job(
@@ -328,7 +335,14 @@ class TestResponseContent:
     def test_cancel_response_structure(self):
         """Test that cancel response has correct structure"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=True)
+        mock_service.cancel_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "object": JobTypes.VIDEO.value,
+                "status": "cancelling",
+                "created_at": 1000,
+            }
+        )
 
         response = cancel_video_job(
             job_id="job_123",
@@ -343,7 +357,7 @@ class TestResponseContent:
 
         assert content["id"] == "job_123"
         assert content["object"] == JobTypes.VIDEO.value
-        assert content["cancelled"] is True
+        assert content["status"] == "cancelling"
 
 
 if __name__ == "__main__":

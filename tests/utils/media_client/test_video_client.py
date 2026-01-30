@@ -466,7 +466,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
         model_spec.model_name = "test_model"
         device = MagicMock()
         device.name = "test_device"
-        return VideoClientStrategy({}, model_spec, device, "/tmp/output", 8000)
+        return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.video_client.requests.get")
     @patch("builtins.open", new_callable=mock_open)
@@ -482,7 +482,7 @@ class TestVideoClientStrategyDownloadVideo(unittest.TestCase):
 
         video_path = strategy._download_video("job123", {})
 
-        assert video_path == "/tmp/output/videos/job123.mp4"
+        assert video_path == "/tmp/videos/job123.mp4"
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
         # Verify file was written
