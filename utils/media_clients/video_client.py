@@ -30,8 +30,6 @@ class VideoClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
@@ -45,10 +43,8 @@ class VideoClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            # Get num_calls from benchmark parameters
-            num_calls = get_num_calls(self)
-            status_list = self._run_video_generation_benchmark(num_calls)
-
+            # Run video generation eval using VideoGenerationEvalsTest
+            eval_result = self._run_video_generation_eval()
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -65,14 +61,30 @@ class VideoClientStrategy(BaseMediaStrategy):
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
+        # Extract metrics from eval result
+        if eval_result:
+            logger.info(
+                "Adding eval results from video generation test to benchmark data"
+            )
+            benchmark_data["num_prompts"] = eval_result.get("num_prompts", 0)
+            benchmark_data["num_inference_steps"] = eval_result.get(
+                "num_inference_steps", 0
+            )
+
+            clip_results = eval_result.get("clip_results", {})
+            benchmark_data["average_clip"] = clip_results.get("average_clip", 0.0)
+            benchmark_data["min_clip"] = clip_results.get("min_clip", 0.0)
+            benchmark_data["max_clip"] = clip_results.get("max_clip", 0.0)
+            benchmark_data["clip_standard_deviation"] = clip_results.get(
+                "clip_standard_deviation", 0.0
+            )
+            benchmark_data["accuracy_check"] = eval_result.get("accuracy_check", 0)
+        else:
+            logger.warning("No eval results from video generation test")
 
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
-        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
@@ -261,7 +273,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info(f"Downloading video for job: {job_id}")
 
         try:
-            output_dir = Path(self.output_path) / "videos"
+            output_dir = Path("/tmp/videos")
             output_dir.mkdir(parents=True, exist_ok=True)
 
             video_path = output_dir / f"{job_id}.mp4"
@@ -337,3 +349,61 @@ class VideoClientStrategy(BaseMediaStrategy):
             if status_list
             else 0
         )
+
+    def _run_video_generation_eval(self) -> dict:
+        """Run video generation eval using VideoGenerationEvalsTest.
+
+        Returns:
+            dict: eval_results with structure:
+                {
+                    "model": str,
+                    "num_prompts": int,
+                    "num_inference_steps": int,
+                    "clip_results": {
+                        "average_clip": float,
+                        "min_clip": float,
+                        "max_clip": float,
+                        "clip_standard_deviation": float,
+                        "num_videos": int
+                    },
+                    "accuracy_check": int
+                }
+        """
+        # Lazy import to avoid loading dependencies at module import time
+        from tests.server_tests.test_cases.video_generation_eval_test import (
+            VideoGenerationEvalsTest,
+            VideoGenerationEvalsTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
+        logger.info("Running video generation eval.")
+
+        # Get parameters from eval configuration with defaults
+        # Use default values similar to metal team's approach
+        num_prompts = 5  # Default for video evaluation
+        num_inference_steps = 40  # Default for video models
+        start_from = 0
+        frame_sample_rate = 8  # Sample every 8th frame
+
+        request = VideoGenerationEvalsTestRequest(
+            model_name=self.model_spec.model_name,
+            num_prompts=num_prompts,
+            start_from=start_from,
+            num_inference_steps=num_inference_steps,
+            server_url=self.base_url,
+            frame_sample_rate=frame_sample_rate,
+        )
+        logger.info(f"Running VideoGenerationEvalsTest with request: {request}")
+
+        config = TestConfig.create_default()
+        targets = {"request": request}
+        test = VideoGenerationEvalsTest(config, targets)
+
+        logger.info("Starting VideoGenerationEvalsTest")
+        result = test.run_tests()
+
+        # Extract eval_results from result
+        eval_results = result.get("result", {}).get("eval_results", {})
+        logger.info(f"VideoGenerationEvalsTest eval_results: {eval_results}")
+
+        return eval_results

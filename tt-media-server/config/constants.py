@@ -56,7 +56,7 @@ class ModelNames(Enum):
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     QWEN_3_4B = "Qwen3-4B"
-    SPEECHT5_TTS = "speecht5-tts"
+    SPEECHT5_TTS = "speecht5_tts"
 
 
 class ModelRunners(Enum):
@@ -185,6 +185,12 @@ class DeviceTypes(Enum):
     T3K = "t3k"
     QBGE = "qbge"
     P300 = "p300"
+
+
+class QueueType(Enum):
+    MemoryQueue = "MemoryQueue"
+    FasterFifo = "FasterFifo"
+    TTQueue = "TTQueue"
 
 
 class DeviceIds(Enum):
@@ -449,6 +455,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -472,18 +484,21 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -503,6 +518,7 @@ ModelConfigs = {
             max_model_length=1024,
             max_num_batched_tokens=1024,
         ),
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
@@ -516,6 +532,7 @@ ModelConfigs = {
             max_model_length=8192,
             max_num_batched_tokens=8192,
         ),
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
@@ -529,6 +546,7 @@ ModelConfigs = {
             max_model_length=8192,
             max_num_batched_tokens=8192,
         ),
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -542,12 +560,14 @@ ModelConfigs = {
             max_model_length=4096,
             max_num_batched_tokens=4096,
         ),
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
@@ -555,12 +575,14 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
     },
     (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 16,
         "default_throttle_level": 0,
     },
@@ -568,6 +590,7 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 8,
         "default_throttle_level": 0,
     },
@@ -615,3 +638,6 @@ _DEFAULT_SAMPLING_PARAMS = {
     "guided_decoding": None,
     "extra_args": None,
 }
+
+# Sentinel object for worker shutdown signaling
+SHUTDOWN_SIGNAL = {"__shutdown__": True}

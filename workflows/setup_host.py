@@ -187,9 +187,12 @@ class HostSetupManager:
         self.hf_token = hf_token
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
+        def _stderr(msg: str) -> None:
+            print(msg, file=sys.stderr, flush=True)
+
         if not host_weights_dir or not host_weights_dir.exists():
-            logger.info(
-                f"Weights directory does not exist for {self.model_spec.model_name}."
+            _stderr(
+                f"[setup_host] Weights directory does not exist for {self.model_spec.model_name}."
             )
             return False
 
@@ -215,15 +218,19 @@ class HostSetupManager:
             has_tokenizer = bool(list(host_weights_dir.glob(fmt["tokenizer_format"])))
             has_params = bool(list(host_weights_dir.glob(fmt["params_format"])))
 
+            logger.info(f"has_weights: {has_weights}")
+            logger.info(f"has_tokenizer: {has_tokenizer}")
+            logger.info(f"has_params: {has_params}")
+
             if has_weights and has_tokenizer and has_params:
                 self.setup_config.model_weights_format = fmt["format_name"]
-                logger.info(f"detected {fmt['format_name']} model format")
-                logger.info(
-                    f"✅ Setup already completed for model {self.model_spec.model_name}."
+                _stderr(f"[setup_host] detected {fmt['format_name']} model format")
+                _stderr(
+                    f"[setup_host] ✅ Setup already completed for model {self.model_spec.model_name}."
                 )
                 return True
-        logger.info(
-            f"Incomplete model setup for {self.model_spec.model_name}. "
+        _stderr(
+            f"[setup_host] Incomplete model setup for {self.model_spec.model_name}. "
             f"checked: {host_weights_dir}"
         )
         return False
@@ -552,13 +559,29 @@ def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Model setup script")
-    parser.add_argument("model_name", help="Type of the model to setup")
-    parser.add_argument("impl", help="Implementation to use")
+    parser.add_argument(
+        "--check-weights",
+        action="store_true",
+        help="Replicate release workflow: run check_model_weights_dir and exit (for local/CI debug).",
+    )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Path to model spec JSON file (required for --check-weights or full setup).",
+        default=None,
+    )
+    parser.add_argument(
+        "--weights-dir",
+        type=str,
+        default=None,
+        help="Optional: test this directory instead of HF cache path (only with --check-weights).",
+    )
+    parser.add_argument("model_name", nargs="?", help="Type of the model to setup")
+    parser.add_argument("impl", nargs="?", help="Implementation to use")
     parser.add_argument(
         "--device",
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
-        required=True,
     )
     parser.add_argument(
         "--automatic",
@@ -583,14 +606,57 @@ def main():
         help="Model implementation to use",
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
-    parser.add_argument(
-        "--model-spec-json",
-        type=str,
-        help="Path to model spec JSON file",
-        default=None,
-    )
 
     args = parser.parse_args()
+
+    if args.check_weights:
+        if not args.model_spec_json:
+            print(
+                "[setup_host] --check-weights requires --model-spec-json",
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(2)
+        model_spec = ModelSpec.from_json(args.model_spec_json)
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            jwt_secret=args.jwt_secret or "",
+            hf_token=args.hf_token or "",
+            automatic=True,
+        )
+        if args.weights_dir:
+            host_weights_dir = Path(args.weights_dir)
+            print(
+                f"[setup_host] Testing --weights-dir: {host_weights_dir}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            host_weights_dir = manager.setup_config.host_model_weights_snapshot_dir
+            if manager.setup_config.model_source != ModelSource.HUGGINGFACE.value:
+                host_weights_dir = manager.setup_config.host_model_weights_mount_dir
+            if host_weights_dir is None:
+                print(
+                    "[setup_host] No weights path from setup_config (HF cache dir not found for this model).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                sys.exit(1)
+            print(
+                f"[setup_host] Using path from setup_config (same as release): {host_weights_dir}",
+                file=sys.stderr,
+                flush=True,
+            )
+        ok = manager.check_model_weights_dir(host_weights_dir)
+        print(
+            f"[setup_host] check_model_weights_dir result: {ok}",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(0 if ok else 1)
+
+    if not args.model_spec_json:
+        parser.error("Full setup requires --model-spec-json (or use --check-weights).")
     model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(

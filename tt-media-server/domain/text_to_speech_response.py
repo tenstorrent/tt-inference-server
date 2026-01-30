@@ -16,8 +16,8 @@ class TextToSpeechResponse(BaseModel):
     format: str = "wav"  # Audio format
     speaker_id: Optional[str] = None  # Speaker ID used (if any)
 
-    # Field for storing decoded WAV bytes (used when response_format is "audio" or "wav")
-    wav_bytes: Optional[bytes] = None
+    # Binary response body: set by post_process (WAV/MP3/OGG per response_format).
+    output_bytes: Optional[bytes] = None
 
     def to_dict(self):
         return {

@@ -19,7 +19,6 @@ mock_settings.device_ids = "(0),(1)"
 mock_settings.max_queue_size = 10
 mock_settings.max_batch_size = 1
 mock_settings.use_queue_per_worker = True
-mock_settings.use_memory_queue = False
 mock_settings.use_dynamic_batcher = True
 mock_settings.new_device_delay_seconds = 0.1
 mock_settings.max_worker_restart_count = 3
@@ -580,6 +579,190 @@ class TestScheduler:
             exc_info.value
         )
         mock_logger.error.assert_called()
+
+
+class TestSchedulerQueueTypes:
+    """Test different queue type configurations"""
+
+    def test_get_queue_default(self):
+        """Test _get_queue returns multiprocessing.Queue by default"""
+        mock_settings_default = Mock()
+        mock_settings_default.device_ids = "(0)"
+        mock_settings_default.max_queue_size = 10
+        mock_settings_default.max_batch_size = 1
+        mock_settings_default.use_queue_per_worker = False
+        mock_settings_default.use_dynamic_batcher = False
+        mock_settings_default.queue_for_multiprocessing = "default"  # Not a known type
+
+        with patch(
+            "model_services.scheduler.get_settings", return_value=mock_settings_default
+        ):
+            scheduler = Scheduler()
+            # Default queue is multiprocessing.Queue
+            assert scheduler.task_queue is not None
+
+
+class TestSchedulerResultListener:
+    """Test result_listener async method"""
+
+    @pytest.fixture
+    def scheduler_for_listener(self):
+        """Create scheduler instance for listener tests"""
+        mock_settings_listener = Mock()
+        mock_settings_listener.device_ids = "(0)"
+        mock_settings_listener.max_queue_size = 10
+        mock_settings_listener.max_batch_size = 1
+        mock_settings_listener.use_queue_per_worker = False
+        mock_settings_listener.use_dynamic_batcher = False
+        mock_settings_listener.queue_for_multiprocessing = "default"
+
+        with patch(
+            "model_services.scheduler.get_settings", return_value=mock_settings_listener
+        ):
+            scheduler = Scheduler()
+            return scheduler
+
+    @pytest.mark.asyncio
+    async def test_result_listener_processes_results(self, scheduler_for_listener):
+        """Test result_listener processes results from worker queues"""
+        scheduler = scheduler_for_listener
+
+        # Setup mock result queue
+        mock_result_queue = Mock()
+        call_count = [0]
+
+        def mock_get_many(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [("worker_0", "task_123", {"data": "result"})]
+            # Stop the listener after first iteration
+            scheduler.listener_running = False
+            return []
+
+        mock_result_queue.get_many = Mock(side_effect=mock_get_many)
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+
+        # Create async queue for result
+        result_queue = asyncio.Queue()
+        scheduler.result_queues = {"task_123": result_queue}
+
+        # Run listener
+        await scheduler.result_listener()
+
+        # Verify result was put in queue
+        assert not result_queue.empty()
+        result = await result_queue.get()
+        assert result == {"data": "result"}
+
+    @pytest.mark.asyncio
+    async def test_result_listener_handles_none_result(self, scheduler_for_listener):
+        """Test result_listener handles None results gracefully"""
+        scheduler = scheduler_for_listener
+
+        mock_result_queue = Mock()
+        call_count = [0]
+
+        def mock_get_many(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [None]  # None result should be skipped
+            scheduler.listener_running = False
+            return []
+
+        mock_result_queue.get_many = Mock(side_effect=mock_get_many)
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+        scheduler.result_queues = {}
+
+        # Should complete without error
+        await scheduler.result_listener()
+
+    @pytest.mark.asyncio
+    async def test_result_listener_handles_shutdown_signal(
+        self, scheduler_for_listener
+    ):
+        """Test result_listener stops on None result_key (shutdown signal)"""
+        scheduler = scheduler_for_listener
+
+        mock_result_queue = Mock()
+        mock_result_queue.get_many = Mock(
+            return_value=[("worker_0", None, None)]  # Shutdown signal
+        )
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+        scheduler.result_queues = {}
+
+        await scheduler.result_listener()
+
+        # Listener should have stopped
+        assert not scheduler.listener_running
+
+    @pytest.mark.asyncio
+    async def test_result_listener_handles_missing_queue(self, scheduler_for_listener):
+        """Test result_listener logs warning for missing result queue"""
+        scheduler = scheduler_for_listener
+
+        mock_result_queue = Mock()
+        call_count = [0]
+
+        def mock_get_many(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [("worker_0", "missing_task", {"data": "orphan"})]
+            scheduler.listener_running = False
+            return []
+
+        mock_result_queue.get_many = Mock(side_effect=mock_get_many)
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+        scheduler.result_queues = {}  # No queue registered for this task
+
+        await scheduler.result_listener()
+
+        # Verify warning was logged
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_result_listener_handles_exception(self, scheduler_for_listener):
+        """Test result_listener handles exceptions gracefully"""
+        scheduler = scheduler_for_listener
+
+        mock_result_queue = Mock()
+        call_count = [0]
+
+        def mock_get_many(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("Queue error")
+            scheduler.listener_running = False
+            return []
+
+        mock_result_queue.get_many = Mock(side_effect=mock_get_many)
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+
+        # Should complete without raising
+        await scheduler.result_listener()
+
+    @pytest.mark.asyncio
+    async def test_result_listener_sleeps_when_no_results(self, scheduler_for_listener):
+        """Test result_listener sleeps when no results found"""
+        scheduler = scheduler_for_listener
+
+        mock_result_queue = Mock()
+        call_count = [0]
+
+        def mock_get_many(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] >= 3:
+                scheduler.listener_running = False
+            return []  # Empty results
+
+        mock_result_queue.get_many = Mock(side_effect=mock_get_many)
+        scheduler.result_queues_by_worker = {0: mock_result_queue}
+
+        start = asyncio.get_event_loop().time()
+        await scheduler.result_listener()
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # Should have slept at least twice (0.001 * 2)
+        assert elapsed >= 0.002
 
 
 if __name__ == "__main__":
