@@ -140,9 +140,13 @@ def run_sender(device: Any, socket_config: Any, rank: int) -> dict[str, float]:
     # Barrier to sync before send/recv
     ttnn.distributed_context_barrier()
 
+    # Pre-sync to ensure no pending operations affect timing
+    ttnn.synchronize_device(device)
     warmup_start = time.perf_counter()
     dist_socket.send(warmup_tt)
-    ttnn.synchronize_device(device)
+    # Use event-based sync for more precise timing (only waits for this specific operation)
+    send_complete = ttnn.record_event(device, cq_id=0)
+    ttnn.event_synchronize(send_complete)
     warmup_time = time.perf_counter() - warmup_start
 
     timings["warmup_send"] = warmup_time
@@ -195,10 +199,14 @@ def run_sender(device: Any, socket_config: Any, rank: int) -> dict[str, float]:
         # Barrier to sync before E2E timing starts
         ttnn.distributed_context_barrier()
 
+        # Pre-sync to ensure no pending operations affect timing
+        ttnn.synchronize_device(device)
         # Send timing: measures just the send() operation
         send_start = time.perf_counter()
         dist_socket.send(src_tt)
-        ttnn.synchronize_device(device)
+        # Use event-based sync for more precise timing
+        send_complete = ttnn.record_event(device, cq_id=0)
+        ttnn.event_synchronize(send_complete)
         send_time = time.perf_counter() - send_start
 
         timings[f"single_send_{shape_str}"] = send_time
@@ -248,13 +256,17 @@ def run_sender(device: Any, socket_config: Any, rank: int) -> dict[str, float]:
         # Barrier to sync before starting layer transfers
         ttnn.distributed_context_barrier()
 
+        # Pre-sync to ensure no pending operations affect timing
+        ttnn.synchronize_device(device)
         # Send 61 layers one by one
         layer_times = []
         total_start = time.perf_counter()
         for layer_idx in range(NUM_LAYERS):
             layer_start = time.perf_counter()
             dist_socket.send(src_tt)
-            ttnn.synchronize_device(device)
+            # Use event-based sync for more precise timing
+            send_complete = ttnn.record_event(device, cq_id=0)
+            ttnn.event_synchronize(send_complete)
             layer_time = time.perf_counter() - layer_start
             layer_times.append(layer_time)
 
@@ -332,13 +344,17 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
     # Barrier to sync before E2E timing starts
     ttnn.distributed_context_barrier()
 
+    # Pre-sync to ensure no pending operations affect timing
+    ttnn.synchronize_device(device)
     # E2E timing: from sync point (≈ when sender starts send) to recv completion
     warmup_e2e_start = time.perf_counter()
 
     # Recv timing: just the recv() operation
     warmup_recv_start = time.perf_counter()
     dist_socket.recv(warmup_tt)
-    ttnn.synchronize_device(device)
+    # Use event-based sync for more precise timing
+    recv_complete = ttnn.record_event(device, cq_id=0)
+    ttnn.event_synchronize(recv_complete)
     warmup_recv_time = time.perf_counter() - warmup_recv_start
 
     warmup_e2e_time = time.perf_counter() - warmup_e2e_start
@@ -389,13 +405,17 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
         # Barrier to sync before E2E timing starts
         ttnn.distributed_context_barrier()
 
+        # Pre-sync to ensure no pending operations affect timing
+        ttnn.synchronize_device(device)
         # E2E timing: from sync point (≈ when sender starts send) to recv completion
         e2e_start = time.perf_counter()
 
         # Recv timing: just the recv() operation
         recv_start = time.perf_counter()
         dist_socket.recv(dst_tt)
-        ttnn.synchronize_device(device)
+        # Use event-based sync for more precise timing
+        recv_complete = ttnn.record_event(device, cq_id=0)
+        ttnn.event_synchronize(recv_complete)
         recv_time = time.perf_counter() - recv_start
 
         e2e_time = time.perf_counter() - e2e_start
@@ -462,6 +482,8 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
         # Barrier to sync before starting layer transfers
         ttnn.distributed_context_barrier()
 
+        # Pre-sync to ensure no pending operations affect timing
+        ttnn.synchronize_device(device)
         # Receive 61 layers one by one
         layer_times = []
         total_start = time.perf_counter()
@@ -474,7 +496,9 @@ def run_receiver(device: Any, socket_config: Any, rank: int) -> dict[str, float]
 
             layer_start = time.perf_counter()
             dist_socket.recv(dst_tt)
-            ttnn.synchronize_device(device)
+            # Use event-based sync for more precise timing
+            recv_complete = ttnn.record_event(device, cq_id=0)
+            ttnn.event_synchronize(recv_complete)
             layer_time = time.perf_counter() - layer_start
             layer_times.append(layer_time)
 
