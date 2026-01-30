@@ -71,14 +71,37 @@ class PrefillModelRunner:
         logger.info("=" * 60)
         logger.info("INITIALIZING DEEPSEEK GENERATOR")
         logger.info("=" * 60)
-        logger.info("ModelConfig: model_path=%s cache_dir=%s", cfg.model_path, cfg.cache_dir)
         
+        logger.info("ModelConfig:")
+        logger.info("  model_path: %s", cfg.model_path)
+        logger.info("  cache_dir: %s", cfg.cache_dir)
+        logger.info("  prefill_max_tokens: %s", cfg.prefill_max_tokens)
+        logger.info("  vocab_size: %d", cfg.vocab_size)
+        logger.info("  block_size: %d", cfg.block_size)
+        logger.info("  pad_token_id: %d", cfg.pad_token_id)
+        
+        logger.info("-" * 40)
+        logger.info("Loading tokenizer...")
         self._tokenizer = load_tokenizer(cfg.model_path)
-        logger.info("Tokenizer: vocab_size=%d pad_token_id=%s", 
-                   self._tokenizer.vocab_size, self._tokenizer.pad_token_id)
+        logger.info("Tokenizer loaded:")
+        logger.info("  vocab_size: %d", self._tokenizer.vocab_size)
+        logger.info("  pad_token_id: %s", self._tokenizer.pad_token_id)
+        logger.info("  eos_token_id: %s", self._tokenizer.eos_token_id)
+        logger.info("  bos_token_id: %s", self._tokenizer.bos_token_id)
         
         if self._tokenizer.pad_token_id is not None:
             self.model_config.pad_token_id = self._tokenizer.pad_token_id
+            logger.info("  Updated pad_token_id from tokenizer: %d", self.model_config.pad_token_id)
+        
+        logger.info("-" * 40)
+        logger.info("Creating DeepseekGenerator with arguments:")
+        logger.info("  mesh_device: %s (shape=%s)", type(self.mesh_device).__name__, list(self.mesh_device.shape))
+        logger.info("  model_path: %s", cfg.model_path)
+        logger.info("  cache_dir: %s", cfg.cache_dir)
+        logger.info("  tokenizer: %s", type(self._tokenizer).__name__)
+        logger.info("  random_weights: False")
+        logger.info("  enable_trace: False")
+        logger.info("  prefill_max_tokens: %s", cfg.prefill_max_tokens)
         
         self._generator = DeepseekGenerator(
             mesh_device=self.mesh_device,
@@ -92,8 +115,32 @@ class PrefillModelRunner:
         
         self._num_layers = self._generator.hf_config.num_hidden_layers
         
-        logger.info("Generator: batch_size=%d num_layers=%d", 
-                   self._generator.batch_size, self._num_layers)
+        logger.info("-" * 40)
+        logger.info("Generator created:")
+        logger.info("  batch_size_per_row: %d", self._generator.batch_size_per_row)
+        logger.info("  batch_size (total): %d", self._generator.batch_size)
+        logger.info("  dp_factor: %d", self._generator.dp_factor)
+        logger.info("  prefill_max_tokens: %s", self._generator.prefill_max_tokens)
+        logger.info("  enable_trace: %s", self._generator.enable_trace)
+        
+        logger.info("-" * 40)
+        logger.info("HF Config:")
+        logger.info("  num_hidden_layers: %d", self._num_layers)
+        logger.info("  hidden_size: %d", self._generator.hf_config.hidden_size)
+        logger.info("  num_attention_heads: %d", self._generator.hf_config.num_attention_heads)
+        logger.info("  vocab_size: %d", self._generator.hf_config.vocab_size)
+        logger.info("  max_seq_len: %d", self._generator.hf_config.max_seq_len)
+        if hasattr(self._generator.hf_config, 'kv_lora_rank'):
+            logger.info("  kv_lora_rank: %d", self._generator.hf_config.kv_lora_rank)
+        if hasattr(self._generator.hf_config, 'qk_rope_head_dim'):
+            logger.info("  qk_rope_head_dim: %d", self._generator.hf_config.qk_rope_head_dim)
+        
+        logger.info("-" * 40)
+        logger.info("Paged Config:")
+        paged_cfg = self._generator.paged_config
+        logger.info("  block_size: %d", paged_cfg.block_size)
+        logger.info("  max_num_blocks: %d", paged_cfg.max_num_blocks)
+        
         logger.info("=" * 60)
     
     @property
@@ -178,6 +225,42 @@ class PrefillModelRunner:
             
             all_logits = []
             
+            # Build page_table from all sequences' block tables
+            # Shape: [batch_size, max_num_blocks_per_req]
+            max_blocks_per_req = max(len(seq.block_table) for seq in seqs)
+            page_table = torch.zeros((len(seqs), max_blocks_per_req), dtype=torch.int32)
+            for i, seq in enumerate(seqs):
+                block_table = seq.block_table
+                page_table[i, :len(block_table)] = torch.tensor(block_table, dtype=torch.int32)
+            
+            logger.info("Page table created:")
+            logger.info("  shape: %s", tuple(page_table.shape))
+            logger.info("  block_tables: %s", [seq.block_table for seq in seqs])
+            
+            # Sample KV cache block values BEFORE prefill
+            block_ids_to_check = list(set(b for seq in seqs for b in seq.block_table))
+            
+            def get_kv_block_sample(block_id: int, layer_idx: int = 0) -> torch.Tensor:
+                """Read a small sample from KV cache block."""
+                kv_tensor = self._kv_cache[layer_idx]
+                kv_host = ttnn.to_torch(
+                    kv_tensor,
+                    mesh_composer=ttnn.ConcatMesh2dToTensor(
+                        self.mesh_device, dims=(0, -1), mesh_shape=self.mesh_device.shape
+                    ),
+                )
+                # Shape: [num_blocks, num_heads, block_size, kvpe_dim]
+                # Return first 8 values from the block
+                return kv_host[block_id, 0, 0, :8].float()
+            
+            logger.info("-" * 40)
+            logger.info("KV CACHE BLOCK VALUES BEFORE PREFILL (layer 0, first 8 values):")
+            pre_values = {}
+            for block_id in sorted(block_ids_to_check):
+                vals = get_kv_block_sample(block_id, layer_idx=0)
+                pre_values[block_id] = vals.clone()
+                logger.info("  block[%d]: %s", block_id, vals.tolist())
+            
             for i, seq in enumerate(seqs):
                 prompt_len = prompt_lens[i]
                 token_ids = seq.token_ids[:prompt_len]
@@ -186,11 +269,37 @@ class PrefillModelRunner:
                 tokens_padded = token_ids + [cfg.pad_token_id] * (pad_len - prompt_len)
                 tokens_tensor = torch.tensor(tokens_padded, dtype=torch.long)
                 
-                logger.info("  user=%d prompt_len=%d padded_len=%d", i, prompt_len, pad_len)
+                logger.info("-" * 40)
+                logger.info("PREFILL user_id=%d", i)
+                logger.info("  req_id: %s", seq.req_id)
+                logger.info("  prompt_len: %d", prompt_len)
+                logger.info("  padded_len: %d", pad_len)
+                logger.info("  block_table: %s", seq.block_table)
+                logger.info("  first_10_tokens: %s", token_ids[:10])
+                logger.info("  last_10_tokens: %s", token_ids[-10:] if len(token_ids) >= 10 else token_ids)
+                logger.info("Calling generator._prefill():")
+                logger.info("  tokens: shape=%s dtype=%s", tuple(tokens_tensor.shape), tokens_tensor.dtype)
+                logger.info("  user_id: %d", i)
+                logger.info("  page_table: shape=%s user_row=%s", tuple(page_table.shape), page_table[i].tolist())
+                logger.info("  local_user_id: %d", i)
                 
-                logits = self._generator._prefill(tokens_tensor, user_id=i)
+                logits = self._generator._prefill(
+                    tokens_tensor,
+                    user_id=i,
+                    page_table=page_table,
+                    local_user_id=i,
+                )
+                
+                logger.info("Output: logits.shape=%s", tuple(logits.shape))
                 
                 user_logits = logits[0, 0, :prompt_len, :]
+                
+                last_logits = user_logits[-1, :]
+                top5_values, top5_indices = torch.topk(last_logits, 5)
+                logger.info("Top-5 tokens at last position:")
+                for j, (val, idx) in enumerate(zip(top5_values, top5_indices)):
+                    token_text = self._tokenizer.decode([idx.item()], skip_special_tokens=False) if self._tokenizer else "?"
+                    logger.info("  [%d] token_id=%d logit=%.4f text='%s'", j+1, idx.item(), val.item(), token_text[:50])
                 
                 if user_logits.shape[0] < max_padded_len:
                     pad_size = max_padded_len - user_logits.shape[0]
@@ -201,6 +310,16 @@ class PrefillModelRunner:
                 self._generator.ccl.reset_sem_counters()
             
             result = torch.stack(all_logits, dim=0)
+            
+            # Sample KV cache block values AFTER prefill
+            logger.info("-" * 40)
+            logger.info("KV CACHE BLOCK VALUES AFTER PREFILL (layer 0, first 8 values):")
+            for block_id in sorted(block_ids_to_check):
+                vals = get_kv_block_sample(block_id, layer_idx=0)
+                pre_vals = pre_values.get(block_id)
+                changed = not torch.allclose(vals, pre_vals, atol=1e-6) if pre_vals is not None else "N/A"
+                logger.info("  block[%d]: %s", block_id, vals.tolist())
+                logger.info("    CHANGED: %s (was: %s)", changed, pre_vals.tolist() if pre_vals is not None else "N/A")
             
             logger.info("RUN_PREFILL COMPLETE: logits_shape=%s", tuple(result.shape))
             logger.info("=" * 60)
