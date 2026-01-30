@@ -109,17 +109,17 @@ def generate_video_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
-def generate_image_report_data(model_spec, eval_run_id):
-    """Generate image-specific report data.
+def generate_image_generation_report_data(model_spec, eval_run_id):
+    """Generate image-generation-specific report data.
 
     Args:
         model_spec: Model specification
         eval_run_id: Evaluation run ID
 
     Returns:
-        File pattern for image evaluation results
+        File pattern for image generation evaluation results
     """
-    # Image models use results_*.json pattern
+    # Image generation models use results_*.json pattern
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
 
@@ -325,8 +325,9 @@ def benchmark_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_image_release_markdown(release_raw, target_checks=None):
-    # Define display columns mapping for image benchmarks
+def benchmark_vlm_release_markdown(release_raw, target_checks=None):
+    """Build markdown table for VLM benchmark results (isl, osl, image dimensions, etc.)."""
+    # Display columns for VLM benchmarks only
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
@@ -396,7 +397,7 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def aiperf_release_markdown(release_raw, is_image_benchmark=False):
+def aiperf_release_markdown(release_raw, is_vlm_benchmark=False):
     """Generate markdown table for AIPerf benchmarks with detailed metrics.
 
     This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
@@ -404,7 +405,7 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
 
     Args:
         release_raw: Raw benchmark data
-        is_image_benchmark: If True, includes image dimension columns (height, width, images per prompt)
+        is_vlm_benchmark: If True, table is for VLM results (includes image dimension columns).
     """
     # Define display columns mapping - NVIDIA style with detailed percentiles
     display_cols = [
@@ -413,8 +414,8 @@ def aiperf_release_markdown(release_raw, is_image_benchmark=False):
         ("concurrency", "Concur"),
     ]
 
-    # Add image-specific columns for image benchmarks
-    if is_image_benchmark:
+    # Add image-dimension columns for VLM benchmarks only
+    if is_vlm_benchmark:
         display_cols.extend(
             [
                 ("image_height", "Image Height"),
@@ -686,19 +687,19 @@ def aiperf_benchmark_generate_report(
         f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf, {len(genai_files)} GenAI-Perf files"
     )
 
-    # Separate text-only and image benchmarks
+    # Separate text-only and VLM benchmarks
     vllm_text_only_files = [f for f in vllm_files if "images" not in Path(f).name]
-    vllm_image_files = [f for f in vllm_files if "images" in Path(f).name]
+    vllm_vlm_files = [f for f in vllm_files if "images" in Path(f).name]
     aiperf_text_only_files = [f for f in aiperf_files if "images" not in Path(f).name]
-    aiperf_image_files = [f for f in aiperf_files if "images" in Path(f).name]
+    aiperf_vlm_files = [f for f in aiperf_files if "images" in Path(f).name]
     genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
-    genai_image_files = [f for f in genai_files if "images" in Path(f).name]
+    genai_vlm_files = [f for f in genai_files if "images" in Path(f).name]
 
     logger.info(
         f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf, {len(genai_text_only_files)} GenAI-Perf"
     )
     logger.info(
-        f"Image benchmarks: {len(vllm_image_files)} vLLM, {len(aiperf_image_files)} AIPerf, {len(genai_image_files)} GenAI-Perf"
+        f"VLM benchmarks: {len(vllm_vlm_files)} vLLM, {len(aiperf_vlm_files)} AIPerf, {len(genai_vlm_files)} GenAI-Perf"
     )
 
     # Process text-only vLLM benchmarks
@@ -825,9 +826,9 @@ def aiperf_benchmark_generate_report(
             logger.warning(f"Error processing AIPerf file {filepath}: {e}")
             continue
 
-    # Process image vLLM benchmarks
-    vllm_image_results = []
-    for filepath in sorted(vllm_image_files):
+    # Process VLM vLLM benchmarks
+    vllm_vlm_results = []
+    for filepath in sorted(vllm_vlm_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
@@ -846,15 +847,28 @@ def aiperf_benchmark_generate_report(
                 logger.warning(f"Could not parse image parameters from {filename}")
                 continue
 
+            # Calculate throughput metrics
+            mean_tpot_ms = data.get("mean_tpot_ms", 0)
+            if mean_tpot_ms and mean_tpot_ms > 0:
+                mean_tps = 1000.0 / mean_tpot_ms
+            else:
+                mean_tps = 0
+
+            actual_max_con = min(concurrency, num_requests)
+            tps_decode_throughput = mean_tps * actual_max_con if mean_tps else 0
+
             result = {
                 "source": "vLLM",
+                "task_type": "vlm",
                 "isl": isl,
                 "osl": osl,
                 "concurrency": concurrency,
+                "max_con": concurrency,
                 "num_requests": num_requests,
                 "images": images,
                 "image_height": height,
                 "image_width": width,
+                "images_per_prompt": images,
                 # TTFT metrics
                 "mean_ttft_ms": data.get("mean_ttft_ms", 0),
                 "median_ttft_ms": data.get("median_ttft_ms", 0),
@@ -870,7 +884,9 @@ def aiperf_benchmark_generate_report(
                 "median_e2el_ms": data.get("median_e2el_ms", 0),
                 "p99_e2el_ms": data.get("p99_e2el_ms", 0),
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
-                # Throughput
+                # Throughput (calculated)
+                "mean_tps": mean_tps,
+                "tps_decode_throughput": tps_decode_throughput,
                 "output_token_throughput": data.get("output_throughput", 0),
                 "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
@@ -880,16 +896,16 @@ def aiperf_benchmark_generate_report(
                 "total_output_tokens": data.get("total_output_tokens", 0),
                 # Metadata
                 "model_id": data.get("model_id", ""),
-                "backend": "vllm",
+                "backend": data.get("backend", "vllm"),
             }
-            vllm_image_results.append(result)
+            vllm_vlm_results.append(result)
         except Exception as e:
-            logger.warning(f"Error processing vLLM image file {filepath}: {e}")
+            logger.warning(f"Error processing vLLM VLM file {filepath}: {e}")
             continue
 
-    # Process image AIPerf files
-    aiperf_image_results = []
-    for filepath in sorted(aiperf_image_files):
+    # Process VLM AIPerf files
+    aiperf_vlm_results = []
+    for filepath in sorted(aiperf_vlm_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
@@ -944,9 +960,9 @@ def aiperf_benchmark_generate_report(
                 "model_id": data.get("model_id", ""),
                 "backend": "aiperf",
             }
-            aiperf_image_results.append(result)
+            aiperf_vlm_results.append(result)
         except Exception as e:
-            logger.warning(f"Error processing AIPerf image file {filepath}: {e}")
+            logger.warning(f"Error processing AIPerf VLM file {filepath}: {e}")
             continue
 
     # Process GenAI-Perf text files
@@ -1011,9 +1027,9 @@ def aiperf_benchmark_generate_report(
             logger.warning(f"Error processing GenAI-Perf file {filepath}: {e}")
             continue
 
-    # Process GenAI-Perf image files
-    genai_image_results = []
-    for filepath in sorted(genai_image_files):
+    # Process GenAI-Perf VLM files
+    genai_vlm_results = []
+    for filepath in sorted(genai_vlm_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
@@ -1068,18 +1084,18 @@ def aiperf_benchmark_generate_report(
                 "model_id": data.get("model_id", ""),
                 "backend": "genai-perf",
             }
-            genai_image_results.append(result)
+            genai_vlm_results.append(result)
         except Exception as e:
-            logger.warning(f"Error processing GenAI-Perf image file {filepath}: {e}")
+            logger.warning(f"Error processing GenAI-Perf VLM file {filepath}: {e}")
             continue
 
     if (
         not aiperf_text_results
         and not vllm_text_results
         and not genai_text_results
-        and not aiperf_image_results
-        and not vllm_image_results
-        and not genai_image_results
+        and not aiperf_vlm_results
+        and not vllm_vlm_results
+        and not genai_vlm_results
     ):
         return "", [], None, None
 
@@ -1088,8 +1104,8 @@ def aiperf_benchmark_generate_report(
     aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
     genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
 
-    # Sort image benchmarks by ISL, OSL, concurrency, image size
-    vllm_image_results.sort(
+    # Sort VLM benchmarks by ISL, OSL, concurrency, image size
+    vllm_vlm_results.sort(
         key=lambda x: (
             x["isl"],
             x["osl"],
@@ -1098,7 +1114,7 @@ def aiperf_benchmark_generate_report(
             x["image_width"],
         )
     )
-    aiperf_image_results.sort(
+    aiperf_vlm_results.sort(
         key=lambda x: (
             x["isl"],
             x["osl"],
@@ -1107,7 +1123,7 @@ def aiperf_benchmark_generate_report(
             x["image_width"],
         )
     )
-    genai_image_results.sort(
+    genai_vlm_results.sort(
         key=lambda x: (
             x["isl"],
             x["osl"],
@@ -1121,7 +1137,7 @@ def aiperf_benchmark_generate_report(
     release_str = ""
 
     # Only include section if there are results to display
-    if aiperf_text_results or aiperf_image_results:
+    if aiperf_text_results or aiperf_vlm_results:
         release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
         # TEXT BENCHMARKS SECTION
@@ -1134,14 +1150,14 @@ def aiperf_benchmark_generate_report(
             release_str += nvidia_markdown_str
             release_str += "\n\n"
 
-        # IMAGE BENCHMARKS SECTION
-        if aiperf_image_results:
-            release_str += "#### AIPerf Image Benchmarks - Detailed Percentiles\n\n"
+        # VLM BENCHMARKS SECTION
+        if aiperf_vlm_results:
+            release_str += "#### AIPerf VLM Benchmarks - Detailed Percentiles\n\n"
             release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
 
             # Only show AIPerf-specific detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(
-                aiperf_image_results, is_image_benchmark=True
+                aiperf_vlm_results, is_vlm_benchmark=True
             )
             release_str += nvidia_markdown_str
             release_str += "\n\n"
@@ -1182,21 +1198,21 @@ def aiperf_benchmark_generate_report(
                 writer.writerow([str(result.get(h, "")) for h in headers])
         logger.info(f"AIPerf text benchmark data saved to: {text_data_file_path}")
 
-    # Save CSV data for image benchmarks
+    # Save CSV data for VLM benchmarks
     image_data_file_path = (
-        output_dir / "data" / f"aiperf_benchmark_image_stats_{report_id}.csv"
+        output_dir / "data" / f"aiperf_benchmark_vlm_stats_{report_id}.csv"
     )
-    if aiperf_image_results:
-        headers = list(aiperf_image_results[0].keys())
+    if aiperf_vlm_results:
+        headers = list(aiperf_vlm_results[0].keys())
         with open(image_data_file_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
-            for result in aiperf_image_results:
+            for result in aiperf_vlm_results:
                 writer.writerow([str(result.get(h, "")) for h in headers])
-        logger.info(f"AIPerf image benchmark data saved to: {image_data_file_path}")
+        logger.info(f"AIPerf VLM benchmark data saved to: {image_data_file_path}")
 
-    # Return combined results for both text and image
-    all_aiperf_results = aiperf_text_results + aiperf_image_results
+    # Return combined results for both text and VLM
+    all_aiperf_results = aiperf_text_results + aiperf_vlm_results
     return release_str, all_aiperf_results, disp_md_path, text_data_file_path
 
 
@@ -1258,12 +1274,12 @@ def genai_perf_benchmark_generate_report(
     genai_files = deduplicate_by_config(genai_files)
     logger.info(f"After deduplication: {len(genai_files)} GenAI-Perf benchmark files")
 
-    # Separate text-only and image benchmarks
+    # Separate text-only and VLM benchmarks
     genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
-    genai_image_files = [f for f in genai_files if "images" in Path(f).name]
+    genai_vlm_files = [f for f in genai_files if "images" in Path(f).name]
 
     logger.info(
-        f"GenAI-Perf Text benchmarks: {len(genai_text_only_files)}, Image benchmarks: {len(genai_image_files)}"
+        f"GenAI-Perf Text benchmarks: {len(genai_text_only_files)}, VLM benchmarks: {len(genai_vlm_files)}"
     )
 
     # Process text-only GenAI-Perf benchmarks
@@ -1327,9 +1343,9 @@ def genai_perf_benchmark_generate_report(
             logger.warning(f"Error processing GenAI-Perf text file {filepath}: {e}")
             continue
 
-    # Process image GenAI-Perf files
-    genai_image_results = []
-    for filepath in sorted(genai_image_files):
+    # Process VLM GenAI-Perf files
+    genai_vlm_results = []
+    for filepath in sorted(genai_vlm_files):
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
@@ -1384,20 +1400,20 @@ def genai_perf_benchmark_generate_report(
                 "model_id": data.get("model_id", ""),
                 "backend": "genai-perf",
             }
-            genai_image_results.append(result)
+            genai_vlm_results.append(result)
         except Exception as e:
-            logger.warning(f"Error processing GenAI-Perf image file {filepath}: {e}")
+            logger.warning(f"Error processing GenAI-Perf VLM file {filepath}: {e}")
             continue
 
-    if not genai_text_results and not genai_image_results:
+    if not genai_text_results and not genai_vlm_results:
         logger.info("No GenAI-Perf results to process.")
         return "", [], None, None
 
     # Sort text benchmarks by ISL, OSL, concurrency
     genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
 
-    # Sort image benchmarks by ISL, OSL, concurrency, image dimensions
-    genai_image_results.sort(
+    # Sort VLM benchmarks by ISL, OSL, concurrency, image dimensions
+    genai_vlm_results.sort(
         key=lambda x: (
             x["isl"],
             x["osl"],
@@ -1412,7 +1428,7 @@ def genai_perf_benchmark_generate_report(
     release_str = ""
 
     # Only include section if there are results to display
-    if genai_text_results or genai_image_results:
+    if genai_text_results or genai_vlm_results:
         release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
 
         # TEXT BENCHMARKS SECTION
@@ -1425,14 +1441,14 @@ def genai_perf_benchmark_generate_report(
             release_str += nvidia_markdown_str
             release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
 
-        # IMAGE BENCHMARKS SECTION
-        if genai_image_results:
-            release_str += "#### GenAI-Perf Image Benchmarks - Detailed Percentiles\n\n"
+        # VLM BENCHMARKS SECTION
+        if genai_vlm_results:
+            release_str += "#### GenAI-Perf VLM Benchmarks - Detailed Percentiles\n\n"
             release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
 
             # Show GenAI-Perf detailed percentiles (mean, median, P99)
             nvidia_markdown_str = aiperf_release_markdown(
-                genai_image_results, is_image_benchmark=True
+                genai_vlm_results, is_vlm_benchmark=True
             )
             release_str += nvidia_markdown_str
             release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
@@ -1473,21 +1489,21 @@ def genai_perf_benchmark_generate_report(
                 writer.writerow([str(result.get(h, "")) for h in headers])
         logger.info(f"GenAI-Perf text benchmark data saved to: {text_data_file_path}")
 
-    # Save CSV data for image benchmarks
+    # Save CSV data for VLM benchmarks
     image_data_file_path = (
-        output_dir / "data" / f"genai_perf_benchmark_image_stats_{report_id}.csv"
+        output_dir / "data" / f"genai_perf_benchmark_vlm_stats_{report_id}.csv"
     )
-    if genai_image_results:
-        headers = list(genai_image_results[0].keys())
+    if genai_vlm_results:
+        headers = list(genai_vlm_results[0].keys())
         with open(image_data_file_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
-            for result in genai_image_results:
+            for result in genai_vlm_results:
                 writer.writerow([str(result.get(h, "")) for h in headers])
-        logger.info(f"GenAI-Perf image benchmark data saved to: {image_data_file_path}")
+        logger.info(f"GenAI-Perf VLM benchmark data saved to: {image_data_file_path}")
 
-    # Return combined results for both text and image
-    all_genai_results = genai_text_results + genai_image_results
+    # Return combined results for both text and VLM
+    all_genai_results = genai_text_results + genai_vlm_results
     return release_str, all_genai_results, disp_md_path, text_data_file_path
 
 
@@ -1571,7 +1587,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_audio_display_dict,
         create_display_dict,
         create_embedding_display_dict,
-        create_image_display_dict,
+        create_vlm_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
         get_markdown_table,
@@ -1595,9 +1611,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, image, audio, tts, embedding and cnn for vLLM
+        # Separate text, vlm, audio, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
-        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
+        vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
         vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
@@ -1613,11 +1629,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### vLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_text_md}"
             )
 
-        if vllm_image:
-            vllm_image_display = [create_image_display_dict(r) for r in vllm_image]
-            vllm_image_md = get_markdown_table(vllm_image_display)
+        if vllm_vlm:
+            vllm_vlm_display = [create_vlm_display_dict(r) for r in vllm_vlm]
+            vllm_vlm_md = get_markdown_table(vllm_vlm_display)
             image_sections.append(
-                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
+                f"#### vLLM Vision-Language Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_vlm_md}"
             )
 
         if vllm_audio:
@@ -1670,15 +1686,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(aiperf_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for AIPerf
+        # Separate text and vlm for AIPerf
         aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
-        aiperf_image = [r for r in aiperf_release_raw if r.get("task_type") == "image"]
-        aiperf_audio = [r for r in aiperf_release_raw if r.get("task_type") == "audio"]
-        aiperf_embedding = [
-            r for r in aiperf_release_raw if r.get("task_type") == "embedding"
-        ]
-        aiperf_cnn = [r for r in aiperf_release_raw if r.get("task_type") == "cnn"]
-        aiperf_video = [r for r in aiperf_release_raw if r.get("task_type") == "video"]
+        aiperf_vlm = [r for r in aiperf_release_raw if r.get("task_type") == "vlm"]
 
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
@@ -1687,51 +1697,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### AIPerf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_text_md}"
             )
 
-        if aiperf_image:
-            aiperf_image_display = [create_image_display_dict(r) for r in aiperf_image]
-            aiperf_image_md = get_markdown_table(aiperf_image_display)
+        if aiperf_vlm:
+            aiperf_vlm_display = [create_vlm_display_dict(r) for r in aiperf_vlm]
+            aiperf_vlm_md = get_markdown_table(aiperf_vlm_display)
             image_sections.append(
-                f"#### AIPerf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
-            )
-
-        # Note: AIPerf does not currently support audio models
-        # This section is here for future compatibility if support is added
-        if aiperf_audio and aiperf_audio[0].get("backend") == "aiperf":
-            aiperf_audio_display = [
-                create_audio_display_dict(r, model_spec) for r in aiperf_audio
-            ]
-            aiperf_audio_md = get_markdown_table(aiperf_audio_display)
-            audio_sections.append(
-                f"#### AIPerf Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_audio_md}"
-            )
-
-        # Note: AIPerf does not currently support embedding models
-        # This section is here for future compatibility if support is added
-        if aiperf_embedding and aiperf_embedding[0].get("backend") == "aiperf":
-            aiperf_embedding_display = [
-                create_embedding_display_dict(r) for r in aiperf_embedding
-            ]
-            aiperf_embedding_md = get_markdown_table(aiperf_embedding_display)
-            embedding_sections.append(
-                f"#### AIPerf Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_embedding_md}"
-            )
-
-        # Note: AIPerf does not currently support CNN models
-        # This section is here for future compatibility if support is added
-        if aiperf_cnn and aiperf_cnn[0].get("backend") == "aiperf":
-            aiperf_cnn_display = [
-                create_image_generation_display_dict(r) for r in aiperf_cnn
-            ]
-            aiperf_cnn_md = get_markdown_table(aiperf_cnn_display)
-            cnn_sections.append(
-                f"#### AIPerf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_cnn_md}"
-            )
-
-        if aiperf_video and aiperf_video[0].get("backend") == "aiperf":
-            aiperf_video_display = [create_video_display_dict(r) for r in aiperf_video]
-            aiperf_video_md = get_markdown_table(aiperf_video_display)
-            video_sections.append(
-                f"#### AIPerf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_video_md}"
+                f"#### AIPerf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_vlm_md}"
             )
 
     # Process GenAI-Perf benchmarks
@@ -1741,15 +1711,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(genai_release_raw)
 
-        # Separate text, image, audio, embedding and cnn for GenAI-Perf
+        # Separate text and vlm for GenAI-Perf
         genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
-        genai_image = [r for r in genai_release_raw if r.get("task_type") == "image"]
-        genai_audio = [r for r in genai_release_raw if r.get("task_type") == "audio"]
-        genai_embedding = [
-            r for r in genai_release_raw if r.get("task_type") == "embedding"
-        ]
-        genai_cnn = [r for r in genai_release_raw if r.get("task_type") == "cnn"]
-        genai_video = [r for r in genai_release_raw if r.get("task_type") == "video"]
+        genai_vlm = [r for r in genai_release_raw if r.get("task_type") == "vlm"]
 
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
@@ -1758,51 +1722,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 f"#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_text_md}"
             )
 
-        if genai_image:
-            genai_image_display = [create_image_display_dict(r) for r in genai_image]
-            genai_image_md = get_markdown_table(genai_image_display)
+        if genai_vlm:
+            genai_vlm_display = [create_vlm_display_dict(r) for r in genai_vlm]
+            genai_vlm_md = get_markdown_table(genai_vlm_display)
             image_sections.append(
-                f"#### GenAI-Perf Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"
-            )
-
-        # Note: GenAI-Perf does not currently support audio models
-        # This section is here for future compatibility if support is added
-        if genai_audio and genai_audio[0].get("backend") == "genai-perf":
-            genai_audio_display = [
-                create_audio_display_dict(r, model_spec) for r in genai_audio
-            ]
-            genai_audio_md = get_markdown_table(genai_audio_display)
-            audio_sections.append(
-                f"#### GenAI-Perf Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_audio_md}"
-            )
-
-        # Note: GenAI-Perf does not currently support embedding models
-        # This section is here for future compatibility if support is added
-        if genai_embedding and genai_embedding[0].get("backend") == "genai-perf":
-            genai_embedding_display = [
-                create_embedding_display_dict(r) for r in genai_embedding
-            ]
-            genai_embedding_md = get_markdown_table(genai_embedding_display)
-            embedding_sections.append(
-                f"#### GenAI-Perf Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_embedding_md}"
-            )
-
-        # Note: GenAI-Perf does not currently support CNN models
-        # This section is here for future compatibility if support is added
-        if genai_cnn and genai_cnn[0].get("backend") == "genai-perf":
-            genai_cnn_display = [
-                create_image_generation_display_dict(r) for r in genai_cnn
-            ]
-            genai_cnn_md = get_markdown_table(genai_cnn_display)
-            cnn_sections.append(
-                f"#### GenAI-Perf CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_cnn_md}"
-            )
-
-        if genai_video and genai_video[0].get("backend") == "genai-perf":
-            genai_video_display = [create_video_display_dict(r) for r in genai_video]
-            genai_video_md = get_markdown_table(genai_video_display)
-            video_sections.append(
-                f"#### GenAI-Perf Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_video_md}"
+                f"#### GenAI-Perf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_vlm_md}"
             )
 
     # Combine sections: text, image, audio, embedding, then cnn (matching original order)
@@ -1858,20 +1782,20 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
     ]
 
-    # Separate text and image benchmarks from vLLM results (for targets)
+    # Separate text and vlm benchmarks from vLLM results (for targets)
     text_release_raw = [
         r for r in vllm_release_raw if r.get("task_type", "text") == "text"
     ]
-    image_release_raw = [
-        r for r in vllm_release_raw if r.get("task_type", "text") == "image"
+    vlm_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "vlm"
     ]
 
-    # Separate text and image performance references
+    # Separate text and vlm performance references
     text_perf_refs = [
         p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "text"
     ]
-    image_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "image"
+    vlm_perf_refs = [
+        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "vlm"
     ]
 
     release_sections = []
@@ -2009,26 +1933,26 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         text_section += "No performance targets defined for text benchmarks.\n\n"
         release_sections.append(text_section)
 
-    # Process image benchmarks if they exist
-    print(f"image_release_raw: {image_release_raw}")
-    if image_perf_refs and image_release_raw and False:
-        # hard coded for now - using fallback option for image benchmarks
-        # TODO: implement proper image benchmark targets retrieval
+    # Process VLM benchmarks if they exist
+    print(f"vlm_release_raw: {vlm_release_raw}")
+    if vlm_perf_refs and vlm_release_raw:
+        # VLM models (ModelType.VLM) now distinguished from image generation models (ModelType.IMAGE)
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
-        image_res_dict = {
+        # Support both old (input_sequence_length) and new (isl) key names for backward compatibility
+        vlm_res_dict = {
             (
-                r["input_sequence_length"],
-                r["output_sequence_length"],
+                r.get("isl", r.get("input_sequence_length", 0)),
+                r.get("osl", r.get("output_sequence_length", 0)),
                 r["image_height"],
                 r["image_width"],
                 r["images_per_prompt"],
                 r["max_con"],
             ): r
-            for r in image_release_raw
+            for r in vlm_release_raw
         }
-        image_perf_results = {}
-        for p_ref in image_perf_refs:
+        vlm_perf_results = {}
+        for p_ref in vlm_perf_refs:
             p_ref_key = (
                 p_ref.isl,
                 p_ref.osl,
@@ -2037,9 +1961,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 p_ref.images_per_prompt,
                 p_ref.max_concurrency,
             )
-            res = image_res_dict.get(p_ref_key)
+            res = vlm_res_dict.get(p_ref_key)
             # add reference values to the result
-            image_perf_results[p_ref_key] = {
+            vlm_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
                 "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
@@ -2052,7 +1976,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             }
             # add measurements to result and checks if defined
             if res:
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": res["mean_ttft_ms"],
                         "tput_user": res["mean_tps"],
@@ -2061,7 +1985,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 )
 
                 # Prepare a dictionary to hold checks for all targets.
-                image_perf_results[p_ref_key]["target_checks"] = {}
+                vlm_perf_results[p_ref_key]["target_checks"] = {}
                 # Iterate over each target defined in p_ref.targets.
                 for target_name, perf_target in p_ref.targets.items():
                     target_check = {}
@@ -2112,7 +2036,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         target_check["tput_check"] = ReportCheckTypes.NA
 
                     # Save the computed checks under the target's name.
-                    image_perf_results[p_ref_key]["target_checks"][target_name] = (
+                    vlm_perf_results[p_ref_key]["target_checks"][target_name] = (
                         target_check
                     )
 
@@ -2120,7 +2044,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 # No result available from benchmark measurements.
                 NA_STRING = "N/A"
                 # In this case, add N/A for performance measures and an empty check dict per target.
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": NA_STRING,
                         "tput_user": NA_STRING,
@@ -2136,35 +2060,31 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                     }
                 )
 
-        # build release performance benchmarking report for images
-        sorted_image_perf_results = {
-            k: image_perf_results[k] for k in sorted(image_perf_results)
+        # build release performance benchmarking report for VLMs
+        sorted_vlm_perf_results = {
+            k: vlm_perf_results[k] for k in sorted(vlm_perf_results)
         }
-        image_release_raw_targets = [v for k, v in sorted_image_perf_results.items()]
+        vlm_release_raw_targets = [v for k, v in sorted_vlm_perf_results.items()]
 
-        flat_image_release_raw = flatten_target_checks(image_release_raw_targets)
-        image_section = (
-            f"#### Image Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-        )
-        if image_release_raw_targets and image_release_raw_targets[0].get(
-            "target_checks"
-        ):
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw,
-                target_checks=image_release_raw_targets[0]["target_checks"],
+        flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
+        vlm_section = f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
+        if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
+            vlm_section += benchmark_vlm_release_markdown(
+                flat_vlm_release_raw,
+                target_checks=vlm_release_raw_targets[0]["target_checks"],
             )
         else:
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw, target_checks=None
+            vlm_section += benchmark_vlm_release_markdown(
+                flat_vlm_release_raw, target_checks=None
             )
-        release_sections.append(image_section)
-    elif image_release_raw:
-        # Show image benchmarks even without performance targets
-        image_section = (
-            f"#### Image Benchmark Results {model_spec.model_name} on {args.device}\n\n"
+        release_sections.append(vlm_section)
+    elif vlm_release_raw:
+        # Show VLM benchmarks even without performance targets
+        vlm_section = (
+            f"#### VLM Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         )
-        image_section += "No performance targets defined for image benchmarks.\n\n"
-        release_sections.append(image_section)
+        vlm_section += "No performance targets defined for VLM benchmarks.\n\n"
+        release_sections.append(vlm_section)
 
     # Combine sections or fallback to original behavior
     if release_sections:
@@ -2179,10 +2099,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 if "text_release_raw_targets" in locals()
                 else release_raw
             )
-        elif image_perf_refs:
+        elif vlm_perf_refs:
             release_raw = (
-                image_release_raw_targets
-                if "image_release_raw_targets" in locals()
+                vlm_release_raw_targets
+                if "vlm_release_raw_targets" in locals()
                 else release_raw
             )
     else:
@@ -2529,7 +2449,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         )
         files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.IMAGE:
-        file_name_pattern = generate_image_report_data(model_spec, eval_run_id)
+        file_name_pattern = generate_image_generation_report_data(
+            model_spec, eval_run_id
+        )
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
@@ -2813,9 +2735,9 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+                value = row.get("isl", NOT_MEASURED_STR)
             elif col_name == "osl":
-                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+                value = row.get("osl", NOT_MEASURED_STR)
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -2960,9 +2882,9 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", NOT_MEASURED_STR)
+                value = row.get("isl", NOT_MEASURED_STR)
             elif col_name == "osl":
-                value = row.get("output_sequence_length", NOT_MEASURED_STR)
+                value = row.get("osl", NOT_MEASURED_STR)
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
