@@ -2411,13 +2411,13 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="tts_generation",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                include_path=None,
-                max_concurrent=32,
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://arxiv.org/abs/2110.07205",
+                    published_score=14.0,
+                    published_score_ref="",
                     score_func=lambda results: 0.0,
                 ),
             ),
