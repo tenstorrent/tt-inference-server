@@ -3313,6 +3313,7 @@ def calculate_target_metrics(metrics_config):
         "target": 1,  # actual target
     }
 
+
     metrics = {}
     for config in metrics_config:
         avg_metric = config["avg_metric"]
