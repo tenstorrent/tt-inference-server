@@ -1645,7 +1645,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if vllm_image:
-            vllm_image_display = [create_image_generation_display_dict(r) for r in vllm_image]
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
             vllm_image_md = get_markdown_table(vllm_image_display)
             image_sections.append(
                 f"#### vLLM Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
@@ -1727,7 +1729,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if aiperf_image:
-            aiperf_image_display = [create_image_generation_display_dict(r) for r in aiperf_image]
+            aiperf_image_display = [
+                create_image_generation_display_dict(r) for r in aiperf_image
+            ]
             aiperf_image_md = get_markdown_table(aiperf_image_display)
             image_sections.append(
                 f"#### AIPerf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_image_md}"
@@ -1806,7 +1810,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
 
         if genai_image:
-            genai_image_display = [create_image_generation_display_dict(r) for r in genai_image]
+            genai_image_display = [
+                create_image_generation_display_dict(r) for r in genai_image
+            ]
             genai_image_md = get_markdown_table(genai_image_display)
             image_sections.append(
                 f"#### GenAI-Perf Image Generation Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_image_md}"

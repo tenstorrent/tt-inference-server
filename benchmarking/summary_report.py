@@ -682,9 +682,13 @@ def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     for col_name, display_header in display_cols:
         # Backward compatibility: try new key first, fall back to old key
         if col_name == "isl":
-            value = result.get("isl", result.get("input_sequence_length", NOT_MEASURED_STR))
+            value = result.get(
+                "isl", result.get("input_sequence_length", NOT_MEASURED_STR)
+            )
         elif col_name == "osl":
-            value = result.get("osl", result.get("output_sequence_length", NOT_MEASURED_STR))
+            value = result.get(
+                "osl", result.get("output_sequence_length", NOT_MEASURED_STR)
+            )
         else:
             value = result.get(col_name, NOT_MEASURED_STR)
         # Format backend value for display
