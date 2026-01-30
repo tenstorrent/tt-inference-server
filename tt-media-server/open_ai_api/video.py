@@ -144,14 +144,8 @@ def cancel_video_job(
     Raises:
         HTTPException: If video not found.
     """
-    success = service.cancel_job(job_id)
-    if not success:
+    status = service.cancel_job(job_id)
+    if not status:
         raise HTTPException(status_code=404, detail="Video job not found")
 
-    return JSONResponse(
-        content={
-            "id": job_id,
-            "object": JobTypes.VIDEO.value,
-            "cancelled": True,
-        }
-    )
+    return JSONResponse(content=status)
