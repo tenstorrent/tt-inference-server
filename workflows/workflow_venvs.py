@@ -303,10 +303,19 @@ def setup_evals_video(
 ) -> bool:
     """
     Setup video evaluation environment on HOST.
-    Video models typically need basic dependencies for server interaction.
+    Video models need dependencies for CLIP scoring, video frame extraction, and server interaction.
     """
     logger.info("Installing dependencies for video evaluation...")
-    return setup_venv(venv_config)
+    setup_venv(venv_config)
+    run_command(
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} --index-url https://download.pytorch.org/whl/cpu torch torchvision",
+        logger=logger,
+    )
+    run_command(
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests datasets open-clip-torch pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
+        logger=logger,
+    )
+    return True
 
 
 def setup_stress_tests_run_script(
@@ -341,7 +350,7 @@ def setup_evals_run_script(
         logger=logger,
     )
     run_command(
-        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+        command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
         logger=logger,
     )
     run_command(

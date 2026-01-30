@@ -39,33 +39,24 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Multiple status entries to verify TTFT averaging
-        status_list = [
-            VideoGenerationTestStatus(
-                status=True,
-                elapsed=60.0,
-                num_inference_steps=20,
-                inference_steps_per_second=0.33,
-                job_id="job1",
-                video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
-            ),
-            VideoGenerationTestStatus(
-                status=True,
-                elapsed=70.0,
-                num_inference_steps=20,
-                inference_steps_per_second=0.29,
-                job_id="job2",
-                video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
-            ),
-        ]
+
+        mock_eval_result = {
+            "num_prompts": 2,
+            "num_inference_steps": 20,
+            "clip_results": {
+                "average_clip": 0.85,
+                "min_clip": 0.8,
+                "max_clip": 0.9,
+                "clip_standard_deviation": 0.05,
+            },
+            "accuracy_check": 1,
+        }
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-mochi")):
             with patch.object(
                 strategy,
-                "_run_video_generation_benchmark",
-                return_value=status_list,
+                "_run_video_generation_eval",
+                return_value=mock_eval_result,
             ):
                 strategy.run_eval()
 
@@ -99,7 +90,13 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
             "tolerance": 0.1,
             "published_score": 0.9,
             "published_score_ref": "ref",
-            "score": 65.0,  # TTFT average: (60.0 + 70.0) / 2
+            "num_prompts": 2,
+            "num_inference_steps": 20,
+            "average_clip": 0.85,
+            "min_clip": 0.8,
+            "max_clip": 0.9,
+            "clip_standard_deviation": 0.05,
+            "accuracy_check": 1,
         }
         for key, value in expected.items():
             assert eval_result[key] == value, f"Mismatch for {key}"
@@ -118,7 +115,7 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
         with patch.object(strategy, "get_health", return_value=(True, "tt-mochi")):
             with patch.object(
                 strategy,
-                "_run_video_generation_benchmark",
+                "_run_video_generation_eval",
                 side_effect=RuntimeError("Error"),
             ):
                 with pytest.raises(RuntimeError):
