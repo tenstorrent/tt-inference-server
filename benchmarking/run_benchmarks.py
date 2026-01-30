@@ -119,18 +119,22 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    if params.task_type in ("image", "vlm"):
+    
+    # VLM models: use isl/osl + image dimensions
+    if params.task_type == "vlm":
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json"
         )
+    # Text models: standard isl/osl
     else:
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
-    dataset_name = "random-mm" if params.task_type == "image" else "random"
+    # VLM models need multimodal dataset; text models use standard dataset
+    dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "vllm" if params.task_type == "text" else "openai-chat"
 
     # fmt: off

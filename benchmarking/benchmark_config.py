@@ -208,10 +208,10 @@ def cap_benchmark_params(
     if params.isl is None or params.osl is None:
         return params
 
-    # Calculate vision tokens for VLM models
+    # Calculate vision tokens for VLM models only (not image generation)
     vision_tokens = 0
     if (
-        params.task_type in ("image", "vlm")
+        params.task_type == "vlm"
         and params.image_height
         and params.image_width
     ):
