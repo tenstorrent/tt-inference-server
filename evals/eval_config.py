@@ -1468,6 +1468,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
                 score=EvalTaskScore(
                     gpu_reference_score=91.35,
                     gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J86",
@@ -1490,6 +1494,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
                 score=EvalTaskScore(
                     gpu_reference_score=60.04,
                     gpu_reference_score_ref="https://docs.google.com/spreadsheets/d/1kFIUj9Bp5WJ0lW3QPwQRRWDyLRieedKrFZqfxWBfeNw/edit?gid=0#gid=0&range=J87",
@@ -1923,6 +1931,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
                 score=EvalTaskScore(
                     published_score=87.5,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
@@ -1943,6 +1955,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 apply_chat_template=False,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
                 score=EvalTaskScore(
                     published_score=46.7,
                     published_score_ref="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct#instruction-tuned-models",
