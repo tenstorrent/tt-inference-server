@@ -10,6 +10,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import List
+from pytest import ExitCode
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -184,7 +185,12 @@ def main():
             args.output_path,
             cli_args.get("service_port"),
         )
-        return_code = run_command(command=cmd, logger=logger, env=env_vars)
+        return_code = run_command(command=cmd, logger=logger, env=env_vars, check=False)
+        if return_code not in (ExitCode.OK, ExitCode.TESTS_FAILED):
+            raise RuntimeError(
+                f"⛔ Command: {cmd} exited with code {return_code} ({ExitCode(return_code).name}). "
+                "This indicates a error, not a test failure. See logs above."
+            )
         return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
