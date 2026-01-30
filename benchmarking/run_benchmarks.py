@@ -119,7 +119,7 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    
+
     # VLM models: use isl/osl + image dimensions
     if params.task_type == "vlm":
         result_filename = (
@@ -155,8 +155,7 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
-    # Add multimodal parameters if the model supports it
-    if params.task_type in ("image", "vlm"):
+    if params.task_type == "vlm":
         if params.image_height and params.image_width:
             cmd.extend([
                 "--random-mm-base-items-per-request", str(params.images_per_prompt),
@@ -273,11 +272,11 @@ def main():
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
     if "image" in model_spec.supported_modalities:
-        log_str += "Running image benchmarks for:\n"
+        log_str += "Running VLM benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12}\n"
         for i, param in enumerate(all_params, 1):
-            if param.task_type in ("image", "vlm"):
+            if param.task_type == "vlm":
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
