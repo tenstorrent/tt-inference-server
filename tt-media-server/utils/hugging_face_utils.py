@@ -73,8 +73,9 @@ class HuggingFaceUtils:
             raise RuntimeError("Missing required dependency: huggingface_hub")
 
         except Exception as e:
-            name = getattr(settings, "model_weights_path", None) or "unknown"
-            self.logger.error(f"Failed to download model weights for {name}: {e}")
+            self.logger.error(
+                f"Failed to download model weights for {model_name or 'unknown model'}: {e}"
+            )
             self.logger.warning("Continuing with existing model weights path")
 
     def _are_huggingface_weights_cached(self, repo_id: str) -> bool:
