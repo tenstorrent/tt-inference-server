@@ -846,15 +846,38 @@ def aiperf_benchmark_generate_report(
                 logger.warning(f"Could not parse image parameters from {filename}")
                 continue
 
+            # Determine if this is VLM or image generation based on model type
+            model_id = data.get("model_id", "")
+            is_image_generation = any(
+                img_gen in model_id.lower()
+                for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+            )
+            task_type = "image" if is_image_generation else "vlm"
+
+            # Calculate throughput metrics
+            mean_tpot_ms = data.get("mean_tpot_ms", 0)
+            if mean_tpot_ms and mean_tpot_ms > 0:
+                mean_tps = 1000.0 / mean_tpot_ms
+            else:
+                mean_tps = 0
+            
+            actual_max_con = min(concurrency, num_requests)
+            tps_decode_throughput = mean_tps * actual_max_con if mean_tps else 0
+
             result = {
                 "source": "vLLM",
                 "isl": isl,
                 "osl": osl,
+                "input_sequence_length": isl,
+                "output_sequence_length": osl,
                 "concurrency": concurrency,
+                "max_con": concurrency,
                 "num_requests": num_requests,
                 "images": images,
                 "image_height": height,
                 "image_width": width,
+                "images_per_prompt": images,
+                "task_type": task_type,
                 # TTFT metrics
                 "mean_ttft_ms": data.get("mean_ttft_ms", 0),
                 "median_ttft_ms": data.get("median_ttft_ms", 0),
@@ -870,7 +893,9 @@ def aiperf_benchmark_generate_report(
                 "median_e2el_ms": data.get("median_e2el_ms", 0),
                 "p99_e2el_ms": data.get("p99_e2el_ms", 0),
                 "std_e2el_ms": data.get("std_e2el_ms", 0),
-                # Throughput
+                # Throughput (calculated)
+                "mean_tps": mean_tps,
+                "tps_decode_throughput": tps_decode_throughput,
                 "output_token_throughput": data.get("output_throughput", 0),
                 "total_token_throughput": data.get("total_token_throughput", 0),
                 "request_throughput": data.get("request_throughput", 0),
@@ -880,7 +905,7 @@ def aiperf_benchmark_generate_report(
                 "total_output_tokens": data.get("total_output_tokens", 0),
                 # Metadata
                 "model_id": data.get("model_id", ""),
-                "backend": "vllm",
+                "backend": data.get("backend", "vllm"),
             }
             vllm_image_results.append(result)
         except Exception as e:
@@ -2167,7 +2192,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
         flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
         vlm_section = (
-            f"#### VLM Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
+            f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         )
         if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
             vlm_section += benchmark_image_release_markdown(
