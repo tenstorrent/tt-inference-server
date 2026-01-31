@@ -26,6 +26,7 @@ class SupportedModels(Enum):
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    LLAMA_3_2_1B = "meta-llama/Llama-3.2-1B"
 
 
 # MODEL environment variable

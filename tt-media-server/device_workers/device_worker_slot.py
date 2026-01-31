@@ -1,16 +1,12 @@
-# SPDX-License-Identifier: Apache-2.0
-#
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
 import asyncio
 from multiprocessing import Queue
+from typing import List
 
-from config.constants import SHUTDOWN_SIGNAL
 from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
 )
-from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
@@ -19,23 +15,12 @@ from utils.logger import TTLogger
 def device_worker(
     worker_id: str,
     task_queue: TTQueue,
-    result_queue,
+    slots: List[TTFasterFifoQueue],
     warmup_signals_queue: Queue,
     error_queue: Queue,
-    result_queue_name: str = None,
-    result_queue_capacity: int = 10000,
 ):
     setup_worker_environment(worker_id, "16", 16)
     logger = TTLogger()
-
-    # attach to queue if it's provided
-    if result_queue_name is not None:
-        result_queue = SharedMemoryChunkQueue(
-            name=result_queue_name, create=False, capacity=result_queue_capacity
-        )
-        logger.info(
-            f"Worker {worker_id} attached to SharedMemoryChunkQueue: {result_queue_name}"
-        )
 
     # Create a single event loop for this worker process
     # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
@@ -69,6 +54,8 @@ def device_worker(
     # Define streaming handler
     async def handle_streaming(request):
         try:
+            slot_id = request._slot_id
+            result_queue: TTFasterFifoQueue = slots[slot_id]
             result_generator = await device_runner._run_async([request])
 
             logger.info("Starting streaming")
@@ -85,6 +72,8 @@ def device_worker(
 
     # Handle non-streaming request
     async def handle_non_streaming(request):
+        slot_id = request._slot_id
+        result_queue: TTFasterFifoQueue = slots[slot_id]
         try:
             response = await device_runner._run_async([request])
             if response:
@@ -97,30 +86,29 @@ def device_worker(
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
-        from config.settings import get_settings
-
-        settings = get_settings()
+        from queue import Empty
         """Continuously pull requests from queue and submit to async handlers"""
-        batch_size = settings.vllm.max_num_seqs
         while True:
+            try:
             # Run blocking queue.get() in thread pool to not block event loop
-            requests = await loop.run_in_executor(
-                None,
-                lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
-            )
+                request = await loop.run_in_executor(None, lambda: task_queue.get(block=True))
+            except Empty:
+                continue
 
-            for request in requests:
-                if request == SHUTDOWN_SIGNAL:
-                    logger.info(f"Worker {worker_id} received shutdown signal")
-                    return
-                if request is None:
-                    continue
-                if hasattr(request, "stream") and request.stream:
-                    # Fire and forget streaming task - runs concurrently
-                    asyncio.create_task(handle_streaming(request))
-                else:
-                    # Fire and forget non-streaming task - runs concurrently in event loop
-                    asyncio.create_task(handle_non_streaming(request))
+            if not request:
+                await asyncio.sleep(0.001)
+                continue
+
+            if request is None:  # Sentinel to shut down
+                logger.info(f"Worker {worker_id} received shutdown signal")
+                return
+
+            if hasattr(request, "stream") and request.stream:
+                # Fire and forget streaming task - runs concurrently
+                asyncio.create_task(handle_streaming(request))
+            else:
+                # Fire and forget non-streaming task - runs concurrently in event loop
+                asyncio.create_task(handle_non_streaming(request))
 
     try:
         loop.run_until_complete(request_feeder())

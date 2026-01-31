@@ -8,6 +8,7 @@ from abc import ABC
 from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
+from model_services.tt_faster_fifo_queue import SlotManager
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
@@ -22,6 +23,8 @@ class BaseService(ABC):
         self.logger = TTLogger()
         if settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
+        if settings.use_slot_manager:
+            self.slot_manager = SlotManager()
 
     def create_segment_request(
         self, original_request: BaseRequest, segment, segment_index: int
@@ -51,7 +54,10 @@ class BaseService(ABC):
 
         # If no segments, process as single request
         if not segments:
-            result = await self.process(request)
+            if settings.use_slot_manager:
+                result = await self.process_request_slot(request)
+            else:
+                result = await self.process(request)
         else:
             # Process segments in parallel
             segment_requests = [
@@ -80,8 +86,12 @@ class BaseService(ABC):
     async def process_streaming_request(self, input_request: BaseRequest):
         """Process streaming request - returns async generator"""
         request = await self.pre_process(input_request)
-        async for result in self.process_streaming(request):
-            yield await self.post_process(result)
+        if settings.use_slot_manager:
+            async for result in self.process_streaming_request_slot(request):
+                yield await self.post_process(result)
+        else:
+            async for result in self.process_streaming(request):
+                yield await self.post_process(result)
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -118,7 +128,10 @@ class BaseService(ABC):
     async def _start_workers_async(self):
         """Internal async wrapper for scheduler.start_workers()"""
         try:
-            await self.scheduler.start_workers()
+            if settings.use_slot_manager:
+                await self.scheduler.start_workers(slot_manager=self.slot_manager)
+            else:
+                await self.scheduler.start_workers()
         except Exception as e:
             self.logger.error(f"Failed to start workers: {e}")
 
@@ -145,7 +158,7 @@ class BaseService(ABC):
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
+                f"Request timed out for task {request._task_id} after {settings.request_processing_timeout_seconds}s"
             )
             raise
         except Exception as e:
@@ -153,6 +166,120 @@ class BaseService(ABC):
             raise e
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
+
+    async def process_request_slot(self, request):
+        """Process non-streaming request using slot-based result queue."""
+        import time
+        from queue import Empty
+
+        slot_id, queue = await self.slot_manager.claim_slot()
+        request._slot_id = slot_id
+
+        self.scheduler.process_request(request)
+
+        start_time = time.monotonic()
+        timeout = settings.request_processing_timeout_seconds
+        loop = asyncio.get_event_loop()
+
+        try:
+            while True:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= timeout:
+                    raise asyncio.TimeoutError(f"Request timed out after {timeout}s")
+
+                try:
+                    # Use shorter timeout (5s) and retry to allow proper timeout handling
+                    result = await loop.run_in_executor(
+                        None, lambda: queue.get(block=True, timeout=5.0)
+                    )
+                    if result:
+                        _worker_id, _task_id, data = result
+                        return data
+                except Empty:
+                    # faster_fifo timeout, continue and check overall timeout
+                    continue
+
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Request timed out for task {request._task_id} after {timeout}s"
+            )
+            raise
+        except Exception as e:
+            self.logger.error(f"Error processing request: {e}")
+            raise e
+        finally:
+            self.slot_manager.release_slot(slot_id)
+
+    async def process_streaming_request_slot(self, request):
+        """Process streaming request using slot-based result queue."""
+        import time
+        from queue import Empty
+
+        slot_id, queue = await self.slot_manager.claim_slot()
+        request._slot_id = slot_id
+
+        self.scheduler.process_request(request)
+
+        last_chunk_time = time.monotonic()
+        timeout = settings.request_processing_timeout_seconds
+        loop = asyncio.get_event_loop()
+
+        try:
+            while True:
+                elapsed_since_last_chunk = time.monotonic() - last_chunk_time
+                if elapsed_since_last_chunk >= timeout:
+                    raise asyncio.TimeoutError(
+                        f"Streaming timed out - no chunk received for {timeout}s"
+                    )
+
+                try:
+                    result = await loop.run_in_executor(
+                        None, lambda: queue.get(block=True, timeout=5.0)
+                    )
+                except Empty:
+                    continue
+
+                if result:
+                    last_chunk_time = time.monotonic()
+                    _worker_id, _task_id, chunk = result
+                    chunk_type = chunk.get("type")
+
+                    if chunk_type == "streaming_chunk":
+                        data = chunk.get("data")
+                        if data is not None:
+                            yield data
+                    elif chunk_type == "final_result":
+                        data = chunk.get("data")
+                        if data is not None:
+                            yield data
+                        break
+                    else:
+                        self.logger.error(
+                            f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
+                        )
+                        raise ValueError(f"Streaming protocol violation: {chunk_type}")
+
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Streaming timed out for task {request._task_id} after {timeout}s"
+            )
+            raise
+        except Exception as e:
+            self.logger.error(f"Streaming failed for task {request._task_id}: {e}")
+            raise
+        finally:
+            self.slot_manager.release_slot(slot_id)
+
+    def handle_streaming_chunk(self, chunk):
+        formatted_chunk = chunk["chunk"]
+        if formatted_chunk and formatted_chunk.text:
+            return formatted_chunk
+        return None
+
+    def handle_final_result(self, result):
+        if result.get("return", False):
+            return result.get("result")
+        return None
 
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
@@ -183,16 +310,13 @@ class BaseService(ABC):
                 chunk_type = chunk.get("type")
 
                 if chunk_type == "streaming_chunk":
-                    formatted_chunk = chunk["chunk"]
-                    # Inline the check - no function calls
-                    if formatted_chunk and formatted_chunk.text:
-                        yield formatted_chunk
-
+                    result = self.handle_streaming_chunk(chunk)
+                    if result is not None:
+                        yield result
                 elif chunk_type == "final_result":
-                    if chunk.get("return", False):
-                        final_result = chunk["result"]
-                        if final_result is not None:
-                            yield final_result
+                    result = self.handle_final_result(chunk)
+                    if result is not None:
+                        yield result
                     break
                 else:
                     self.logger.error(
