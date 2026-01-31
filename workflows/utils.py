@@ -192,7 +192,7 @@ def run_command(
     shell=False,
     copy_env=True,
     env=None,
-    check=True,
+    check=False,
 ):
     """
     This function is a wrapper around subprocess.Popen and subprocess.run.
@@ -205,7 +205,7 @@ def run_command(
         shell: Whether to use shell to run the command.
         copy_env: Whether to copy the environment variables.
         env: Environment variables to use.
-        check: Whether to check the return code. Only set to False if this command is optional or can be recovered from.
+        check: Whether to check the return code. Set to True for commands that must succeed.
     Returns:
         Return code of the command.
     Raises:
@@ -287,7 +287,7 @@ def run_command(
         else:
             logger.error(
                 error_message
-                + "This command is optional or can be recovered from failure (check=False set). Continuing ..."
+                + "\nThis command is optional or can be recovered from failure (check=False set). Continuing ...\n"
             )
     return return_code
 
