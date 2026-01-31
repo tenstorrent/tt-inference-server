@@ -199,7 +199,7 @@
 │   ├── scripts
 │   │   └── download_sdxl_weights.py
 │   ├── security
-│   │   └── api_key_cheker.py
+│   │   └── api_key_checker.py
 │   ├── static
 │   │   ├── data
 │   │   │   ├── audio_test.json

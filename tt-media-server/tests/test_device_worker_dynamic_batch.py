@@ -7,6 +7,7 @@ import sys
 from unittest.mock import Mock, patch
 
 import pytest
+from config.constants import SHUTDOWN_SIGNAL
 
 # Mock all external dependencies before importing
 sys.modules["ttnn"] = Mock()
@@ -22,7 +23,6 @@ mock_settings.enable_telemetry = False
 mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
 mock_settings.request_processing_timeout_seconds = 100
-mock_settings.use_memory_queue = True
 
 # Mock the settings module completely
 mock_settings_module = Mock()
@@ -108,8 +108,8 @@ class TestDeviceWorkerDynamicBatch:
         # Create streaming request
         streaming_request = create_test_request("stream_task_1", stream=True)
 
-        # Mock queue to return request then shutdown
-        task_queue.get.side_effect = [streaming_request, None]
+        # Mock queue to return request then shutdown signal
+        task_queue.get.side_effect = [streaming_request, SHUTDOWN_SIGNAL]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -174,8 +174,8 @@ class TestDeviceWorkerDynamicBatch:
         # Create non-streaming request
         regular_request = create_test_request("task_1", stream=False)
 
-        # Mock queue to return request then shutdown
-        task_queue.get.side_effect = [regular_request, None]
+        # Mock queue to return request then shutdown signal
+        task_queue.get.side_effect = [regular_request, SHUTDOWN_SIGNAL]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -215,7 +215,7 @@ class TestDeviceWorkerDynamicBatch:
         # Create streaming request that will fail
         failing_stream = create_test_request("stream_fail", stream=True)
 
-        task_queue.get.side_effect = [failing_stream, None]
+        task_queue.get.side_effect = [failing_stream, SHUTDOWN_SIGNAL]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
