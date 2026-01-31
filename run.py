@@ -292,7 +292,7 @@ def validate_local_setup(model_spec, json_fpath):
         ]
         # fmt: on
 
-        return_code = run_command(cmd, logger=logger)
+        return_code = run_command(cmd, logger=logger, check=True)
 
         if return_code != 0:
             raise ValueError(
