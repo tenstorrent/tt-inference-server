@@ -308,7 +308,6 @@ class WhisperEvalTest(BaseTest):
                 [path, "--help"],
                 capture_output=True,
                 timeout=DEFAULT_TIMEOUT,
-                check=False,
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError, OSError):
