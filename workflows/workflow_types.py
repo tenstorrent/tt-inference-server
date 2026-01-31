@@ -44,6 +44,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
+    EVALS_GPT_OSS = auto()
     SERVER = auto()
     TT_SMI = auto()
     TT_TOPOLOGY = auto()

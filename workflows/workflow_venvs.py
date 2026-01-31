@@ -318,6 +318,35 @@ def setup_evals_video(
     return True
 
 
+
+
+def setup_evals_gpt_oss(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+    uv_exec: Path,
+) -> bool:
+    """Setup gpt-oss evaluation environment."""
+    logger.info("running setup_evals_gpt_oss() ...")
+    gpt_oss_dir = venv_config.venv_path / "gpt-oss"
+    original_dir = os.getcwd()
+    if gpt_oss_dir.is_dir():
+        logger.info(f"The directory {gpt_oss_dir} exists.")
+    else:
+        logger.info(f"The directory {gpt_oss_dir} does not exist. Setting up ...")
+        # Clone the repository
+        clone_cmd = f"git clone https://github.com/openai/gpt-oss.git {gpt_oss_dir}"
+        run_command(clone_cmd, logger=logger)
+        # Install the package in editable mode with eval extras
+        run_command(
+            f"{uv_exec} pip install --managed-python --python {venv_config.venv_python} "
+            f"-e '{gpt_oss_dir}[eval]' pyjwt==2.7.0",
+            logger=logger,
+        )
+    os.chdir(original_dir)
+    return True
+
+
+
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -544,6 +573,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_EMBEDDING,
         setup_function=setup_evals_embedding,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_GPT_OSS,
+        setup_function=setup_evals_gpt_oss,
+        python_version="3.12",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VIDEO, setup_function=setup_evals_video

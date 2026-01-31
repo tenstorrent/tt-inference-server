@@ -464,7 +464,7 @@ class ModelSpec:
                 )
 
         if not self.min_ram_gb and self.param_count:
-            object.__setattr__(self, "min_ram_gb", self.param_count * 4)
+            object.__setattr__(self, "min_ram_gb", self.param_count * 2)
 
         # Generate default docker image if not provided
         if not self.docker_image:
@@ -934,7 +934,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="60ffb199",
+        tt_metal_commit="de73e2d8",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -973,7 +973,7 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="60ffb199",
+        tt_metal_commit="de73e2d8",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
