@@ -374,7 +374,7 @@ def save_individual_result(
         result["images_per_prompt"] = images
         result["image_height"] = image_height
         result["image_width"] = image_width
-        result["task_type"] = "image"
+        result["task_type"] = "vlm"
 
     with open(filepath, "w") as f:
         json.dump(result, f, indent=2)
