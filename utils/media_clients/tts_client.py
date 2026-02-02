@@ -506,16 +506,11 @@ class TtsClientStrategy(BaseMediaStrategy):
             return 3  # FAIL
 
     def _calculate_accuracy_check(self) -> int:
-        """Calculate accuracy/quality check based on WER (Word Error Rate).
-
-        NOTE: WER calculation requires ASR integration (running Whisper model
-        to transcribe generated audio). Currently returns 0 (undefined) until
-        multi-model support is available.
+        """Calculate accuracy/quality check for TTS eval/benchmark.
 
         Returns:
-            0 - undefined (WER not implemented)
-            2 - passed (WER within valid range) - future
-            3 - failed (WER outside valid range) - future
+            0 - undefined (no quality metric implemented)
+            2 - passed
+            3 - failed
         """
-        # TODO: Implement WER calculation when multi-model support is available
         return 0

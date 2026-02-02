@@ -333,7 +333,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
 
 class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
-    """Tests for _calculate_accuracy_check method (WER quality stub)."""
+    """Tests for _calculate_accuracy_check method."""
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -347,10 +347,10 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     def test_accuracy_check_returns_undefined(self):
-        """Test that accuracy_check returns 0 (undefined) - WER not implemented."""
+        """Test that accuracy_check returns 0 (undefined)."""
         strategy = self._create_strategy()
         result = strategy._calculate_accuracy_check()
-        assert result == 0  # UNDEFINED - WER requires multi-model support
+        assert result == 0
 
 
 class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
@@ -469,8 +469,8 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0, wer=0.1),
-            TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0, wer=0.2),
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0),
+            TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
         ]
 
         with patch.object(
@@ -503,9 +503,7 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert "p90_ttft" in eval_data
         assert "p95_ttft" in eval_data
         assert "performance_check" in eval_data  # TTFT/RTR check
-        assert (
-            "accuracy_check" in eval_data
-        )  # TODO: WER quality check (requires multi-model)
+        assert "accuracy_check" in eval_data
 
         # Verify calculated averages
         assert eval_data["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
