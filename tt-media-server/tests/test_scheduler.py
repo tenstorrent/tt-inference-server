@@ -387,6 +387,134 @@ class TestScheduler:
         )
         mock_logger.info.assert_any_call("Device warmup listener is done")
 
+    @patch("model_services.scheduler.Process")
+    def test_start_worker_with_queue_index_uses_given_index(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        """Test _start_worker with queue_index uses that index (restart path, lines 159-160)"""
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {
+            0: create_mock_queue(),
+            1: create_mock_queue(),
+        }
+        scheduler.worker_info = {}
+
+        scheduler._start_worker(worker_id="0", queue_index=1)
+
+        assert scheduler.worker_info["0"]["queue_index"] == 1
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_start_worker_without_queue_index_uses_len_worker_info(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        """Test _start_worker without queue_index uses len(worker_info) (first start, line 162)"""
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {
+            0: create_mock_queue(),
+            1: create_mock_queue(),
+        }
+        scheduler.worker_info = {}
+
+        scheduler._start_worker(worker_id="0")
+
+        assert scheduler.worker_info["0"]["queue_index"] == 0
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_passes_existing_queue_index_to_start_worker(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        """Test restart_worker passes existing queue_index to _start_worker (lines 225, 228)"""
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {
+            0: create_mock_queue(),
+            1: create_mock_queue(),
+        }
+        old_process = Mock(spec=Process)
+        old_process.is_alive = Mock(return_value=False)
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 0,
+            "queue_index": 1,
+            "error_count": 0,
+        }
+
+        scheduler.restart_worker("0")
+
+        assert scheduler.worker_info["0"]["queue_index"] == 1
+        mock_process_cls.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(
+        self, scheduler
+    ):
+        """Test worker_health_monitor logs and bumps restart_count when restart_worker raises (491-494, 498)"""
+        dead_process = Mock(spec=Process)
+        dead_process.is_alive = Mock(return_value=False)
+        scheduler.worker_info["0"] = {
+            "process": dead_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+        scheduler.is_ready = True
+        scheduler.monitor_running = True
+        first_sleep = True
+
+        async def stop_after_first_iteration(timeout):
+            nonlocal first_sleep
+            if first_sleep:
+                first_sleep = False
+                scheduler.monitor_running = False
+
+        with patch.object(
+            scheduler, "restart_worker", side_effect=RuntimeError("Restart failed")
+        ), patch(
+            "model_services.scheduler.asyncio.sleep",
+            side_effect=stop_after_first_iteration,
+        ):
+            await scheduler.worker_health_monitor()
+
+        mock_logger.error.assert_any_call("Failed to restart worker 0: Restart failed")
+        assert scheduler.worker_info["0"]["restart_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_worker_health_monitor_calls_deep_restart_when_restart_count_exceeded(
+        self, scheduler
+    ):
+        """Test worker_health_monitor calls deep_restart_workers when restart_count >= max and allow_deep_reset (500-506)"""
+        dead_process = Mock(spec=Process)
+        dead_process.is_alive = Mock(return_value=False)
+        scheduler.settings.allow_deep_reset = True
+        scheduler.settings.max_worker_restart_count = 3
+        scheduler.worker_info["0"] = {
+            "process": dead_process,
+            "restart_count": 3,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+        scheduler.is_ready = True
+        scheduler.monitor_running = True
+        first_sleep = True
+
+        async def stop_after_first_iteration(timeout):
+            nonlocal first_sleep
+            if first_sleep:
+                first_sleep = False
+                scheduler.monitor_running = False
+
+        with patch.object(
+            scheduler, "deep_restart_workers", new_callable=AsyncMock
+        ) as mock_deep_restart, patch(
+            "model_services.scheduler.asyncio.sleep",
+            side_effect=stop_after_first_iteration,
+        ):
+            await scheduler.worker_health_monitor()
+
+        mock_logger.info.assert_any_call("Trying deep restart of all workers")
+        mock_deep_restart.assert_called_once()
+
     def test_stop_workers(self, scheduler):
         """Test stop_workers method"""
         # Setup
@@ -739,6 +867,38 @@ class TestSchedulerResultListener:
 
         # Should complete without raising
         await scheduler.result_listener()
+
+    @pytest.mark.asyncio
+    async def test_result_listener_continues_when_one_queue_get_many_raises(
+        self, scheduler_for_listener
+    ):
+        """Test result_listener inner except (271-272): one queue raises, listener continues"""
+        scheduler = scheduler_for_listener
+
+        queue_ok = Mock()
+        queue_ok.get_many = Mock(return_value=[])
+
+        queue_raises = Mock()
+        queue_raises.get_many = Mock(side_effect=RuntimeError("Queue read error"))
+
+        scheduler.result_queues_by_worker = {0: queue_ok, 1: queue_raises}
+        scheduler.result_queues = {}
+        call_count = [0]
+
+        async def stop_after_few(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] >= 4:
+                scheduler.listener_running = False
+
+        with patch(
+            "model_services.scheduler.asyncio.sleep",
+            side_effect=stop_after_few,
+        ):
+            await scheduler.result_listener()
+
+        queue_ok.get_many.assert_called()
+        queue_raises.get_many.assert_called()
+        assert not scheduler.listener_running
 
     @pytest.mark.asyncio
     async def test_result_listener_sleeps_when_no_results(self, scheduler_for_listener):
