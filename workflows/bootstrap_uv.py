@@ -53,6 +53,7 @@ def bootstrap_uv():
     run_command(
         f"{sys.executable} -m venv {UV_VENV_PATH}",
         logger=logger,
+        check=True,
     )
 
     # Ensure pip is installed using ensurepip (works even on externally-managed Python)
@@ -61,14 +62,15 @@ def bootstrap_uv():
         run_command(
             f"{venv_python} -m ensurepip --upgrade",
             logger=logger,
+            check=True,
         )
 
     # Step 3: Install 'uv' using pip
     # Note: Activating the virtual environment in a script doesn't affect the current shell,
     # so we directly use the pip executable from the venv.
     logger.info("Installing 'uv' using pip...")
-    run_command(f"{pip_exec} install uv", logger=logger)
+    run_command(f"{pip_exec} install uv", logger=logger, check=True)
 
     logger.info("uv bootstrap installation complete.")
     # check version
-    run_command(f"{str(UV_EXEC)} --version", logger=logger)
+    run_command(f"{str(UV_EXEC)} --version", logger=logger, check=True)
