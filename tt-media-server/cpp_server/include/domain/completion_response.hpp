@@ -137,6 +137,7 @@ struct StreamingChunkResponse {
     int64_t created;
     std::string model;
     std::vector<CompletionChoice> choices;
+    std::optional<std::string> error;  // Error message if any
 
     Json::Value toJson() const {
         Json::Value json;
@@ -150,6 +151,10 @@ struct StreamingChunkResponse {
             choicesArray.append(choice.toJson());
         }
         json["choices"] = choicesArray;
+        
+        if (error.has_value()) {
+            json["error"] = error.value();
+        }
 
         return json;
     }
