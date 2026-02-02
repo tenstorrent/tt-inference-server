@@ -114,11 +114,10 @@ tt-inference-server/tt-media-server$ pytest tt_model_runners/forge_runners/test_
 
 #### tt-inference-server
 - Add new model spec with forge vllm plugin implementation (model_spec.py)
-- Add eval config(eval_config.py) -> only if it should differ from the existing one, or if it doesnt exist at all
+- If the model does not exist in eval_config.py, you can add your eval_config, but the eval tasks should be the same as other tasks from other eval_configs from the model's family. Check NOTES below as well.
 
 #### tt-shield
 - Add model names in `on-dispatch.yml` dropdown when selecting models
-- Add to on-nightly forge media server model matrix
 
 ### Local Testing
 
@@ -139,3 +138,11 @@ To run the forge model, select the `forge-vllm-plugin` implementation when runni
 Add the model into the options dropdown(under the model input) in on-dispatch.yml in .github/workflows/on-dispatch.yml file
 
 To add models into the on-nightly workflow, navigate to tt-shield repo, and add the model into the model matrix in .github/workflows/on-dispatch.yml , under   run-evals-on-media-inference-server-forge job
+
+NOTES:
+- We are unable to run evaluations on Forge models that exist in metal.
+Reasons:
+   - current eval_configs send a seed parameter, which xla does not support per request
+   - current eval_configs specify max_model_lenght that will crash the FORGE LLM model.
+   - We cannot support two eval_configs for the same model at the moment.
+   - If the model only exists on forge, eval can be ran, but make sure that you limit max model len + add the limit of how many requests eval will send(limit_samples_map)

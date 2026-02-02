@@ -33,20 +33,14 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-<<<<<<< HEAD
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container.
-=======
-def get_base_docker_env_vars(model_spec, args):
-    """Get base environment variables common to all media server Docker containers.
->>>>>>> origin/dev
 
     Args:
         model_spec: Model specification
         args: CLI arguments
 
     Returns:
-<<<<<<< HEAD
         Dictionary of media server environment variables
     """
     env_vars = {
@@ -56,81 +50,6 @@ def get_base_docker_env_vars(model_spec, args):
 
     logger.info(
         f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
-=======
-        Dictionary with base environment variables (MODEL, DEVICE, DEVICE_IDS)
-    """
-    # Configure device IDs for tt-media-server workers
-    if getattr(args, "device_id", None):
-        # Use specific device IDs provided by user
-        device_ids_str = ",".join(f"({d})" for d in args.device_id)
-    else:
-        # Default to device 0 for single device setups
-        device_ids_str = "(0)"
-
-    # Use model_name (not hf_model_repo) to match ModelNames enum
-    # model_name is extracted from the HF repo path
-    env_vars = {
-        "MODEL": model_spec.model_name,
-        "DEVICE": model_spec.device_type.name.lower(),
-        "DEVICE_IDS": device_ids_str,
-    }
-
-    return env_vars
-
-
-def get_audio_docker_env_vars(model_spec, args):
-    """Get audio-specific environment variables for Docker container.
-
-    Args:
-        model_spec: Model specification
-        args: CLI arguments
-
-    Returns:
-        Dictionary of audio-specific environment variables
-    """
-    env_vars = get_base_docker_env_vars(model_spec, args)
-    env_vars["ALLOW_AUDIO_PREPROCESSING"] = "true"
-
-    logger.info(
-        f"Audio environment variables: MODEL={env_vars['MODEL']}, DEVICE={env_vars['DEVICE']}, DEVICE_IDS={env_vars['DEVICE_IDS']}"
-    )
-    return env_vars
-
-
-def get_embedding_docker_env_vars(model_spec, args):
-    """Get embedding-specific environment variables for Docker container.
-
-    Args:
-        model_spec: Model specification
-        args: CLI arguments
-
-    Returns:
-        Dictionary of embedding-specific environment variables
-    """
-    env_vars = get_base_docker_env_vars(model_spec, args)
-
-    # TODO: Remove these VLLM explicit parameters
-    # https://github.com/tenstorrent/tt-inference-server/issues/1253
-    env_vars.update(
-        {
-            "VLLM__MAX_NUM_BATCHED_TOKENS": model_spec.device_model_spec.env_vars.get(
-                "VLLM__MAX_NUM_BATCHED_TOKENS", 1024
-            ),
-            "VLLM__MAX_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
-                "VLLM__MAX_MODEL_LENGTH", 1024
-            ),
-            "VLLM__MIN_CONTEXT_LENGTH": model_spec.device_model_spec.env_vars.get(
-                "VLLM__MIN_CONTEXT_LENGTH", 32
-            ),
-            "VLLM__MAX_NUM_SEQS": model_spec.device_model_spec.env_vars.get(
-                "VLLM__MAX_NUM_SEQS", 1
-            ),
-        }
-    )
-
-    logger.info(
-        f"Embedding environment variables: MODEL={env_vars['MODEL']}, DEVICE={env_vars['DEVICE']}, DEVICE_IDS={env_vars['DEVICE_IDS']}"
->>>>>>> origin/dev
     )
     return env_vars
 
