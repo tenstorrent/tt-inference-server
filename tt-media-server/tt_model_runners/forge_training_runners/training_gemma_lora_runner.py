@@ -88,6 +88,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Gemma Lora training setup completed")
         
+        self.logger.debug("Sanity check if debug logging is working")
         self.logger.debug(f"Device {self.device_id}: Starting training...")
 
         global_step = 0
@@ -100,9 +101,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     # batch = device_manager.prepare_batch(batch)
                     batch = {k: v.to(self.device) for k, v in batch.items()}
-
+                    
+                    self.logger.debug(f"Device {self.device_id}: Forward pass started")
                     # Forward pass
-                    outputs = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                    try:
+                        outputs = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                    except Exception as e:
+                        self.logger.error(f"Forward pass failed: {e}")
+                        self.logger.error(traceback.format_exc())
+                        raise
+                    self.logger.debug(f"Device {self.device_id}: Forward pass finished")
 
                     logits = outputs.logits
 
@@ -115,10 +123,12 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         batch["labels"].view(-1),
                     )
                     running_loss += loss.item()
-
+                    
+                    self.logger.debug(f"Device {self.device_id}: Backward pass started")
                     # Backward pass
                     loss.backward()
                     torch_xla.sync(wait=True)
+                    self.logger.debug(f"Device {self.device_id}: Backward pass finished")
 
                     # Update parameters
                     self.optimizer.step()
@@ -143,8 +153,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     global_step += 1
 
         except Exception as e:
-            traceback_str = traceback.format_exc()
-            self.logger.error(f"Training failed with error: {str(e)}", traceback_str)
+            self.logger.error(f"Training failed with error: {str(e)}")
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
         finally:
             self.logger.debug(f"Device {self.device_id}: Training completed")
