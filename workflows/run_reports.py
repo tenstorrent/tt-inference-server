@@ -29,7 +29,7 @@ from stress_tests.stress_tests_summary_report import (
 )
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
@@ -41,7 +41,7 @@ from workflows.workflow_config import (
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ReportCheckTypes
+from workflows.workflow_types import DeviceTypes, ModelType, ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 

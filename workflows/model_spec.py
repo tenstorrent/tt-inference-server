@@ -6,7 +6,6 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, make_dataclass
-from enum import Enum, IntEnum, auto
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -16,7 +15,13 @@ from workflows.utils import (
     parse_commits_from_docker_image,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
+from workflows.workflow_types import (
+    DeviceTypes,
+    InferenceEngine,
+    ModelStatusTypes,
+    ModelType,
+    VersionMode,
+)
 
 VERSION = get_version()
 
@@ -178,29 +183,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
-
-
-class InferenceEngine(Enum):
-    VLLM = "vLLM"
-    MEDIA = "media"
-    FORGE = "forge"
-
-
-class ModelSource(Enum):
-    HUGGINGFACE = "huggingface"
-    LOCAL = "local"
-    NOACTION = "noaction"
-
-
-class ModelType(IntEnum):
-    LLM = auto()
-    CNN = auto()
-    AUDIO = auto()
-    IMAGE = auto()
-    EMBEDDING = auto()
-    TEXT_TO_SPEECH = auto()
-    VIDEO = auto()
-    VLM = auto()  # Vision-Language Models (text+image-to-text)
 
 
 @dataclass(frozen=True)

@@ -93,17 +93,30 @@ Follow the development and release git workflow, steps described below image:
 Pre-commit usage is defined in `.pre-commit-config.yaml`.
 
 Set up linting and formatting for development:
+#### option 1: use uv
 ```bash
-# [optional] step 1: use venv
+# option 1: use uv
+uv venv .pre-commit --python 3.10
+source .pre-commit/bin/activate
+
+uv pip install -r requirements-dev.txt
+uv pip install -r tt-media-server/requirements.txt
+```
+
+#### option 2: use os python venv
+```bash
+# option 2: use os python venv
 python3 -m venv .pre-commit
 source .pre-commit/bin/activate
 
-# step 2: install
 pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
 pip install -r tt-media-server/requirements.txt
+```
 
-# step 3: pre-commit
+#### running pre-commit tests
+
+```bash
 pre-commit install
 ```
 
