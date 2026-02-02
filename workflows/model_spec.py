@@ -464,7 +464,7 @@ class ModelSpec:
                 )
 
         if not self.min_ram_gb and self.param_count:
-            object.__setattr__(self, "min_ram_gb", self.param_count * 2)
+            object.__setattr__(self, "min_ram_gb", self.param_count * 4)
 
         # Generate default docker image if not provided
         if not self.docker_image:
