@@ -10,7 +10,7 @@ These functions are stateless and can be used anywhere without class inheritance
 
 Example usage:
     from utils.media_clients.metrics_utils import calculate_ttft, calculate_rtr
-    
+
     ttft = calculate_ttft(status_list)
     rtr = calculate_rtr(status_list)
 """
@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 def _extract_numeric_value(obj: Any, attributes: Tuple[str, ...]) -> float | None:
     """
     Extract first available numeric value from object attributes.
-    
+
     Args:
         obj: Object to extract value from
         attributes: Attribute names to try in order
-        
+
     Returns:
         Numeric value or None if not found/invalid
     """
@@ -51,14 +51,14 @@ def calculate_ttft(
 ) -> float:
     """
     Calculate average TTFT (Time To First Token) value.
-    
+
     Args:
         status_list: List of status objects with timing attributes
         attributes: Tuple of attribute names to try in order of preference
-        
+
     Returns:
         Average TTFT value, or 0.0 if no valid values found
-        
+
     Example:
         >>> statuses = [Status(ttft_ms=100), Status(ttft_ms=200)]
         >>> calculate_ttft(statuses)
@@ -82,14 +82,14 @@ def calculate_rtr(
 ) -> float:
     """
     Calculate average RTR (Real-Time Ratio) value.
-    
+
     RTR = audio_duration / processing_time
     Values > 1.0 mean faster than real-time.
-    
+
     Args:
         status_list: List of status objects with RTR attribute
         attribute: Name of the RTR attribute (default: "rtr")
-        
+
     Returns:
         Average RTR value, or 0.0 if no valid values found
     """
@@ -112,15 +112,15 @@ def calculate_tail_latency(
 ) -> Tuple[float, float]:
     """
     Calculate tail latency percentiles (P90, P95 by default).
-    
+
     Args:
         status_list: List of status objects with timing attributes
         attributes: Tuple of attribute names to try in order of preference
         percentiles: Tuple of two percentile values (default: 90th and 95th)
-        
+
     Returns:
         Tuple of (p90_value, p95_value) in same units as input
-        
+
     Raises:
         ValueError: If percentiles are not between 0 and 1
     """
@@ -156,12 +156,12 @@ def calculate_average(
 ) -> float:
     """
     Generic average calculation for any numeric attribute.
-    
+
     Args:
         status_list: List of status objects
         attribute: Name of the attribute to average
         default: Default value if no valid values found
-        
+
     Returns:
         Average value of the attribute
     """
@@ -180,14 +180,14 @@ def calculate_average(
 def calculate_percentile(values: List[float], percentile: float) -> float:
     """
     Calculate a single percentile value from a list of numbers.
-    
+
     Args:
         values: List of numeric values
         percentile: Percentile to calculate (0.0 to 1.0)
-        
+
     Returns:
         The percentile value
-        
+
     Raises:
         ValueError: If percentile is not between 0 and 1
     """
