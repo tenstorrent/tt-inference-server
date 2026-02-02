@@ -6,6 +6,7 @@ import asyncio
 import sys
 from unittest.mock import Mock, patch
 
+from domain.completion_response import CompletionOutput, CompletionResult
 import pytest
 from config.constants import SHUTDOWN_SIGNAL
 
@@ -75,7 +76,7 @@ from device_workers.device_worker_dynamic_batch import device_worker
 def mock_queues():
     """Create mock queues for testing"""
     task_queue = Mock()
-    task_queue.get = Mock()
+    task_queue.get_many = Mock()
 
     result_queue = Mock()
     result_queue.put = Mock()
@@ -100,16 +101,17 @@ class TestDeviceWorkerDynamicBatch:
         # Track results
         results_captured = []
 
-        def capture_put(*args):
-            results_captured.append(args)
+        def capture_put(item):
+            results_captured.append(item)
 
         result_queue.put = capture_put
 
         # Create streaming request
         streaming_request = create_test_request("stream_task_1", stream=True)
 
-        # Mock queue to return request then shutdown signal
-        task_queue.get.side_effect = [streaming_request, SHUTDOWN_SIGNAL]
+        # Mock queue to return batch of requests then shutdown signal
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[streaming_request], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -123,9 +125,21 @@ class TestDeviceWorkerDynamicBatch:
 
         # Create async generator that yields tuples (task_id, is_final, text)
         async def mock_async_generator():
-            yield ("stream_task_1", 0, "token_0")
-            yield ("stream_task_1", 0, "token_1")
-            yield ("stream_task_1", 1, "[DONE]")  # ✅ is_final=1
+            yield CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_0"),
+                task_id="stream_task_1",
+            )
+            yield CompletionOutput(
+                type="streaming_chunk",
+                data=CompletionResult(text="token_1"),
+                task_id="stream_task_1",
+            )
+            yield CompletionOutput(
+                type="final_result",
+                data=CompletionResult(text="[DONE]"),
+                task_id="stream_task_1",
+            )
 
         async def mock_run_async(requests):
             return mock_async_generator()
@@ -149,15 +163,39 @@ class TestDeviceWorkerDynamicBatch:
         assert len(results_captured) >= 3, (
             f"Expected at least 3 results, got {len(results_captured)}: {results_captured}"
         )
-        assert results_captured[0] == ("stream_task_1", 0, "token_0"), (
-            f"Got {results_captured[0]}"
-        )
-        assert results_captured[1] == ("stream_task_1", 0, "token_1"), (
-            f"Got {results_captured[1]}"
-        )
-        assert results_captured[2] == ("stream_task_1", 1, "[DONE]"), (
-            f"Got {results_captured[2]}"
-        )
+        assert results_captured[0] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="streaming_chunk",
+                    data=CompletionResult(text="token_0"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[0]}"
+        assert results_captured[1] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="streaming_chunk",
+                    data=CompletionResult(text="token_1"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[1]}"
+        assert results_captured[2] == (
+            (
+                "worker_0",
+                "stream_task_1",
+                CompletionOutput(
+                    type="final_result",
+                    data=CompletionResult(text="[DONE]"),
+                    task_id="stream_task_1",
+                ),
+            )
+        ), f"Got {results_captured[2]}"
 
     def test_device_worker_non_streaming_request(self, mock_queues):
         """✅ Test handling of non-streaming requests"""
@@ -174,8 +212,9 @@ class TestDeviceWorkerDynamicBatch:
         # Create non-streaming request
         regular_request = create_test_request("task_1", stream=False)
 
-        # Mock queue to return request then shutdown signal
-        task_queue.get.side_effect = [regular_request, SHUTDOWN_SIGNAL]
+        # Mock queue to return batch of requests then shutdown signal
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[regular_request], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -188,7 +227,11 @@ class TestDeviceWorkerDynamicBatch:
         fresh_device_runner.warmup = mock_warmup
 
         mock_response = Mock()
-        fresh_device_runner.run.return_value = [mock_response]
+
+        async def mock_run_async(requests):
+            return [mock_response]
+
+        fresh_device_runner._run_async = mock_run_async
 
         with patch(
             "device_workers.device_worker_dynamic_batch.initialize_device_worker",
@@ -215,7 +258,8 @@ class TestDeviceWorkerDynamicBatch:
         # Create streaming request that will fail
         failing_stream = create_test_request("stream_fail", stream=True)
 
-        task_queue.get.side_effect = [failing_stream, SHUTDOWN_SIGNAL]
+        # get_many returns lists of requests, not individual requests
+        task_queue.get_many.side_effect = [[failing_stream], [SHUTDOWN_SIGNAL]]
 
         # Create fresh device runner
         fresh_device_runner = Mock()
@@ -258,7 +302,8 @@ class TestDeviceWorkerDynamicBatch:
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
 
         # Mock queue to raise KeyboardInterrupt
-        task_queue.get.side_effect = KeyboardInterrupt()
+        # get_many is called, not get
+        task_queue.get_many.side_effect = KeyboardInterrupt()
 
         # Create fresh device runner
         fresh_device_runner = Mock()

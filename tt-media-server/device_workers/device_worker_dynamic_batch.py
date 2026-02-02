@@ -70,8 +70,8 @@ def device_worker(
 
             logger.info("Starting streaming")
 
-            async for task_id, is_final, text in result_generator:
-                result_queue.put(task_id, is_final, text)
+            async for chunk in result_generator:
+                result_queue.put((worker_id, request._task_id, chunk))
 
             logger.info(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
@@ -81,9 +81,9 @@ def device_worker(
             error_queue.put((worker_id, request._task_id, str(e)))
 
     # Handle non-streaming request
-    def handle_non_streaming(request):
+    async def handle_non_streaming(request):
         try:
-            response = device_runner.run([request])
+            response = await device_runner._run_async([request])
             if response:
                 result_queue.put((worker_id, request._task_id, response[0]))
             else:
@@ -94,21 +94,30 @@ def device_worker(
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
+        from config.settings import get_settings
+
+        settings = get_settings()
         """Continuously pull requests from queue and submit to async handlers"""
+        batch_size = settings.vllm.max_num_seqs
         while True:
             # Run blocking queue.get() in thread pool to not block event loop
-            request = await loop.run_in_executor(None, task_queue.get)
+            requests = await loop.run_in_executor(
+                None,
+                lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
+            )
 
-            if request == SHUTDOWN_SIGNAL:
-                logger.info(f"Worker {worker_id} received shutdown signal")
-                return
-
-            if hasattr(request, "stream") and request.stream:
-                # Fire and forget streaming task - runs concurrently
-                asyncio.create_task(handle_streaming(request))
-            else:
-                # Run non-streaming in thread pool to not block other tasks
-                loop.run_in_executor(None, handle_non_streaming, request)
+            for request in requests:
+                if request == SHUTDOWN_SIGNAL:
+                    logger.info(f"Worker {worker_id} received shutdown signal")
+                    return
+                if request is None:
+                    continue
+                if hasattr(request, "stream") and request.stream:
+                    # Fire and forget streaming task - runs concurrently
+                    asyncio.create_task(handle_streaming(request))
+                else:
+                    # Fire and forget non-streaming task - runs concurrently in event loop
+                    asyncio.create_task(handle_non_streaming(request))
 
     try:
         loop.run_until_complete(request_feeder())

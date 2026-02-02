@@ -6,11 +6,12 @@ import sys
 from multiprocessing import shared_memory
 
 import pytest
+from domain.completion_response import CompletionOutput, CompletionResult
 
 
-# Mock the CompletionStreamChunk before importing memory_queue
-class MockCompletionStreamChunk:
-    """Mock CompletionStreamChunk for testing"""
+# Mock the CompletionResult before importing memory_queue
+class MockCompletionResult:
+    """Mock CompletionResult for testing"""
 
     def __init__(self, text=None, index=None, finish_reason=None):
         self.text = text
@@ -24,19 +25,30 @@ if "domain.completion_response" not in sys.modules:
     from unittest.mock import Mock
 
     mock_completion_response = Mock()
-    mock_completion_response.CompletionStreamChunk = MockCompletionStreamChunk
+    mock_completion_response.CompletionResult = MockCompletionResult
     sys.modules["domain.completion_response"] = mock_completion_response
 else:
-    # Update the existing mock with our MockCompletionStreamChunk
-    sys.modules[
-        "domain.completion_response"
-    ].CompletionStreamChunk = MockCompletionStreamChunk
+    # Update the existing mock with our MockCompletionResult
+    sys.modules["domain.completion_response"].CompletionResult = MockCompletionResult
 
 # DO NOT mock utils.logger here - let conftest.py handle it
 # The logger in conftest.py is already properly configured
 
 # Now import the actual module we're testing
 from model_services.memory_queue import SharedMemoryChunkQueue
+
+
+def make_chunk(task_id: str, is_final: int, text: str):
+    """Helper to create test data in the expected format."""
+    chunk_type = "final_result" if is_final else "streaming_chunk"
+    return (
+        "worker_id",
+        task_id,
+        CompletionOutput(
+            type=chunk_type,
+            data=CompletionResult(text=text),
+        ),
+    )
 
 
 @pytest.fixture
@@ -148,7 +160,7 @@ class TestQueueSize:
 
         # Add 5 items
         for i in range(5):
-            result = queue.put(f"task_{i}", 0, f"text_{i}")
+            result = queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
             assert result is True
 
         # Size should be 5
@@ -163,7 +175,7 @@ class TestQueueSize:
 
         # Fill queue to near capacity (leaving margin)
         for i in range(80):
-            result = queue.put(f"task_{i}", 0, f"text_{i}")
+            result = queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
             assert result is True
 
         assert queue._get_size() == 80
@@ -186,7 +198,7 @@ class TestPutOperation:
         """Test putting a single item"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_9", create=True)
 
-        result = queue.put("task_1", 0, "hello world")
+        result = queue.put(make_chunk("task_1", 0, "hello world"))
 
         assert result is True
         assert queue._get_size() == 1
@@ -199,7 +211,7 @@ class TestPutOperation:
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_10", create=True)
 
         long_task_id = "a" * 200  # Longer than MAX_TASK_ID_LEN (100)
-        result = queue.put(long_task_id, 0, "text")
+        result = queue.put(make_chunk(long_task_id, 0, "text"))
 
         assert result is True
         # Queue should accept the truncated version
@@ -213,7 +225,7 @@ class TestPutOperation:
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_11", create=True)
 
         long_text = "x" * 500  # Longer than MAX_TEXT_LEN (450)
-        result = queue.put("task_1", 0, long_text)
+        result = queue.put(make_chunk("task_1", 0, long_text))
 
         assert result is True
         # Queue should accept the truncated version
@@ -233,10 +245,10 @@ class TestPutOperation:
         """Test putting item with is_final flag"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_13", create=True)
 
-        result = queue.put("task_1", 0, "chunk")
+        result = queue.put(make_chunk("task_1", 0, "chunk"))
         assert result is True
 
-        result = queue.put("task_1", 1, "final")
+        result = queue.put(make_chunk("task_1", 1, "final"))
         assert result is True
 
         assert queue._get_size() == 2
@@ -263,7 +275,7 @@ class TestGetNowait:
         """Test get_nowait retrieves single item"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_15", create=True)
 
-        queue.put("task_1", 0, "hello")
+        queue.put(make_chunk("task_1", 0, "hello"))
         result = queue.get_nowait()
 
         assert result is not None
@@ -281,7 +293,7 @@ class TestGetNowait:
 
         # Put 3 items
         for i in range(3):
-            queue.put(f"task_{i}", 0, f"text_{i}")
+            queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
 
         # Get them back in order
         for i in range(3):
@@ -298,7 +310,7 @@ class TestGetNowait:
         """Test get_nowait with is_final flag"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_17", create=True)
 
-        queue.put("task_1", 1, "final_text")
+        queue.put(make_chunk("task_1", 1, "final_text"))
         worker_id, task_id, chunk_dict = queue.get_nowait()
 
         assert chunk_dict["type"] == "final_result"
@@ -313,7 +325,7 @@ class TestGetNowait:
 
         # Put multiple items
         for i in range(10):
-            queue.put(f"task_{i}", 0, f"text_{i}")
+            queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
 
         # Get all items
         results = []
@@ -337,7 +349,7 @@ class TestGetBlocking:
         """Test blocking get retrieves item"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_19", create=True)
 
-        queue.put("task_1", 0, "hello")
+        queue.put(make_chunk("task_1", 0, "hello"))
         worker_id, task_id, chunk_dict = queue.get(timeout=1.0)
 
         assert task_id == "task_1"
@@ -362,7 +374,7 @@ class TestGetBlocking:
 
         # Put multiple items
         for i in range(5):
-            queue.put(f"task_{i}", 0, f"text_{i}")
+            queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
 
         # Get all items
         for i in range(5):
@@ -382,7 +394,7 @@ class TestIndexManagement:
 
         initial_idx = queue._get_write_idx()
 
-        queue.put("task_1", 0, "text")
+        queue.put(make_chunk("task_1", 0, "text"))
 
         new_idx = queue._get_write_idx()
         assert new_idx == (initial_idx + 1) % queue.capacity
@@ -394,7 +406,7 @@ class TestIndexManagement:
         """Test that read_idx increments correctly"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_23", create=True)
 
-        queue.put("task_1", 0, "text")
+        queue.put(make_chunk("task_1", 0, "text"))
 
         initial_read_idx = queue._get_read_idx()
         queue.get_nowait()
@@ -415,7 +427,7 @@ class TestIndexManagement:
         # Fill and drain queue multiple times to cause wraparound
         for _ in range(2):
             for i in range(capacity - 1):
-                queue.put(f"task_{i}", 0, f"text_{i}")
+                queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
 
             for i in range(capacity - 1):
                 queue.get_nowait()
@@ -482,7 +494,7 @@ class TestErrorHandling:
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_29", create=True)
 
         # Normal put should work
-        result = queue.put("task_1", 0, "text")
+        result = queue.put(make_chunk("task_1", 0, "text"))
         assert result is True
 
         queue.close()
@@ -492,7 +504,7 @@ class TestErrorHandling:
         """Test get_nowait handles errors gracefully"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_30", create=True)
 
-        queue.put("task_1", 0, "text")
+        queue.put(make_chunk("task_1", 0, "text"))
         result = queue.get_nowait()
 
         # Should return valid result
@@ -517,7 +529,7 @@ class TestQueueIntegration:
         ]
 
         for task_id, is_final, text in items:
-            result = queue.put(task_id, is_final, text)
+            result = queue.put(make_chunk(task_id, is_final, text))
             assert result is True
 
         # Get them back
@@ -541,7 +553,7 @@ class TestQueueIntegration:
 
         # Alternate between put and get
         for i in range(5):
-            queue.put(f"task_{i}", 0, f"text_{i}")
+            queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
             worker_id, task_id, chunk_dict = queue.get_nowait()
             assert task_id == f"task_{i}"
 
@@ -561,7 +573,7 @@ class TestQueueIntegration:
         # Put and get many items
         num_items = 1000
         for i in range(num_items):
-            result = queue.put(f"task_{i}", 0, f"text_{i}")
+            result = queue.put(make_chunk(f"task_{i}", 0, f"text_{i}"))
             assert result is True
 
         assert queue._get_size() == num_items

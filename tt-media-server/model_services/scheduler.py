@@ -32,10 +32,12 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = self._get_queue(name="task_queue", create=True, size=10000)
+        # Task queue must use a standard queue that can serialize arbitrary objects
+        # SharedMemoryChunkQueue is only for result streaming
+        self.task_queue = self._get_task_queue(size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
-        # Create one result queue per worker
+        # Create one result queue per worker (can use SharedMemoryChunkQueue)
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
@@ -49,7 +51,16 @@ class Scheduler:
 
         self.error_queue = Queue()
 
+    def _get_task_queue(self, size: int):
+        """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
+        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
+            return TTFasterFifoQueue(size)
+        else:
+            # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
+            return TTQueue(size)
+
     def _get_queue(self, name: str, create: bool, size: int):
+        """Get a queue for result/chunk streaming."""
         if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
             return TTFasterFifoQueue(size)
         elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:

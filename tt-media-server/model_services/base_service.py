@@ -154,6 +154,17 @@ class BaseService(ABC):
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
 
+    def handle_streaming_chunk(self, chunk):
+        formatted_chunk = chunk["chunk"]
+        if formatted_chunk and formatted_chunk.text:
+            return formatted_chunk
+        return None
+
+    def handle_final_result(self, result):
+        if result.get("return", False):
+            return result.get("result")
+        return None
+
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
@@ -183,16 +194,13 @@ class BaseService(ABC):
                 chunk_type = chunk.get("type")
 
                 if chunk_type == "streaming_chunk":
-                    formatted_chunk = chunk["chunk"]
-                    # Inline the check - no function calls
-                    if formatted_chunk and formatted_chunk.text:
-                        yield formatted_chunk
-
+                    result = self.handle_streaming_chunk(chunk)
+                    if result is not None:
+                        yield result
                 elif chunk_type == "final_result":
-                    if chunk.get("return", False):
-                        final_result = chunk["result"]
-                        if final_result is not None:
-                            yield final_result
+                    result = self.handle_final_result(chunk)
+                    if result is not None:
+                        yield result
                     break
                 else:
                     self.logger.error(
