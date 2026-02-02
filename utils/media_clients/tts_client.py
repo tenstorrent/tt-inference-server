@@ -33,15 +33,6 @@ logger = logging.getLogger(__name__)
 # Default text for TTS testing (going to be changed with dataset)
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 
-# Default number of samples for accuracy reference lookup
-DEFAULT_NUM_SAMPLES = 5
-
-# Result tuple lengths from _generate_speech()
-# Short result: (status, elapsed, ttft_ms, rtr) - when WER not calculated
-RESULT_LEN_WITHOUT_WER = 4
-# Full result: (status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer)
-RESULT_LEN_WITH_WER = 7
-
 
 class TtsClientStrategy(BaseMediaStrategy):
     """Strategy for text-to-speech models (SpeechT5, etc.)."""
@@ -79,7 +70,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             num_calls = self._get_tts_num_calls(is_eval=True)
 
-            status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
+            status_list = self._run_tts_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -119,18 +110,13 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
-        # Calculate performance check (TTFT, RTR): 0 = undefined, 2 = passed, 3 = failed
         performance_check = self._calculate_performance_check(
             ttft_value=ttft_value, rtr_value=rtr_value
         )
         benchmark_data["performance_check"] = performance_check
 
-        # Calculate accuracy/quality check (WER): 0 = undefined, 2 = passed, 3 = failed
-        # NOTE: WER not yet implemented - requires ASR integration
-        accuracy_check = self._calculate_accuracy_check(wer_value=None)
-        benchmark_data["accuracy_check"] = accuracy_check
+        benchmark_data["accuracy_check"] = self._calculate_accuracy_check()
 
-        # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
         eval_filename = (
             Path(self.output_path)
@@ -162,7 +148,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             num_calls = self._get_tts_num_calls(is_eval=False)
 
-            status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
+            status_list = self._run_tts_benchmark(num_calls)
 
             self._generate_report(status_list)
             return status_list
@@ -175,7 +161,8 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         TTS requires more samples for statistical validity:
         - BENCHMARK: 10 calls (for reliable P90/P95 tail latency)
-        - EVAL: 5 calls (for valid WER, without too many ASR calls)
+        - EVAL: 5 calls (for consistent evaluation results)
+
         Args:
             is_eval: True for EVAL workflow, False for BENCHMARK workflow
 
@@ -236,9 +223,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         logger.info(f"Report generated: {result_filename}")
 
-    def _run_tts_benchmark(
-        self, num_calls: int, calculate_wer: bool = False
-    ) -> list[TtsTestStatus]:
+    def _run_tts_benchmark(self, num_calls: int) -> list[TtsTestStatus]:
         """Run TTS benchmark."""
         logger.info(f"Running TTS benchmark with {num_calls} calls.")
         status_list = []
@@ -257,14 +242,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            result = asyncio.run(self._generate_speech(calculate_wer=calculate_wer))
-            if len(result) == RESULT_LEN_WITHOUT_WER:
-                status, elapsed, ttft_ms, rtr = result
-                reference_text, audio_duration, wer = test_text, None, None
-            else:
-                status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer = (
-                    result
-                )
+            status, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(
+                self._generate_speech()
+            )
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
 
             status_list.append(
@@ -275,38 +255,23 @@ class TtsClientStrategy(BaseMediaStrategy):
                     rtr=rtr,
                     text=test_text,
                     audio_duration=audio_duration,
-                    wer=wer,
-                    reference_text=reference_text,
                 )
             )
 
         return status_list
 
     async def _generate_speech(
-        self, calculate_wer: bool = False
-    ) -> tuple[
-        bool,
-        float,
-        Optional[float],
-        Optional[float],
-        Optional[str],
-        Optional[float],
-        Optional[float],
-    ]:
+        self,
+    ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
         """Generate speech from text.
 
-        Args:
-            calculate_wer: If True, transcribe audio and calculate WER
-
         Returns:
-            tuple: (success, latency_sec, ttft_ms, rtr, reference_text, audio_duration, wer)
+            tuple: (success, latency_sec, ttft_ms, rtr, audio_duration)
                 - success: True if speech generation completed successfully
                 - latency_sec: Total end-to-end latency in seconds
                 - ttft_ms: Time to first token/sound in milliseconds
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
-                - reference_text: Original text used for TTS
                 - audio_duration: Duration of generated audio in seconds
-                - wer: Word Error Rate (if calculate_wer=True, !!!NOT_ENABLED!!!->Potential future feature)
         """
         logger.info("🔊 Calling TTS /audio/speech endpoint")
 
@@ -348,7 +313,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                         logger.error(
                             f"TTS request failed with status {response.status}: {error_text}"
                         )
-                        return False, 0.0, None, None
+                        return False, 0.0, None, None, None
 
                     # Check content-type to ensure we're receiving JSON, not WAV bytes
                     content_type = response.headers.get("Content-Type", "").lower()
@@ -360,7 +325,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                             f"Content-Type: {content_type}. "
                             f"Request payload was: {payload}"
                         )
-                        return False, 0.0, None, None, text, None, None
+                        return False, 0.0, None, None, None
 
                     response_start = time.monotonic()
                     response_data = await response.json()
@@ -377,7 +342,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                     audio_base64 = response_data.get("audio")
                     if not audio_base64:
                         logger.error("Audio data not found in response")
-                        return False, 0.0, None, None, text, None, None
+                        return False, 0.0, None, None, None
 
                     logger.info(
                         f"Received audio data (base64 length: {len(audio_base64)})"
@@ -397,20 +362,16 @@ class TtsClientStrategy(BaseMediaStrategy):
                     "Could not calculate RTR: missing duration or invalid processing time"
                 )
 
-            wer = None
-            if calculate_wer and audio_base64:
-                wer = await self._transcribe_audio_for_wer(audio_base64, text)
-
             rtr_str = f"{rtr:.2f}" if rtr is not None else "N/A"
             logger.info(
                 f"✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str}"
             )
 
-            return True, total_duration, ttft_ms, rtr, text, audio_duration, wer
+            return True, total_duration, ttft_ms, rtr, audio_duration
 
         except Exception as e:
             logger.error(f"TTS generation failed: {e}")
-            return False, 0.0, None, None, text, None, None
+            return False, 0.0, None, None, None
 
     def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
         """Calculate average TTFT value in milliseconds."""
@@ -443,154 +404,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             )
 
         return rtr_value
-
-    async def _transcribe_audio_for_wer(
-        self, audio_base64: str, reference_text: str
-    ) -> Optional[float]:
-        """Transcribe audio using /audio/transcriptions endpoint for WER calculation.
-
-        Args:
-            audio_base64: Base64-encoded audio data
-            reference_text: Original text used for TTS (ground truth)
-
-        Returns:
-            WER value (0.0-1.0) or None if transcription failed
-        """
-        logger.debug("Transcribing audio for WER calculation...")
-
-        headers = {
-            "accept": "application/json",
-            "Authorization": "Bearer your-secret-key",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "file": audio_base64,
-            "stream": False,
-        }
-
-        url = f"{self.base_url}/audio/transcriptions"
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=90),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.warning(
-                            f"Transcription failed with status {response.status}: {error_text}"
-                        )
-                        return None
-
-                    response_data = await response.json()
-                    hypothesis_text = response_data.get("text", "")
-
-                    if not hypothesis_text:
-                        logger.warning("Empty transcription result")
-                        return None
-
-                    logger.debug(f"Reference: {reference_text}")
-                    logger.debug(f"Hypothesis: {hypothesis_text}")
-
-                    # Calculate WER
-                    wer = self._compute_wer(reference_text, hypothesis_text)
-                    return wer
-
-        except Exception as e:
-            logger.warning(f"Failed to transcribe audio for WER: {e}")
-            return None
-
-    def _compute_wer(self, reference: str, hypothesis: str) -> float:
-        """Calculate Word Error Rate (WER) between reference and hypothesis.
-
-        WER = (S + D + I) / N
-        where:
-        - S = substitutions
-        - D = deletions
-        - I = insertions
-        - N = number of words in reference
-
-        Optimized implementation using space-efficient DP (O(min(n,m)) space instead of O(n×m)).
-
-        Args:
-            reference: Reference text (ground truth)
-            hypothesis: Hypothesis text (transcription)
-
-        Returns:
-            WER value (0.0 = perfect, 1.0 = all words wrong)
-        """
-
-        ref_words = reference.lower().split()
-        hyp_words = hypothesis.lower().split()
-
-        if not ref_words:
-            return 1.0 if hyp_words else 0.0
-
-        n = len(ref_words)
-        m = len(hyp_words)
-
-        if ref_words == hyp_words:
-            return 0.0
-
-        if not hyp_words:
-            return 1.0
-
-        original_n = n
-
-        if m < n:
-            words_a, words_b = hyp_words, ref_words
-            len_a, len_b = m, n
-        else:
-            words_a, words_b = ref_words, hyp_words
-            len_a, len_b = n, m
-
-        prev_row = list(range(len_b + 1))
-
-        # Fill DP table row by row
-        for i in range(1, len_a + 1):
-            curr_row = [i]
-            for j in range(1, len_b + 1):
-                if words_a[i - 1] == words_b[j - 1]:
-                    curr_row.append(prev_row[j - 1])
-                else:
-                    curr_row.append(
-                        min(
-                            prev_row[j] + 1,  # Deletion
-                            curr_row[j - 1] + 1,  # Insertion
-                            prev_row[j - 1] + 1,  # Substitution
-                        )
-                    )
-            prev_row = curr_row
-
-        # WER = total errors / number of reference words (always use original n)
-        total_errors = prev_row[len_b]
-        wer = total_errors / original_n if original_n > 0 else 1.0
-
-        return wer
-
-    def _calculate_wer_value(self, status_list: list[TtsTestStatus]) -> Optional[float]:
-        """Calculate average Word Error Rate (WER) from status list.
-
-        Returns:
-            Average WER value or None if no WER values available
-        """
-        logger.info("Calculating WER value")
-
-        if not status_list:
-            return None
-
-        valid_wer_values = [
-            status.wer for status in status_list if status.wer is not None
-        ]
-
-        if not valid_wer_values:
-            return None
-
-        wer_value = sum(valid_wer_values) / len(valid_wer_values)
-        return wer_value
 
     def _calculate_tail_latency(
         self, status_list: list[TtsTestStatus]
@@ -646,8 +459,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         logger.info(f"Performance targets: {targets}")
 
-        if not targets.ttft_ms and not targets.rtr:
-            logger.warning("⚠️ No TTFT or RTR target found, skipping performance check")
+        # TTFT is the primary metric for TTS performance - required for validation
+        if not targets.ttft_ms:
+            logger.warning("⚠️ No TTFT target found, skipping performance check")
             return 0  # UNDEFINED
 
         tolerance = targets.tolerance if targets.tolerance else 0.05
@@ -656,8 +470,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         checks_passed = 0
         checks_total = 0
 
-        # Check TTFT if target is available (ttft_value already in ms)
-        if targets.ttft_ms is not None and ttft_value is not None:
+        if targets.ttft_ms is not None:
             checks_total += 1
             ttft_threshold = targets.ttft_ms * (1 + tolerance)
             if ttft_value <= ttft_threshold:
@@ -670,8 +483,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                     f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
                 )
 
-        # Check RTR if target is available (higher RTR is better)
-        if targets.rtr is not None and rtr_value is not None:
+        if targets.rtr is not None:
             checks_total += 1
             rtr_threshold = targets.rtr * (1 - tolerance)
             if rtr_value >= rtr_threshold:
@@ -680,7 +492,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             else:
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
-        # Determine overall result
         if checks_total == 0:
             logger.warning("⚠️ No metrics available for validation")
             return 0  # UNDEFINED
@@ -694,78 +505,17 @@ class TtsClientStrategy(BaseMediaStrategy):
             )
             return 3  # FAIL
 
-    def _calculate_accuracy_check(self, wer_value: Optional[float] = None) -> int:
-        """Calculate accuracy/quality check based on WER using audio_accuracy_reference.json.
+    def _calculate_accuracy_check(self) -> int:
+        """Calculate accuracy/quality check based on WER (Word Error Rate).
 
-        NOTE: WER calculation requires transcribing generated audio back to text,
-        which needs ASR integration. For now, returns 0 (undefined) when no WER.
-
-        Args:
-            wer_value: Word Error Rate (0.0-1.0), if available
+        NOTE: WER calculation requires ASR integration (running Whisper model
+        to transcribe generated audio). Currently returns 0 (undefined) until
+        multi-model support is available.
 
         Returns:
-            0 - undefined (no WER value or no reference data)
-            2 - passed (WER within valid range)
-            3 - failed (WER outside valid range)
+            0 - undefined (WER not implemented)
+            2 - passed (WER within valid range) - future
+            3 - failed (WER outside valid range) - future
         """
-        logger.info("Calculating accuracy check using audio_accuracy_reference.json")
-
-        # If no WER value provided, return undefined
-        if wer_value is None:
-            logger.warning("⚠️ No WER value provided, accuracy check undefined")
-            return 0
-
-        # Load reference data
-        reference_data = self._load_audio_accuracy_reference()
-        if not reference_data:
-            logger.warning("⚠️ Could not load audio accuracy reference")
-            return 0
-
-        model_name = self.model_spec.model_name
-        if model_name not in reference_data:
-            logger.warning(
-                f"⚠️ Model '{model_name}' not found in audio accuracy reference"
-            )
-            return 0
-
-        # Get num_samples from eval config
-        num_samples = str(DEFAULT_NUM_SAMPLES)
-        accuracy_data = reference_data[model_name].get("accuracy", {})
-        if str(num_samples) not in accuracy_data:
-            logger.warning(f"⚠️ No accuracy reference for {num_samples} samples")
-            return 0
-
-        wer_valid_range = accuracy_data[str(num_samples)].get("wer_valid_range")
-        if not wer_valid_range:
-            logger.warning("⚠️ No WER valid range defined")
-            return 0
-
-        # Check if WER is within valid range (with 3% tolerance like image models)
-        wer_approx_range = [0.97 * wer_valid_range[0], 1.03 * wer_valid_range[1]]
-
-        if wer_approx_range[0] <= wer_value <= wer_approx_range[1]:
-            logger.info(f"✅ WER PASSED: {wer_value:.4f} in range {wer_approx_range}")
-            return 2
-        else:
-            logger.warning(
-                f"❌ WER FAILED: {wer_value:.4f} not in range {wer_approx_range}"
-            )
-            return 3
-
-    def _load_audio_accuracy_reference(self) -> dict:
-        """Load audio accuracy reference data from JSON file."""
-        accuracy_ref_path = (
-            Path(__file__).resolve().parent.parent.parent
-            / "evals"
-            / "eval_targets"
-            / "audio_accuracy_reference.json"
-        )
-        try:
-            with open(accuracy_ref_path, "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            logger.warning(f"Audio accuracy reference not found: {accuracy_ref_path}")
-            return {}
-        except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON in audio accuracy reference: {e}")
-            return {}
+        # TODO: Implement WER calculation when multi-model support is available
+        return 0
