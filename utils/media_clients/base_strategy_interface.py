@@ -2,8 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import logging
+import time
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Optional
 
 from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_classes import TestConfig
@@ -101,3 +105,107 @@ class BaseMediaStrategy(ABC):
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return (False, None)
+
+    def generate_report(
+        self,
+        status_list: list[BaseTestStatus],
+        report_prefix: str = "benchmark",
+    ) -> Optional[Path]:
+        """
+        Template Method - generates report with common structure.
+
+        Subclasses override _create_specific_benchmarks_data() to add their metrics.
+
+        Args:
+            status_list: List of test status objects from benchmark run
+            report_prefix: Prefix for the report filename (e.g., "benchmark", "eval")
+
+        Returns:
+            Path to generated report file, or None if generation failed
+        """
+        if not status_list:
+            logger.warning("Empty status list, skipping report generation")
+            return None
+
+        logger.info("Generating benchmark report...")
+
+        filename = self._create_report_filename(report_prefix)
+
+        self._ensure_report_directory(filename)
+
+        base_data = self._create_base_report_data()
+
+        benchmarks_data = self._create_specific_benchmarks_data(status_list)
+
+        report_data = {**base_data, "benchmarks": benchmarks_data}
+        self._save_report(report_data, filename)
+
+        logger.info(f"Report generated: {filename}")
+        return filename
+
+    def _create_report_filename(self, prefix: str = "benchmark") -> Path:
+        """Create standardized report filename."""
+        return (
+            Path(self.output_path)
+            / f"{prefix}_{self.model_spec.model_id}_{time.time()}.json"
+        )
+
+    def _ensure_report_directory(self, filepath: Path) -> None:
+        """Ensure parent directory exists."""
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    def _create_base_report_data(self) -> dict:
+        """Create common report metadata."""
+        return {
+            "model": self.model_spec.model_name,
+            "device": self.device.name
+            if hasattr(self.device, "name")
+            else str(self.device),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": self._get_task_type(),
+        }
+
+    def _save_report(self, report_data: dict, filename: Path) -> None:
+        """Save report to JSON file."""
+        with open(filename, "w") as f:
+            json.dump(report_data, f, indent=4)
+
+    def _get_task_type(self) -> str:
+        """
+        Return task type for this client.
+        Subclasses should override to return appropriate type.
+        """
+        return "unknown"
+
+    @abstractmethod
+    def _create_specific_benchmarks_data(
+        self, status_list: list[BaseTestStatus]
+    ) -> dict:
+        """
+        Create benchmark-specific data. Subclasses MUST implement.
+
+        Args:
+            status_list: List of test status objects
+
+        Returns:
+            Dict with benchmark metrics specific to this media type
+
+        Example for audio:
+            return {
+                "num_requests": len(status_list),
+                "ttft": self._calculate_ttft(status_list),
+                "rtr": self._calculate_rtr(status_list),
+                "t/s/u": self._calculate_tsu(status_list),
+            }
+        """
+        pass
+
+    def _calculate_ttft_value(self, status_list: list[BaseTestStatus]) -> float:
+        """
+        Can be overridden if needed.
+        """
+        if not status_list:
+            return 0.0
+        return sum(
+            getattr(s, "elapsed", 0) or getattr(s, "ttft", 0) for s in status_list
+        ) / len(status_list)
