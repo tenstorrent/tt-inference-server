@@ -306,3 +306,18 @@ class ModelType(IntEnum):
             ModelType.VLM: "Vision-Language Model",
         }
         return display_names[self]
+
+
+    @property
+    def short_name(self) -> str:
+        short_names = {
+            ModelType.LLM: "LLM",
+            ModelType.VLM: "VLM",
+            ModelType.AUDIO: "Audio",
+            ModelType.IMAGE: "Image",
+            ModelType.CNN: "CNN",
+            ModelType.EMBEDDING: "Embedding",
+            ModelType.TEXT_TO_SPEECH: "TTS",
+            ModelType.VIDEO: "Video",
+        }
+        return short_names[self]
