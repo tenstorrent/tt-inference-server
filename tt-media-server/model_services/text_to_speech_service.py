@@ -10,24 +10,28 @@ from domain.text_to_speech_response import TextToSpeechResponse
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from utils.decorators import log_execution_time
+from utils.ffmpeg_utils import encode_wav_to
+
+# base64 (from runner) + format -> bytes in that format (WAV, MP3 or OGG)
+TTS_BINARY_FORMATS = ("audio", "wav", "mp3", "ogg")
+TTS_WAV_FORMATS = ("audio", "wav")
 
 
 def tts_worker_function(worker_context, base64_audio: str, response_format: str = None):
     """
-    Worker function for TTS post-processing.
-    Decodes base64 audio to WAV bytes if response_format is "audio" or "wav".
-
-    Args:
-        worker_context: Worker context (None for TTS, not used)
-        base64_audio: Base64-encoded audio string
-        response_format: Response format ("audio" or "wav" for WAV bytes, otherwise None)
-
-    Returns:
-        WAV bytes if response_format is "audio" or "wav", otherwise None
+    Decode base64 WAV from runner and return bytes in requested format (WAV/MP3/OGG).
+    Uses utils.ffmpeg_utils for MP3/OGG encoding.
     """
-    if response_format and response_format.lower() in ("audio", "wav"):
-        return base64.b64decode(base64_audio)
-    return None
+    if not response_format:
+        return None
+    fmt = response_format.lower()
+    if fmt not in TTS_BINARY_FORMATS:
+        return None
+
+    raw = base64.b64decode(base64_audio)
+    if fmt in TTS_WAV_FORMATS:
+        return raw
+    return encode_wav_to(raw, fmt)
 
 
 class TextToSpeechService(BaseService):
@@ -45,44 +49,36 @@ class TextToSpeechService(BaseService):
             name="TTSPostprocessing",
             worker_count=self.scheduler.get_worker_count(),
             worker_function=tts_worker_function,
-            worker_context_setup=None,  # No context needed for base64 decode
+            worker_context_setup=None,
             warmup_task_data=(minimal_wav_base64, ResponseFormat.AUDIO.value),
         )
-
-    # async def pre_process(self, request: TextToSpeechRequest) -> TextToSpeechRequest:
-    #     return request
 
     @log_execution_time("TTS post-processing")
     async def post_process(
         self, result: TextToSpeechResponse, input_request: TextToSpeechRequest
     ) -> TextToSpeechResponse:
         """
-        Post-process TTS response using CPU workload handler.
-        If response_format is "audio" or "wav", decode base64 audio to WAV bytes.
-        Otherwise, return response as-is with base64 audio.
-
-        Uses CPU workers for consistency with ImageService and AudioService,
-        and to enable future batch processing capabilities.
+        Convert result.audio (base64 WAV from runner) to requested format and set
+        result.output_bytes. No-op for non-binary response_format (json/verbose_json).
         """
-        if input_request.response_format.lower() in ("audio", "wav"):
-            try:
-                wav_bytes = await self._cpu_workload_handler.execute_task(
-                    result.audio, input_request.response_format
-                )
+        fmt = input_request.response_format.lower()
+        if fmt not in TTS_BINARY_FORMATS:
+            return result
 
-                result.wav_bytes = wav_bytes
-                self.logger.debug(
-                    f"Decoded base64 audio to WAV bytes: {len(wav_bytes)} bytes"
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to decode base64 audio: {e}")
-                raise ValueError(f"Failed to decode audio data: {str(e)}") from e
+        try:
+            output_bytes = await self._cpu_workload_handler.execute_task(
+                result.audio, input_request.response_format
+            )
+        except Exception as e:
+            self.logger.error(f"TTS post-process failed: {e}")
+            raise ValueError(f"Failed to produce audio ({fmt}): {str(e)}") from e
 
+        result.output_bytes = output_bytes
+        self.logger.debug(f"TTS post-process {fmt}: {len(output_bytes)} bytes")
         return result
 
     def stop_workers(self):
-        """Stop CPU workload handler workers"""
+        """Stop CPU workload handler workers."""
         self.logger.info("Shutting down TTS postprocessing workers")
         self._cpu_workload_handler.stop_workers()
-
         return super().stop_workers()

@@ -4,7 +4,7 @@
 
 import numpy as np
 from domain.video_generate_request import VideoGenerateRequest
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 
 
@@ -28,7 +28,7 @@ def video_worker_function(video_manager, video_frames, should_discard_file=True)
     return output_path
 
 
-class VideoService(BaseService):
+class VideoService(BaseJobService):
     def __init__(self):
         super().__init__()
 

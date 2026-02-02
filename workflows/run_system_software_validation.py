@@ -3,16 +3,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
-import subprocess
 import json
 import logging
 import os
-from packaging.specifiers import SpecifierSet
-from packaging.version import Version
-from pathlib import Path
 import re
 import signal
+import subprocess
 import sys
+from pathlib import Path
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,12 @@ def main():
     venv_tt_smi = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
     venv_tt_smi.setup(model_spec=model_spec)
     tt_smi_data = SystemResourceService.get_tt_smi_data()
+    if not tt_smi_data:
+        raise RuntimeError(
+            "⛔ Failed to get tt-smi data."
+            "This is likely because Tenstorrent devices must be reset.\n\n"
+            "💡 Tip: Please run 'tt-smi -r' and try again, especially if 'tt-smi' is unresponsive.\n\n"
+        )
     fw_bundle_versions = []
     board_types = []
     for info in tt_smi_data["device_info"]:
@@ -202,9 +209,9 @@ def main():
     filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
 
     unique_board_types = set(filtered_board_types)
-    assert (
-        len(unique_board_types) == 1
-    ), f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    assert len(unique_board_types) == 1, (
+        f"Only homogeneous board types are supported at this time, detected: {unique_board_types}"
+    )
     unique_board_type = unique_board_types.pop()
 
     # parse system topology if board type requires it
