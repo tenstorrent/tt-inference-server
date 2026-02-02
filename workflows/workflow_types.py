@@ -237,15 +237,14 @@ class ModelStatusTypes(IntEnum):
     COMPLETE = auto()
     TOP_PERF = auto()
 
-    @classmethod
-    def to_display_string(cls, check_type: str):
-        disp_map = {
+    @property
+    def display_string(self) -> str:
+        return {
             ModelStatusTypes.EXPERIMENTAL: "🛠️ Experimental",
             ModelStatusTypes.FUNCTIONAL: "🟡 Functional",
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
-        }
-        return disp_map[check_type]
+        }[self]
 
 
 class EvalLimitMode(IntEnum):
@@ -306,7 +305,6 @@ class ModelType(IntEnum):
             ModelType.VLM: "Vision-Language Model",
         }
         return display_names[self]
-
 
     @property
     def short_name(self) -> str:
