@@ -26,6 +26,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import get_num_calls
+from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,14 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
-        # Calculate accuracy check: 0 = undefined, 2 = passed, 3 = failed
+        # Calculate performance check (TTFT, RTR): 0 = undefined, 2 = passed, 3 = failed
+        performance_check = self._calculate_performance_check(
+            ttft_value=ttft_value, rtr_value=rtr_value
+        )
+        benchmark_data["performance_check"] = performance_check
+
+        # Calculate accuracy/quality check (WER): 0 = undefined, 2 = passed, 3 = failed
+        # NOTE: WER not yet implemented - requires ASR integration
         accuracy_check = self._calculate_accuracy_check(wer_value=None)
         benchmark_data["accuracy_check"] = accuracy_check
 
@@ -609,12 +617,92 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         return p90_ttft, p95_ttft
 
-    def _calculate_accuracy_check(self, wer_value: Optional[float] = None) -> int:
-        """Calculate accuracy check for TTS quality using audio_accuracy_reference.json.
+    def _calculate_performance_check(
+        self,
+        ttft_value: Optional[float] = None,
+        rtr_value: Optional[float] = None,
+    ) -> int:
+        """Calculate performance check based on TTFT and RTR targets.
 
-        NOTE: Currently we don't have a valid WER metric implemented.
-        WER calculation requires transcribing generated audio back to text,
-        which needs ASR integration. For now, this returns 0 (undefined).
+        Uses get_performance_targets from model_performance_reference.json.
+
+        Args:
+            ttft_value: Time to first token in milliseconds
+            rtr_value: Real-time ratio (audio_duration / generation_time)
+
+        Returns:
+            0 - undefined (no targets or values)
+            2 - passed (all metrics within tolerance)
+            3 - failed (any metric outside tolerance)
+        """
+        logger.info("Calculating performance check based on TTFT, RTR targets")
+
+        # Get performance targets using the shared utility
+        device_str = self.model_spec.cli_args.get("device")
+        targets = get_performance_targets(
+            self.model_spec.model_name,
+            device_str,
+            model_type=self.model_spec.model_type.name,
+        )
+        logger.info(f"Performance targets: {targets}")
+
+        if not targets.ttft_ms and not targets.rtr:
+            logger.warning("⚠️ No TTFT or RTR target found, skipping performance check")
+            return 0  # UNDEFINED
+
+        tolerance = targets.tolerance if targets.tolerance else 0.05
+        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
+
+        checks_passed = 0
+        checks_total = 0
+
+        # Check TTFT if target is available (ttft_value already in ms)
+        if targets.ttft_ms is not None and ttft_value is not None:
+            checks_total += 1
+            ttft_threshold = targets.ttft_ms * (1 + tolerance)
+            if ttft_value <= ttft_threshold:
+                logger.info(
+                    f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms"
+                )
+                checks_passed += 1
+            else:
+                logger.warning(
+                    f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
+                )
+
+        # Check RTR if target is available (higher RTR is better)
+        if targets.rtr is not None and rtr_value is not None:
+            checks_total += 1
+            rtr_threshold = targets.rtr * (1 - tolerance)
+            if rtr_value >= rtr_threshold:
+                logger.info(
+                    f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}"
+                )
+                checks_passed += 1
+            else:
+                logger.warning(
+                    f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}"
+                )
+
+        # Determine overall result
+        if checks_total == 0:
+            logger.warning("⚠️ No metrics available for validation")
+            return 0  # UNDEFINED
+
+        if checks_passed == checks_total:
+            logger.info(f"✅ All {checks_total} performance checks passed")
+            return 2  # PASS
+        else:
+            logger.warning(
+                f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
+            )
+            return 3  # FAIL
+
+    def _calculate_accuracy_check(self, wer_value: Optional[float] = None) -> int:
+        """Calculate accuracy/quality check based on WER using audio_accuracy_reference.json.
+
+        NOTE: WER calculation requires transcribing generated audio back to text,
+        which needs ASR integration. For now, returns 0 (undefined) when no WER.
 
         Args:
             wer_value: Word Error Rate (0.0-1.0), if available
@@ -624,7 +712,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             2 - passed (WER within valid range)
             3 - failed (WER outside valid range)
         """
-        # NOTE: For now we don't have valid WER metric - returns 0 (undefined)
         logger.info("Calculating accuracy check using audio_accuracy_reference.json")
 
         # If no WER value provided, return undefined
