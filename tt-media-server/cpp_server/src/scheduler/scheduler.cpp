@@ -89,10 +89,9 @@ void Scheduler::stop() {
     // Clean up runners
     runners_.clear();
 
-    // Clean up callbacks
+    // Clean up promises
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        streaming_callbacks_.clear();
+        std::lock_guard<std::mutex> lock(promises_mutex_);
         result_promises_.clear();
     }
 
@@ -112,7 +111,7 @@ std::future<domain::CompletionResponse> Scheduler::submit_request(domain::Comple
 
     // Register promise for this task
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
+        std::lock_guard<std::mutex> lock(promises_mutex_);
         result_promises_[task_id] = promise;
     }
 
@@ -124,7 +123,7 @@ std::future<domain::CompletionResponse> Scheduler::submit_request(domain::Comple
     if (!task_queue_.push(std::move(task))) {
         // Remove promise on failure
         {
-            std::lock_guard<std::mutex> lock(callbacks_mutex_);
+            std::lock_guard<std::mutex> lock(promises_mutex_);
             result_promises_.erase(task_id);
         }
         promise->set_exception(std::make_exception_ptr(
@@ -141,23 +140,15 @@ void Scheduler::submit_streaming_request(
 
     std::string task_id = request.task_id;
 
-    // Register callback for this task (similar to Python's result_queues[task_id])
-    {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        streaming_callbacks_[task_id] = std::move(callback);
-    }
-
+    // Callback is stored directly in the task - worker calls it directly
+    // No result queue for streaming = maximum throughput
     SchedulerTask task;
     task.request = std::move(request);
     task.is_streaming = true;
     task.task_id = task_id;
+    task.stream_callback = std::move(callback);
 
     if (!task_queue_.push(std::move(task))) {
-        // Remove callback on failure
-        {
-            std::lock_guard<std::mutex> lock(callbacks_mutex_);
-            streaming_callbacks_.erase(task_id);
-        }
         throw std::runtime_error("Failed to submit streaming request: queue shutdown");
     }
 }
@@ -173,7 +164,7 @@ std::vector<Scheduler::WorkerInfo> Scheduler::get_worker_info() const {
 }
 
 void Scheduler::result_listener_loop() {
-    std::cout << "[ResultListener] Starting..." << std::endl;
+    std::cout << "[ResultListener] Starting (non-streaming only)..." << std::endl;
 
     while (running_) {
         auto item_opt = result_queue_.pop();
@@ -183,53 +174,40 @@ void Scheduler::result_listener_loop() {
 
         const auto& item = item_opt.value();
 
-        // Route result to the appropriate callback/promise based on task_id
-        // Similar to Python's result_listener() dispatching to result_queues[task_id]
-        
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        
-        if (auto* chunk_ptr = std::get_if<domain::StreamingChunkResponse>(&item.data)) {
-            // Streaming chunk - find and call the callback
-            auto it = streaming_callbacks_.find(item.task_id);
-            if (it != streaming_callbacks_.end()) {
-                it->second(*chunk_ptr, item.is_final);
-                
-                // Clean up callback on final chunk
-                if (item.is_final) {
-                    streaming_callbacks_.erase(it);
-                }
-            } else {
-                std::cerr << "[ResultListener] No callback found for streaming task " << item.task_id << std::endl;
-            }
-        } else if (auto* response_ptr = std::get_if<domain::CompletionResponse>(&item.data)) {
+        // Only handles non-streaming results (streaming bypasses result queue)
+        if (auto* response_ptr = std::get_if<domain::CompletionResponse>(&item.data)) {
             // Non-streaming response - set the promise value
-            auto it = result_promises_.find(item.task_id);
-            if (it != result_promises_.end()) {
-                it->second->set_value(*response_ptr);
-                result_promises_.erase(it);
+            std::shared_ptr<std::promise<domain::CompletionResponse>> promise;
+            {
+                std::lock_guard<std::mutex> lock(promises_mutex_);
+                auto it = result_promises_.find(item.task_id);
+                if (it != result_promises_.end()) {
+                    promise = it->second;
+                    result_promises_.erase(it);
+                }
+            }
+            if (promise) {
+                promise->set_value(*response_ptr);
             } else {
                 std::cerr << "[ResultListener] No promise found for task " << item.task_id << std::endl;
             }
         } else if (auto* error_ptr = std::get_if<std::string>(&item.data)) {
-            // Error - propagate to appropriate target
-            auto streaming_it = streaming_callbacks_.find(item.task_id);
-            if (streaming_it != streaming_callbacks_.end()) {
-                // For streaming, send error as final chunk
-                domain::StreamingChunkResponse error_response;
-                error_response.id = "error-" + item.task_id;
-                error_response.error = *error_ptr;
-                streaming_it->second(error_response, true);
-                streaming_callbacks_.erase(streaming_it);
-            } else {
-                auto promise_it = result_promises_.find(item.task_id);
-                if (promise_it != result_promises_.end()) {
-                    promise_it->second->set_exception(std::make_exception_ptr(
-                        std::runtime_error(*error_ptr)
-                    ));
-                    result_promises_.erase(promise_it);
-                } else {
-                    std::cerr << "[ResultListener] No handler found for error task " << item.task_id << std::endl;
+            // Error for non-streaming
+            std::shared_ptr<std::promise<domain::CompletionResponse>> promise;
+            {
+                std::lock_guard<std::mutex> lock(promises_mutex_);
+                auto it = result_promises_.find(item.task_id);
+                if (it != result_promises_.end()) {
+                    promise = it->second;
+                    result_promises_.erase(it);
                 }
+            }
+            if (promise) {
+                promise->set_exception(std::make_exception_ptr(
+                    std::runtime_error(*error_ptr)
+                ));
+            } else {
+                std::cerr << "[ResultListener] No handler found for error task " << item.task_id << std::endl;
             }
         }
     }
@@ -286,7 +264,8 @@ void Scheduler::worker_loop(const std::string& worker_id) {
 void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& runner, const std::string& worker_id) {
     try {
         if (task.is_streaming) {
-            // Streaming request - push results to result_queue_
+            // Streaming request - call callback DIRECTLY (no result queue)
+            // This is critical for high throughput
             auto created = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -294,10 +273,13 @@ void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& run
             std::string completion_id = "cmpl-" + task.request.task_id;
             std::string model = task.request.model.value_or("test-model");
 
+            // Get callback from task (set during submit_streaming_request)
+            auto& callback = task.stream_callback;
+
             runner.run_streaming(
                 task.request,
-                // Chunk callback - push to result_queue_
-                [this, &task, &completion_id, &model, &worker_id, created](const domain::StreamingChunkOutput& chunk) {
+                // Chunk callback - call directly, no queue
+                [&callback, &completion_id, &model, created](const domain::StreamingChunkOutput& chunk) {
                     domain::StreamingChunkResponse response;
                     response.id = completion_id;
                     response.created = created;
@@ -309,17 +291,11 @@ void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& run
                     choice.finish_reason = chunk.chunk.finish_reason;
                     response.choices.push_back(choice);
 
-                    // Push to result queue (like Python's result_queue.put())
-                    ResultQueueItem item;
-                    item.worker_id = worker_id;
-                    item.task_id = task.task_id;
-                    item.data = response;
-                    item.is_final = false;
-                    item.is_error = false;
-                    result_queue_.push(std::move(item));
+                    // Call callback directly - no queue overhead!
+                    callback(response, false);
                 },
-                // Final callback - push to result_queue_
-                [this, &task, &completion_id, &model, &worker_id, created](const domain::FinalResultOutput& final_result) {
+                // Final callback - call directly
+                [&callback, &completion_id, &model, created](const domain::FinalResultOutput& final_result) {
                     domain::StreamingChunkResponse response;
                     response.id = completion_id;
                     response.created = created;
@@ -331,14 +307,8 @@ void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& run
                     choice.finish_reason = "stop";
                     response.choices.push_back(choice);
 
-                    // Push final result to result queue
-                    ResultQueueItem item;
-                    item.worker_id = worker_id;
-                    item.task_id = task.task_id;
-                    item.data = response;
-                    item.is_final = true;
-                    item.is_error = false;
-                    result_queue_.push(std::move(item));
+                    // Call callback directly
+                    callback(response, true);
                 }
             );
         } else {
@@ -349,7 +319,6 @@ void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& run
                 item.worker_id = worker_id;
                 item.task_id = task.task_id;
                 item.data = responses[0];
-                item.is_final = true;
                 item.is_error = false;
                 result_queue_.push(std::move(item));
             } else {
@@ -357,20 +326,26 @@ void Scheduler::process_task(SchedulerTask& task, runners::BaseDeviceRunner& run
                 item.worker_id = worker_id;
                 item.task_id = task.task_id;
                 item.data = std::string("No response generated");
-                item.is_final = true;
                 item.is_error = true;
                 result_queue_.push(std::move(item));
             }
         }
     } catch (const std::exception& e) {
-        // Push error to result queue
-        ResultQueueItem item;
-        item.worker_id = worker_id;
-        item.task_id = task.task_id;
-        item.data = std::string(e.what());
-        item.is_final = true;
-        item.is_error = true;
-        result_queue_.push(std::move(item));
+        if (task.is_streaming && task.stream_callback) {
+            // Send error via callback
+            domain::StreamingChunkResponse error_response;
+            error_response.id = "error-" + task.task_id;
+            error_response.error = e.what();
+            task.stream_callback(error_response, true);
+        } else {
+            // Push error to result queue
+            ResultQueueItem item;
+            item.worker_id = worker_id;
+            item.task_id = task.task_id;
+            item.data = std::string(e.what());
+            item.is_error = true;
+            result_queue_.push(std::move(item));
+        }
         std::cerr << "[Scheduler] Error processing task: " << e.what() << std::endl;
     }
 }
