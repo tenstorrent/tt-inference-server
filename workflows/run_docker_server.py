@@ -12,10 +12,6 @@ from datetime import datetime
 
 
 from workflows.log_setup import clean_log_file
-from workflows.model_spec import (
-    ModelSource,
-    ModelType,
-)
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -23,7 +19,7 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
-from workflows.workflow_types import DeviceTypes, WorkflowType
+from workflows.workflow_types import DeviceTypes, ModelSource, ModelType, WorkflowType
 
 logger = logging.getLogger("run_log")
 
