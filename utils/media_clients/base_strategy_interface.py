@@ -13,6 +13,7 @@ from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTes
 from tests.server_tests.test_classes import TestConfig
 
 # Import test framework components
+from .metrics_utils import calculate_rtr, calculate_tail_latency, calculate_ttft
 from .test_status import BaseTestStatus
 
 # BaseMediaStrategy constants
@@ -22,7 +23,32 @@ logger = logging.getLogger(__name__)
 
 
 class BaseMediaStrategy(ABC):
-    """Interface for media strategies."""
+    """
+    Abstract base class for media client strategies.
+
+    Subclasses MUST:
+    1. Define TASK_TYPE class attribute (e.g., TASK_TYPE = "tts")
+    2. Implement _create_specific_benchmarks_data() method
+    """
+
+    # Subclasses should override this with their task type
+    # Default is "unknown" for backward compatibility during migration
+    TASK_TYPE: str = "unknown"
+
+    def __init_subclass__(cls, **kwargs):
+        """Validate that subclasses define required class attributes."""
+        super().__init_subclass__(**kwargs)
+        if ABC in cls.__bases__:
+            return
+        if cls.TASK_TYPE == "unknown":
+            import warnings
+
+            warnings.warn(
+                f"{cls.__name__} should define TASK_TYPE class attribute "
+                f"(e.g., TASK_TYPE = 'audio'). Using 'unknown' as default.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         self.all_params = all_params
@@ -162,7 +188,7 @@ class BaseMediaStrategy(ABC):
             if hasattr(self.device, "name")
             else str(self.device),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": self._get_task_type(),
+            "task_type": self.TASK_TYPE,
         }
 
     def _save_report(self, report_data: dict, filename: Path) -> None:
@@ -170,19 +196,11 @@ class BaseMediaStrategy(ABC):
         with open(filename, "w") as f:
             json.dump(report_data, f, indent=4)
 
-    def _get_task_type(self) -> str:
-        """
-        Return task type for this client.
-        Subclasses should override to return appropriate type.
-        """
-        return "unknown"
-
-    @abstractmethod
     def _create_specific_benchmarks_data(
         self, status_list: list[BaseTestStatus]
     ) -> dict:
         """
-        Create benchmark-specific data. Subclasses MUST implement.
+        Create benchmark-specific data. Subclasses should override this.
 
         Args:
             status_list: List of test status objects
@@ -198,14 +216,25 @@ class BaseMediaStrategy(ABC):
                 "t/s/u": self._calculate_tsu(status_list),
             }
         """
-        pass
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _create_specific_benchmarks_data()"
+        )
 
+    # =========================================================================
+    # Common Calculation Methods
+    # Delegate to metrics_utils for pure function implementations.
+    # Can be overridden if client needs different calculation.
+    # =========================================================================
     def _calculate_ttft_value(self, status_list: list[BaseTestStatus]) -> float:
-        """
-        Can be overridden if needed.
-        """
-        if not status_list:
-            return 0.0
-        return sum(
-            getattr(s, "elapsed", 0) or getattr(s, "ttft", 0) for s in status_list
-        ) / len(status_list)
+        """Calculate average TTFT. See metrics_utils.calculate_ttft for details."""
+        return calculate_ttft(status_list)
+
+    def _calculate_rtr_value(self, status_list: list[BaseTestStatus]) -> float:
+        """Calculate average RTR. See metrics_utils.calculate_rtr for details."""
+        return calculate_rtr(status_list)
+
+    def _calculate_tail_latency(
+        self, status_list: list[BaseTestStatus]
+    ) -> tuple[float, float]:
+        """Calculate P90/P95 tail latency. See metrics_utils.calculate_tail_latency for details."""
+        return calculate_tail_latency(status_list)
