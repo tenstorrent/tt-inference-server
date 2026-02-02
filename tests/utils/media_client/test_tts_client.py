@@ -227,7 +227,9 @@ class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
         result = strategy._calculate_ttft_value(status_list)
-        assert result == 200.0  # Average of valid values
+        # Base uses metrics_utils.calculate_ttft with fallback (ttft_ms, ttft, elapsed)
+        # None ttft_ms falls back to elapsed=1.0; average(100, 1.0, 300) ≈ 133.67
+        assert abs(result - (100 + 1.0 + 300) / 3) < 0.01
 
     def test_calculate_ttft_all_none_values(self):
         strategy = self._create_strategy()
@@ -236,7 +238,8 @@ class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
         ]
         result = strategy._calculate_ttft_value(status_list)
-        assert result == 0
+        # Base uses metrics_utils.calculate_ttft: when ttft_ms is None, fallback is elapsed
+        assert result == 1.0
 
 
 class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
@@ -879,3 +882,13 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
         assert report_data["task_type"] == "tts"
+
+    @patch("pathlib.Path.mkdir")
+    def test_generate_report_empty_status_list_returns_none(self, mock_mkdir):
+        """Empty status_list: shared report_utils skips write and returns None."""
+        strategy = self._create_strategy()
+
+        result = strategy._generate_report([])
+
+        assert result is None
+        mock_mkdir.assert_not_called()
