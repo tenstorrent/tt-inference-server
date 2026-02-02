@@ -675,14 +675,10 @@ class TtsClientStrategy(BaseMediaStrategy):
             checks_total += 1
             rtr_threshold = targets.rtr * (1 - tolerance)
             if rtr_value >= rtr_threshold:
-                logger.info(
-                    f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}"
-                )
+                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
                 checks_passed += 1
             else:
-                logger.warning(
-                    f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}"
-                )
+                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
         # Determine overall result
         if checks_total == 0:
