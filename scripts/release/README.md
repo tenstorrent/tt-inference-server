@@ -137,6 +137,7 @@ python3 scripts/build_docker_images.py --push
 * include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 * the PR must be merge commit option ("all commits from this branch will be added with a merge commit"), this is done in the case that there are merge conflicts that need to be resolved. The resolution commit is then available in the next release for the changes required on current `dev`.
+* Use `git add -f docs/model_support/**` to commit updates to generated model docs.
 * NOTE: the release will process with `pre-release-vx.x.x` branch which is now "stable" from `dev`
 
 ## Release to `main`
