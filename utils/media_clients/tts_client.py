@@ -26,12 +26,20 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import get_num_calls
-from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
 # Default text for TTS testing (going to be changed with dataset)
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
+
+# Default number of samples for accuracy reference lookup
+DEFAULT_NUM_SAMPLES = 5
+
+# Result tuple lengths from _generate_speech()
+# Short result: (status, elapsed, ttft_ms, rtr) - when WER not calculated
+RESULT_LEN_WITHOUT_WER = 4
+# Full result: (status, elapsed, ttft_ms, rtr, reference_text, audio_duration, wer)
+RESULT_LEN_WITH_WER = 7
 
 
 class TtsClientStrategy(BaseMediaStrategy):
@@ -110,37 +118,19 @@ class TtsClientStrategy(BaseMediaStrategy):
         benchmark_data["p90_ttft"] = p90_ttft
         benchmark_data["p95_ttft"] = p95_ttft
 
-        task_name = benchmark_data["task_name"]
-
-        dict_format_data = {
-            "results": {
-                task_name: {
-                    "score": ttft_value,
-                    "rtr": rtr_value,
-                    "p90_ttft": p90_ttft,
-                    "p95_ttft": p95_ttft,
-                }
-            },
-            "configs": {
-                task_name: {
-                    "task": task_name,
-                    "dataset_path": "N/A",
-                }
-            },
-        }
-
-        benchmark_data.update(dict_format_data)
+        # Calculate accuracy check: 0 = undefined, 2 = passed, 3 = failed
+        accuracy_check = self._calculate_accuracy_check(wer_value=None)
+        benchmark_data["accuracy_check"] = accuracy_check
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
-
         eval_filename = (
             Path(self.output_path)
             / f"eval_{self.model_spec.model_id}"
             / self.model_spec.hf_model_repo.replace("/", "__")
             / f"results_{time.time()}.json"
         )
-        # Create directory structure if it doesn't exist
+
         eval_filename.parent.mkdir(parents=True, exist_ok=True)
 
         with open(eval_filename, "w") as f:
@@ -260,7 +250,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
             result = asyncio.run(self._generate_speech(calculate_wer=calculate_wer))
-            if len(result) == 4:
+            if len(result) == RESULT_LEN_WITHOUT_WER:
                 status, elapsed, ttft_ms, rtr = result
                 reference_text, audio_duration, wer = test_text, None, None
             else:
@@ -619,68 +609,76 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         return p90_ttft, p95_ttft
 
-    def _calculate_accuracy_check(
-        self, ttft_value: float, rtr_value: float, wer_value: Optional[float] = None
-    ) -> int:
-        """Calculate accuracy check based on TTFT and RTR targets."""
-        logger.info("Calculating accuracy check based on TTFT and RTR targets")
+    def _calculate_accuracy_check(self, wer_value: Optional[float] = None) -> int:
+        """Calculate accuracy check for TTS quality using audio_accuracy_reference.json.
 
-        device_str = self.model_spec.cli_args.get("device")
-        targets = get_performance_targets(
-            self.model_spec.model_name,
-            device_str,
-            model_type=self.model_spec.model_type.name,
-        )
-        logger.info(f"Performance targets: {targets}")
+        NOTE: Currently we don't have a valid WER metric implemented.
+        WER calculation requires transcribing generated audio back to text,
+        which needs ASR integration. For now, this returns 0 (undefined).
 
-        if not targets.ttft_ms:
-            logger.warning("⚠️ No TTFT target found, skipping accuracy check")
-            return 0  # UNDEFINED
+        Args:
+            wer_value: Word Error Rate (0.0-1.0), if available
 
-        available_metrics = [
-            "TTFT" if targets.ttft_ms else None,
-            "RTR" if targets.rtr and rtr_value else None,
-        ]
-        logger.info(
-            f"Available metrics for validation: {[m for m in available_metrics if m]}"
-        )
+        Returns:
+            0 - undefined (no WER value or no reference data)
+            2 - passed (WER within valid range)
+            3 - failed (WER outside valid range)
+        """
+        # NOTE: For now we don't have valid WER metric - returns 0 (undefined)
+        logger.info("Calculating accuracy check using audio_accuracy_reference.json")
 
-        tolerance = targets.tolerance if targets.tolerance else 0.05
-        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-        checks_passed = 0
-        checks_total = 0
-
-        if targets.ttft_ms is not None:
-            checks_total += 1
-
-            ttft_value_ms = ttft_value * 1000
-            ttft_threshold = targets.ttft_ms * (1 + tolerance)
-            if ttft_value_ms <= ttft_threshold:
-                logger.info(
-                    f"✅ TTFT PASSED: {ttft_value_ms:.2f}ms <= {ttft_threshold:.2f}ms"
-                )
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ TTFT FAILED: {ttft_value_ms:.2f}ms > {ttft_threshold:.2f}ms"
-                )
-
-        if targets.rtr is not None and rtr_value is not None:
-            checks_total += 1
-            rtr_threshold = targets.rtr * (1 - tolerance)
-            if rtr_value >= rtr_threshold:
-                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        if checks_total == 0:
-            logger.warning("No targets available for accuracy check")
+        # If no WER value provided, return undefined
+        if wer_value is None:
+            logger.warning("⚠️ No WER value provided, accuracy check undefined")
             return 0
-        elif checks_passed == checks_total:
-            logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-            return 2
 
-        logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-        return 3
+        # Load reference data
+        reference_data = self._load_audio_accuracy_reference()
+        if not reference_data:
+            logger.warning("⚠️ Could not load audio accuracy reference")
+            return 0
+
+        model_name = self.model_spec.model_name
+        if model_name not in reference_data:
+            logger.warning(f"⚠️ Model '{model_name}' not found in audio accuracy reference")
+            return 0
+
+        # Get num_samples from eval config
+        num_samples = str(DEFAULT_NUM_SAMPLES)
+        accuracy_data = reference_data[model_name].get("accuracy", {})
+        if str(num_samples) not in accuracy_data:
+            logger.warning(f"⚠️ No accuracy reference for {num_samples} samples")
+            return 0
+
+        wer_valid_range = accuracy_data[str(num_samples)].get("wer_valid_range")
+        if not wer_valid_range:
+            logger.warning("⚠️ No WER valid range defined")
+            return 0
+
+        # Check if WER is within valid range (with 3% tolerance like image models)
+        wer_approx_range = [0.97 * wer_valid_range[0], 1.03 * wer_valid_range[1]]
+
+        if wer_approx_range[0] <= wer_value <= wer_approx_range[1]:
+            logger.info(f"✅ WER PASSED: {wer_value:.4f} in range {wer_approx_range}")
+            return 2
+        else:
+            logger.warning(f"❌ WER FAILED: {wer_value:.4f} not in range {wer_approx_range}")
+            return 3
+
+    def _load_audio_accuracy_reference(self) -> dict:
+        """Load audio accuracy reference data from JSON file."""
+        accuracy_ref_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "evals"
+            / "eval_targets"
+            / "audio_accuracy_reference.json"
+        )
+        try:
+            with open(accuracy_ref_path, "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.warning(f"Audio accuracy reference not found: {accuracy_ref_path}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in audio accuracy reference: {e}")
+            return {}
