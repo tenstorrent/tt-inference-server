@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from utils.media_clients.tts_client import DEFAULT_TTS_TEXT, TtsClientStrategy
+from utils.media_clients.tts_client import TtsClientStrategy
 from utils.media_clients.test_status import TtsTestStatus
 
 
@@ -503,7 +503,9 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert "p90_ttft" in eval_data
         assert "p95_ttft" in eval_data
         assert "performance_check" in eval_data  # TTFT/RTR check
-        assert "accuracy_check" in eval_data  # TODO: WER quality check (requires multi-model)
+        assert (
+            "accuracy_check" in eval_data
+        )  # TODO: WER quality check (requires multi-model)
 
         # Verify calculated averages
         assert eval_data["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
