@@ -640,7 +640,9 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         model_name = self.model_spec.model_name
         if model_name not in reference_data:
-            logger.warning(f"⚠️ Model '{model_name}' not found in audio accuracy reference")
+            logger.warning(
+                f"⚠️ Model '{model_name}' not found in audio accuracy reference"
+            )
             return 0
 
         # Get num_samples from eval config
@@ -662,7 +664,9 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.info(f"✅ WER PASSED: {wer_value:.4f} in range {wer_approx_range}")
             return 2
         else:
-            logger.warning(f"❌ WER FAILED: {wer_value:.4f} not in range {wer_approx_range}")
+            logger.warning(
+                f"❌ WER FAILED: {wer_value:.4f} not in range {wer_approx_range}"
+            )
             return 3
 
     def _load_audio_accuracy_reference(self) -> dict:
