@@ -122,14 +122,9 @@ class VLLMRunner(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
-        if chunks:
-            final_text = TextUtils.clean_text("".join(chunks))
-        else:
-            final_text = ""
-
         yield CompletionOutput(
             type=FINAL_TYPE,
-            data=CompletionResult(text=final_text),
+            data=CompletionResult(text=""),
         )
 
     async def process_request_non_streaming(
