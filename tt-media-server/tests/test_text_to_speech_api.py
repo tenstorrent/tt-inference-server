@@ -4,7 +4,7 @@
 
 """Tests for Text-to-Speech API endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import Response
@@ -150,6 +150,43 @@ class TestTTSRouterIntegration:
         assert hasattr(mock_router, "routes")
 
 
+class TestTextToSpeechRequestValidation:
+    """Test actual TextToSpeechRequest validation including max length."""
+
+    def test_text_exceeds_max_length(self):
+        """Test that text exceeding max_tts_text_length raises ValueError."""
+        from domain.text_to_speech_request import (
+            DEFAULT_MAX_TTS_TEXT_LENGTH,
+            TextToSpeechRequest,
+        )
+
+        long_text = "a" * (DEFAULT_MAX_TTS_TEXT_LENGTH + 100)
+
+        with pytest.raises(ValueError) as exc_info:
+            TextToSpeechRequest(text=long_text)
+
+        assert "exceeds maximum length" in str(exc_info.value)
+
+    def test_text_at_max_length_succeeds(self):
+        """Test that text at exactly max_tts_text_length succeeds."""
+        from domain.text_to_speech_request import (
+            DEFAULT_MAX_TTS_TEXT_LENGTH,
+            TextToSpeechRequest,
+        )
+
+        exact_text = "a" * DEFAULT_MAX_TTS_TEXT_LENGTH
+
+        request = TextToSpeechRequest(text=exact_text)
+        assert len(request.text) == DEFAULT_MAX_TTS_TEXT_LENGTH
+
+    def test_text_below_max_length_succeeds(self):
+        """Test that text below max_tts_text_length succeeds."""
+        from domain.text_to_speech_request import TextToSpeechRequest
+
+        request = TextToSpeechRequest(text="Hello world")
+        assert request.text == "Hello world"
+
+
 class TestRealImplementation:
     """Test actual text_to_speech.py implementation"""
 
@@ -170,7 +207,7 @@ class TestRealImplementation:
         """Test real handle_tts_request with audio format"""
         mock_service = MagicMock()
         mock_response = MagicMock()
-        mock_response.wav_bytes = b"test_wav"
+        mock_response.output_bytes = b"test_wav"
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
@@ -187,7 +224,7 @@ class TestRealImplementation:
         """Test real handle_tts_request with wav format"""
         mock_service = MagicMock()
         mock_response = MagicMock()
-        mock_response.wav_bytes = b"test_wav"
+        mock_response.output_bytes = b"test_wav"
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
@@ -197,6 +234,62 @@ class TestRealImplementation:
 
         result = await real_handle_tts_request(mock_request, mock_service)
         assert isinstance(result, Response)
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_mp3(self):
+        """Test real handle_tts_request with mp3 format returns output_bytes and audio/mpeg"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.output_bytes = b"fake_mp3_data"
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "mp3"
+        mock_request.response_format = mock_format
+
+        result = await real_handle_tts_request(mock_request, mock_service)
+        assert isinstance(result, Response)
+        assert result.body == b"fake_mp3_data"
+        assert result.media_type == "audio/mpeg"
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_ogg(self):
+        """Test real handle_tts_request with ogg format returns output_bytes and audio/ogg"""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.output_bytes = b"fake_ogg_data"
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "ogg"
+        mock_request.response_format = mock_format
+
+        result = await real_handle_tts_request(mock_request, mock_service)
+        assert isinstance(result, Response)
+        assert result.body == b"fake_ogg_data"
+        assert result.media_type == "audio/ogg"
+
+    @pytest.mark.asyncio
+    async def test_real_handle_tts_request_binary_no_content_returns_500(self):
+        """Test handle_tts_request raises 500 when binary format but no output_bytes."""
+        mock_service = MagicMock()
+        mock_response = MagicMock()
+        mock_response.output_bytes = None
+        mock_service.process_request = AsyncMock(return_value=mock_response)
+
+        mock_request = MagicMock()
+        mock_format = MagicMock()
+        mock_format.lower.return_value = "mp3"
+        mock_request.response_format = mock_format
+
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await real_handle_tts_request(mock_request, mock_service)
+        assert exc_info.value.status_code == 500
+        assert "Binary audio not available" in exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_real_handle_tts_request_json(self):
@@ -219,7 +312,7 @@ class TestRealImplementation:
         """Test text_to_speech endpoint"""
         mock_service = MagicMock()
         mock_response = MagicMock()
-        mock_response.wav_bytes = b"test"
+        mock_response.output_bytes = b"test"
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
@@ -229,3 +322,97 @@ class TestRealImplementation:
 
         result = await text_to_speech(mock_request, mock_service, "key")
         assert isinstance(result, Response)
+
+
+class TestTTSServicePostProcess:
+    """Test TTS service post_process for binary formats (mp3/ogg)."""
+
+    @pytest.mark.asyncio
+    async def test_post_process_mp3_sets_output_bytes(self):
+        """post_process for response_format mp3 sets result.output_bytes from worker."""
+        from domain.text_to_speech_response import TextToSpeechResponse
+        from model_services.text_to_speech_service import TextToSpeechService
+
+        with patch("model_services.base_service.HuggingFaceUtils"):
+            with patch(
+                "model_services.text_to_speech_service.CpuWorkloadHandler"
+            ) as MockCpuHandler:
+                mock_handler = MagicMock()
+                mock_handler.execute_task = AsyncMock(return_value=b"fake_mp3_bytes")
+                MockCpuHandler.return_value = mock_handler
+                service = TextToSpeechService()
+
+        result = TextToSpeechResponse(audio="dummy_base64", duration=1.0)
+        request = MagicMock()
+        request.response_format = "mp3"
+
+        await service.post_process(result, request)
+
+        assert result.output_bytes == b"fake_mp3_bytes"
+
+    @pytest.mark.asyncio
+    async def test_post_process_ogg_sets_output_bytes(self):
+        """post_process for response_format ogg sets result.output_bytes."""
+        from domain.text_to_speech_response import TextToSpeechResponse
+        from model_services.text_to_speech_service import TextToSpeechService
+
+        with patch("model_services.base_service.HuggingFaceUtils"):
+            with patch(
+                "model_services.text_to_speech_service.CpuWorkloadHandler"
+            ) as MockCpuHandler:
+                mock_handler = MagicMock()
+                mock_handler.execute_task = AsyncMock(return_value=b"fake_ogg_bytes")
+                MockCpuHandler.return_value = mock_handler
+                service = TextToSpeechService()
+
+        result = TextToSpeechResponse(audio="dummy_base64", duration=1.0)
+        request = MagicMock()
+        request.response_format = "ogg"
+
+        await service.post_process(result, request)
+
+        assert result.output_bytes == b"fake_ogg_bytes"
+
+
+class TestTTSWorkerFunction:
+    """Test tts_worker_function (base64 + format -> bytes)."""
+
+    def test_worker_mp3_uses_encode_wav_to(self):
+        """tts_worker_function for mp3 calls encode_wav_to and returns result."""
+
+        from model_services.text_to_speech_service import tts_worker_function
+
+        minimal_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+        with patch(
+            "model_services.text_to_speech_service.encode_wav_to",
+            return_value=b"encoded_mp3",
+        ):
+            out = tts_worker_function(None, minimal_wav_b64, "mp3")
+        assert out == b"encoded_mp3"
+
+    def test_worker_ogg_uses_encode_wav_to(self):
+        """tts_worker_function for ogg calls encode_wav_to and returns result."""
+
+        from model_services.text_to_speech_service import tts_worker_function
+
+        minimal_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+        with patch(
+            "model_services.text_to_speech_service.encode_wav_to",
+            return_value=b"encoded_ogg",
+        ):
+            out = tts_worker_function(None, minimal_wav_b64, "ogg")
+        assert out == b"encoded_ogg"
+
+    def test_worker_audio_returns_decoded_wav_no_encode(self):
+        """tts_worker_function for audio returns raw decoded bytes, no encode_wav_to."""
+        import base64
+
+        from model_services.text_to_speech_service import tts_worker_function
+
+        minimal_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+        with patch(
+            "model_services.text_to_speech_service.encode_wav_to"
+        ) as mock_encode:
+            out = tts_worker_function(None, minimal_wav_b64, "audio")
+        mock_encode.assert_not_called()
+        assert out == base64.b64decode(minimal_wav_b64)

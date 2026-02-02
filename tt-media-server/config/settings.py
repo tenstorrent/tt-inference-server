@@ -16,6 +16,7 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
+    QueueType,
     SupportedModels,
     DatasetLoaders,
 )
@@ -50,8 +51,6 @@ class Settings(BaseSettings):
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
-    use_queue_per_worker: bool = False
-    use_memory_queue: bool = False
 
     # Training settings
     dataset_loader: str = DatasetLoaders.SST2.value
@@ -62,6 +61,8 @@ class Settings(BaseSettings):
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
+    use_queue_per_worker: bool = False
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Worker management settings
     new_device_delay_seconds: int = 0

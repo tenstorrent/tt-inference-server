@@ -10,22 +10,22 @@ from domain.completion_response import CompletionStreamChunk
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+from utils.sampling_params_builder import build_sampling_params
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
-from vllm.sampling_params import RequestOutputKind
 
 
-class VLLMForgeRunner(BaseDeviceRunner):
+class VLLMRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 
     @log_execution_time(
-        "VLLM Forge model load",
+        "VLLM model load",
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     async def warmup(self) -> bool:
-        self.logger.info(f"Device {self.device_id}: Loading VLLM Forge model...")
+        self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
@@ -51,8 +51,15 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
         return True
 
+    def _build_vllm_input(self, request: CompletionRequest):
+        if isinstance(request.prompt, str):
+            return request.prompt
+        elif isinstance(request.prompt, list):
+            return {"prompt_token_ids": request.prompt}
+        raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
+
     @log_execution_time(
-        "Run VLLM Forge inference",
+        "Run VLLM inference",
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
@@ -66,38 +73,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
             self.logger.debug(f"Device {self.device_id}: Running inference")
 
             request = requests[0]
-            # Harcode those sampling params
-            # SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.0, top_p=1.0, top_k=0, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], include_stop_str_in_output=False, ignore_eos=False, max_tokens=231, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, truncate_prompt_tokens=None, guided_decoding=None, extra_args=None)
-            sampling_params = SamplingParams(
-                n=1,
-                presence_penalty=0.0,
-                frequency_penalty=0.0,
-                repetition_penalty=1.0,
-                seed=None,
-                stop=[],
-                stop_token_ids=[],
-                bad_words=[],
-                include_stop_str_in_output=False,
-                ignore_eos=False,
-                min_tokens=0,
-                logprobs=None,
-                prompt_logprobs=None,
-                temperature=0.0,
-                top_p=1.0,
-                top_k=0,
-                min_p=0.0,
-                max_tokens=request.max_tokens if request.max_tokens else 65536,
-                skip_special_tokens=True,
-                spaces_between_special_tokens=True,
-                truncate_prompt_tokens=None,
-                guided_decoding=None,
-                extra_args=None,
-                output_kind=RequestOutputKind.DELTA,
-            )
             if request.stream:
-                return self._generate_streaming(request, sampling_params)
+                return self._generate_streaming(request)
             else:
-                return await self._generate_non_streaming(request, sampling_params)
+                return await self._generate_non_streaming(requests)
         except Exception as e:
             self.logger.error(
                 f"Device {self.device_id}: Inference failed: {type(e).__name__}: {e}"
@@ -107,9 +86,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
             )
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
-    async def _generate_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
-    ):
+    async def _generate_streaming(self, request: CompletionRequest):
         """✅ Yields tuples of (task_id, is_final, text) to avoid pickling"""
         task_id = request._task_id
 
@@ -117,9 +94,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
         chunks_append = chunks.append
 
         strip_eos = TextUtils.strip_eos
+        sampling_params = build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, task_id
+            self._build_vllm_input(request), sampling_params, task_id
         ):
             outputs = request_output.outputs
             if not outputs:
@@ -144,14 +122,14 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
-    async def _generate_non_streaming(
-        self, request: CompletionRequest, sampling_params: SamplingParams
-    ):
+    async def process_request_non_streaming(self, request: CompletionRequest):
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
+
+        sampling_params = build_sampling_params(request)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
-            request.prompt, sampling_params, request._task_id
+            self._build_vllm_input(request), sampling_params, request._task_id
         ):
             if request_output.outputs:
                 generated_text.append(request_output.outputs[0].text)
@@ -160,4 +138,15 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 
-        return [CompletionStreamChunk(text=generated_text)]
+        return CompletionStreamChunk(text=generated_text)
+
+    async def _generate_non_streaming(self, requests: list[CompletionRequest]):
+        tasks = [self.process_request_non_streaming(request) for request in requests]
+        self.logger.info(
+            f"Device {self.device_id}: Starting non-streaming batch generation for {len(tasks)} requests"
+        )
+        results = await asyncio.gather(*tasks)
+        self.logger.info(
+            f"Device {self.device_id}: Non-streaming batch generation completed for {len(tasks)} requests"
+        )
+        return results

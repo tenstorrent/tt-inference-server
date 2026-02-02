@@ -3,12 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 import os
 
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 
-class TrainingService(BaseService):
+class TrainingService(BaseJobService):
     def __init__(self):
         self.settings = get_settings()
         super().__init__()

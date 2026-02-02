@@ -19,11 +19,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 
-
-# CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ARG CONTAINER_APP_UID=1000
-ARG DEBIAN_FRONTEND=noninteractive
-
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 
@@ -196,6 +191,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -223,5 +219,11 @@ WORKDIR ${HOME_DIR}/tt-metal
 # Set up bashrc
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
+# Switch back to root for entrypoint (it will drop to non-root user via gosu)
+USER root
+COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
+RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
+
 EXPOSE 8000
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
