@@ -275,7 +275,7 @@ class JobManager:
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
             # for training job types, the path is set on job creation, so we log here in case the final path differs
-            if result_path and job.result_path != result_path:
+            if job.result_path and job.result_path != result_path:
                 self._logger.info(f"Job {job.id} result path updated on job completion: {job.result_path} -> {result_path}")
 
             job.mark_completed(result_path=result_path)
