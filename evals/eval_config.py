@@ -2427,98 +2427,43 @@ _eval_config_list = [
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[
             EvalTask(
-                task_name="gpqa_diamond_generative_n_shot",
-                num_fewshot=0,
-                gen_kwargs={"reasoning_effort": "high"},
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                },
-                score=EvalTaskScore(
-                    published_score=71.5,  # GPQA Diamond score
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,flexible-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                gen_kwargs={"reasoning_effort": "high"},
-                score=EvalTaskScore(
-                    published_score=85.3,  # MMLU Pro score
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="r1_aime24",
-                gen_kwargs={"reasoning_effort": "high"},
-                score=EvalTaskScore(
-                    published_score=92.1,  # AIME 2024 score (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
                 task_name="aime25",
                 workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
-                eval_class="gpt-oss",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://github.com/openai/gpt-oss",
+                    published_score=91.7,  # AIME 2025 score (without tools)
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
-                use_chat_api=False,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                },
+                use_chat_api=True,
                 apply_chat_template=False,
-                max_concurrent=32,
+                max_concurrent=1,
                 gen_kwargs={"reasoning_effort": "high"},
             ),
             EvalTask(
                 task_name="gpqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
-                eval_class="gpt-oss",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://github.com/openai/gpt-oss",
+                    published_score=71.5,  # GPQA Diamond score (without tools)
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
-                use_chat_api=False,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
+                },
+                use_chat_api=True,
                 apply_chat_template=False,
-                max_concurrent=32,
+                max_concurrent=1,
                 gen_kwargs={"reasoning_effort": "high"},
             ),
         ],
@@ -2529,7 +2474,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="aime25",
                 workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
-                eval_class="gpt-oss",
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
@@ -2550,7 +2494,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa",
                 workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
-                eval_class="gpt-oss",
                 score=EvalTaskScore(
                     published_score=80.1,  # GPQA Diamond score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
