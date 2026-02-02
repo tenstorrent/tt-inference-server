@@ -2443,7 +2443,7 @@ _eval_config_list = [
                 },
                 use_chat_api=True,
                 apply_chat_template=False,
-                max_concurrent=1,
+                max_concurrent=32,
                 gen_kwargs={"reasoning_effort": "high"},
             ),
             EvalTask(
@@ -2463,7 +2463,7 @@ _eval_config_list = [
                 },
                 use_chat_api=True,
                 apply_chat_template=False,
-                max_concurrent=1,
+                max_concurrent=32,
                 gen_kwargs={"reasoning_effort": "high"},
             ),
         ],
