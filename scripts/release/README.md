@@ -78,8 +78,9 @@ python3 scripts/release/update_model_spec.py --output-only
 
 - `workflows/model_spec.py`: diff has updates from Models CI most recent passing runs
 - `model_specs_output.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/release_models_diff.md`: summary of diff with links to specifci Models CI runs
-- `README.md`: updates to the `Model Support` section
+- `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs
+- `docs/model_support/`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
+- `README.md`: updates to the `Model Support` section (links to docs/model_support/)
 
 ## step 3: generate pre-release artifacts
 

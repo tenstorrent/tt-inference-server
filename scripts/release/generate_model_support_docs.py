@@ -332,7 +332,8 @@ def generate_model_page(model_name: str, templates: List[ModelSpecTemplate]) -> 
             lines.append("")
 
         # Option 1: run.py
-        lines.append("**Option 1: via run.py command**")
+        # lines.append("**Option 1: via run.py command**")
+        lines.append("**via run.py command**")
         lines.append("")
         device_arg = device.name.lower()
         lines.append("```bash")
@@ -488,8 +489,8 @@ def generate_model_type_page(
     )
     lines.append("")
 
-    # Back link to model types index
-    lines.append("[Search model by model type](README.md#model-types)")
+    # Back link to model types index in root README
+    lines.append("[Search model by model type](../../README.md#models-by-model-type)")
     lines.append("")
 
     # Get devices that have models of this type
@@ -559,8 +560,8 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
     lines.append("This page lists all supported models organized by hardware type.")
     lines.append("")
 
-    # Back link to model support index
-    lines.append("[Search model by model type](README.md#model-types)")
+    # Back link to model types index in root README
+    lines.append("[Search model by model type](../../README.md#models-by-model-type)")
     lines.append("")
 
     # Get devices that have templates
@@ -638,7 +639,7 @@ def generate_directory_readme(templates: List[ModelSpecTemplate]) -> str:
         "This directory contains documentation for all models supported on Tenstorrent hardware."
     )
     lines.append("")
-    lines.append("## Model Types")
+    lines.append("### Models by Model Type")
     lines.append("")
     lines.append("Browse models by type:")
     lines.append("")
@@ -659,7 +660,7 @@ def generate_directory_readme(templates: List[ModelSpecTemplate]) -> str:
     lines.append("")
 
     # Models by Hardware section
-    lines.append("## Models by Hardware")
+    lines.append("### Models by Hardware")
     lines.append("")
     lines.append("Browse models by hardware type:")
     lines.append("")
@@ -690,11 +691,6 @@ def generate_directory_readme(templates: List[ModelSpecTemplate]) -> str:
             f"- [{product_name} ({device.name})](models_by_hardware.md#{anchor})"
         )
 
-    lines.append("")
-    lines.append("## Quick Links")
-    lines.append("")
-    lines.append("- [System Requirements](../system_requirements.md)")
-    lines.append("- [Getting Started](../../README.md)")
     lines.append("")
 
     return "\n".join(lines)
@@ -744,9 +740,9 @@ def main():
         print("[DRY RUN MODE]")
     print()
 
-    # Generate directory README
-    readme_content = generate_directory_readme(templates)
-    write_file(output_dir / "README.md", readme_content, args.dry_run)
+    # Note: docs/model_support/README.md is no longer generated here.
+    # The model support content is maintained directly in root README.md
+    # via update_model_spec.py's update_readme_model_support() function.
 
     # Generate models by hardware page
     hardware_content = generate_models_by_hardware_page(templates)
