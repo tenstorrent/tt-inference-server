@@ -13,14 +13,13 @@ from typing import Callable, Optional
 import yaml
 
 from workflows.bootstrap_uv import UV_EXEC
-from workflows.model_spec import ModelType
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_repo_root_path,
     map_configs_by_attr,
     run_command,
 )
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import ModelType, WorkflowVenvType
 
 logger = logging.getLogger("run_log")
 
