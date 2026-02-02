@@ -97,6 +97,7 @@ Set up linting and formatting for development:
 ```bash
 # option 1: use uv
 uv venv .pre-commit --python 3.10
+source .pre-commit/bin/activate
 
 uv pip install -r requirements-dev.txt
 uv pip install -r tt-media-server/requirements.txt
