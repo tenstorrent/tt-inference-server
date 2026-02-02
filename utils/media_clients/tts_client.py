@@ -76,44 +76,35 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
-        logger.info("Generating eval report...")
-        benchmark_data = {}
+        self._generate_eval_report(status_list=status_list)
 
+    def _create_eval_extra_data(
+        self,
+        status_list=None,
+        eval_result=None,
+        total_time=None,
+    ) -> dict:
+        """TTS eval payload: task_name, tolerance, score, rtr, p90/p95, results, configs."""
+        if not status_list:
+            return {}
         ttft_value = self._calculate_ttft_value(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value:.2f}ms")
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
         logger.info(f"Extracted RTR value: {rtr_value:.2f}")
-
-        # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
         logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
-        # Metadata fields (excluded from numeric metrics in process_list_format_eval_files)
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
-        )
-        benchmark_data["task_type"] = "text_to_speech"
-        # all_params is always an object with tasks attribute
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        benchmark_data["rtr"] = rtr_value
-        benchmark_data["p90_ttft"] = p90_ttft
-        benchmark_data["p95_ttft"] = p95_ttft
-
-        task_name = benchmark_data["task_name"]
-
-        dict_format_data = {
+        task_name = self.all_params.tasks[0].task_name
+        return {
+            "task_type": "text_to_speech",
+            "task_name": task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": ttft_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "rtr": rtr_value,
+            "p90_ttft": p90_ttft,
+            "p95_ttft": p95_ttft,
             "results": {
                 task_name: {
                     "score": ttft_value,
@@ -129,24 +120,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                 }
             },
         }
-
-        benchmark_data.update(dict_format_data)
-
-        # Make benchmark_data is inside of list as an object
-        benchmark_data = [benchmark_data]
-
-        eval_filename = (
-            Path(self.output_path)
-            / f"eval_{self.model_spec.model_id}"
-            / self.model_spec.hf_model_repo.replace("/", "__")
-            / f"results_{time.time()}.json"
-        )
-        # Create directory structure if it doesn't exist
-        eval_filename.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(eval_filename, "w") as f:
-            json.dump(benchmark_data, f, indent=4)
-        logger.info(f"Evaluation data written to: {eval_filename}")
 
     def run_benchmark(self, attempt=0) -> list[TtsTestStatus]:
         """Run benchmarks for the TTS model."""
@@ -167,8 +140,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
 
-            # Use template method from BaseMediaStrategy
-            self.generate_report(status_list)
+            self._generate_report(status_list)
             return status_list
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -201,31 +173,22 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         return tts_default
 
-    def _create_specific_benchmarks_data(
+    def _get_benchmark_report_extras(
         self, status_list: list[TtsTestStatus]
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """
-        TTS-specific benchmark metrics.
-
-        Base class (BaseMediaStrategy.generate_report) handles:
-        - filename creation
-        - directory creation
-        - model, device, timestamp, task_type fields
-        - JSON serialization
-
-        This method only needs to return the TTS-specific metrics.
+        TTS benchmark extras: ttft (s), ttft_p90, ttft_p95 in benchmarks; no top-level.
         """
+        if not status_list:
+            return ({}, {})
         ttft_value = self._calculate_ttft_value(status_list)
-        rtr_value = self._calculate_rtr_value(status_list)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
-
-        return {
-            "num_requests": len(status_list),
-            "ttft": ttft_value / 1000,  # ms to seconds
-            "rtr": rtr_value,
-            "ttft_p90": p90_ttft / 1000,  # ms to seconds
-            "ttft_p95": p95_ttft / 1000,  # ms to seconds
+        benchmark_extras = {
+            "ttft": ttft_value / 1000,
+            "ttft_p90": p90_ttft / 1000,
+            "ttft_p95": p95_ttft / 1000,
         }
+        return (benchmark_extras, {})
 
     def _run_tts_benchmark(
         self, num_calls: int, calculate_wer: bool = False
