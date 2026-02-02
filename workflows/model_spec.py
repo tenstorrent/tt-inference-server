@@ -1968,7 +1968,7 @@ spec_templates = [
                 device=DeviceTypes.P150X4,
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
@@ -1989,7 +1989,7 @@ spec_templates = [
                 device=DeviceTypes.P150X4,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
                 override_tt_config={
                     "trace_region_size": 42000000,
                 },
@@ -2028,7 +2028,7 @@ spec_templates = [
                 device=DeviceTypes.P150X8,
                 max_concurrency=32 * 8,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
                     "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
@@ -2058,7 +2058,7 @@ spec_templates = [
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
