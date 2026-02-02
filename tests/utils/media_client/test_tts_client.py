@@ -385,8 +385,8 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
         assert p95 == 100.0
 
 
-class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
-    """Tests for _calculate_accuracy_check method."""
+class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
+    """Tests for _calculate_performance_check method (TTFT, RTR)."""
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -400,59 +400,106 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_all_pass(self, mock_targets):
+    def test_performance_check_all_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=2.5, wer_value=None
-        )  # ttft_value in seconds
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=2.5)
 
         assert result == 2  # PASS
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_ttft_fail(self, mock_targets):
+    def test_performance_check_ttft_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.2, rtr_value=None, wer_value=None
-        )  # 200ms > 105ms threshold
+        result = strategy._calculate_performance_check(ttft_value=200.0, rtr_value=None)
 
         assert result == 3  # FAIL
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_rtr_fail(self, mock_targets):
+    def test_performance_check_rtr_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=5.0, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=1.0, wer_value=None
-        )  # 1.0 < 4.75 threshold
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=1.0)
 
         assert result == 3  # FAIL
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_no_targets(self, mock_targets):
+    def test_performance_check_no_targets(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=None, rtr=None, tolerance=None)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.1, rtr_value=2.0, wer_value=None
-        )
+        result = strategy._calculate_performance_check(ttft_value=100.0, rtr_value=2.0)
 
         assert result == 0  # UNDEFINED
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_default_tolerance(self, mock_targets):
+    def test_performance_check_default_tolerance(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=None)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=None, wer_value=None
-        )
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=None)
 
         assert result == 2  # PASS with default 5% tolerance
+
+
+class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
+    """Tests for _calculate_accuracy_check method (WER quality)."""
+
+    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    def _create_strategy(self, mock_tokenizer):
+        mock_tokenizer.return_value = MagicMock()
+        model_spec = MagicMock()
+        model_spec.model_name = "speecht5_tts"
+        model_spec.hf_model_repo = "microsoft/speecht5_tts"
+        model_spec.model_type.name = "TEXT_TO_SPEECH"
+        model_spec.cli_args = {"device": "n150"}
+        device = MagicMock()
+        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
+
+    def test_accuracy_check_no_wer_returns_undefined(self):
+        """Test that accuracy_check returns 0 when no WER value provided."""
+        strategy = self._create_strategy()
+        result = strategy._calculate_accuracy_check(wer_value=None)
+        assert result == 0  # UNDEFINED
+
+    def test_accuracy_check_wer_in_range_passes(self):
+        """Test that accuracy_check returns 2 when WER is within valid range."""
+        strategy = self._create_strategy()
+        with patch.object(strategy, "_load_audio_accuracy_reference") as mock_load:
+            mock_load.return_value = {
+                "speecht5_tts": {"accuracy": {"5": {"wer_valid_range": [0.0, 0.15]}}}
+            }
+            result = strategy._calculate_accuracy_check(wer_value=0.10)
+            assert result == 2  # PASS
+
+    def test_accuracy_check_wer_out_of_range_fails(self):
+        """Test that accuracy_check returns 3 when WER is outside valid range."""
+        strategy = self._create_strategy()
+        with patch.object(strategy, "_load_audio_accuracy_reference") as mock_load:
+            mock_load.return_value = {
+                "speecht5_tts": {"accuracy": {"5": {"wer_valid_range": [0.0, 0.15]}}}
+            }
+            result = strategy._calculate_accuracy_check(wer_value=0.25)
+            assert result == 3  # FAIL
+
+    def test_accuracy_check_model_not_in_reference(self):
+        """Test that accuracy_check returns 0 when model not in reference."""
+        strategy = self._create_strategy()
+        with patch.object(strategy, "_load_audio_accuracy_reference") as mock_load:
+            mock_load.return_value = {"other_model": {}}
+            result = strategy._calculate_accuracy_check(wer_value=0.10)
+            assert result == 0  # UNDEFINED
+
+    def test_accuracy_check_empty_reference(self):
+        """Test that accuracy_check returns 0 when reference is empty."""
+        strategy = self._create_strategy()
+        with patch.object(strategy, "_load_audio_accuracy_reference") as mock_load:
+            mock_load.return_value = {}
+            result = strategy._calculate_accuracy_check(wer_value=0.10)
+            assert result == 0  # UNDEFINED
 
 
 class TestTtsClientStrategyTranscribeAudioForWer(unittest.TestCase):
@@ -697,30 +744,17 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_data = report_data[0]
 
-        # Verify dict format structure
-        assert "results" in eval_data
-        assert "configs" in eval_data
-
-        # Verify task_name exists in both results and configs
-        task_name = "test_task"
-        assert task_name in eval_data["results"]
-        assert task_name in eval_data["configs"]
-
-        eval_result = eval_data["results"][task_name]
-
-        # Verify required keys in results
-        required_keys = [
-            "score",
-            "rtr",
-            "p90_ttft",
-            "p95_ttft",
-        ]
-        for key in required_keys:
-            assert key in eval_result, f"Missing required key: {key}"
+        # Verify required fields
+        assert "score" in eval_data
+        assert "rtr" in eval_data
+        assert "p90_ttft" in eval_data
+        assert "p95_ttft" in eval_data
+        assert "performance_check" in eval_data  # TTFT/RTR check
+        assert "accuracy_check" in eval_data  # WER quality check
 
         # Verify calculated averages
-        assert eval_result["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
-        assert abs(eval_result["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
+        assert eval_data["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
+        assert abs(eval_data["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
         # WER is not calculated in run_eval (calculate_wer=False)
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
@@ -757,14 +791,10 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.tts_client.get_num_calls", return_value=2)
-    @patch("utils.media_clients.tts_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
-    def test_run_benchmark_success(
-        self, mock_mkdir, mock_file, mock_targets, mock_num_calls
-    ):
+    def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0),
             TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
@@ -841,11 +871,9 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp/output", 8000)
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
-    def test_generate_report(self, mock_mkdir, mock_file, mock_targets):
-        mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
+    def test_generate_report(self, mock_mkdir, mock_file):
         strategy = self._create_strategy()
 
         status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0)]
