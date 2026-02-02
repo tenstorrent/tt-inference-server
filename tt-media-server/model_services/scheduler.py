@@ -504,7 +504,7 @@ class Scheduler:
                         )
                         if self.settings.allow_deep_reset:
                             self.logger.info("Trying deep restart of all workers")
-                            self.deep_restart_workers()
+                            await self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
 
