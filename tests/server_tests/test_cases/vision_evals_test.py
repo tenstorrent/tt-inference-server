@@ -379,7 +379,7 @@ class VisionEvalsTest(BaseTest):
         cpu_accuracy: float | None,
         device_accuracy: float | None,
         threshold: float = ACCURACY_THRESHOLD,
-    ) -> int:
+    ) -> tuple[int, float | None]:
         """Evaluate device accuracy against CPU accuracy.
 
         Args:
@@ -388,30 +388,24 @@ class VisionEvalsTest(BaseTest):
             threshold: Maximum allowed relative difference (default 0.05 = 5%).
 
         Returns:
-            0: Undefined (missing data)
-            2: Pass - device accuracy is within threshold of CPU accuracy
-            3: Fail - device accuracy is lower than CPU by more than threshold
+            (status, min_acceptable):
+                status: 0=undefined, 2=pass, 3=fail
+                min_acceptable: CPU * (1 - threshold), or None when undefined
 
         Example:
             CPU = 40%, threshold = 5%
             Minimum acceptable device accuracy = 40% * 0.95 = 38%
-            If device < 38% -> Fail (return 3)
-            If device >= 38% -> Pass (return 2)
+            If device < 38% -> Fail (return (3, 0.38))
+            If device >= 38% -> Pass (return (2, 0.38))
         """
         if cpu_accuracy is None or device_accuracy is None:
-            logger.info("Undefined accuracy ❌")
-            return 0
+            return (0, None)
 
         min_acceptable = cpu_accuracy * (1 - threshold)
         if device_accuracy < min_acceptable:
-            logger.info(
-                f"Device accuracy {device_accuracy} is below minimum acceptable {min_acceptable} ❌"
-            )
-            return 3
-        logger.info(
-            f"Device accuracy {device_accuracy} is above minimum acceptable {min_acceptable} ✅"
-        )
-        return 2
+            return (3, min_acceptable)
+
+        return (2, min_acceptable)
 
     def _compare_results(self) -> dict[str, int]:
         """Compare CPU and device accuracy results and print a summary.
@@ -457,7 +451,7 @@ class VisionEvalsTest(BaseTest):
             cpu_value = cpu_accuracy.get(model)
             device_value = device_accuracy.get(model)
 
-            status = self._get_accuracy_status(cpu_value, device_value)
+            status, min_acceptable = self._get_accuracy_status(cpu_value, device_value)
             accuracy_status[model] = status
 
             cpu_pct = cpu_value * 100.0 if cpu_value is not None else None
@@ -485,6 +479,17 @@ class VisionEvalsTest(BaseTest):
                 diff_display,
                 f"{status_display:>8}",
             )
+
+            if status == 2 and min_acceptable is not None:
+                logger.info(
+                    f"Device accuracy {device_value} is above minimum acceptable {min_acceptable} ✅"
+                )
+            elif status == 3 and min_acceptable is not None:
+                logger.info(
+                    f"Device accuracy {device_value} is below minimum acceptable {min_acceptable} ❌"
+                )
+            elif status == 0:
+                logger.info("Undefined accuracy ❌")
 
         if unacceptable:
             formatted = ", ".join(unacceptable)
