@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -330,15 +330,15 @@ class TestGenaiPerfDockerCheckTrue:
 
 
 # =============================================================================
-# run.py system software validation - check=True
+# run.py system software validation - check=False with manual error handling
 # =============================================================================
 
 
-class TestSystemSoftwareValidationCheckTrue:
-    """Test validate_local_setup uses check=True for system software validation."""
+class TestSystemSoftwareValidationCheckFalse:
+    """Test validate_local_setup uses check=False and raises ValueError on failure."""
 
-    def test_system_validation_uses_check_true(self):
-        """Test system software validation command uses check=True."""
+    def test_system_validation_uses_check_false(self):
+        """Test system software validation command uses check=False (default)."""
         from run import validate_local_setup
 
         mock_model_spec = MagicMock()
@@ -358,12 +358,12 @@ class TestSystemSoftwareValidationCheckTrue:
 
             validate_local_setup(mock_model_spec, "/fake/json/path")
 
-            # Verify run_command was called with check=True
+            # Verify run_command was called with check=False (default)
             mock_run.assert_called_once()
-            assert mock_run.call_args[1].get("check") is True
+            assert mock_run.call_args[1].get("check", False) is False
 
-    def test_system_validation_raises_on_failure(self):
-        """Test system software validation failure raises RuntimeError."""
+    def test_system_validation_raises_valueerror_on_failure(self):
+        """Test system software validation failure raises ValueError."""
         from run import validate_local_setup
 
         mock_model_spec = MagicMock()
@@ -373,7 +373,7 @@ class TestSystemSoftwareValidationCheckTrue:
         with patch("run.get_default_workflow_root_log_dir") as mock_log_dir, patch(
             "run.ensure_readwriteable_dir"
         ), patch("run.VENV_CONFIGS") as mock_venv_configs, patch(
-            "run.run_command", side_effect=RuntimeError("validation failed")
+            "run.run_command", return_value=1
         ), patch("run.get_repo_root_path", return_value=Path("/fake/repo")):
             mock_log_dir.return_value = Path("/fake/logs")
             mock_venv_config = MagicMock()
@@ -381,7 +381,9 @@ class TestSystemSoftwareValidationCheckTrue:
             mock_venv_config.setup.return_value = True
             mock_venv_configs.__getitem__.return_value = mock_venv_config
 
-            with pytest.raises(RuntimeError, match="validation failed"):
+            with pytest.raises(
+                ValueError, match="validating system software dependencies failed"
+            ):
                 validate_local_setup(mock_model_spec, "/fake/json/path")
 
 
@@ -540,15 +542,6 @@ class TestWorkflowExecutionCheckFalse:
             # Verify check=False (default) was used
             mock_run.assert_called_once()
             assert mock_run.call_args[1].get("check", False) is False
-
-    def test_tests_run_py_does_not_raise_on_test_failure(self):
-        """Test tests/run_tests.py doesn't raise when pytest fails."""
-        # This validates that test failures don't crash the main script
-        with patch("tests.run_tests.run_command", return_value=1) as mock_run:
-            # The run_tests.py already uses check=False explicitly
-            # Just verify the pattern is correct
-            pass  # The actual test is in the implementation
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
