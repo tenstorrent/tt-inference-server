@@ -12,14 +12,12 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
-from workflows.model_spec import (
-    MODEL_SPECS,
-    ModelType,
-)
+from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
+from workflows.workflow_types import ModelType
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"

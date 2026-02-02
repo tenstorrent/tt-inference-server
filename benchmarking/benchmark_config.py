@@ -6,9 +6,14 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List
 
-from workflows.model_spec import MODEL_SPECS, ModelType
+from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
-from workflows.workflow_types import BenchmarkTaskType, DeviceTypes, WorkflowVenvType
+from workflows.workflow_types import (
+    BenchmarkTaskType,
+    DeviceTypes,
+    ModelType,
+    WorkflowVenvType,
+)
 
 
 @dataclass(frozen=True)
