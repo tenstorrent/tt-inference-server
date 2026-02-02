@@ -77,14 +77,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self.model.to(eval(request.dtype))
         self.model.to(self.device)
+
+        model_path = request._output_model_path
         
         # use torch compile
-        # self.model = torch.compile(self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False})
-
-        model_id = str(uuid.uuid4())
-        os.makedirs("models_save", exist_ok=True)
-        model_path = f"models_save/gemma_lora_{model_id}.pt"
-        self.logger.info(f"Generated output path: {model_path}")
+        self.model = torch.compile(self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False})
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=request.learning_rate)
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)

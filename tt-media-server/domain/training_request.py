@@ -8,6 +8,7 @@ from domain.base_request import BaseRequest
 from typing import Optional
 from pydantic import model_validator
 from config.settings import settings
+from pydantic import PrivateAttr
 
 class TrainingRequest(BaseRequest):
     batch_size: int = 4
@@ -24,3 +25,5 @@ class TrainingRequest(BaseRequest):
     lora_task_type: str = "CAUSAL_LM"
 
     ignored_index: int = -100
+
+    _output_model_path: str = PrivateAttr(default=None)
