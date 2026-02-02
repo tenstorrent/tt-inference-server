@@ -6,7 +6,6 @@
 import asyncio
 import json
 import logging
-import math
 import sys
 import time
 from pathlib import Path
@@ -36,6 +35,8 @@ DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 
 class TtsClientStrategy(BaseMediaStrategy):
     """Strategy for text-to-speech models (SpeechT5, etc.)."""
+
+    TASK_TYPE = "tts"
 
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
@@ -166,7 +167,8 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
 
-            self._generate_report(status_list)
+            # Use template method from BaseMediaStrategy
+            self.generate_report(status_list)
             return status_list
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -199,44 +201,31 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         return tts_default
 
-    def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
+    def _create_specific_benchmarks_data(
+        self, status_list: list[TtsTestStatus]
+    ) -> dict:
         """
-        Generate benchmark report for TTS model.
+        TTS-specific benchmark metrics.
+
+        Base class (BaseMediaStrategy.generate_report) handles:
+        - filename creation
+        - directory creation
+        - model, device, timestamp, task_type fields
+        - JSON serialization
+
+        This method only needs to return the TTS-specific metrics.
         """
-        logger.info("Generating benchmark report...")
-        result_filename = (
-            Path(self.output_path)
-            / f"benchmark_{self.model_spec.model_id}_{time.time()}.json"
-        )
-
-        result_filename.parent.mkdir(parents=True, exist_ok=True)
-
         ttft_value = self._calculate_ttft_value(status_list)
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-
-        # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
-        report_data = {
-            "benchmarks": {
-                "num_requests": len(status_list),
-                "ttft": ttft_value / 1000,
-                "rtr": rtr_value,
-                "ttft_p90": p90_ttft / 1000,  # ms to seconds; 0.0 when no data
-                "ttft_p95": p95_ttft / 1000,  # ms to seconds; 0.0 when no data
-            },
-            "model": self.model_spec.model_name,
-            "device": self.device.name,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "tts",
+        return {
+            "num_requests": len(status_list),
+            "ttft": ttft_value / 1000,  # ms to seconds
+            "rtr": rtr_value,
+            "ttft_p90": p90_ttft / 1000,  # ms to seconds
+            "ttft_p95": p95_ttft / 1000,  # ms to seconds
         }
-
-        with open(result_filename, "w") as f:
-            json.dump(report_data, f, indent=4)
-
-        logger.info(f"Report generated: {result_filename}")
 
     def _run_tts_benchmark(
         self, num_calls: int, calculate_wer: bool = False
@@ -414,38 +403,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.error(f"TTS generation failed: {e}")
             return False, 0.0, None, None, text, None, None
 
-    def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average TTFT value in milliseconds."""
-        logger.info("Calculating TTFT value")
-
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [
-                status.ttft_ms for status in status_list if status.ttft_ms is not None
-            ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
-                else 0
-            )
-
-        return ttft_value
-
-    def _calculate_rtr_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average RTR value."""
-        logger.info("Calculating RTR value")
-
-        rtr_value = 0
-        if status_list:
-            valid_rtr_values = [
-                status.rtr for status in status_list if status.rtr is not None
-            ]
-            rtr_value = (
-                sum(valid_rtr_values) / len(valid_rtr_values) if valid_rtr_values else 0
-            )
-
-        return rtr_value
-
     async def _transcribe_audio_for_wer(
         self, audio_base64: str, reference_text: str
     ) -> Optional[float]:
@@ -594,30 +551,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         wer_value = sum(valid_wer_values) / len(valid_wer_values)
         return wer_value
 
-    def _calculate_tail_latency(
-        self, status_list: list[TtsTestStatus]
-    ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency for TTFT."""
-        logger.info("Calculating tail latency (P90, P95)")
-
-        if not status_list:
-            return 0.0, 0.0
-
-        valid_ttft_values = [
-            status.ttft_ms for status in status_list if status.ttft_ms is not None
-        ]
-
-        if not valid_ttft_values:
-            return 0.0, 0.0
-
-        sorted_ttft = sorted(valid_ttft_values)
-        n = len(sorted_ttft)
-        p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
-        p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-        p90_ttft = sorted_ttft[p90_index]
-        p95_ttft = sorted_ttft[p95_index]
-
-        return p90_ttft, p95_ttft
+    # _calculate_tail_latency -> inherited from BaseMediaStrategy
 
     def _calculate_accuracy_check(
         self, ttft_value: float, rtr_value: float, wer_value: Optional[float] = None
