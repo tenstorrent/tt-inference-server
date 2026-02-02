@@ -66,7 +66,7 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
             logger.info("Adding eval results from eval spec test to benchmark data")
-            benchmark_data["accuracy"] = eval_result["accuracy"]
+            benchmark_data["accuracy"] = eval_result.get("accuracy_status", 0)
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
@@ -258,13 +258,14 @@ class CnnClientStrategy(BaseMediaStrategy):
         logger.info("Starting VisionEvalsTest")
         result = test.run_tests()
 
-        # Extract eval_results from nested structure: {model: {cpu: {...}, device: {...}}}
+        # Extract eval_results from nested structure: {model: {cpu: {...}, device: {...}, accuracy_status: int}}
         eval_results = result.get("result", {}).get("eval_results", {})
         model_results = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
         logger.info(f"VisionEvalsTest model results: {model_results}")
 
         # Get device mode results for benchmark comparison
         device_result = model_results.get("device", {})
+        device_result["accuracy_status"] = model_results.get("accuracy_status", 0)
         logger.info(f"VisionEvalsTest device eval_results: {device_result}")
 
         return device_result
