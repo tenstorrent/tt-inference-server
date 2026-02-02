@@ -8,9 +8,11 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/benchmark_controller.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o.d"
   "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/llm_controller.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o.d"
   "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/openapi.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o.d"
   "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/main.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o.d"
+  "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/multiprocess_scheduler.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o.d"
   "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/scheduler.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o.d"
   "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/services/base_service.cpp" "CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o" "gcc" "CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o.d"
   )

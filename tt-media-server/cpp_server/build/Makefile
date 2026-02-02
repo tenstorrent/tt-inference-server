@@ -174,6 +174,30 @@ tt_media_server_cpp/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/build
 .PHONY : tt_media_server_cpp/fast
 
+src/api/benchmark_controller.o: src/api/benchmark_controller.cpp.o
+.PHONY : src/api/benchmark_controller.o
+
+# target to build an object file
+src/api/benchmark_controller.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o
+.PHONY : src/api/benchmark_controller.cpp.o
+
+src/api/benchmark_controller.i: src/api/benchmark_controller.cpp.i
+.PHONY : src/api/benchmark_controller.i
+
+# target to preprocess a source file
+src/api/benchmark_controller.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.i
+.PHONY : src/api/benchmark_controller.cpp.i
+
+src/api/benchmark_controller.s: src/api/benchmark_controller.cpp.s
+.PHONY : src/api/benchmark_controller.s
+
+# target to generate assembly for a file
+src/api/benchmark_controller.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.s
+.PHONY : src/api/benchmark_controller.cpp.s
+
 src/api/llm_controller.o: src/api/llm_controller.cpp.o
 .PHONY : src/api/llm_controller.o
 
@@ -246,6 +270,30 @@ src/main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.s
 .PHONY : src/main.cpp.s
 
+src/scheduler/multiprocess_scheduler.o: src/scheduler/multiprocess_scheduler.cpp.o
+.PHONY : src/scheduler/multiprocess_scheduler.o
+
+# target to build an object file
+src/scheduler/multiprocess_scheduler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o
+.PHONY : src/scheduler/multiprocess_scheduler.cpp.o
+
+src/scheduler/multiprocess_scheduler.i: src/scheduler/multiprocess_scheduler.cpp.i
+.PHONY : src/scheduler/multiprocess_scheduler.i
+
+# target to preprocess a source file
+src/scheduler/multiprocess_scheduler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.i
+.PHONY : src/scheduler/multiprocess_scheduler.cpp.i
+
+src/scheduler/multiprocess_scheduler.s: src/scheduler/multiprocess_scheduler.cpp.s
+.PHONY : src/scheduler/multiprocess_scheduler.s
+
+# target to generate assembly for a file
+src/scheduler/multiprocess_scheduler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.s
+.PHONY : src/scheduler/multiprocess_scheduler.cpp.s
+
 src/scheduler/scheduler.o: src/scheduler/scheduler.cpp.o
 .PHONY : src/scheduler/scheduler.o
 
@@ -307,6 +355,9 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... tt_media_server_cpp"
+	@echo "... src/api/benchmark_controller.o"
+	@echo "... src/api/benchmark_controller.i"
+	@echo "... src/api/benchmark_controller.s"
 	@echo "... src/api/llm_controller.o"
 	@echo "... src/api/llm_controller.i"
 	@echo "... src/api/llm_controller.s"
@@ -316,6 +367,9 @@ help:
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
+	@echo "... src/scheduler/multiprocess_scheduler.o"
+	@echo "... src/scheduler/multiprocess_scheduler.i"
+	@echo "... src/scheduler/multiprocess_scheduler.s"
 	@echo "... src/scheduler/scheduler.o"
 	@echo "... src/scheduler/scheduler.i"
 	@echo "... src/scheduler/scheduler.s"

@@ -9,12 +9,17 @@
 namespace tt::services {
 
 BaseService::BaseService() {
-    scheduler_ = std::make_shared<scheduler::Scheduler>();
+    // Use multiprocess scheduler with 4 workers by default
+    // Can be overridden with TT_NUM_WORKERS environment variable
+    const char* num_workers_env = std::getenv("TT_NUM_WORKERS");
+    size_t num_workers = num_workers_env ? std::stoul(num_workers_env) : 4;
+
+    scheduler_ = std::make_shared<scheduler::MultiprocessScheduler>(num_workers);
 
     // Set runner factory based on TT_RUNNER_TYPE environment variable
     scheduler_->set_runner_factory(runners::RunnerFactory::get_factory());
 
-    std::cout << "[BaseService] Initialized" << std::endl;
+    std::cout << "[BaseService] Initialized with MultiprocessScheduler (" << num_workers << " workers)" << std::endl;
 }
 
 void BaseService::start() {

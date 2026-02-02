@@ -72,10 +72,24 @@ include CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/codegen:
 .PHONY : CMakeFiles/tt_media_server_cpp.dir/codegen
 
+CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
+CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/benchmark_controller.cpp
+CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/benchmark_controller.cpp
+
+CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/benchmark_controller.cpp > CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.i
+
+CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/benchmark_controller.cpp -o CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.s
+
 CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/llm_controller.cpp
 CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/llm_controller.cpp
 
 CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.i: cmake_force
@@ -89,7 +103,7 @@ CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.s: cmake_force
 CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/openapi.cpp
 CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/api/openapi.cpp
 
 CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.i: cmake_force
@@ -103,7 +117,7 @@ CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.s: cmake_force
 CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/main.cpp
 CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/main.cpp
 
 CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.i: cmake_force
@@ -114,10 +128,24 @@ CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/main.cpp -o CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.s
 
+CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
+CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/multiprocess_scheduler.cpp
+CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/multiprocess_scheduler.cpp
+
+CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/multiprocess_scheduler.cpp > CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.i
+
+CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/multiprocess_scheduler.cpp -o CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.s
+
 CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/scheduler.cpp
 CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/scheduler/scheduler.cpp
 
 CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.i: cmake_force
@@ -131,7 +159,7 @@ CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.s: cmake_force
 CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o: CMakeFiles/tt_media_server_cpp.dir/flags.make
 CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o: /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/services/base_service.cpp
 CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o: CMakeFiles/tt_media_server_cpp.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o -MF CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o.d -o CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o -c /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/services/base_service.cpp
 
 CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.i: cmake_force
@@ -144,18 +172,22 @@ CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.s: cmake_force
 
 # Object files for target tt_media_server_cpp
 tt_media_server_cpp_OBJECTS = \
+"CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o" \
 "CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o" \
 "CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o" \
 "CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o" \
+"CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o" \
 "CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o" \
 "CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o"
 
 # External object files for target tt_media_server_cpp
 tt_media_server_cpp_EXTERNAL_OBJECTS =
 
+tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/api/benchmark_controller.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/api/llm_controller.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/api/openapi.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o
+tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/scheduler/multiprocess_scheduler.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/scheduler/scheduler.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/src/services/base_service.cpp.o
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/build.make
@@ -170,7 +202,7 @@ tt_media_server_cpp: /usr/lib/x86_64-linux-gnu/libuuid.so
 tt_media_server_cpp: /usr/lib/x86_64-linux-gnu/libsqlite3.so
 tt_media_server_cpp: /usr/lib/x86_64-linux-gnu/libz.so
 tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX executable tt_media_server_cpp"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX executable tt_media_server_cpp"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/tt_media_server_cpp.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

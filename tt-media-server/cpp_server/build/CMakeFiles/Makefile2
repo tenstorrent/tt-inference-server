@@ -85,12 +85,12 @@ clean: CMakeFiles/tt_media_server_cpp.dir/clean
 CMakeFiles/tt_media_server_cpp.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=1,2,3,4,5,6 "Built target tt_media_server_cpp"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Built target tt_media_server_cpp"
 .PHONY : CMakeFiles/tt_media_server_cpp.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/tt_media_server_cpp.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles 6
+	$(CMAKE_COMMAND) -E cmake_progress_start /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles 8
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/tt_media_server_cpp.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles 0
 .PHONY : CMakeFiles/tt_media_server_cpp.dir/rule
@@ -102,7 +102,7 @@ tt_media_server_cpp: CMakeFiles/tt_media_server_cpp.dir/rule
 # codegen rule for target.
 CMakeFiles/tt_media_server_cpp.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tt_media_server_cpp.dir/build.make CMakeFiles/tt_media_server_cpp.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=1,2,3,4,5,6 "Finished codegen for target tt_media_server_cpp"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Finished codegen for target tt_media_server_cpp"
 .PHONY : CMakeFiles/tt_media_server_cpp.dir/codegen
 
 # clean rule for target.

@@ -395,8 +395,26 @@ CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o: \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/api/llm_controller.hpp \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/services/llm_service.hpp \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/services/base_service.hpp \
- /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/scheduler/scheduler.hpp \
- /usr/include/c++/11/variant \
+ /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/scheduler/multiprocess_scheduler.hpp \
+ /usr/include/c++/11/variant /usr/include/x86_64-linux-gnu/sys/wait.h \
+ /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/ipc/shared_memory.hpp \
+ /usr/include/x86_64-linux-gnu/sys/mman.h \
+ /usr/include/x86_64-linux-gnu/bits/mman.h \
+ /usr/include/x86_64-linux-gnu/bits/mman-map-flags-generic.h \
+ /usr/include/x86_64-linux-gnu/bits/mman-linux.h \
+ /usr/include/x86_64-linux-gnu/bits/mman-shared.h \
+ /usr/include/x86_64-linux-gnu/sys/stat.h \
+ /usr/include/x86_64-linux-gnu/bits/stat.h \
+ /usr/include/x86_64-linux-gnu/bits/struct_stat.h \
+ /usr/include/x86_64-linux-gnu/bits/statx.h /usr/include/linux/stat.h \
+ /usr/include/linux/types.h /usr/include/x86_64-linux-gnu/asm/types.h \
+ /usr/include/asm-generic/types.h /usr/include/asm-generic/int-ll64.h \
+ /usr/include/x86_64-linux-gnu/bits/statx-generic.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h \
+ /usr/include/fcntl.h /usr/include/x86_64-linux-gnu/bits/fcntl.h \
+ /usr/include/x86_64-linux-gnu/bits/fcntl-linux.h \
+ /usr/include/linux/falloc.h /usr/include/x86_64-linux-gnu/bits/fcntl2.h \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/scheduler/thread_safe_queue.hpp \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/domain/completion_request.hpp \
  /localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/include/domain/completion_response.hpp \
@@ -433,15 +451,6 @@ CMakeFiles/tt_media_server_cpp.dir/src/main.cpp.o: \
  /usr/include/c++/11/tr1/poly_hermite.tcc \
  /usr/include/c++/11/tr1/poly_laguerre.tcc \
  /usr/include/c++/11/tr1/riemann_zeta.tcc \
- /usr/include/x86_64-linux-gnu/sys/stat.h \
- /usr/include/x86_64-linux-gnu/bits/stat.h \
- /usr/include/x86_64-linux-gnu/bits/struct_stat.h \
- /usr/include/x86_64-linux-gnu/bits/statx.h /usr/include/linux/stat.h \
- /usr/include/linux/types.h /usr/include/x86_64-linux-gnu/asm/types.h \
- /usr/include/asm-generic/types.h /usr/include/asm-generic/int-ll64.h \
- /usr/include/x86_64-linux-gnu/bits/statx-generic.h \
- /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h \
- /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h \
  /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/exports.h \
  /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymacro.h \
  /home/idjuric/.local/share/uv/python/cpython-3.10.18-linux-x86_64-gnu/include/python3.10/pymath.h \
