@@ -355,6 +355,20 @@ def setup_evals_video(
     return setup_succeeded
 
 
+def setup_evals_gpt_oss(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Setup gpt-oss evaluation environment."""
+    logger.info("running setup_evals_gpt_oss() ...")
+    run_command(
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
+        f"git+https://github.com/bgoelTT/gpt-oss.git@evals-tt#egg=gpt_oss[eval] pyjwt==2.7.0",
+        logger=logger,
+    )
+    return True
+
+
 def setup_stress_tests_run_script(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -647,6 +661,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_EMBEDDING,
         setup_function=setup_evals_embedding,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_GPT_OSS,
+        setup_function=setup_evals_gpt_oss,
+        python_version="3.12",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VIDEO, setup_function=setup_evals_video
