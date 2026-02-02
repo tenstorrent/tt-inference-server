@@ -6,16 +6,7 @@
 
 ## Quickstart guide
 
-### Prerequisites
-
-This guide assumes you have already:
-1. Set up Tenstorrent hardware
-2. Installed Tenstorrent System Software Stack:
-    - Firmware
-    - KMD
-    - Hugepages
-
-For these steps please see https://docs.tenstorrent.com/index.html
+Please ensure you've met [prerequisites](docs/prerequisites.md), especially if model deployment is not working.
 
 ### Tenstorrent E2E Inference Model Statuses
 
