@@ -2,9 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from ast import List
 from multiprocessing import get_context
 from multiprocessing.queues import Queue
 from queue import Empty
+from typing import Optional
 
 
 class TTQueue(Queue):
@@ -36,6 +38,51 @@ class TTQueue(Queue):
             except Empty:
                 pass
         return super().get(block=block, timeout=timeout)
+
+    def get_many(
+        self,
+        max_messages_to_get: int = 100,
+        block: bool = True,
+        timeout: Optional[float] = None,
+    ) -> List:
+        """
+        multiprocessing.Queue doesn't have batch get, get one item as fallback
+        """
+        batch = []
+
+        # Get first item (blocking)
+        try:
+            first_item = super().get(block=block, timeout=timeout)
+            if first_item is None:
+                return [None]
+            batch.append(first_item)
+        except Exception:
+            # Handle case where queue is empty or other error
+            return []
+
+        # Aggressively try to get more items
+        for _ in range(max_messages_to_get - 1):
+            try:
+                item = self.get_nowait()
+                if item is None:
+                    # this might be a shutdown signal, pick it up
+                    batch.append(None)
+                    break
+                batch.append(item)
+            except Exception:
+                break
+
+        return batch
+
+    def put_many(
+        self, items: List, block: bool = True, timeout: Optional[float] = None
+    ):
+        """multiprocessing.Queue doesn't have put_many, put one by one"""
+        for item in items:
+            if timeout is not None:
+                super().put(item, block=block, timeout=timeout)
+            else:
+                super().put(item, block=block)
 
     def get_nowait(self):
         """Non-blocking get, checking leftover cache first if batching enabled"""

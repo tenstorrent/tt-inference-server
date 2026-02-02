@@ -5,19 +5,19 @@
 import threading
 from multiprocessing import Queue
 
+from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
 from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
 )
-from model_services.tt_queue import TTQueue
 from utils.logger import TTLogger
 
 
 def device_worker(
     worker_id: str,
-    task_queue: TTQueue,
-    result_queue: Queue,
+    task_queue,
+    result_queue,
     warmup_signals_queue: Queue,
     error_queue: Queue,
     result_queue_name: None | str = None,
@@ -49,13 +49,18 @@ def device_worker(
 
     # Main processing loop
     while True:
-        requests: list[object] = get_greedy_batch(
-            task_queue, settings.max_batch_size, device_runner.is_request_batchable
+        requests: list[object] = task_queue.get_many(
+            max_messages_to_get=settings.max_batch_size, block=True
         )
-        if requests[0] is None:  # Sentinel to shut down
+        if requests is None or len(requests) == 0:
+            continue
+
+        # Check for shutdown sentinel
+        if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
+
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None
 
@@ -126,8 +131,11 @@ def device_worker(
                         )
                     continue
 
-                for i, request in enumerate(requests):
-                    result_queue.put((worker_id, request._task_id, responses[i]))
+                results = [
+                    (worker_id, request._task_id, responses[i])
+                    for i, request in enumerate(requests)
+                ]
+                result_queue.put_many(results, False)
 
             successful = True
             timeout_timer.cancel()
@@ -160,44 +168,3 @@ def device_worker(
                     )
                 )
             continue
-
-
-def get_greedy_batch(task_queue, max_batch_size, batching_predicate):
-    logger = TTLogger()
-    batch = []
-
-    # Get first item (blocking)
-    try:
-        first_item = task_queue.get()
-        if first_item is None:
-            return [None]
-        batch.append(first_item)
-    except KeyboardInterrupt:
-        logger.warning("KeyboardInterrupt received - shutting down gracefully")
-        return [None]
-    except Exception as e:
-        logger.error(f"Error getting first item from queue: {e}")
-        # Handle case where queue is empty or other error
-        return [None]
-
-    # Aggressively try to get more items
-    timeout = settings.max_batch_delay_time_ms
-    for _ in range(max_batch_size - 1):
-        try:
-            item = task_queue.peek_next(
-                timeout=timeout,
-            )  # Non-blocking
-            if not batching_predicate(item, batch):
-                task_queue.return_item(item)
-                break
-            # After the first item, use zero
-            timeout = None
-            if item is None:
-                # this might be a shutdown signal, pick it up
-                batch.append(None)
-                break
-            batch.append(item)
-        except Exception:
-            break
-
-    return batch

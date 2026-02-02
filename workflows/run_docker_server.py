@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime
 
+
 from workflows.log_setup import clean_log_file
 from workflows.model_spec import (
     InferenceEngine,
@@ -32,14 +33,20 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+<<<<<<< HEAD
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container.
+=======
+def get_base_docker_env_vars(model_spec, args):
+    """Get base environment variables common to all media server Docker containers.
+>>>>>>> origin/dev
 
     Args:
         model_spec: Model specification
         args: CLI arguments
 
     Returns:
+<<<<<<< HEAD
         Dictionary of media server environment variables
     """
     env_vars = {
@@ -49,6 +56,81 @@ def get_media_server_docker_env_vars(model_spec):
 
     logger.info(
         f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
+=======
+        Dictionary with base environment variables (MODEL, DEVICE, DEVICE_IDS)
+    """
+    # Configure device IDs for tt-media-server workers
+    if getattr(args, "device_id", None):
+        # Use specific device IDs provided by user
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+    else:
+        # Default to device 0 for single device setups
+        device_ids_str = "(0)"
+
+    # Use model_name (not hf_model_repo) to match ModelNames enum
+    # model_name is extracted from the HF repo path
+    env_vars = {
+        "MODEL": model_spec.model_name,
+        "DEVICE": model_spec.device_type.name.lower(),
+        "DEVICE_IDS": device_ids_str,
+    }
+
+    return env_vars
+
+
+def get_audio_docker_env_vars(model_spec, args):
+    """Get audio-specific environment variables for Docker container.
+
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+
+    Returns:
+        Dictionary of audio-specific environment variables
+    """
+    env_vars = get_base_docker_env_vars(model_spec, args)
+    env_vars["ALLOW_AUDIO_PREPROCESSING"] = "true"
+
+    logger.info(
+        f"Audio environment variables: MODEL={env_vars['MODEL']}, DEVICE={env_vars['DEVICE']}, DEVICE_IDS={env_vars['DEVICE_IDS']}"
+    )
+    return env_vars
+
+
+def get_embedding_docker_env_vars(model_spec, args):
+    """Get embedding-specific environment variables for Docker container.
+
+    Args:
+        model_spec: Model specification
+        args: CLI arguments
+
+    Returns:
+        Dictionary of embedding-specific environment variables
+    """
+    env_vars = get_base_docker_env_vars(model_spec, args)
+
+    # TODO: Remove these VLLM explicit parameters
+    # https://github.com/tenstorrent/tt-inference-server/issues/1253
+    env_vars.update(
+        {
+            "VLLM__MAX_NUM_BATCHED_TOKENS": model_spec.device_model_spec.env_vars.get(
+                "VLLM__MAX_NUM_BATCHED_TOKENS", 1024
+            ),
+            "VLLM__MAX_MODEL_LENGTH": model_spec.device_model_spec.env_vars.get(
+                "VLLM__MAX_MODEL_LENGTH", 1024
+            ),
+            "VLLM__MIN_CONTEXT_LENGTH": model_spec.device_model_spec.env_vars.get(
+                "VLLM__MIN_CONTEXT_LENGTH", 32
+            ),
+            "VLLM__MAX_NUM_SEQS": model_spec.device_model_spec.env_vars.get(
+                "VLLM__MAX_NUM_SEQS", 1
+            ),
+        }
+    )
+
+    logger.info(
+        f"Embedding environment variables: MODEL={env_vars['MODEL']}, DEVICE={env_vars['DEVICE']}, DEVICE_IDS={env_vars['DEVICE_IDS']}"
+>>>>>>> origin/dev
     )
     return env_vars
 
@@ -57,7 +139,7 @@ def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    pull_return_code = run_command(cmd, logger=logger)
+    pull_return_code = run_command(cmd, logger=logger, check=False)
     if pull_return_code != 0:
         logger.error(
             f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
@@ -90,7 +172,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
-    server_prefix = "vllm" if model_spec.model_type == ModelType.LLM else "media"
+    server_prefix = (
+        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
+    )
     docker_log_file_path = (
         docker_log_file_dir
         / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
@@ -185,8 +269,14 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
-        elif model_spec.model_type == ModelType.CNN or model_spec.model_type == ModelType.IMAGE or model_spec.model_type == ModelType.EMBEDDING or model_spec.model_type == ModelType.VIDEO:
-            # For CNN models (tt-media-server containers), mount the tt-media-server directory
+        elif (
+            model_spec.model_type == ModelType.CNN
+            or model_spec.model_type == ModelType.IMAGE
+            or model_spec.model_type == ModelType.EMBEDDING
+            or model_spec.model_type == ModelType.VIDEO
+            or model_spec.model_type == ModelType.TEXT_TO_SPEECH
+        ):
+            # For CNN, IMAGE, EMBEDDING, VIDEO, and TTS models (tt-media-server containers), mount the tt-media-server directory
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
                 "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",

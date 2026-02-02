@@ -7,7 +7,7 @@ import logging
 import time
 
 import aiohttp
-from server_tests.base_test import BaseTest
+from tests.server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,21 @@ response_format_audio_payload = {
     "response_format": "audio",
 }
 
+response_format_wav_payload = {
+    "text": "Hello, this is a test of the text to speech system.",
+    "response_format": "wav",
+}
+
+response_format_mp3_payload = {
+    "text": "Hello, this is a test of the text to speech system.",
+    "response_format": "mp3",
+}
+
+response_format_ogg_payload = {
+    "text": "Hello, this is a test of the text to speech system.",
+    "response_format": "ogg",
+}
+
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
@@ -37,11 +52,15 @@ class TTSParamTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/audio/speech"
 
-        payloads = []
-        payloads.append(default_payload)
-        payloads.append(default_payload)
-        payloads.append(short_text_payload)
-        payloads.append(response_format_audio_payload)
+        payloads = [
+            default_payload,
+            default_payload,
+            short_text_payload,
+            response_format_audio_payload,
+            response_format_wav_payload,
+            response_format_mp3_payload,
+            response_format_ogg_payload,
+        ]
 
         response_data_list = await self.test_concurrent_tts(payloads)
 
