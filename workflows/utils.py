@@ -195,8 +195,26 @@ def run_command(
     check=True,
 ):
     """
-    Note: logger must be passed because the common use case is to capture the command's
-    stdout and stderr in the caller's logger.
+    This function is a wrapper around subprocess.Popen and subprocess.run.
+    It is used to run a command and capture the stdout and stderr in the caller's logger.
+
+    Args:
+        command: Command to run. Can be a string or a list of strings.
+        logger: Logger to use for logging. Must be passed because the common use case is to capture the command's stdout and stderr in the caller's logger.
+        log_file_path: Path to log file. If None, stdout and stderr will be logged to the logger.
+        shell: Whether to use shell to run the command.
+        copy_env: Whether to copy the environment variables.
+        env: Environment variables to use.
+        check: Whether to check the return code. Only set to False if this command is optional or can be recovered from.
+    Returns:
+        Return code of the command.
+    Raises:
+        RuntimeError: If the command fails and check is True.
+        NotImplementedError: If copy_env is True and not implemented.
+        AssertionError: If command is not a list of strings.
+        ValueError: If command is None.
+        PermissionError: If the directory is not writable.
+        IOError: If the directory is not readable.
     """
     if not copy_env:
         raise NotImplementedError("TODO")
@@ -216,6 +234,7 @@ def run_command(
     logger.info(f"Running command: {shlex.join(command)}")
 
     if not log_file_path:
+        subproc_type = "subprocess.Popen"
         # capture all output to stdout and stderr in current process
         process = subprocess.Popen(
             command,
@@ -243,6 +262,7 @@ def run_command(
         process.wait()
         return_code = process.returncode
     else:
+        subproc_type = "subprocess.run"
         logger.info(f"Logging output to: {log_file_path} ...")
         with open(log_file_path, "a", buffering=1) as log_file:
             result = subprocess.run(
@@ -257,11 +277,17 @@ def run_command(
             return_code = result.returncode
 
     if return_code != 0:
+        error_message = (
+            f"⛔ {subproc_type} command failed with return code: {return_code}\n"
+            f"command: {shlex.join(command)}\n\n"
+            "See error messages in logs above this RuntimeError for details on actual cause of failure.\n"
+        )
         if check:
-            raise RuntimeError(f"⛔ Command failed with return code: {return_code}")
+            raise RuntimeError(error_message)
         else:
             logger.error(
-                f"⛔ Command failed with return code: {return_code}, check=False, continuing..."
+                error_message
+                + "This command is optional or can be recovered from failure (check=False set). Continuing ..."
             )
     return return_code
 
