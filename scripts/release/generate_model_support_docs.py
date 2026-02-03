@@ -57,7 +57,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.N150: "https://tenstorrent.com/hardware/wormhole",
     DeviceTypes.N300: "https://tenstorrent.com/hardware/wormhole",
     DeviceTypes.GALAXY: "https://tenstorrent.com/hardware/galaxy",
-    DeviceTypes.GALAXY_T3K: "https://tenstorrent.com/hardware/galaxy-t3k",
+    DeviceTypes.GALAXY_T3K: "https://tenstorrent.com/hardware/galaxy",
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
@@ -480,8 +480,9 @@ def generate_model_type_table(
 
     lines = []
 
-    # Table header - use DeviceTypes.name for column headers
-    header_cols = ["Model Name"] + [d.name for d in devices]
+    # Table header - use DeviceTypes.name with links to hardware pages
+    device_headers = [f"[{d.name}]({DEVICE_HARDWARE_LINKS[d]})" for d in devices]
+    header_cols = ["Model Name"] + device_headers
     lines.append("| " + " | ".join(header_cols) + " |")
     lines.append("| " + " | ".join(["---"] * len(header_cols)) + " |")
 

@@ -8,7 +8,7 @@ This page lists all supported convolutional neural networks and their device com
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | N150 | N300 | T3K | GALAXY |
+| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) |
 | --- | --- | --- | --- | --- |
 | [FLUX.1-dev](FLUX.1-dev_t3k.md) | - | - | [🟢 Complete](FLUX.1-dev_t3k.md) | [🟢 Complete](FLUX.1-dev_galaxy.md) |
 | [motif-image-6b-preview](motif-image-6b-preview_t3k.md) | - | - | [🟢 Complete](motif-image-6b-preview_t3k.md) | [🟢 Complete](motif-image-6b-preview_galaxy.md) |
@@ -18,7 +18,7 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
 Models with EXPERIMENTAL status are under active development and may have stability or performance issues.
 
-| Model Name | N150 | N300 | T3K | GALAXY |
+| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) |
 | --- | --- | --- | --- | --- |
 | [efficientnet](efficientnet_n150.md) | [🛠️ Experimental](efficientnet_n150.md) | [🛠️ Experimental](efficientnet_n300.md) | - | - |
 | [mobilenetv2](mobilenetv2_n150.md) | [🛠️ Experimental](mobilenetv2_n150.md) | [🛠️ Experimental](mobilenetv2_n300.md) | - | - |

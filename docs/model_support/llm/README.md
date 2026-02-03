@@ -8,7 +8,7 @@ This page lists all supported large language models and their device compatibili
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | N150 | N300 | T3K | GALAXY | GALAXY_T3K | P100 | P150 | P150X4 | P150X8 |
+| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) | [GALAXY_T3K](https://tenstorrent.com/hardware/galaxy) | [P100](https://tenstorrent.com/hardware/blackhole) | [P150](https://tenstorrent.com/hardware/blackhole) | [P150X4](https://tenstorrent.com/hardware/tt-quietbox) | [P150X8](https://tenstorrent.com/hardware/tt-loudbox) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [gpt-oss-120b](gpt-oss-120b_t3k.md) | - | - | [🟡 Functional](gpt-oss-120b_t3k.md) | [🟡 Functional](gpt-oss-120b_galaxy.md) | - | - | - | - | - |
 | [gpt-oss-20b](gpt-oss-20b_t3k.md) | - | - | [🟡 Functional](gpt-oss-20b_t3k.md) | [🟡 Functional](gpt-oss-20b_galaxy.md) | [🟡 Functional](gpt-oss-20b_galaxy_t3k.md) | - | - | - | - |
@@ -26,7 +26,7 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
 Models with EXPERIMENTAL status are under active development and may have stability or performance issues.
 
-| Model Name | N150 | N300 | T3K | GALAXY | GALAXY_T3K | P100 | P150 | P150X4 | P150X8 |
+| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) | [GALAXY_T3K](https://tenstorrent.com/hardware/galaxy) | [P100](https://tenstorrent.com/hardware/blackhole) | [P150](https://tenstorrent.com/hardware/blackhole) | [P150X4](https://tenstorrent.com/hardware/tt-quietbox) | [P150X8](https://tenstorrent.com/hardware/tt-loudbox) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [AFM-4.5B](AFM-4.5B_n300.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | - | - | - | - | - |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_galaxy.md) | - | - | - | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - |

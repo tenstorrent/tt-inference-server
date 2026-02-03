@@ -7,7 +7,7 @@ gemma-3-27b-it is also supported on:
 
 #### Back links
 
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy-t3k)
+- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
