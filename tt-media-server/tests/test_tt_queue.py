@@ -7,7 +7,7 @@ from multiprocessing import get_context
 from queue import Empty
 
 import pytest
-from model_services.tt_queue import TTQueue
+from model_services.queues.tt_queue import TTQueue
 
 
 class TestTTQueueBasics:
