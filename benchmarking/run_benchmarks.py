@@ -135,7 +135,8 @@ def build_benchmark_command(
 
     # VLM models need multimodal dataset; text models use standard dataset
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
-    backend = "vllm" if params.task_type == "text" else "openai-chat"
+    # backend = "vllm" if params.task_type == "text" else "openai-chat"
+    backend = "openai-chat"
 
     # fmt: off
     cmd = [
@@ -143,6 +144,8 @@ def build_benchmark_command(
         "bench",
         "serve",
         "--backend", backend,
+        "--endpoint", "/v1/chat/completions",
+        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
