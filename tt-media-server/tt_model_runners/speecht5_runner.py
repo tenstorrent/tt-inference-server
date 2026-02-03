@@ -47,12 +47,16 @@ class SpeechT5Constants:
     MAX_STEPS = 768  # Current optimal value
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
+    HIFIGAN_VOCODER_REPO = (
+        "microsoft/speecht5_hifigan"  # Standard vocoder for all SpeechT5 models
+    )
 
 
 class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id)
         self.processor = None
+        self.model = None  # HuggingFace model reference
         self.vocoder = None
         self.ttnn_encoder = None
         self.ttnn_decoder = None
@@ -71,18 +75,45 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         device_params = {"l1_small_size": 150000, "trace_region_size": 10000000}
         return device_params
 
+    def load_weights(self):
+        """Load HuggingFace model weights for download verification"""
+        self._load_huggingface_models()
+        return True
+
+    def _load_huggingface_models(self):
+        """Load HuggingFace models - used by both load_weights() and _initialize_models()"""
+        try:
+            model_weights_path = (
+                self.settings.model_weights_path or SupportedModels.SPEECHT5_TTS.value
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}"
+            )
+
+            # Load all required components for inference
+            self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
+            self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
+            # Vocoder is always the same for all SpeechT5 models (standard HiFi-GAN vocoder)
+            self.vocoder = SpeechT5HifiGan.from_pretrained(
+                SpeechT5Constants.HIFIGAN_VOCODER_REPO
+            )
+
+            self.logger.info(
+                f"Device {self.device_id}: Successfully loaded HuggingFace model components"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Failed to load HuggingFace model: {e}"
+            )
+            raise RuntimeError(f"Failed to load reference model: {str(e)}") from e
+
     def _initialize_models(self):
         """Initialize SpeechT5 models and components"""
         try:
-            # Load HuggingFace models
-            model_name = SupportedModels.SPEECHT5_TTS.value
-            self.logger.info(
-                f"Device {self.device_id}: Loading SpeechT5 models from {model_name}"
-            )
+            # Load HuggingFace models (same as in load_weights())
+            self._load_huggingface_models()
 
-            self.processor = SpeechT5Processor.from_pretrained(model_name)
-            model = SpeechT5ForTextToSpeech.from_pretrained(model_name)
-            self.vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+            model = self.model
 
             # Initialize speaker embeddings manager
             self.speaker_manager = SpeakerEmbeddingsManager()
@@ -227,11 +258,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
                 raise
 
-            # Skip warmup for now to avoid kernel compilation issues
-            # Kernels will be compiled on first inference request
-            self.logger.info(
-                f"Device {device_id_int}: Skipping warmup - kernels will compile on first request"
-            )
+            self.logger.info(f"Device {device_id_int}: Model loaded successfully")
 
             # do a warmup run
             await self._run_async(
@@ -241,6 +268,8 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     )
                 ]
             )
+
+            self.logger.info(f"Device {device_id_int}: Model warmup completed")
 
             return True
 

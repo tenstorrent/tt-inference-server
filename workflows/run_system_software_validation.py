@@ -191,6 +191,12 @@ def main():
     venv_tt_smi = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
     venv_tt_smi.setup(model_spec=model_spec)
     tt_smi_data = SystemResourceService.get_tt_smi_data()
+    if not tt_smi_data:
+        raise RuntimeError(
+            "⛔ Failed to get tt-smi data."
+            "This is likely because Tenstorrent devices must be reset.\n\n"
+            "💡 Tip: Please run 'tt-smi -r' and try again, especially if 'tt-smi' is unresponsive.\n\n"
+        )
     fw_bundle_versions = []
     board_types = []
     for info in tt_smi_data["device_info"]:
