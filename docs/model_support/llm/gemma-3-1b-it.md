@@ -2,7 +2,7 @@
 
 ## Run gemma-3-1b-it on n150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

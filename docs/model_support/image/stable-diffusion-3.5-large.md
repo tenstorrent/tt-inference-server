@@ -2,7 +2,7 @@
 
 ## Run stable-diffusion-3.5-large on TT-LoudBox
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model stable-diffusion-3.5-large --device t3k --workflow server
 
 ## Run stable-diffusion-3.5-large on Tenstorrent Galaxy
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

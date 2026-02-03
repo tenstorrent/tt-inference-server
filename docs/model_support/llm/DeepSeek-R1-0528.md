@@ -2,7 +2,7 @@
 
 ## Run DeepSeek-R1-0528 on Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model DeepSeek-R1-0528 --device galaxy --workflow server --dock
 
 ## Run DeepSeek-R1-0528 on Dual Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -56,7 +56,7 @@ python3 run.py --model DeepSeek-R1-0528 --device dual_galaxy --workflow server -
 
 ## Run DeepSeek-R1-0528 on Quad Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

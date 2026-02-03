@@ -2,7 +2,7 @@
 
 ## Run Qwen2.5-VL-3B-Instruct on n150
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model Qwen2.5-VL-3B-Instruct --device n150 --workflow server --
 
 ## Run Qwen2.5-VL-3B-Instruct on n300
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -56,7 +56,7 @@ python3 run.py --model Qwen2.5-VL-3B-Instruct --device n300 --workflow server --
 
 ## Run Qwen2.5-VL-3B-Instruct on TT-LoudBox
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

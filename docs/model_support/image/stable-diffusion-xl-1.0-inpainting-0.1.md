@@ -2,7 +2,7 @@
 
 ## Run stable-diffusion-xl-1.0-inpainting-0.1 on n150
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model stable-diffusion-xl-1.0-inpainting-0.1 --device n150 --wo
 
 ## Run stable-diffusion-xl-1.0-inpainting-0.1 on n300
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -52,7 +52,7 @@ python3 run.py --model stable-diffusion-xl-1.0-inpainting-0.1 --device n300 --wo
 
 ## Run stable-diffusion-xl-1.0-inpainting-0.1 on TT-LoudBox
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -77,7 +77,7 @@ python3 run.py --model stable-diffusion-xl-1.0-inpainting-0.1 --device t3k --wor
 
 ## Run stable-diffusion-xl-1.0-inpainting-0.1 on Tenstorrent Galaxy
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

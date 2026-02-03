@@ -15,14 +15,14 @@ For the specific quickstart guide and details for your model, select your model 
 
 Browse models by type:
 
-- [LLM Models](docs/model_support/llm_models.md) - Large Language Models
-- [CNN Models](docs/model_support/cnn_models.md) - Convolutional Neural Networks
-- [Audio Models](docs/model_support/audio_models.md) - Speech-to-text models
-- [Image Models](docs/model_support/image_models.md) - Image generation models
-- [Embedding Models](docs/model_support/embedding_models.md) - Text embedding models
-- [TTS Models](docs/model_support/tts_models.md) - Text-to-speech models
-- [Video Models](docs/model_support/video_models.md) - Video generation models
-- [VLM Models](docs/model_support/vlm_models.md) - Vision-Language Models
+- [LLM Models](docs/model_support/llm/README.md) - Large Language Models
+- [CNN Models](docs/model_support/cnn/README.md) - Convolutional Neural Networks
+- [Audio Models](docs/model_support/audio/README.md) - Speech-to-text models
+- [Image Models](docs/model_support/image/README.md) - Image generation models
+- [Embedding Models](docs/model_support/embedding/README.md) - Text embedding models
+- [TTS Models](docs/model_support/tts/README.md) - Text-to-speech models
+- [Video Models](docs/model_support/video/README.md) - Video generation models
+- [VLM Models](docs/model_support/vlm/README.md) - Vision-Language Models
 
 ### Models by Hardware
 

@@ -2,7 +2,7 @@
 
 ## Run gemma-3-4b-it on n150
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -35,7 +35,7 @@ python3 run.py --model gemma-3-4b-it --device n150 --workflow server --docker-se
 
 ## Run gemma-3-4b-it on n300
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

@@ -2,7 +2,7 @@
 
 ## Run Qwen3-Embedding-4B on n150
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model Qwen3-Embedding-4B --device n150 --workflow server --dock
 
 ## Run Qwen3-Embedding-4B on n300
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -52,7 +52,7 @@ python3 run.py --model Qwen3-Embedding-4B --device n300 --workflow server --dock
 
 ## Run Qwen3-Embedding-4B on TT-LoudBox
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -77,7 +77,7 @@ python3 run.py --model Qwen3-Embedding-4B --device t3k --workflow server --docke
 
 ## Run Qwen3-Embedding-4B on Tenstorrent Galaxy
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

@@ -2,7 +2,7 @@
 
 ## Run gpt-oss-120b on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model gpt-oss-120b --device t3k --workflow server --docker-serv
 
 ## Run gpt-oss-120b on Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

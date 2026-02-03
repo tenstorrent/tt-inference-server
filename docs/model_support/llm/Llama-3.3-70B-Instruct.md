@@ -2,7 +2,7 @@
 
 ## Run Llama-3.3-70B-Instruct on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -37,7 +37,7 @@ python3 run.py --model Llama-3.3-70B-Instruct --device t3k --workflow server --d
 
 ## Run Llama-3.3-70B-Instruct on Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -72,7 +72,7 @@ python3 run.py --model Llama-3.3-70B-Instruct --device galaxy --workflow server 
 
 ## Run Llama-3.3-70B-Instruct on Tenstorrent Galaxy (GALAXY_T3K)
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -107,7 +107,7 @@ python3 run.py --model Llama-3.3-70B-Instruct --device galaxy_t3k --workflow ser
 
 ## Run Llama-3.3-70B-Instruct on 4xp150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -142,7 +142,7 @@ python3 run.py --model Llama-3.3-70B-Instruct --device p150x4 --workflow server 
 
 ## Run Llama-3.3-70B-Instruct on 8xp150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

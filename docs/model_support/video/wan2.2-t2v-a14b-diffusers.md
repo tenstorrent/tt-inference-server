@@ -2,7 +2,7 @@
 
 ## Run wan2.2-t2v-a14b-diffusers on TT-LoudBox
 
-[Video Model Support Table](../video_models.md)
+[Video Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model wan2.2-t2v-a14b-diffusers --device t3k --workflow server 
 
 ## Run wan2.2-t2v-a14b-diffusers on Tenstorrent Galaxy
 
-[Video Model Support Table](../video_models.md)
+[Video Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

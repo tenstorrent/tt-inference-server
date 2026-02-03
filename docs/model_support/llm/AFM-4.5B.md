@@ -2,7 +2,7 @@
 
 ## Run AFM-4.5B on n300
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model AFM-4.5B --device n300 --workflow server --docker-server
 
 ## Run AFM-4.5B on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

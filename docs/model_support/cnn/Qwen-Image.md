@@ -2,7 +2,7 @@
 
 ## Run Qwen-Image on TT-LoudBox
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -33,7 +33,7 @@ python3 run.py --model Qwen-Image --device t3k --workflow server --docker-server
 
 ## Run Qwen-Image on Tenstorrent Galaxy
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

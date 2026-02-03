@@ -8,7 +8,7 @@ Generate Model Support documentation from MODEL_SPECS.
 
 This script generates a documentation system for model support including:
 - Directory README with links to model type tables and hardware tables
-- Model type table pages (llm_models.md, vlm_models.md, etc.)
+- Model type table pages (llm/README.md, vlm/README.md, etc.)
 - Models by hardware page (models_by_hardware.md)
 - Individual model pages with device-specific sections
 
@@ -202,16 +202,13 @@ def get_device_status_link(
     if status == "-":
         return "-"
 
-    # Get model type for subdirectory path
-    model_type = get_model_type_for_templates(model_templates)
-    subdir = get_model_subdir(model_type)
-
     # Generate the link to the model page with section anchor
+    # (model pages are in the same directory as the model type README.md)
     filename = f"{sanitize_filename(model_name)}.md"
     section_title = get_device_section_title(model_name, device)
     anchor = generate_section_anchor(section_title)
 
-    return f"[{status}]({subdir}/{filename}#{anchor})"
+    return f"[{status}]({filename}#{anchor})"
 
 
 def get_device_product_name(device: DeviceTypes) -> str:
@@ -245,7 +242,6 @@ def generate_model_page(model_name: str, templates: List[ModelSpecTemplate]) -> 
     # Get model type for back link
     model_type = get_model_type_for_templates(templates)
     short_name = model_type.short_name
-    type_filename = f"{model_type.short_name.lower()}_models.md"
 
     # Page title
     lines.append(f"# {model_name} Tenstorrent Support")
@@ -297,8 +293,8 @@ def generate_model_page(model_name: str, templates: List[ModelSpecTemplate]) -> 
         lines.append(section_title)
         lines.append("")
 
-        # Back link to model type table
-        lines.append(f"[{short_name} Model Support Table](../{type_filename})")
+        # Back link to model type table (README.md in same directory)
+        lines.append(f"[{short_name} Model Support Table](README.md)")
         lines.append("")
 
         # Quickstart section
@@ -455,13 +451,10 @@ def generate_model_type_table(
     for model_name in sorted(filtered_groups.keys(), key=str.lower):
         model_templates = filtered_groups[model_name]
 
-        # Get model type subdirectory for link path
-        model_type_for_link = get_model_type_for_templates(model_templates)
-        subdir = get_model_subdir(model_type_for_link)
         filename = f"{sanitize_filename(model_name)}.md"
 
-        # Model name with link to subdirectory
-        row = [f"[{model_name}]({subdir}/{filename})"]
+        # Model name with link (same directory since README.md is in the model type subdir)
+        row = [f"[{model_name}]({filename})"]
 
         # Device status columns - link to specific device section on model page
         for device in devices:
@@ -489,8 +482,8 @@ def generate_model_type_page(
     )
     lines.append("")
 
-    # Back link to model types index in root README
-    lines.append("[Search model by model type](../../README.md#models-by-model-type)")
+    # Back link to model types index in root README (from docs/model_support/{type}/README.md)
+    lines.append("[Search model by model type](../../../README.md#models-by-model-type)")
     lines.append("")
 
     # Get devices that have models of this type
@@ -651,11 +644,11 @@ def generate_directory_readme(templates: List[ModelSpecTemplate]) -> str:
         if model_type not in model_types_with_templates:
             continue
 
-        filename = f"{model_type.short_name.lower()}_models.md"
+        subdir = model_type.short_name.lower()
         description = MODEL_TYPE_DESCRIPTIONS.get(model_type, model_type.display_name)
         short_name = model_type.short_name
 
-        lines.append(f"- [{short_name} Models]({filename}) - {description}")
+        lines.append(f"- [{short_name} Models]({subdir}/README.md) - {description}")
 
     lines.append("")
 
@@ -748,16 +741,16 @@ def main():
     hardware_content = generate_models_by_hardware_page(templates)
     write_file(output_dir / "models_by_hardware.md", hardware_content, args.dry_run)
 
-    # Generate model type table pages
+    # Generate model type table pages (in subdirectory as README.md)
     for model_type in ModelType:
         # Check if there are any templates of this type
         type_templates = [t for t in templates if t.model_type == model_type]
         if not type_templates:
             continue
 
-        filename = f"{model_type.short_name.lower()}_models.md"
+        subdir = model_type.short_name.lower()
         page_content = generate_model_type_page(templates, model_type)
-        write_file(output_dir / filename, page_content, args.dry_run)
+        write_file(output_dir / subdir / "README.md", page_content, args.dry_run)
 
     # Group templates by model name and generate consolidated pages in subdirectories
     model_groups = group_templates_by_model(templates)

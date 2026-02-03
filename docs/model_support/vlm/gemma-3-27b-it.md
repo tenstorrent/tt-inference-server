@@ -2,7 +2,7 @@
 
 ## Run gemma-3-27b-it on TT-LoudBox
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -35,7 +35,7 @@ python3 run.py --model gemma-3-27b-it --device t3k --workflow server --docker-se
 
 ## Run gemma-3-27b-it on Tenstorrent Galaxy
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -68,7 +68,7 @@ python3 run.py --model gemma-3-27b-it --device galaxy --workflow server --docker
 
 ## Run gemma-3-27b-it on Tenstorrent Galaxy (GALAXY_T3K)
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

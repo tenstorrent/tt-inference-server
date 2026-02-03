@@ -519,15 +519,15 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     hardware_content = generate_models_by_hardware_page(templates)
     write_file(output_path / "models_by_hardware.md", hardware_content)
 
-    # Generate model type table pages
+    # Generate model type table pages (in subdirectory as README.md)
     for model_type in ModelType:
         type_templates = [t for t in templates if t.model_type == model_type]
         if not type_templates:
             continue
 
-        filename = f"{model_type.short_name.lower()}_models.md"
+        subdir = model_type.short_name.lower()
         page_content = generate_model_type_page(templates, model_type)
-        write_file(output_path / filename, page_content)
+        write_file(output_path / subdir / "README.md", page_content)
 
     # Group templates by model name and generate consolidated pages in subdirectories
     model_groups = group_templates_by_model(templates)
@@ -579,7 +579,7 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     model_support_content = generate_directory_readme(templates)
 
     # Adjust relative paths to work from repo root
-    # - Links like (llm_models.md) -> (docs/model_support/llm_models.md)
+    # - Links like (llm/README.md) -> (docs/model_support/llm/README.md)
     # - Links like (models_by_hardware.md#...) -> (docs/model_support/models_by_hardware.md#...)
     # - Links like (llm/Model.md) -> (docs/model_support/llm/Model.md)
     # Skip external links (http/https) and parent links (..)

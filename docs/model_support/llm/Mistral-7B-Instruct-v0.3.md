@@ -2,7 +2,7 @@
 
 ## Run Mistral-7B-Instruct-v0.3 on n150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model Mistral-7B-Instruct-v0.3 --device n150 --workflow server 
 
 ## Run Mistral-7B-Instruct-v0.3 on n300
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -56,7 +56,7 @@ python3 run.py --model Mistral-7B-Instruct-v0.3 --device n300 --workflow server 
 
 ## Run Mistral-7B-Instruct-v0.3 on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

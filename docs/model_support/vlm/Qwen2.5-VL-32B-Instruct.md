@@ -2,7 +2,7 @@
 
 ## Run Qwen2.5-VL-32B-Instruct on TT-LoudBox
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

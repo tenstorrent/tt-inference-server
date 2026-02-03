@@ -2,7 +2,7 @@
 
 ## Run Qwen3-32B on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model Qwen3-32B --device t3k --workflow server --docker-server
 
 ## Run Qwen3-32B on Tenstorrent Galaxy
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -56,7 +56,7 @@ python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-serv
 
 ## Run Qwen3-32B on Tenstorrent Galaxy (GALAXY_T3K)
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -83,7 +83,7 @@ python3 run.py --model Qwen3-32B --device galaxy_t3k --workflow server --docker-
 
 ## Run Qwen3-32B on 8xp150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

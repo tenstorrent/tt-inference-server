@@ -2,7 +2,7 @@
 
 ## Run Qwen2.5-Coder-32B-Instruct on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -29,7 +29,7 @@ python3 run.py --model Qwen2.5-Coder-32B-Instruct --device t3k --workflow server
 
 ## Run Qwen2.5-Coder-32B-Instruct on Tenstorrent Galaxy (GALAXY_T3K)
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

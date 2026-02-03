@@ -2,7 +2,7 @@
 
 ## Run FLUX.1-dev on TT-LoudBox
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -33,7 +33,7 @@ python3 run.py --model FLUX.1-dev --device t3k --workflow server --docker-server
 
 ## Run FLUX.1-dev on Tenstorrent Galaxy
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

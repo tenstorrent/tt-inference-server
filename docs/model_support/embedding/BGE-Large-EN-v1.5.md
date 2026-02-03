@@ -2,7 +2,7 @@
 
 ## Run BGE-Large-EN-v1.5 on n150
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model BGE-Large-EN-v1.5 --device n150 --workflow server --docke
 
 ## Run BGE-Large-EN-v1.5 on n300
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -52,7 +52,7 @@ python3 run.py --model BGE-Large-EN-v1.5 --device n300 --workflow server --docke
 
 ## Run BGE-Large-EN-v1.5 on TT-LoudBox
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -77,7 +77,7 @@ python3 run.py --model BGE-Large-EN-v1.5 --device t3k --workflow server --docker
 
 ## Run BGE-Large-EN-v1.5 on Tenstorrent Galaxy
 
-[Embedding Model Support Table](../embedding_models.md)
+[Embedding Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

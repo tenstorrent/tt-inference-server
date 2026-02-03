@@ -2,7 +2,7 @@
 
 ## Run Llama-3.2-11B-Vision on n300
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -35,7 +35,7 @@ python3 run.py --model Llama-3.2-11B-Vision --device n300 --workflow server --do
 
 ## Run Llama-3.2-11B-Vision on TT-LoudBox
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

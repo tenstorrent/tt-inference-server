@@ -2,7 +2,7 @@
 
 ## Run speecht5_tts on n150
 
-[TTS Model Support Table](../tts_models.md)
+[TTS Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model speecht5_tts --device n150 --workflow server --docker-ser
 
 ## Run speecht5_tts on n300
 
-[TTS Model Support Table](../tts_models.md)
+[TTS Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

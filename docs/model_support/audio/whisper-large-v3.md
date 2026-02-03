@@ -2,7 +2,7 @@
 
 ## Run whisper-large-v3 on n150
 
-[Audio Model Support Table](../audio_models.md)
+[Audio Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -33,7 +33,7 @@ python3 run.py --model whisper-large-v3 --device n150 --workflow server --docker
 
 ## Run whisper-large-v3 on TT-LoudBox
 
-[Audio Model Support Table](../audio_models.md)
+[Audio Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -64,7 +64,7 @@ python3 run.py --model whisper-large-v3 --device t3k --workflow server --docker-
 
 ## Run whisper-large-v3 on Tenstorrent Galaxy
 
-[Audio Model Support Table](../audio_models.md)
+[Audio Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

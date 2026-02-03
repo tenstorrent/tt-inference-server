@@ -2,7 +2,7 @@
 
 ## Run Llama-3.2-90B-Vision on TT-LoudBox
 
-[VLM Model Support Table](../vlm_models.md)
+[VLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

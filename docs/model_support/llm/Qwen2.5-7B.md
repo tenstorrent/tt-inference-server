@@ -2,7 +2,7 @@
 
 ## Run Qwen2.5-7B on n300
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -35,7 +35,7 @@ python3 run.py --model Qwen2.5-7B --device n300 --workflow server --docker-serve
 
 ## Run Qwen2.5-7B on 4xn150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

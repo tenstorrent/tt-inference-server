@@ -2,7 +2,7 @@
 
 ## Run stable-diffusion-xl-base-1.0 on n150
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -33,7 +33,7 @@ python3 run.py --model stable-diffusion-xl-base-1.0 --device n150 --workflow ser
 
 ## Run stable-diffusion-xl-base-1.0 on n300
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -64,7 +64,7 @@ python3 run.py --model stable-diffusion-xl-base-1.0 --device n300 --workflow ser
 
 ## Run stable-diffusion-xl-base-1.0 on TT-LoudBox
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -95,7 +95,7 @@ python3 run.py --model stable-diffusion-xl-base-1.0 --device t3k --workflow serv
 
 ## Run stable-diffusion-xl-base-1.0 on Tenstorrent Galaxy
 
-[Image Model Support Table](../image_models.md)
+[Image Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

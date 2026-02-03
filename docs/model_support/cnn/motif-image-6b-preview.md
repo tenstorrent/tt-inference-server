@@ -2,7 +2,7 @@
 
 ## Run motif-image-6b-preview on TT-LoudBox
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model motif-image-6b-preview --device t3k --workflow server --d
 
 ## Run motif-image-6b-preview on Tenstorrent Galaxy
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

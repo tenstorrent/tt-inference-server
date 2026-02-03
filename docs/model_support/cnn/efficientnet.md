@@ -2,7 +2,7 @@
 
 ## Run efficientnet on n150
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model efficientnet --device n150 --workflow server --docker-ser
 
 ## Run efficientnet on n300
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

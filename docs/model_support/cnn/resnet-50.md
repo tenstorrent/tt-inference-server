@@ -2,7 +2,7 @@
 
 ## Run resnet-50 on n150
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model resnet-50 --device n150 --workflow server --docker-server
 
 ## Run resnet-50 on n300
 
-[CNN Model Support Table](../cnn_models.md)
+[CNN Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

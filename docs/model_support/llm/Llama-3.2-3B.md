@@ -2,7 +2,7 @@
 
 ## Run Llama-3.2-3B on n150
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -35,7 +35,7 @@ python3 run.py --model Llama-3.2-3B --device n150 --workflow server --docker-ser
 
 ## Run Llama-3.2-3B on n300
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -68,7 +68,7 @@ python3 run.py --model Llama-3.2-3B --device n300 --workflow server --docker-ser
 
 ## Run Llama-3.2-3B on TT-LoudBox
 
-[LLM Model Support Table](../llm_models.md)
+[LLM Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 

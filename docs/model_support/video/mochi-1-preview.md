@@ -2,7 +2,7 @@
 
 ## Run mochi-1-preview on TT-LoudBox
 
-[Video Model Support Table](../video_models.md)
+[Video Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
@@ -27,7 +27,7 @@ python3 run.py --model mochi-1-preview --device t3k --workflow server --docker-s
 
 ## Run mochi-1-preview on Tenstorrent Galaxy
 
-[Video Model Support Table](../video_models.md)
+[Video Model Support Table](README.md)
 
 ### Quickstart - Deploy Inference Server
 
