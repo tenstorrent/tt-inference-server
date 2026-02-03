@@ -14,11 +14,11 @@ To use these weights simply swap `Llama-3.1-8B` for your desired weights in comm
 
 `Llama-3.1-8B` is also supported on:
 
-- [N150/N300](Llama-3.1-8B_n150.md)
-- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
-- [P100/P150](Llama-3.1-8B_p100.md)
-- [BH QuietBox](Llama-3.1-8B_p150x4.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
+- [BH QuietBox](Llama-3.1-8B_p150x4.md)
+- [P100/P150](Llama-3.1-8B_p100.md)
+- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
+- [N150/N300](Llama-3.1-8B_n150.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on WH Galaxy
 

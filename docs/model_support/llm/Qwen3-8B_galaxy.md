@@ -8,8 +8,8 @@
 
 `Qwen3-8B` is also supported on:
 
-- [N150/N300](Qwen3-8B_n150.md)
 - [WH LoudBox/QuietBox](Qwen3-8B_t3k.md)
+- [N150/N300](Qwen3-8B_n150.md)
 
 ## Quickstart - Deploy Qwen3-8B Inference Server on WH Galaxy
 

@@ -14,8 +14,8 @@ To use these weights simply swap `whisper-large-v3` for your desired weights in 
 
 `whisper-large-v3` is also supported on:
 
-- [N150/N300](whisper-large-v3_n150.md)
 - [WH Galaxy](whisper-large-v3_galaxy.md)
+- [N150/N300](whisper-large-v3_n150.md)
 
 ## Quickstart - Deploy whisper-large-v3 Inference Server on WH LoudBox/QuietBox
 

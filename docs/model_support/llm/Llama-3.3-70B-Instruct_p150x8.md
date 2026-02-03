@@ -16,9 +16,9 @@ To use these weights simply swap `Llama-3.3-70B-Instruct` for your desired weigh
 
 `Llama-3.3-70B-Instruct` is also supported on:
 
-- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
 - [BH QuietBox](Llama-3.3-70B-Instruct_p150x4.md)
+- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH LoudBox
 

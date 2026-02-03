@@ -8,6 +8,6 @@ This page lists all supported audio models and their device compatibility.
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [N150/N300](https://tenstorrent.com/hardware/wormhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) |
+| Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- |
-| [whisper-large-v3](whisper-large-v3_n150.md) | [🟢 Complete](whisper-large-v3_n150.md) | [🟢 Complete](whisper-large-v3_t3k.md) | [🟢 Complete](whisper-large-v3_galaxy.md) |
+| [whisper-large-v3](whisper-large-v3_galaxy.md) | [🟢 Complete](whisper-large-v3_galaxy.md) | [🟢 Complete](whisper-large-v3_t3k.md) | [🟢 Complete](whisper-large-v3_n150.md) |

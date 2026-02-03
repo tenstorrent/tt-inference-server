@@ -8,8 +8,8 @@
 
 `Qwen3-Embedding-8B` is also supported on:
 
-- [WH LoudBox/QuietBox](Qwen3-Embedding-8B_t3k.md)
 - [WH Galaxy](Qwen3-Embedding-8B_galaxy.md)
+- [WH LoudBox/QuietBox](Qwen3-Embedding-8B_t3k.md)
 
 ## Quickstart - Deploy Qwen3-Embedding-8B Inference Server on n150
 

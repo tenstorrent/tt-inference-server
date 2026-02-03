@@ -8,8 +8,8 @@
 
 `stable-diffusion-xl-1.0-inpainting-0.1` is also supported on:
 
-- [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
 - [WH Galaxy](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md)
+- [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on WH LoudBox/QuietBox
 

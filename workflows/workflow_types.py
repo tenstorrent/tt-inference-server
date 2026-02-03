@@ -60,20 +60,20 @@ class BenchmarkTaskType(IntEnum):
 
 class DeviceTypes(IntEnum):
     CPU = auto()
+    GPU = auto()
     E150 = auto()
     N150 = auto()
+    N150X4 = auto()
+    N300 = auto()
+    T3K = auto()
     P100 = auto()
     P150 = auto()
     P150X4 = auto()
     P150X8 = auto()
-    N150X4 = auto()
-    N300 = auto()
-    T3K = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
     QUAD_GALAXY = auto()
-    GPU = auto()
 
     @classmethod
     def from_string(cls, name: str):

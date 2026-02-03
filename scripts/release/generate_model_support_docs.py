@@ -102,15 +102,15 @@ _BH_SINGLE_CARD_PAGE_GROUP = HardwarePageGroup(
 # - Value: HardwarePageGroup with name (for headers) and device_ordering (page layout)
 # Multiple DeviceTypes can map to the same HardwarePageGroup instance
 DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
-    DeviceTypes.N150: _WH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.N300: _WH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
     DeviceTypes.GALAXY: _GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY_T3K: _GALAXY_PAGE_GROUP,
-    DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
+    DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
+    DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
+    DeviceTypes.N300: _WH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.N150: _WH_SINGLE_CARD_PAGE_GROUP,
 }
 
 UNIQUE_DEVICE_PAGE_GROUPS = {

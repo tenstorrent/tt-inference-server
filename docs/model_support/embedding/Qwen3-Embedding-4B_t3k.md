@@ -8,8 +8,8 @@
 
 `Qwen3-Embedding-4B` is also supported on:
 
-- [N150/N300](Qwen3-Embedding-4B_n150.md)
 - [WH Galaxy](Qwen3-Embedding-4B_galaxy.md)
+- [N150/N300](Qwen3-Embedding-4B_n150.md)
 
 ## Quickstart - Deploy Qwen3-Embedding-4B Inference Server on WH LoudBox/QuietBox
 

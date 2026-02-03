@@ -14,8 +14,8 @@ To use these weights simply swap `stable-diffusion-xl-base-1.0` for your desired
 
 `stable-diffusion-xl-base-1.0` is also supported on:
 
-- [WH LoudBox/QuietBox](stable-diffusion-xl-base-1.0_t3k.md)
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
+- [WH LoudBox/QuietBox](stable-diffusion-xl-base-1.0_t3k.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-base-1.0 Inference Server on n150
 
