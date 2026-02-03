@@ -100,12 +100,16 @@ class TextToSpeechService(BaseService):
             self.logger.error(f"TTS post-process failed: {e}")
             raise ValueError(f"Failed to produce audio ({fmt}): {e!s}") from e
 
-        if output_bytes is None:
-            if needs_ffmpeg:
-                return await self._warn_and_fallback_to_wav(
-                    result, fmt, WORKER_NONE_MSG
-                )
-            raise ValueError(f"TTS worker returned None for format {fmt}")
+        if output_bytes is not None:
+            result.output_bytes = output_bytes
+            result.format = fmt
+            self.logger.debug(f"TTS post-process {fmt}: {len(output_bytes)} bytes")
+            return result
+            
+        if needs_ffmpeg:
+            return await self._warn_and_fallback_to_wav(
+                result, fmt, WORKER_NONE_MSG
+            )
 
         result.output_bytes = output_bytes
         result.format = fmt
