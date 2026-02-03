@@ -1,26 +1,26 @@
-# FLUX.1-dev Tenstorrent Support on Tenstorrent Galaxy
+# FLUX.1-dev Tenstorrent Support on WH Galaxy
 
-FLUX.1-dev is also supported on:
+The default model weights for this implementation is `FLUX.1-dev` ([black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev)), the following weights are supported as well:
 
-- [TT-LoudBox](FLUX.1-dev_t3k.md)
+- `FLUX.1-schnell`: [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
 
-#### Back links
+To use these weights simply swap `FLUX.1-dev` for your desired weights in commands below.
 
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+#### Useful links
+
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy FLUX.1-dev Inference Server on Tenstorrent Galaxy
+`FLUX.1-dev` is also supported on:
+
+- [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
+
+## Quickstart - Deploy FLUX.1-dev Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [tt-media-server](../../../tt-media-server/README.md) inference engine.
-
-The default model weights for this implementation is `FLUX.1-dev`, the following weights are supported as well:
-
-- `FLUX.1-schnell`
-
-To use these weights simply swap `FLUX.1-dev` for your desired weights in commands below.
 
 **via run.py command**
 

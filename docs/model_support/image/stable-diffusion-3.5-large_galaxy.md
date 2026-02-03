@@ -1,16 +1,16 @@
-# stable-diffusion-3.5-large Tenstorrent Support on Tenstorrent Galaxy
+# stable-diffusion-3.5-large Tenstorrent Support on WH Galaxy
 
-stable-diffusion-3.5-large is also supported on:
+#### Useful links
 
-- [TT-LoudBox](stable-diffusion-3.5-large_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy stable-diffusion-3.5-large Inference Server on Tenstorrent Galaxy
+`stable-diffusion-3.5-large` is also supported on:
+
+- [WH LoudBox/QuietBox](stable-diffusion-3.5-large_t3k.md)
+
+## Quickstart - Deploy stable-diffusion-3.5-large Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

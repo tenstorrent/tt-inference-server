@@ -8,8 +8,8 @@ This page lists all supported images and their device compatibility.
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) |
-| --- | --- | --- | --- | --- |
-| [stable-diffusion-3.5-large](stable-diffusion-3.5-large_t3k.md) | - | - | [🟢 Complete](stable-diffusion-3.5-large_t3k.md) | [🟢 Complete](stable-diffusion-3.5-large_galaxy.md) |
-| [stable-diffusion-xl-1.0-inpainting-0.1](stable-diffusion-xl-1.0-inpainting-0.1_n150.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_n150.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_n300.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) |
-| [stable-diffusion-xl-base-1.0](stable-diffusion-xl-base-1.0_n150.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_n150.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_n300.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_t3k.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_galaxy.md) |
+| Model Name | [N150/N300](https://tenstorrent.com/hardware/wormhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) |
+| --- | --- | --- | --- |
+| [stable-diffusion-3.5-large](stable-diffusion-3.5-large_t3k.md) | - | [🟢 Complete](stable-diffusion-3.5-large_t3k.md) | [🟢 Complete](stable-diffusion-3.5-large_galaxy.md) |
+| [stable-diffusion-xl-1.0-inpainting-0.1](stable-diffusion-xl-1.0-inpainting-0.1_n150.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_n150.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) |
+| [stable-diffusion-xl-base-1.0](stable-diffusion-xl-base-1.0_n150.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_n150.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_t3k.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_galaxy.md) |

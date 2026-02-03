@@ -1,31 +1,30 @@
-# Llama-3.3-70B-Instruct Tenstorrent Support on 4xp150
+# Llama-3.3-70B-Instruct Tenstorrent Support on BH QuietBox
 
-Llama-3.3-70B-Instruct is also supported on:
+The default model weights for this implementation is `Llama-3.3-70B-Instruct` ([meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct)), the following weights are supported as well:
 
-- [TT-LoudBox](Llama-3.3-70B-Instruct_t3k.md)
-- [Tenstorrent Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Llama-3.3-70B-Instruct_galaxy_t3k.md)
-- [8xp150](Llama-3.3-70B-Instruct_p150x8.md)
+- `Llama-3.1-70B`: [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B)
+- `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
+- `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
 
-#### Back links
+To use these weights simply swap `Llama-3.3-70B-Instruct` for your desired weights in commands below.
 
-- [4xp150 details](https://tenstorrent.com/hardware/tt-quietbox)
+#### Useful links
+
+- [BH QuietBox details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on 4xp150
+`Llama-3.3-70B-Instruct` is also supported on:
+
+- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
+- [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
+- [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
+
+## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Llama-3.3-70B-Instruct`, the following weights are supported as well:
-
-- `Llama-3.1-70B`
-- `Llama-3.1-70B-Instruct`
-- `DeepSeek-R1-Distill-Llama-70B`
-
-To use these weights simply swap `Llama-3.3-70B-Instruct` for your desired weights in commands below.
 
 **via run.py command**
 

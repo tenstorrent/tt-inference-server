@@ -1,18 +1,17 @@
-# BGE-Large-EN-v1.5 Tenstorrent Support on Tenstorrent Galaxy
+# BGE-Large-EN-v1.5 Tenstorrent Support on WH Galaxy
 
-BGE-Large-EN-v1.5 is also supported on:
+#### Useful links
 
-- [n150](BGE-Large-EN-v1.5_n150.md)
-- [n300](BGE-Large-EN-v1.5_n300.md)
-- [TT-LoudBox](BGE-Large-EN-v1.5_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on Tenstorrent Galaxy
+`BGE-Large-EN-v1.5` is also supported on:
+
+- [N150/N300](BGE-Large-EN-v1.5_n150.md)
+- [WH LoudBox/QuietBox](BGE-Large-EN-v1.5_t3k.md)
+
+## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

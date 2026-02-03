@@ -1,16 +1,16 @@
-# gpt-oss-120b Tenstorrent Support on Tenstorrent Galaxy
+# gpt-oss-120b Tenstorrent Support on WH Galaxy
 
-gpt-oss-120b is also supported on:
+#### Useful links
 
-- [TT-LoudBox](gpt-oss-120b_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy gpt-oss-120b Inference Server on Tenstorrent Galaxy
+`gpt-oss-120b` is also supported on:
+
+- [WH LoudBox/QuietBox](gpt-oss-120b_t3k.md)
+
+## Quickstart - Deploy gpt-oss-120b Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

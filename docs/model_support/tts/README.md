@@ -8,6 +8,6 @@ This page lists all supported text-to-speechs and their device compatibility.
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) |
-| --- | --- | --- |
-| [speecht5_tts](speecht5_tts_n150.md) | [🟢 Complete](speecht5_tts_n150.md) | [🟢 Complete](speecht5_tts_n300.md) |
+| Model Name | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
+| --- | --- |
+| [speecht5_tts](speecht5_tts_n150.md) | [🟢 Complete](speecht5_tts_n150.md) |

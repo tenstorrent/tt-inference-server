@@ -1,18 +1,17 @@
-# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on TT-LoudBox
+# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on WH LoudBox/QuietBox
 
-stable-diffusion-xl-1.0-inpainting-0.1 is also supported on:
+#### Useful links
 
-- [n150](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
-- [n300](stable-diffusion-xl-1.0-inpainting-0.1_n300.md)
-- [Tenstorrent Galaxy](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on TT-LoudBox
+`stable-diffusion-xl-1.0-inpainting-0.1` is also supported on:
+
+- [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
+- [WH Galaxy](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md)
+
+## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

@@ -1,16 +1,16 @@
-# Qwen2.5-Coder-32B-Instruct Tenstorrent Support on Tenstorrent Galaxy (GALAXY_T3K)
+# Qwen2.5-Coder-32B-Instruct Tenstorrent Support on WH Galaxy
 
-Qwen2.5-Coder-32B-Instruct is also supported on:
+#### Useful links
 
-- [TT-LoudBox](Qwen2.5-Coder-32B-Instruct_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen2.5-Coder-32B-Instruct Inference Server on Tenstorrent Galaxy
+`Qwen2.5-Coder-32B-Instruct` is also supported on:
+
+- [WH LoudBox/QuietBox](Qwen2.5-Coder-32B-Instruct_t3k.md)
+
+## Quickstart - Deploy Qwen2.5-Coder-32B-Instruct Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

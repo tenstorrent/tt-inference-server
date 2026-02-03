@@ -1,33 +1,30 @@
-# Llama-3.1-8B Tenstorrent Support on 4xp150
+# Llama-3.1-8B Tenstorrent Support on BH QuietBox
 
-Llama-3.1-8B is also supported on:
+The default model weights for this implementation is `Llama-3.1-8B` ([meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B)), the following weights are supported as well:
 
-- [n150](Llama-3.1-8B_n150.md)
-- [n300](Llama-3.1-8B_n300.md)
-- [TT-LoudBox](Llama-3.1-8B_t3k.md)
-- [Tenstorrent Galaxy](Llama-3.1-8B_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Llama-3.1-8B_galaxy_t3k.md)
-- [p100](Llama-3.1-8B_p100.md)
-- [p150](Llama-3.1-8B_p150.md)
-- [8xp150](Llama-3.1-8B_p150x8.md)
+- `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
-#### Back links
+To use these weights simply swap `Llama-3.1-8B` for your desired weights in commands below.
 
-- [4xp150 details](https://tenstorrent.com/hardware/tt-quietbox)
+#### Useful links
+
+- [BH QuietBox details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Llama-3.1-8B Inference Server on 4xp150
+`Llama-3.1-8B` is also supported on:
+
+- [N150/N300](Llama-3.1-8B_n150.md)
+- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
+- [WH Galaxy](Llama-3.1-8B_galaxy.md)
+- [P100/P150](Llama-3.1-8B_p100.md)
+- [BH LoudBox](Llama-3.1-8B_p150x8.md)
+
+## Quickstart - Deploy Llama-3.1-8B Inference Server on BH QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Llama-3.1-8B`, the following weights are supported as well:
-
-- `Llama-3.1-8B-Instruct`
-
-To use these weights simply swap `Llama-3.1-8B` for your desired weights in commands below.
 
 **via run.py command**
 

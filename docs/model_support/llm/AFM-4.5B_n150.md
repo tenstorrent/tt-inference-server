@@ -1,14 +1,14 @@
-# AFM-4.5B Tenstorrent Support on n300
+# AFM-4.5B Tenstorrent Support on N150/N300
 
-AFM-4.5B is also supported on:
+#### Useful links
 
-- [TT-LoudBox](AFM-4.5B_t3k.md)
-
-#### Back links
-
-- [n300 details](https://tenstorrent.com/hardware/wormhole)
+- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
+
+`AFM-4.5B` is also supported on:
+
+- [WH LoudBox/QuietBox](AFM-4.5B_t3k.md)
 
 ## Quickstart - Deploy AFM-4.5B Inference Server on n300
 

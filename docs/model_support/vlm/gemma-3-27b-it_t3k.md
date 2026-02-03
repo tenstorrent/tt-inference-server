@@ -1,27 +1,26 @@
-# gemma-3-27b-it Tenstorrent Support on TT-LoudBox
+# gemma-3-27b-it Tenstorrent Support on WH LoudBox/QuietBox
 
-gemma-3-27b-it is also supported on:
+The default model weights for this implementation is `gemma-3-27b-it` ([google/gemma-3-27b-it](https://huggingface.co/google/gemma-3-27b-it)), the following weights are supported as well:
 
-- [Tenstorrent Galaxy](gemma-3-27b-it_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](gemma-3-27b-it_galaxy_t3k.md)
+- `medgemma-27b-it`: [google/medgemma-27b-it](https://huggingface.co/google/medgemma-27b-it)
 
-#### Back links
+To use these weights simply swap `gemma-3-27b-it` for your desired weights in commands below.
 
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+#### Useful links
+
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy gemma-3-27b-it Inference Server on TT-LoudBox
+`gemma-3-27b-it` is also supported on:
+
+- [WH Galaxy](gemma-3-27b-it_galaxy.md)
+
+## Quickstart - Deploy gemma-3-27b-it Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `gemma-3-27b-it`, the following weights are supported as well:
-
-- `medgemma-27b-it`
-
-To use these weights simply swap `gemma-3-27b-it` for your desired weights in commands below.
 
 **via run.py command**
 

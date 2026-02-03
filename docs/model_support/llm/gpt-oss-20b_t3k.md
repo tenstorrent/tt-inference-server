@@ -1,17 +1,16 @@
-# gpt-oss-20b Tenstorrent Support on TT-LoudBox
+# gpt-oss-20b Tenstorrent Support on WH LoudBox/QuietBox
 
-gpt-oss-20b is also supported on:
+#### Useful links
 
-- [Tenstorrent Galaxy](gpt-oss-20b_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](gpt-oss-20b_galaxy_t3k.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy gpt-oss-20b Inference Server on TT-LoudBox
+`gpt-oss-20b` is also supported on:
+
+- [WH Galaxy](gpt-oss-20b_galaxy.md)
+
+## Quickstart - Deploy gpt-oss-20b Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

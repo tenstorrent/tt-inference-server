@@ -1,17 +1,16 @@
-# Qwen2.5-VL-3B-Instruct Tenstorrent Support on TT-LoudBox
+# Qwen2.5-VL-3B-Instruct Tenstorrent Support on WH LoudBox/QuietBox
 
-Qwen2.5-VL-3B-Instruct is also supported on:
+#### Useful links
 
-- [n150](Qwen2.5-VL-3B-Instruct_n150.md)
-- [n300](Qwen2.5-VL-3B-Instruct_n300.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen2.5-VL-3B-Instruct Inference Server on TT-LoudBox
+`Qwen2.5-VL-3B-Instruct` is also supported on:
+
+- [N150/N300](Qwen2.5-VL-3B-Instruct_n150.md)
+
+## Quickstart - Deploy Qwen2.5-VL-3B-Instruct Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

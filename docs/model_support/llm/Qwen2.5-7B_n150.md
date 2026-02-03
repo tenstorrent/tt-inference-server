@@ -1,8 +1,14 @@
-# Qwen2.5-7B Tenstorrent Support on n300
+# Qwen2.5-7B Tenstorrent Support on N150/N300
 
-#### Back links
+The default model weights for this implementation is `Qwen2.5-7B` ([Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B)), the following weights are supported as well:
 
-- [n300 details](https://tenstorrent.com/hardware/wormhole)
+- `Qwen2.5-7B-Instruct`: [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)
+
+To use these weights simply swap `Qwen2.5-7B` for your desired weights in commands below.
+
+#### Useful links
+
+- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -11,12 +17,6 @@
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Qwen2.5-7B`, the following weights are supported as well:
-
-- `Qwen2.5-7B-Instruct`
-
-To use these weights simply swap `Qwen2.5-7B` for your desired weights in commands below.
 
 **via run.py command**
 

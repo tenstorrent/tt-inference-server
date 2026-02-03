@@ -1,12 +1,12 @@
-# Qwen2.5-VL-72B-Instruct Tenstorrent Support on TT-LoudBox
+# Qwen2.5-VL-72B-Instruct Tenstorrent Support on WH LoudBox/QuietBox
 
-#### Back links
+#### Useful links
 
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen2.5-VL-72B-Instruct Inference Server on TT-LoudBox
+## Quickstart - Deploy Qwen2.5-VL-72B-Instruct Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

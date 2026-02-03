@@ -1,16 +1,16 @@
-# wan2.2-t2v-a14b-diffusers Tenstorrent Support on Tenstorrent Galaxy
+# wan2.2-t2v-a14b-diffusers Tenstorrent Support on WH Galaxy
 
-wan2.2-t2v-a14b-diffusers is also supported on:
+#### Useful links
 
-- [TT-LoudBox](wan2.2-t2v-a14b-diffusers_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy wan2.2-t2v-a14b-diffusers Inference Server on Tenstorrent Galaxy
+`wan2.2-t2v-a14b-diffusers` is also supported on:
+
+- [WH LoudBox/QuietBox](wan2.2-t2v-a14b-diffusers_t3k.md)
+
+## Quickstart - Deploy wan2.2-t2v-a14b-diffusers Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

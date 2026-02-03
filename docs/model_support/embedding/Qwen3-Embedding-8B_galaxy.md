@@ -1,18 +1,17 @@
-# Qwen3-Embedding-8B Tenstorrent Support on Tenstorrent Galaxy
+# Qwen3-Embedding-8B Tenstorrent Support on WH Galaxy
 
-Qwen3-Embedding-8B is also supported on:
+#### Useful links
 
-- [n150](Qwen3-Embedding-8B_n150.md)
-- [n300](Qwen3-Embedding-8B_n300.md)
-- [TT-LoudBox](Qwen3-Embedding-8B_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen3-Embedding-8B Inference Server on Tenstorrent Galaxy
+`Qwen3-Embedding-8B` is also supported on:
+
+- [N150/N300](Qwen3-Embedding-8B_n150.md)
+- [WH LoudBox/QuietBox](Qwen3-Embedding-8B_t3k.md)
+
+## Quickstart - Deploy Qwen3-Embedding-8B Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

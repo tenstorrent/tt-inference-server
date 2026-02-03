@@ -1,27 +1,26 @@
-# Qwen2.5-72B Tenstorrent Support on Tenstorrent Galaxy
+# Qwen2.5-72B Tenstorrent Support on WH Galaxy
 
-Qwen2.5-72B is also supported on:
+The default model weights for this implementation is `Qwen2.5-72B` ([Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B)), the following weights are supported as well:
 
-- [TT-LoudBox](Qwen2.5-72B_t3k.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Qwen2.5-72B_galaxy_t3k.md)
+- `Qwen2.5-72B-Instruct`: [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct)
 
-#### Back links
+To use these weights simply swap `Qwen2.5-72B` for your desired weights in commands below.
 
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+#### Useful links
+
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen2.5-72B Inference Server on Tenstorrent Galaxy
+`Qwen2.5-72B` is also supported on:
+
+- [WH LoudBox/QuietBox](Qwen2.5-72B_t3k.md)
+
+## Quickstart - Deploy Qwen2.5-72B Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Qwen2.5-72B`, the following weights are supported as well:
-
-- `Qwen2.5-72B-Instruct`
-
-To use these weights simply swap `Qwen2.5-72B` for your desired weights in commands below.
 
 **via run.py command**
 
@@ -37,6 +36,31 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B), [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 128 |
+| Max Context Length | 131072 |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers) |
+| tt-metal Commit | `13f44c5` |
+| vLLM Commit | `0edd242` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-13f44c5-0edd242` |
+
+---
+
+## GALAXY_T3K Configuration
+
+### Quickstart - Deploy on WH Galaxy
+
+**via run.py command**
+
+```bash
+python3 run.py --model Qwen2.5-72B --device galaxy_t3k --workflow server --docker-server
+```
+
+### Model Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Weights | [Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B), [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct) |
+| Model Status | 🟡 Functional |
+| Max Batch Size | 32 |
 | Max Context Length | 131072 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers) |
 | tt-metal Commit | `13f44c5` |

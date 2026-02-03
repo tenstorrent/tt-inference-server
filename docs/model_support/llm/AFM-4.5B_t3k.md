@@ -1,16 +1,16 @@
-# AFM-4.5B Tenstorrent Support on TT-LoudBox
+# AFM-4.5B Tenstorrent Support on WH LoudBox/QuietBox
 
-AFM-4.5B is also supported on:
+#### Useful links
 
-- [n300](AFM-4.5B_n300.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy AFM-4.5B Inference Server on TT-LoudBox
+`AFM-4.5B` is also supported on:
+
+- [N150/N300](AFM-4.5B_n150.md)
+
+## Quickstart - Deploy AFM-4.5B Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

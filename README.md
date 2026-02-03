@@ -24,19 +24,18 @@ Browse models by type:
 - [Video Models](docs/model_support/video/README.md) - Video generation models
 - [VLM Models](docs/model_support/vlm/README.md) - Vision-Language Models
 
-### Models by Hardware
+### Models by Hardware Configuration
 
-Browse models by hardware type:
+Browse models by hardware:
 
-- [n150 (N150)](docs/model_support/models_by_hardware.md#n150-n150)
-- [n300 (N300)](docs/model_support/models_by_hardware.md#n300-n300)
-- [TT-LoudBox (T3K)](docs/model_support/models_by_hardware.md#tt-loudbox-t3k)
-- [Tenstorrent Galaxy (GALAXY)](docs/model_support/models_by_hardware.md#tenstorrent-galaxy-galaxy)
-- [Tenstorrent Galaxy (GALAXY_T3K)](docs/model_support/models_by_hardware.md#tenstorrent-galaxy-galaxy_t3k)
-- [p100 (P100)](docs/model_support/models_by_hardware.md#p100-p100)
-- [p150 (P150)](docs/model_support/models_by_hardware.md#p150-p150)
-- [4xp150 (P150X4)](docs/model_support/models_by_hardware.md#4xp150-p150x4)
-- [8xp150 (P150X8)](docs/model_support/models_by_hardware.md#8xp150-p150x8)
+- [n150](docs/model_support/models_by_hardware.md#n150)
+- [n300](docs/model_support/models_by_hardware.md#n300)
+- [WH LoudBox/QuietBox](docs/model_support/models_by_hardware.md#wh-loudboxquietbox)
+- [WH Galaxy](docs/model_support/models_by_hardware.md#wh-galaxy)
+- [p100](docs/model_support/models_by_hardware.md#p100)
+- [p150](docs/model_support/models_by_hardware.md#p150)
+- [BH QuietBox](docs/model_support/models_by_hardware.md#bh-quietbox)
+- [BH LoudBox](docs/model_support/models_by_hardware.md#bh-loudbox)
 <!-- MODEL_SUPPORT_END -->
 
 # Workflow automation in tt-inference-server

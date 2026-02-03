@@ -1,18 +1,17 @@
-# Qwen3-32B Tenstorrent Support on TT-LoudBox
+# Qwen3-32B Tenstorrent Support on WH LoudBox/QuietBox
 
-Qwen3-32B is also supported on:
+#### Useful links
 
-- [Tenstorrent Galaxy](Qwen3-32B_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Qwen3-32B_galaxy_t3k.md)
-- [8xp150](Qwen3-32B_p150x8.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen3-32B Inference Server on TT-LoudBox
+`Qwen3-32B` is also supported on:
+
+- [WH Galaxy](Qwen3-32B_galaxy.md)
+- [BH LoudBox](Qwen3-32B_p150x8.md)
+
+## Quickstart - Deploy Qwen3-32B Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

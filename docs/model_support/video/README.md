@@ -8,7 +8,7 @@ This page lists all supported videos and their device compatibility.
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [T3K](https://tenstorrent.com/hardware/tt-loudbox) | [GALAXY](https://tenstorrent.com/hardware/galaxy) |
+| Model Name | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) |
 | --- | --- | --- |
 | [mochi-1-preview](mochi-1-preview_t3k.md) | [🟢 Complete](mochi-1-preview_t3k.md) | [🟢 Complete](mochi-1-preview_galaxy.md) |
 | [wan2.2-t2v-a14b-diffusers](wan2.2-t2v-a14b-diffusers_t3k.md) | [🟢 Complete](wan2.2-t2v-a14b-diffusers_t3k.md) | [🟢 Complete](wan2.2-t2v-a14b-diffusers_galaxy.md) |

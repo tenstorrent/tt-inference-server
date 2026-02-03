@@ -1,26 +1,26 @@
-# Qwen-Image Tenstorrent Support on Tenstorrent Galaxy
+# Qwen-Image Tenstorrent Support on WH Galaxy
 
-Qwen-Image is also supported on:
+The default model weights for this implementation is `Qwen-Image` ([Qwen/Qwen-Image](https://huggingface.co/Qwen/Qwen-Image)), the following weights are supported as well:
 
-- [TT-LoudBox](Qwen-Image_t3k.md)
+- `Qwen-Image-2512`: [Qwen/Qwen-Image-2512](https://huggingface.co/Qwen/Qwen-Image-2512)
 
-#### Back links
+To use these weights simply swap `Qwen-Image` for your desired weights in commands below.
 
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+#### Useful links
+
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen-Image Inference Server on Tenstorrent Galaxy
+`Qwen-Image` is also supported on:
+
+- [WH LoudBox/QuietBox](Qwen-Image_t3k.md)
+
+## Quickstart - Deploy Qwen-Image Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [tt-media-server](../../../tt-media-server/README.md) inference engine.
-
-The default model weights for this implementation is `Qwen-Image`, the following weights are supported as well:
-
-- `Qwen-Image-2512`
-
-To use these weights simply swap `Qwen-Image` for your desired weights in commands below.
 
 **via run.py command**
 

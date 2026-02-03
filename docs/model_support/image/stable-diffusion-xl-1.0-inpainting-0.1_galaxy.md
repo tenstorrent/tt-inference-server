@@ -1,18 +1,17 @@
-# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on Tenstorrent Galaxy
+# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on WH Galaxy
 
-stable-diffusion-xl-1.0-inpainting-0.1 is also supported on:
+#### Useful links
 
-- [n150](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
-- [n300](stable-diffusion-xl-1.0-inpainting-0.1_n300.md)
-- [TT-LoudBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
-
-#### Back links
-
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on Tenstorrent Galaxy
+`stable-diffusion-xl-1.0-inpainting-0.1` is also supported on:
+
+- [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
+- [WH LoudBox/QuietBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
+
+## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

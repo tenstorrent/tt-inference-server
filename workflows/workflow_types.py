@@ -106,20 +106,19 @@ class DeviceTypes(IntEnum):
 
     def to_product_str(self) -> str:
         mapping = {
-            DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
-            DeviceTypes.P150X4: "4xp150",
-            DeviceTypes.P150X8: "8xp150",
+            DeviceTypes.P150X4: "BH QuietBox",
+            DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
-            DeviceTypes.T3K: "TT-LoudBox",
-            DeviceTypes.GALAXY: "Tenstorrent Galaxy",
-            DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
-            DeviceTypes.DUAL_GALAXY: "Dual Tenstorrent Galaxy",
-            DeviceTypes.QUAD_GALAXY: "Quad Tenstorrent Galaxy",
+            DeviceTypes.T3K: "WH LoudBox/QuietBox",
+            DeviceTypes.GALAXY: "WH Galaxy",
+            DeviceTypes.GALAXY_T3K: "WH Galaxy",
+            DeviceTypes.DUAL_GALAXY: "Dual WH Galaxy",
+            DeviceTypes.QUAD_GALAXY: "Quad WH Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")

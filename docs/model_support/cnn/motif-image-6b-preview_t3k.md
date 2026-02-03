@@ -1,16 +1,16 @@
-# motif-image-6b-preview Tenstorrent Support on TT-LoudBox
+# motif-image-6b-preview Tenstorrent Support on WH LoudBox/QuietBox
 
-motif-image-6b-preview is also supported on:
+#### Useful links
 
-- [Tenstorrent Galaxy](motif-image-6b-preview_galaxy.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy motif-image-6b-preview Inference Server on TT-LoudBox
+`motif-image-6b-preview` is also supported on:
+
+- [WH Galaxy](motif-image-6b-preview_galaxy.md)
+
+## Quickstart - Deploy motif-image-6b-preview Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

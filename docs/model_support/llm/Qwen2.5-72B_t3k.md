@@ -1,27 +1,26 @@
-# Qwen2.5-72B Tenstorrent Support on TT-LoudBox
+# Qwen2.5-72B Tenstorrent Support on WH LoudBox/QuietBox
 
-Qwen2.5-72B is also supported on:
+The default model weights for this implementation is `Qwen2.5-72B` ([Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B)), the following weights are supported as well:
 
-- [Tenstorrent Galaxy](Qwen2.5-72B_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Qwen2.5-72B_galaxy_t3k.md)
+- `Qwen2.5-72B-Instruct`: [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct)
 
-#### Back links
+To use these weights simply swap `Qwen2.5-72B` for your desired weights in commands below.
 
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+#### Useful links
+
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Qwen2.5-72B Inference Server on TT-LoudBox
+`Qwen2.5-72B` is also supported on:
+
+- [WH Galaxy](Qwen2.5-72B_galaxy.md)
+
+## Quickstart - Deploy Qwen2.5-72B Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Qwen2.5-72B`, the following weights are supported as well:
-
-- `Qwen2.5-72B-Instruct`
-
-To use these weights simply swap `Qwen2.5-72B` for your desired weights in commands below.
 
 **via run.py command**
 

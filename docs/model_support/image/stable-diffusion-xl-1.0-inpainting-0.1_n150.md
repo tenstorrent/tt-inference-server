@@ -1,16 +1,15 @@
-# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on n150
+# stable-diffusion-xl-1.0-inpainting-0.1 Tenstorrent Support on N150/N300
 
-stable-diffusion-xl-1.0-inpainting-0.1 is also supported on:
+#### Useful links
 
-- [n300](stable-diffusion-xl-1.0-inpainting-0.1_n300.md)
-- [TT-LoudBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
-- [Tenstorrent Galaxy](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md)
-
-#### Back links
-
-- [n150 details](https://tenstorrent.com/hardware/wormhole)
+- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
+
+`stable-diffusion-xl-1.0-inpainting-0.1` is also supported on:
+
+- [WH LoudBox/QuietBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
+- [WH Galaxy](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on n150
 
@@ -26,6 +25,29 @@ python3 run.py --model stable-diffusion-xl-1.0-inpainting-0.1 --device n150 --wo
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
 ## Model Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Weights | [diffusers/stable-diffusion-xl-1.0-inpainting-0.1](https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1) |
+| Model Status | 🟢 Complete |
+| Max Batch Size | 1 |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers) |
+| tt-metal Commit | `fbbbd2d` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd` |
+
+---
+
+## N300 Configuration
+
+### Quickstart - Deploy on n300
+
+**via run.py command**
+
+```bash
+python3 run.py --model stable-diffusion-xl-1.0-inpainting-0.1 --device n300 --workflow server --docker-server
+```
+
+### Model Parameters
 
 | Parameter | Value |
 |-----------|-------|

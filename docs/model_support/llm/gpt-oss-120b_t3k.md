@@ -1,16 +1,16 @@
-# gpt-oss-120b Tenstorrent Support on TT-LoudBox
+# gpt-oss-120b Tenstorrent Support on WH LoudBox/QuietBox
 
-gpt-oss-120b is also supported on:
+#### Useful links
 
-- [Tenstorrent Galaxy](gpt-oss-120b_galaxy.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy gpt-oss-120b Inference Server on TT-LoudBox
+`gpt-oss-120b` is also supported on:
+
+- [WH Galaxy](gpt-oss-120b_galaxy.md)
+
+## Quickstart - Deploy gpt-oss-120b Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

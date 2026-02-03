@@ -1,12 +1,12 @@
-# DeepSeek-R1-0528 Tenstorrent Support on Tenstorrent Galaxy
+# DeepSeek-R1-0528 Tenstorrent Support on WH Galaxy
 
-#### Back links
+#### Useful links
 
-- [Tenstorrent Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy DeepSeek-R1-0528 Inference Server on Tenstorrent Galaxy
+## Quickstart - Deploy DeepSeek-R1-0528 Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

@@ -1,27 +1,27 @@
-# whisper-large-v3 Tenstorrent Support on TT-LoudBox
+# whisper-large-v3 Tenstorrent Support on WH LoudBox/QuietBox
 
-whisper-large-v3 is also supported on:
+The default model weights for this implementation is `whisper-large-v3` ([openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)), the following weights are supported as well:
 
-- [n150](whisper-large-v3_n150.md)
-- [Tenstorrent Galaxy](whisper-large-v3_galaxy.md)
+- `distil-large-v3`: [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3)
 
-#### Back links
+To use these weights simply swap `whisper-large-v3` for your desired weights in commands below.
 
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+#### Useful links
+
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other audio models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy whisper-large-v3 Inference Server on TT-LoudBox
+`whisper-large-v3` is also supported on:
+
+- [N150/N300](whisper-large-v3_n150.md)
+- [WH Galaxy](whisper-large-v3_galaxy.md)
+
+## Quickstart - Deploy whisper-large-v3 Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [tt-media-server](../../../tt-media-server/README.md) inference engine.
-
-The default model weights for this implementation is `whisper-large-v3`, the following weights are supported as well:
-
-- `distil-large-v3`
-
-To use these weights simply swap `whisper-large-v3` for your desired weights in commands below.
 
 **via run.py command**
 

@@ -1,33 +1,30 @@
-# Llama-3.1-8B Tenstorrent Support on n150
+# Llama-3.1-8B Tenstorrent Support on N150/N300
 
-Llama-3.1-8B is also supported on:
+The default model weights for this implementation is `Llama-3.1-8B` ([meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B)), the following weights are supported as well:
 
-- [n300](Llama-3.1-8B_n300.md)
-- [TT-LoudBox](Llama-3.1-8B_t3k.md)
-- [Tenstorrent Galaxy](Llama-3.1-8B_galaxy.md)
-- [Tenstorrent Galaxy (GALAXY_T3K)](Llama-3.1-8B_galaxy_t3k.md)
-- [p100](Llama-3.1-8B_p100.md)
-- [p150](Llama-3.1-8B_p150.md)
-- [4xp150](Llama-3.1-8B_p150x4.md)
-- [8xp150](Llama-3.1-8B_p150x8.md)
+- `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
-#### Back links
+To use these weights simply swap `Llama-3.1-8B` for your desired weights in commands below.
 
-- [n150 details](https://tenstorrent.com/hardware/wormhole)
+#### Useful links
+
+- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
+
+`Llama-3.1-8B` is also supported on:
+
+- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
+- [WH Galaxy](Llama-3.1-8B_galaxy.md)
+- [P100/P150](Llama-3.1-8B_p100.md)
+- [BH QuietBox](Llama-3.1-8B_p150x4.md)
+- [BH LoudBox](Llama-3.1-8B_p150x8.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on n150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
-
-The default model weights for this implementation is `Llama-3.1-8B`, the following weights are supported as well:
-
-- `Llama-3.1-8B-Instruct`
-
-To use these weights simply swap `Llama-3.1-8B` for your desired weights in commands below.
 
 **via run.py command**
 
@@ -44,6 +41,31 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 65536 |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
+| tt-metal Commit | `25305db` |
+| vLLM Commit | `6e67d2d` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-25305db-6e67d2d` |
+
+---
+
+## N300 Configuration
+
+### Quickstart - Deploy on n300
+
+**via run.py command**
+
+```bash
+python3 run.py --model Llama-3.1-8B --device n300 --workflow server --docker-server
+```
+
+### Model Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
+| Model Status | 🟢 Complete |
+| Max Batch Size | 32 |
+| Max Context Length | 131072 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
 | tt-metal Commit | `25305db` |
 | vLLM Commit | `6e67d2d` |

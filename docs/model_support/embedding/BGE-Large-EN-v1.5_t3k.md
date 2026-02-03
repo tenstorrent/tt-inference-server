@@ -1,18 +1,17 @@
-# BGE-Large-EN-v1.5 Tenstorrent Support on TT-LoudBox
+# BGE-Large-EN-v1.5 Tenstorrent Support on WH LoudBox/QuietBox
 
-BGE-Large-EN-v1.5 is also supported on:
+#### Useful links
 
-- [n150](BGE-Large-EN-v1.5_n150.md)
-- [n300](BGE-Large-EN-v1.5_n300.md)
-- [Tenstorrent Galaxy](BGE-Large-EN-v1.5_galaxy.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on TT-LoudBox
+`BGE-Large-EN-v1.5` is also supported on:
+
+- [N150/N300](BGE-Large-EN-v1.5_n150.md)
+- [WH Galaxy](BGE-Large-EN-v1.5_galaxy.md)
+
+## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

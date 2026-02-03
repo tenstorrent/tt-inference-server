@@ -1,17 +1,16 @@
-# Mistral-7B-Instruct-v0.3 Tenstorrent Support on TT-LoudBox
+# Mistral-7B-Instruct-v0.3 Tenstorrent Support on WH LoudBox/QuietBox
 
-Mistral-7B-Instruct-v0.3 is also supported on:
+#### Useful links
 
-- [n150](Mistral-7B-Instruct-v0.3_n150.md)
-- [n300](Mistral-7B-Instruct-v0.3_n300.md)
-
-#### Back links
-
-- [TT-LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy Mistral-7B-Instruct-v0.3 Inference Server on TT-LoudBox
+`Mistral-7B-Instruct-v0.3` is also supported on:
+
+- [N150/N300](Mistral-7B-Instruct-v0.3_n150.md)
+
+## Quickstart - Deploy Mistral-7B-Instruct-v0.3 Inference Server on WH LoudBox/QuietBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
