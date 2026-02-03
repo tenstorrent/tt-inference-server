@@ -66,8 +66,8 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_t3k.md) |
-| 🟢 Complete | CNN | [FLUX.1-dev](cnn/FLUX.1-dev_t3k.md) |
-| 🟢 Complete | CNN | [motif-image-6b-preview](cnn/motif-image-6b-preview_t3k.md) |
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_t3k.md) |
+| 🟢 Complete | Image | [motif-image-6b-preview](image/motif-image-6b-preview_t3k.md) |
 | 🟢 Complete | Image | [stable-diffusion-3.5-large](image/stable-diffusion-3.5-large_t3k.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_t3k.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_t3k.md) |
@@ -75,7 +75,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_t3k.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_t3k.md) |
 | 🟢 Complete | Video | [wan2.2-t2v-a14b-diffusers](video/wan2.2-t2v-a14b-diffusers_t3k.md) |
-| 🟡 Functional | CNN | [Qwen-Image](cnn/Qwen-Image_t3k.md) |
+| 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_t3k.md) |
 | 🟡 Functional | LLM | [gpt-oss-120b](llm/gpt-oss-120b_t3k.md) |
 | 🟡 Functional | LLM | [gpt-oss-20b](llm/gpt-oss-20b_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_t3k.md) |
@@ -103,8 +103,8 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_galaxy.md) |
-| 🟢 Complete | CNN | [FLUX.1-dev](cnn/FLUX.1-dev_galaxy.md) |
-| 🟢 Complete | CNN | [motif-image-6b-preview](cnn/motif-image-6b-preview_galaxy.md) |
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_galaxy.md) |
+| 🟢 Complete | Image | [motif-image-6b-preview](image/motif-image-6b-preview_galaxy.md) |
 | 🟢 Complete | Image | [stable-diffusion-3.5-large](image/stable-diffusion-3.5-large_galaxy.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_galaxy.md) |
@@ -112,7 +112,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) |
 | 🟢 Complete | Video | [wan2.2-t2v-a14b-diffusers](video/wan2.2-t2v-a14b-diffusers_galaxy.md) |
-| 🟡 Functional | CNN | [Qwen-Image](cnn/Qwen-Image_galaxy.md) |
+| 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) |
 | 🟡 Functional | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
 | 🟡 Functional | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) |

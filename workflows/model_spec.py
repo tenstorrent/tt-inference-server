@@ -2278,7 +2278,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2303,7 +2303,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         display_name="motif-image-6b-preview",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
@@ -2328,7 +2328,7 @@ spec_templates = [
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        model_type=ModelType.CNN,
+        model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
