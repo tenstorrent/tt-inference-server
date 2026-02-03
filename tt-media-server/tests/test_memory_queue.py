@@ -234,13 +234,6 @@ class TestPutOperation:
         queue.close()
         queue.unlink()
 
-    def test_put_returns_false_when_queue_full(self, cleanup_queues):
-        """Test that put returns False when queue is full"""
-        # Note: This test is skipped because it requires proper struct.pack_into
-        # operations on shared memory which our mock doesn't fully support.
-        # The actual behavior is tested in integration tests.
-        pytest.skip("Requires full shared memory struct operations")
-
     def test_put_with_is_final_flag(self, cleanup_queues):
         """Test putting item with is_final flag"""
         queue = SharedMemoryChunkQueue(capacity=1000, name="test_queue_13", create=True)
