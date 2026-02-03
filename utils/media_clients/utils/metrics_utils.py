@@ -32,6 +32,11 @@ class MetricsAggregator:
         self._counts: Dict[str, int] = {}
         self._means: Dict[str, float] = {}
 
+    def reset(self) -> None:
+        """Clear state so the aggregator can be reused for another run."""
+        self._counts.clear()
+        self._means.clear()
+
     def add(self, metrics: Dict[str, float]) -> None:
         """Update running mean per key (Welford). O(k) for k keys."""
         for key, value in metrics.items():
