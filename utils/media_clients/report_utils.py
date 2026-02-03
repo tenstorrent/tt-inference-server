@@ -72,7 +72,9 @@ def generate_benchmark_report(
         Path to written report file, or None if status_list is empty and no pre_aggregated
     """
     if not status_list and not pre_aggregated:
-        logger.error("Empty status list and no pre_aggregated, skipping benchmark report")
+        logger.error(
+            "Empty status list and no pre_aggregated, skipping benchmark report"
+        )
         return None
 
     logger.info("Generating benchmark report...")
