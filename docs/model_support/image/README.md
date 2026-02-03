@@ -1,6 +1,6 @@
 # Image Models
 
-This page lists all supported images and their device compatibility.
+This page lists all supported image models and their device compatibility.
 
 [Search other models by model type](../../../README.md#models-by-model-type)
 
