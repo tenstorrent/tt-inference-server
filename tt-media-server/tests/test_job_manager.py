@@ -1010,6 +1010,7 @@ class TestJobManager:
         """Verify that multiple jobs are correctly restored upon manager restart."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
+            return
         job_ids = ["job-1", "job-2", "job-3"]
         db_path = job_manager.db.db_path
 
@@ -1057,6 +1058,7 @@ class TestJobManager:
         """Verify stuck jobs are synced to terminal states and completed jobs stay completed."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
+            return
 
         db_path = job_manager.db.db_path
 
