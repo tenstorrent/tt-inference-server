@@ -82,6 +82,19 @@ class VideoClientStrategy(BaseMediaStrategy):
         else:
             logger.warning("No eval results from video generation test")
 
+        try:
+            # Run video FVD and FVMD eval
+            fvd_and_fvmd_result = self._run_video_fvd_and_fvmd_eval()
+
+            # Add FVD and FVMD results to eval data
+            if fvd_and_fvmd_result:
+                benchmark_data["fvd"] = fvd_and_fvmd_result.get("fvd", 0)
+                benchmark_data["fvmd"] = fvd_and_fvmd_result.get("fvmd", 0)
+        except Exception as e:
+            logger.error(f"Error running video FVD and FVMD eval: {e}")
+            benchmark_data["fvd"] = None
+            benchmark_data["fvmd"] = None
+
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
@@ -407,3 +420,117 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info(f"VideoGenerationEvalsTest eval_results: {eval_results}")
 
         return eval_results
+
+    def _run_video_fvd_and_fvmd_eval(self) -> dict:
+        """Run video FVD and FVMD eval.
+
+        Flow:
+        1. Download reference videos from FineVideo (shared dataset dir).
+        2. Run FVD test (compute_fvd) with reference vs generated videos.
+        3. Run FVMD test (compute_fvmd) with same paths.
+        4. Combine FVD and FVMD scores into a single dict.
+
+        Reference videos: tests/server_tests/datasets/video_fvd_subset/videos
+        Generated videos: tests/server_tests/datasets/videos (same as
+        video_generation_eval_test) or /tmp/videos (video_client downloads).
+
+        Returns:
+            dict: Combined eval results, e.g.:
+                {
+                    "fvd": float,
+                    "fvmd": float,
+                    "reference_videos_path": str,
+                    "generated_videos_path": str,
+                }
+        """
+        from pathlib import Path
+
+        from tests.server_tests.test_cases.video_fvd_eval_test import (
+            DATASET_DIR as FVD_DATASET_DIR,
+        )
+        from tests.server_tests.test_cases.video_fvd_eval_test import (
+            VideoFVDTest,
+            VideoFVDTestRequest,
+        )
+        from tests.server_tests.test_cases.video_fvmd_eval_test import (
+            VideoFVMDTest,
+            VideoFVMDTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
+        logger.info("Running video FVD and FVMD eval.")
+
+        reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
+        # Generated videos: same dir as video_generation_eval_test, or /tmp/videos
+        generated_videos_path = str(
+            Path("tests/server_tests/datasets/videos").resolve()
+        )
+        if not Path(generated_videos_path).exists():
+            generated_videos_path = "/tmp/videos"
+        logger.info(
+            f"Reference path: {reference_videos_path}, "
+            f"generated path: {generated_videos_path}"
+        )
+
+        config = TestConfig.create_default()
+        combined_results = {
+            "reference_videos_path": reference_videos_path,
+            "generated_videos_path": generated_videos_path,
+        }
+
+        # Step 1: Download reference videos (shared for FVD and FVMD)
+        download_request = VideoFVDTestRequest(
+            action="download",
+            download_count=2,
+            category="Sports",
+        )
+        download_test = VideoFVDTest(config, {"request": download_request})
+        download_result = download_test.run_tests()
+        if not download_result.get("success") or not download_result.get(
+            "result", {}
+        ).get("success"):
+            logger.warning(
+                "Reference video download failed: %s. "
+                "FVD/FVMD may fail if reference dir is empty.",
+                download_result,
+            )
+        else:
+            logger.info("Reference videos downloaded successfully.")
+
+        # Step 2: Run FVD (compute_fvd)
+        fvd_request = VideoFVDTestRequest(
+            action="compute_fvd",
+            reference_videos_path=reference_videos_path,
+            generated_videos_path=generated_videos_path,
+        )
+        fvd_test = VideoFVDTest(config, {"request": fvd_request})
+        fvd_result = fvd_test.run_tests()
+        fvd_ok = fvd_result.get("success") and fvd_result.get("result", {}).get(
+            "success"
+        )
+        if fvd_ok:
+            combined_results["fvd"] = fvd_result["result"].get("fvd_score")
+            logger.info("FVD score: %s", combined_results["fvd"])
+        else:
+            combined_results["fvd"] = None
+            logger.warning("FVD test failed or did not return score: %s", fvd_result)
+
+        # Step 3: Run FVMD (compute_fvmd)
+        fvmd_request = VideoFVMDTestRequest(
+            action="compute_fvmd",
+            reference_videos_path=reference_videos_path,
+            generated_videos_path=generated_videos_path,
+        )
+        fvmd_test = VideoFVMDTest(config, {"request": fvmd_request})
+        fvmd_result = fvmd_test.run_tests()
+        fvmd_ok = fvmd_result.get("success") and fvmd_result.get("result", {}).get(
+            "success"
+        )
+        if fvmd_ok:
+            combined_results["fvmd"] = fvmd_result["result"].get("fvmd_score")
+            logger.info("FVMD score: %s", combined_results["fvmd"])
+        else:
+            combined_results["fvmd"] = None
+            logger.warning("FVMD test failed or did not return score: %s", fvmd_result)
+
+        return combined_results
