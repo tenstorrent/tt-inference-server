@@ -8,7 +8,10 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .utils.metrics_utils import MetricsAggregator
 
 
 import aiohttp
@@ -16,8 +19,7 @@ from transformers import AutoTokenizer
 
 
 from .base_strategy_interface import BaseMediaStrategy
-from .metrics_utils import (
-    MetricsAggregator,
+from .utils.metrics_utils import (
     calculate_rtr,
     calculate_tail_latency,
     calculate_ttft,
@@ -143,7 +145,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             num_calls = self._get_tts_num_calls(is_eval=False)
 
-            aggregator = MetricsAggregator()
+            aggregator = self._get_aggregator()
             status_list = self._run_tts_benchmark(
                 num_calls, calculate_wer=False, aggregator=aggregator
             )
@@ -204,7 +206,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         self,
         num_calls: int,
         calculate_wer: bool = False,
-        aggregator: Optional[MetricsAggregator] = None,
+        aggregator: Optional["MetricsAggregator"] = None,
     ) -> list[TtsTestStatus]:
         """Run TTS benchmark. If aggregator is provided, metrics are updated in this loop."""
         logger.info(f"Running TTS benchmark with {num_calls} calls.")

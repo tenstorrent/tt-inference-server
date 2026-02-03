@@ -10,12 +10,9 @@ from typing import Optional
 from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_classes import TestConfig
 
-from .report_utils import (
-    ReportContext,
-    generate_benchmark_report,
-    generate_eval_report,
-)
 from .test_status import BaseTestStatus
+from .utils.metrics_utils import MetricsAggregator
+from .utils.report_utils import ReportContext, ReportGenerator
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
@@ -51,7 +48,17 @@ class BaseMediaStrategy(ABC):
                 stacklevel=2,
             )
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
+    def __init__(
+        self,
+        all_params,
+        model_spec,
+        device,
+        output_path,
+        service_port,
+        *,
+        report_generator: Optional[ReportGenerator] = None,
+        aggregator: Optional[MetricsAggregator] = None,
+    ):
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
@@ -59,6 +66,13 @@ class BaseMediaStrategy(ABC):
         self.service_port = service_port
         self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
+        self._report_generator = report_generator or ReportGenerator()
+        self._aggregator = aggregator or MetricsAggregator()
+
+    def _get_aggregator(self) -> MetricsAggregator:
+        """Return the shared aggregator, reset for this benchmark run."""
+        self._aggregator.reset()
+        return self._aggregator
 
     @abstractmethod
     def run_eval(self) -> None:
@@ -152,7 +166,7 @@ class BaseMediaStrategy(ABC):
         pre_aggregated: Optional[dict] = None,
     ) -> Optional[Path]:
         """
-        Generate benchmark report: build context, get extras from strategy, call report_utils.
+        Generate benchmark report: build context, get extras from strategy, call injected ReportGenerator.
 
         If pre_aggregated is provided (e.g. from MetricsAggregator.result() during the
         benchmark loop), aggregation is not run again over status_list (one less pass).
@@ -164,7 +178,7 @@ class BaseMediaStrategy(ABC):
         benchmark_extras, top_level_extras = self._get_benchmark_report_extras(
             status_list
         )
-        return generate_benchmark_report(
+        return self._report_generator.generate_benchmark_report(
             context,
             status_list,
             self.TASK_TYPE,
@@ -195,7 +209,7 @@ class BaseMediaStrategy(ABC):
         extra_data_override: Optional[dict] = None,
     ) -> Path:
         """
-        Generate eval report via report_utils.
+        Generate eval report via injected ReportGenerator.
 
         If extra_data_override is set, use it; else call _create_eval_extra_data().
         Returns path to written eval JSON file.
@@ -209,7 +223,9 @@ class BaseMediaStrategy(ABC):
                 eval_result=eval_result,
                 total_time=total_time,
             )
-        return generate_eval_report(context, self.TASK_TYPE, extra_data)
+        return self._report_generator.generate_eval_report(
+            context, self.TASK_TYPE, extra_data
+        )
 
     def _create_eval_extra_data(
         self,
@@ -221,10 +237,9 @@ class BaseMediaStrategy(ABC):
         Return client-specific eval payload (task_name, tolerance, score, etc.).
 
         Override in clients. Merged with base metadata (model, device, timestamp, task_type)
-        by report_utils.generate_eval_report.
+        by ReportGenerator.generate_eval_report.
 
         Returns:
             Dict of eval fields; default {}.
         """
         return {}
-
