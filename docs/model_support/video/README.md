@@ -1,0 +1,14 @@
+# Video Models
+
+This page lists all supported videos and their device compatibility.
+
+[Search other models by model type](../../../README.md#models-by-model-type)
+
+## Supported Models
+
+Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
+
+| Model Name | T3K | GALAXY |
+| --- | --- | --- |
+| [mochi-1-preview](mochi-1-preview_t3k.md) | [🟢 Complete](mochi-1-preview_t3k.md) | [🟢 Complete](mochi-1-preview_galaxy.md) |
+| [wan2.2-t2v-a14b-diffusers](wan2.2-t2v-a14b-diffusers_t3k.md) | [🟢 Complete](wan2.2-t2v-a14b-diffusers_t3k.md) | [🟢 Complete](wan2.2-t2v-a14b-diffusers_galaxy.md) |
