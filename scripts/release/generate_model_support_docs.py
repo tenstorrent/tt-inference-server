@@ -142,6 +142,21 @@ EXCLUDED_DEVICES = (DeviceTypes.CPU, DeviceTypes.GPU)
 # Devices to exclude from the Models by Hardware page
 MODELS_BY_HARDWARE_EXCLUDED_DEVICES = (DeviceTypes.GALAXY_T3K,)
 
+# Highlighted models to pin at top of model type tables
+# These models will appear first in their respective tables, in the order specified
+MODEL_HIGHLIGHTS: Dict[ModelType, Tuple[str, ...]] = {
+    ModelType.LLM: (
+        "gpt-oss-120b",  # Maps to weights: openai/gpt-oss-120b
+        "gpt-oss-20b",  # Maps to weights: openai/gpt-oss-20b
+        "Llama-3.3-70B-Instruct",  # Maps to weights: meta-llama/Llama-3.3-70B-Instruct
+        "Qwen3-32B",  # Maps to weights: Qwen/Qwen3-32B
+        "Llama-3.1-8B",  # Maps to weights: meta-llama/Llama-3.1-8B
+    ),
+    # Add other model types as needed:
+    # ModelType.VLM: (...),
+    # ModelType.AUDIO: (...),
+}
+
 
 def get_unique_hardware_page_groups() -> List[HardwarePageGroup]:
     """Get unique HardwarePageGroup instances in consistent order."""
@@ -325,6 +340,14 @@ def get_device_status_enum_for_model(
             if dev_spec.device == device:
                 return template.status
     return None
+
+
+def get_best_status_for_model(
+    model_templates: List[ModelSpecTemplate],
+) -> ModelStatusTypes:
+    """Get the best (highest) status across all templates for a model."""
+    statuses = [t.status for t in model_templates]
+    return max(statuses) if statuses else ModelStatusTypes.EXPERIMENTAL
 
 
 def get_model_subdir(model_type: ModelType) -> str:
@@ -640,8 +663,23 @@ def generate_model_type_table(
     lines.append("| " + " | ".join(header_cols) + " |")
     lines.append("| " + " | ".join(["---"] * len(header_cols)) + " |")
 
+    # Get highlight list for this model type (empty tuple if not defined)
+    highlights = MODEL_HIGHLIGHTS.get(model_type, ())
+
+    def sort_key(model_name: str) -> Tuple:
+        model_tmpls = filtered_groups[model_name]
+        best_status = get_best_status_for_model(model_tmpls)
+
+        # Highlighted models come first, in their specified order
+        if model_name in highlights:
+            highlight_order = highlights.index(model_name)
+            return (0, highlight_order, 0, "")  # Highlighted: sort by highlight order
+        else:
+            # Non-highlighted: sort by status (descending), then name (alphabetical)
+            return (1, 0, -best_status.value, model_name.lower())
+
     # Table rows - one per model (not per template)
-    for model_name in sorted(filtered_groups.keys(), key=str.lower):
+    for model_name in sorted(filtered_groups.keys(), key=sort_key):
         model_templates = filtered_groups[model_name]
 
         # Model name links to first page group's combined page
