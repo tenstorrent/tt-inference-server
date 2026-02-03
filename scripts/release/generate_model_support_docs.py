@@ -888,13 +888,15 @@ def generate_directory_readme(templates: List[ModelSpecTemplate]) -> str:
     lines.append("Browse models by type:")
     lines.append("")
 
-    # Get model types that actually have templates
-    model_types_with_templates = set(t.model_type for t in templates if t.model_type)
+    # Get model types in the order they first appear in spec_templates
+    seen_model_types = set()
+    ordered_model_types = []
+    for t in templates:
+        if t.model_type and t.model_type not in seen_model_types:
+            seen_model_types.add(t.model_type)
+            ordered_model_types.append(t.model_type)
 
-    for model_type in ModelType:
-        if model_type not in model_types_with_templates:
-            continue
-
+    for model_type in ordered_model_types:
         subdir = model_type.short_name.lower()
         description = MODEL_TYPE_DESCRIPTIONS.get(model_type, model_type.display_name)
         short_name = model_type.short_name
