@@ -35,7 +35,7 @@ else:
 # The logger in conftest.py is already properly configured
 
 # Now import the actual module we're testing
-from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
 
 
 def make_chunk(task_id: str, is_final: int, text: str):
