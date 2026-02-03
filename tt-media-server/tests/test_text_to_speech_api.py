@@ -212,7 +212,7 @@ class TestRealImplementation:
 
         mock_request = MagicMock()
         mock_format = MagicMock()
-        mock_format.lower.return_value = "audio"
+        mock_format.lower.return_value = "wav"
         mock_request.response_format = mock_format
 
         result = await real_handle_tts_request(mock_request, mock_service)
@@ -317,7 +317,7 @@ class TestRealImplementation:
 
         mock_request = MagicMock()
         mock_format = MagicMock()
-        mock_format.lower.return_value = "audio"
+        mock_format.lower.return_value = "wav"
         mock_request.response_format = mock_format
 
         result = await text_to_speech(mock_request, mock_service, "key")
@@ -413,6 +413,6 @@ class TestTTSWorkerFunction:
         with patch(
             "model_services.text_to_speech_service.encode_wav_to"
         ) as mock_encode:
-            out = tts_worker_function(None, minimal_wav_b64, "audio")
+            out = tts_worker_function(None, minimal_wav_b64, "wav")
         mock_encode.assert_not_called()
         assert out == base64.b64decode(minimal_wav_b64)
