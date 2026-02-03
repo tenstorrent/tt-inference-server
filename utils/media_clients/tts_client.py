@@ -4,7 +4,6 @@
 
 
 import asyncio
-import json
 import logging
 import sys
 import time
@@ -17,6 +16,7 @@ from transformers import AutoTokenizer
 
 
 from .base_strategy_interface import BaseMediaStrategy
+from .metrics_utils import MetricsAggregator
 from .test_status import TtsTestStatus
 
 # Add project root to Python path
@@ -138,9 +138,14 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             num_calls = self._get_tts_num_calls(is_eval=False)
 
-            status_list = self._run_tts_benchmark(num_calls, calculate_wer=False)
-
-            self._generate_report(status_list)
+            aggregator = MetricsAggregator()
+            status_list = self._run_tts_benchmark(
+                num_calls, calculate_wer=False, aggregator=aggregator
+            )
+            self._generate_report(
+                status_list,
+                pre_aggregated=aggregator.result(len(status_list)),
+            )
             return status_list
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -191,9 +196,12 @@ class TtsClientStrategy(BaseMediaStrategy):
         return (benchmark_extras, {})
 
     def _run_tts_benchmark(
-        self, num_calls: int, calculate_wer: bool = False
+        self,
+        num_calls: int,
+        calculate_wer: bool = False,
+        aggregator: Optional[MetricsAggregator] = None,
     ) -> list[TtsTestStatus]:
-        """Run TTS benchmark."""
+        """Run TTS benchmark. If aggregator is provided, metrics are updated in this loop."""
         logger.info(f"Running TTS benchmark with {num_calls} calls.")
         status_list = []
 
@@ -221,18 +229,19 @@ class TtsClientStrategy(BaseMediaStrategy):
                 )
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
 
-            status_list.append(
-                TtsTestStatus(
-                    status=status,
-                    elapsed=elapsed,
-                    ttft_ms=ttft_ms,
-                    rtr=rtr,
-                    text=test_text,
-                    audio_duration=audio_duration,
-                    wer=wer,
-                    reference_text=reference_text,
-                )
+            s = TtsTestStatus(
+                status=status,
+                elapsed=elapsed,
+                ttft_ms=ttft_ms,
+                rtr=rtr,
+                text=test_text,
+                audio_duration=audio_duration,
+                wer=wer,
+                reference_text=reference_text,
             )
+            status_list.append(s)
+            if aggregator is not None:
+                aggregator.add(s.get_metrics())
 
         return status_list
 
