@@ -98,22 +98,13 @@ public:
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
+        // Generate tokens as fast as possible - no artificial delay
+        // This simulates a very fast model to measure server overhead
         for (int i = 0; i < request.max_tokens; ++i) {
-            // Calculate exact target time for this token
-            auto target_time = start_time + std::chrono::microseconds(
-                static_cast<int64_t>(i * token_interval_us_)
-            );
-
-            // Busy-wait for precise timing (sleep is too coarse for µs precision)
-            while (std::chrono::high_resolution_clock::now() < target_time) {
-                // Spin - we need microsecond precision
-                // Could use _mm_pause() on x86 for better power efficiency
-            }
-
-            // Create and emit chunk
+            // Create and emit chunk immediately
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
-            chunk.chunk.text = "token_" + std::to_string(i);
+            chunk.chunk.text = "tok";
             chunk.chunk.index = i;
 
             chunk_callback(chunk);
@@ -129,16 +120,17 @@ public:
 
         final_callback(final_result);
 
-        // Log actual performance
+        // Log actual performance with worker ID to show parallel execution
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
             end_time - start_time
         ).count();
 
         double actual_tokens_per_sec = (request.max_tokens * MICROSECONDS_PER_SECOND) / duration_us;
-        TT_LOG_DEBUG << "LLMTestRunner generated " << request.max_tokens
+        TT_LOG_DEBUG << "[" << device_id_ << "] generated " << request.max_tokens
                   << " tokens in " << duration_us << " µs"
-                  << " (" << actual_tokens_per_sec << " tokens/sec)";
+                  << " (" << actual_tokens_per_sec << " tokens/sec)"
+                  << " task=" << request.task_id;
     }
 
 private:

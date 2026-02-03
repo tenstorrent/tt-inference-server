@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <functional>
 #include <future>
+#include <variant>
 #include <vector>
 
 #include "scheduler/thread_safe_queue.hpp"
@@ -19,26 +20,48 @@
 namespace tt::scheduler {
 
 /**
- * Task wrapper containing request and result promise.
+ * Task wrapper containing request and callback.
+ * For streaming: callback is called directly by worker (no result queue).
+ * For non-streaming: result goes through result_queue_.
  */
 struct SchedulerTask {
     domain::CompletionRequest request;
     bool is_streaming;
+    std::string task_id;
 
-    // For non-streaming: single result promise
-    std::shared_ptr<std::promise<domain::CompletionResponse>> result_promise;
-
-    // For streaming: callback for each chunk
+    // For streaming: direct callback (called from worker thread)
     std::function<void(const domain::StreamingChunkResponse&, bool is_final)> stream_callback;
+};
+
+/**
+ * Result item for non-streaming requests only.
+ */
+struct ResultQueueItem {
+    std::string worker_id;
+    std::string task_id;
+
+    // The actual result - either a response or error
+    std::variant<
+        domain::CompletionResponse,          // Non-streaming response
+        std::string                          // Error message
+    > data;
+
+    bool is_error;  // True if this is an error
 };
 
 /**
  * Scheduler manages device workers and request queuing.
  * Similar to the Python Scheduler class.
+ *
+ * Architecture:
+ * - task_queue_: incoming requests go here
+ * - result_queue_: workers put results here (worker_id, task_id, data)
+ * - result_listener thread: reads from result_queue_ and dispatches to registered callbacks
+ * - result_callbacks_: map of task_id -> callback for streaming results
  */
 class Scheduler {
 public:
-    static constexpr int DEFAULT_WORKER_COUNT = 1;
+    static constexpr int DEFAULT_WORKER_COUNT = 10;
     static constexpr size_t DEFAULT_QUEUE_SIZE = 10000;
 
     Scheduler();
@@ -75,6 +98,7 @@ public:
 
     /**
      * Submit a streaming request with a callback for each chunk.
+     * The callback receives (response, is_final).
      */
     void submit_streaming_request(
         domain::CompletionRequest request,
@@ -100,25 +124,47 @@ public:
 
 private:
     /**
-     * Worker thread function.
+     * Worker thread function - processes tasks and puts results in result_queue_.
      */
     void worker_loop(const std::string& worker_id);
 
     /**
-     * Process a single task.
+     * Result listener thread function - reads from result_queue_ and dispatches to promises.
+     * Only handles non-streaming results. Streaming callbacks are called directly by workers.
      */
-    void process_task(SchedulerTask& task, runners::BaseDeviceRunner& runner);
+    void result_listener_loop();
 
     /**
      * Refresh worker_info_cache_ from worker_info_. Call with workers_mutex_ held.
      */
     void refresh_worker_info_cache();
 
+    /**
+     * Process a single task. Streaming calls callback directly, non-streaming uses result_queue_.
+     */
+    void process_task(SchedulerTask& task, runners::BaseDeviceRunner& runner, const std::string& worker_id);
+
+    // Task queue - incoming requests
     ThreadSafeQueue<SchedulerTask> task_queue_;
+
+    // Result queue - only for non-streaming results
+    ThreadSafeQueue<ResultQueueItem> result_queue_;
+
+    // Worker threads
     std::vector<std::thread> worker_threads_;
+
+    // Result listener thread (for non-streaming only)
+    std::thread result_listener_thread_;
+
+    // Runners (one per worker)
     std::unordered_map<std::string, std::unique_ptr<runners::BaseDeviceRunner>> runners_;
 
+    // Runner factory
     std::function<std::unique_ptr<runners::BaseDeviceRunner>(const std::string&)> runner_factory_;
+
+    // Promises for non-streaming results
+    mutable std::mutex promises_mutex_;
+    std::unordered_map<std::string, std::shared_ptr<std::promise<domain::CompletionResponse>>> result_promises_;
 
     std::atomic<bool> is_ready_{false};
     std::atomic<bool> running_{false};

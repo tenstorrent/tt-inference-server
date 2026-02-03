@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #include <json/json.h>
@@ -154,9 +155,10 @@ void LLMController::handle_streaming(
             .count());
     const std::string completion_id = "cmpl-" + request.task_id;
     const std::string model = request.model.value_or("test-model");
+    const std::string task_id = request.task_id;
 
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created](
+        [this, req = std::move(request), completion_id, model, created, task_id](
             drogon::ResponseStreamPtr stream) mutable {
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
@@ -177,9 +179,22 @@ void LLMController::handle_streaming(
             choices.PushBack(choice.Move(), a);
             envelope->AddMember("choices", choices.Move(), a);
 
+            // Buffer for batching tokens - reduces syscalls dramatically
+            auto buffer = std::make_shared<std::string>();
+            buffer->reserve(64 * 1024);  // 64KB buffer
+            auto buffer_mutex = std::make_shared<std::mutex>();
+            static constexpr size_t FLUSH_THRESHOLD = 32 * 1024;  // Flush at 32KB
+
+            // Timing stats
+            auto flush_count = std::make_shared<std::atomic<int>>(0);
+            auto total_flush_time_us = std::make_shared<std::atomic<long long>>(0);
+            auto total_bytes_sent = std::make_shared<std::atomic<long long>>(0);
+
             service_->process_streaming_request(
                 std::move(req),
-                [stream_ptr, done, envelope](const domain::StreamingChunkResponse& chunk) {
+                // Chunk callback - serialize with RapidJSON, buffer and flush when large enough
+                [stream_ptr, done, envelope, buffer, buffer_mutex, flush_count, total_flush_time_us, total_bytes_sent](
+                    const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
                         rapidjson::Value& choice = (*envelope)["choices"][0];
                         rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
@@ -204,13 +219,50 @@ void LLMController::handle_streaming(
                         std::string sse = "data: ";
                         sse.append(buf.GetString(), buf.GetSize());
                         sse.append("\n\n");
-                        (*stream_ptr)->send(sse);
+
+                        std::lock_guard<std::mutex> lock(*buffer_mutex);
+                        buffer->append(sse);
+
+                        if (buffer->size() >= FLUSH_THRESHOLD) {
+                            auto start = std::chrono::high_resolution_clock::now();
+                            size_t bytes = buffer->size();
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
+                            auto end = std::chrono::high_resolution_clock::now();
+                            auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+                            flush_count->fetch_add(1);
+                            total_flush_time_us->fetch_add(duration_us);
+                            total_bytes_sent->fetch_add(bytes);
+                        }
                     }
                 },
-                [stream_ptr, done]() {
+                // Done callback - flush remaining and close
+                [stream_ptr, done, buffer, buffer_mutex, flush_count, total_flush_time_us, total_bytes_sent, task_id]() {
                     if (!done->exchange(true) && *stream_ptr) {
+                        std::lock_guard<std::mutex> lock(*buffer_mutex);
+                        if (!buffer->empty()) {
+                            auto start = std::chrono::high_resolution_clock::now();
+                            size_t bytes = buffer->size();
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
+                            auto end = std::chrono::high_resolution_clock::now();
+                            auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+                            flush_count->fetch_add(1);
+                            total_flush_time_us->fetch_add(duration_us);
+                            total_bytes_sent->fetch_add(bytes);
+                        }
                         (*stream_ptr)->send("data: [DONE]\n\n");
                         (*stream_ptr)->close();
+
+                        int flushes = flush_count->load();
+                        long long total_us = total_flush_time_us->load();
+                        long long bytes = total_bytes_sent->load();
+                        std::cout << "[FLUSH] task=" << task_id
+                                  << " flushes=" << flushes
+                                  << " total_time=" << total_us << "µs"
+                                  << " bytes=" << bytes
+                                  << " avg_flush=" << (flushes > 0 ? total_us / flushes : 0) << "µs"
+                                  << std::endl;
                     }
                 });
         });

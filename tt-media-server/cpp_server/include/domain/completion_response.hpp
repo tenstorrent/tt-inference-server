@@ -137,6 +137,7 @@ struct StreamingChunkResponse {
     int64_t created;
     std::string model;
     std::vector<CompletionChoice> choices;
+    std::optional<std::string> error;  // Error message if any
 
     Json::Value toJson() const {
         Json::Value json;
@@ -151,6 +152,10 @@ struct StreamingChunkResponse {
         }
         json["choices"] = choicesArray;
 
+        if (error.has_value()) {
+            json["error"] = error.value();
+        }
+
         return json;
     }
 
@@ -160,8 +165,40 @@ struct StreamingChunkResponse {
         return Json::writeString(writer, toJson());
     }
 
+    // Fast SSE serialization - avoids Json::Value allocation overhead
     std::string toSSE() const {
-        return "data: " + toJsonString() + "\n\n";
+        std::string result;
+        result.reserve(256);  // Pre-allocate typical size
+
+        result.append("data: {\"id\":\"");
+        result.append(id);
+        result.append("\",\"object\":\"");
+        result.append(object);
+        result.append("\",\"created\":");
+        result.append(std::to_string(created));
+        result.append(",\"model\":\"");
+        result.append(model);
+        result.append("\",\"choices\":[");
+
+        for (size_t i = 0; i < choices.size(); ++i) {
+            if (i > 0) result.append(",");
+            result.append("{\"text\":\"");
+            result.append(choices[i].text);
+            result.append("\",\"index\":");
+            result.append(std::to_string(choices[i].index));
+            result.append(",\"logprobs\":null,\"finish_reason\":");
+            if (choices[i].finish_reason.has_value()) {
+                result.append("\"");
+                result.append(choices[i].finish_reason.value());
+                result.append("\"");
+            } else {
+                result.append("null");
+            }
+            result.append("}");
+        }
+
+        result.append("]}\n\n");
+        return result;
     }
 };
 

@@ -6,7 +6,7 @@
 #include <memory>
 #include <functional>
 
-#include "scheduler/scheduler.hpp"
+#include "scheduler/multiprocess_scheduler.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 
@@ -44,7 +44,7 @@ public:
         size_t queue_size;
         size_t max_queue_size;
         std::string device;
-        std::vector<scheduler::Scheduler::WorkerInfo> worker_info;
+        std::vector<scheduler::MultiprocessScheduler::WorkerInfo> worker_info;
     };
     SystemStatus get_system_status() const;
 
@@ -82,7 +82,7 @@ protected:
         return response;
     }
 
-    std::shared_ptr<scheduler::Scheduler> scheduler_;
+    std::shared_ptr<scheduler::MultiprocessScheduler> scheduler_;
     size_t max_queue_size_ = 10000;
     std::string device_ = "cpu";
 };
