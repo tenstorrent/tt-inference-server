@@ -16,10 +16,14 @@ from device_workers.device_worker_dynamic_batch import (
 )
 from fastapi import HTTPException
 from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.request_coalescer import RequestCoalescer
 from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+
+# Threshold for enabling request coalescing (helps when many workers compete)
+COALESCER_WORKER_THRESHOLD = 4
 
 
 class Scheduler:
@@ -32,8 +36,25 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = self._get_queue(name="task_queue", create=True, size=10000)
+        self._raw_task_queue = self._get_queue(name="task_queue", create=True, size=10000)
         self.warmup_signals_queue = Queue(worker_count)
+
+        # Use coalescer when many workers compete for the queue
+        # This batches put() calls to reduce lock contention with get_many()
+        if worker_count >= COALESCER_WORKER_THRESHOLD:
+            self.logger.info(
+                f"Enabling request coalescer for {worker_count} workers "
+                f"(threshold={COALESCER_WORKER_THRESHOLD})"
+            )
+            self._coalescer = RequestCoalescer(
+                self._raw_task_queue,
+                max_batch_size=self.settings.max_batch_size * 4,  # 4x batch size
+                max_delay_ms=5.0,  # 5ms max wait
+            )
+            self.task_queue = self._coalescer
+        else:
+            self._coalescer = None
+            self.task_queue = self._raw_task_queue
 
         # Create one result queue per worker
         self.result_queues_by_worker = {}
@@ -161,13 +182,17 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
+        # Workers always read from raw queue (not coalescer)
+        # Coalescer is only for batching put() calls
+        worker_task_queue = self._raw_task_queue
+
         p = Process(
             target=device_worker_dynamic_batch
             if self.settings.use_dynamic_batcher
             else device_worker,
             args=(
                 worker_id,
-                self.task_queue,
+                worker_task_queue,
                 result_queue,
                 self.warmup_signals_queue,
                 self.error_queue,
@@ -357,9 +382,15 @@ class Scheduler:
 
             self.is_ready = False
 
+            # Flush coalescer before shutdown
+            if self._coalescer is not None:
+                self._coalescer.flush(timeout=2.0)
+                self.logger.info(f"Coalescer stats: {self._coalescer.get_stats()}")
+
+            # Send shutdown signals directly to raw queue (bypass coalescer)
             for _ in self.worker_info:
                 try:
-                    self.task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
+                    self._raw_task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
                 except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 
@@ -391,9 +422,13 @@ class Scheduler:
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
-            # Close all worker queues
+            # Shutdown coalescer
+            if self._coalescer is not None:
+                self._coalescer.shutdown()
+
+            # Close all worker queues (use raw queue, not coalescer)
             self._close_queues(
-                [self.task_queue, self.warmup_signals_queue, self.error_queue]
+                [self._raw_task_queue, self.warmup_signals_queue, self.error_queue]
                 + list(self.result_queues_by_worker.values())
             )
 
