@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
+from config.constants import AUDIO_RESPONSE_FORMATS
 from domain.text_to_speech_request import TextToSpeechRequest
 from fastapi import APIRouter, Depends, HTTPException, Response, Security
 from model_services.base_service import BaseService
@@ -11,10 +12,7 @@ from security.api_key_checker import get_api_key
 
 router = APIRouter()
 
-
-TTS_BINARY_FORMATS = ("audio", "wav", "mp3", "ogg")
 TTS_MEDIA_TYPES = {
-    "audio": "audio/wav",
     "wav": "audio/wav",
     "mp3": "audio/mpeg",
     "ogg": "audio/ogg",
@@ -29,16 +27,22 @@ async def handle_tts_request(tts_request, service):
     try:
         result = await service.process_request(tts_request)
         fmt = tts_request.response_format.lower()
-        if fmt in TTS_BINARY_FORMATS:
+        if fmt in AUDIO_RESPONSE_FORMATS:
             content = getattr(result, "output_bytes", None)
             if not content:
                 raise HTTPException(
                     status_code=500,
                     detail="Binary audio not available in response",
                 )
+            media_type = TTS_MEDIA_TYPES.get(result.format, "audio/wav")
+            suggested_name = f"speech.{result.format}"
+            headers = {
+                "Content-Disposition": f"attachment; filename={suggested_name}"
+            }
             return Response(
                 content=content,
-                media_type=TTS_MEDIA_TYPES.get(fmt, "audio/wav"),
+                media_type=media_type,
+                headers=headers,
             )
         return get_dict_response(result)
     except HTTPException:
@@ -57,14 +61,14 @@ async def text_to_speech(
     Convert text to speech using the provided request.
 
     response_format controls the response type:
-        - "audio" or "wav": binary WAV (Content-Type: audio/wav).
+        - "wav": binary WAV (Content-Type: audio/wav).
         - "mp3": binary MP3 (Content-Type: audio/mpeg); requires ffmpeg on the server.
         - "ogg": binary OGG (Content-Type: audio/ogg); requires ffmpeg on the server.
         - "json" or "verbose_json": JSON body with base64-encoded audio and metadata.
 
     Returns:
-        FastAPI Response: either binary audio bytes (for audio/wav/mp3/ogg) or
-        JSON with keys such as audio, duration, sample_rate, format (for json/verbose_json).
+        FastAPI Response: either binary audio bytes (for wav/mp3/ogg) or
+        JSON with keys such as audio, duration, sample_rate, format (for json/verbose_json). Default WAV.
 
     Raises:
         HTTPException: If text-to-speech fails or binary format requested but
