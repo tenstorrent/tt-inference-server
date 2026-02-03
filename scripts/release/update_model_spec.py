@@ -487,11 +487,12 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     from scripts.release.generate_model_support_docs import (
         generate_models_by_hardware_page,
         generate_model_type_page,
-        generate_model_page,
+        generate_model_device_page,
         group_templates_by_model,
         get_model_type_for_templates,
         get_model_subdir,
-        sanitize_filename,
+        get_model_device_filename,
+        get_all_devices_for_model,
         write_file,
     )
     from workflows.workflow_types import ModelType
@@ -529,15 +530,21 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
         page_content = generate_model_type_page(templates, model_type)
         write_file(output_path / subdir / "README.md", page_content)
 
-    # Group templates by model name and generate consolidated pages in subdirectories
+    # Group templates by model name and generate per-device pages in subdirectories
     model_groups = group_templates_by_model(templates)
 
     for model_name, model_templates in model_groups.items():
         model_type = get_model_type_for_templates(model_templates)
         subdir = get_model_subdir(model_type)
-        filename = f"{sanitize_filename(model_name)}.md"
-        page_content = generate_model_page(model_name, model_templates)
-        write_file(output_path / subdir / filename, page_content)
+
+        # Get all devices for this model and generate a page for each
+        all_devices = get_all_devices_for_model(model_templates)
+        for device in all_devices:
+            filename = get_model_device_filename(model_name, device)
+            page_content = generate_model_device_page(
+                model_name, model_templates, device
+            )
+            write_file(output_path / subdir / filename, page_content)
 
     print("Documentation generation complete!")
 

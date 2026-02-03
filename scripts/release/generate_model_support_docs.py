@@ -7,10 +7,12 @@
 Generate Model Support documentation from MODEL_SPECS.
 
 This script generates a documentation system for model support including:
-- Directory README with links to model type tables and hardware tables
 - Model type table pages (llm/README.md, vlm/README.md, etc.)
 - Models by hardware page (models_by_hardware.md)
-- Individual model pages with device-specific sections
+- Individual model+device pages (e.g., Llama-3.1-8B_n150.md, Llama-3.1-8B_n300.md)
+
+Note: Old consolidated model pages (e.g., Llama-3.1-8B.md) should be removed manually
+after running this script, as they are replaced by per-device pages.
 
 Usage:
     python scripts/release/generate_model_support_docs.py
@@ -108,20 +110,6 @@ def generate_section_anchor(section_title: str) -> str:
     return anchor
 
 
-def get_device_section_title(model_name: str, device: DeviceTypes) -> str:
-    """
-    Generate the section title for a device section on a model page.
-    Must match the titles generated in generate_model_page().
-    """
-    product_name = get_device_product_name(device)
-
-    # Match the logic in generate_model_page for disambiguation
-    if device in [DeviceTypes.GALAXY_T3K]:
-        return f"Run {model_name} on {product_name} ({device.name})"
-    else:
-        return f"Run {model_name} on {product_name}"
-
-
 def get_model_display_name(template: ModelSpecTemplate) -> str:
     """Get the display name for a model template."""
     if template.display_name:
@@ -129,10 +117,23 @@ def get_model_display_name(template: ModelSpecTemplate) -> str:
     return model_weights_to_model_name(template.weights[0])
 
 
-def get_model_filename(template: ModelSpecTemplate) -> str:
-    """Get the markdown filename for a model page."""
-    display_name = get_model_display_name(template)
-    return f"{sanitize_filename(display_name)}.md"
+def get_model_device_filename(model_name: str, device: DeviceTypes) -> str:
+    """Get the markdown filename for a model+device page."""
+    return f"{sanitize_filename(model_name)}_{device.name.lower()}.md"
+
+
+def get_first_device_for_model(
+    model_templates: List[ModelSpecTemplate],
+) -> DeviceTypes:
+    """
+    Get the first device from a model's templates' DeviceSpec list.
+    Used for generating model name links in tables.
+    """
+    for template in model_templates:
+        if template.device_model_specs:
+            return template.device_model_specs[0].device
+    # Fallback (should not happen with valid templates)
+    return DeviceTypes.N150
 
 
 def get_devices_for_model_type(
@@ -195,20 +196,17 @@ def get_device_status_link(
 ) -> str:
     """
     Get a markdown link for the status of a model on a specific device.
-    Links to the specific device section on the model page.
+    Links to the model+device page directly.
     Returns "-" if the device is not supported.
     """
     status = get_device_status_for_model(model_templates, device)
     if status == "-":
         return "-"
 
-    # Generate the link to the model page with section anchor
-    # (model pages are in the same directory as the model type README.md)
-    filename = f"{sanitize_filename(model_name)}.md"
-    section_title = get_device_section_title(model_name, device)
-    anchor = generate_section_anchor(section_title)
+    # Generate link to the model+device page (same directory as README.md)
+    filename = get_model_device_filename(model_name, device)
 
-    return f"[{status}]({filename}#{anchor})"
+    return f"[{status}]({filename})"
 
 
 def get_device_product_name(device: DeviceTypes) -> str:
@@ -231,34 +229,13 @@ def get_model_type_for_templates(templates: List[ModelSpecTemplate]) -> ModelTyp
     return ModelType.LLM  # Default fallback
 
 
-def generate_model_page(model_name: str, templates: List[ModelSpecTemplate]) -> str:
+def get_all_devices_for_model(
+    templates: List[ModelSpecTemplate],
+) -> List[DeviceTypes]:
     """
-    Generate markdown content for an individual model page.
-    Consolidates device specs from multiple templates for the same model.
-    Uses DeviceTypes.to_product_str() for section headers.
+    Get all devices supported by a model from its templates.
+    Returns devices in standard order.
     """
-    lines = []
-
-    # Get model type for back link
-    model_type = get_model_type_for_templates(templates)
-    short_name = model_type.short_name
-
-    # Page title
-    lines.append(f"# {model_name} Tenstorrent Support")
-    lines.append("")
-
-    # Collect all device specs from all templates, avoiding duplicates
-    seen_devices = set()
-    device_sections = []
-
-    for template in templates:
-        for dev_spec in template.device_model_specs:
-            if dev_spec.device in seen_devices:
-                continue
-            seen_devices.add(dev_spec.device)
-            device_sections.append((dev_spec, template))
-
-    # Sort by device order for consistent output
     device_order = [
         DeviceTypes.N150,
         DeviceTypes.N300,
@@ -272,129 +249,167 @@ def generate_model_page(model_name: str, templates: List[ModelSpecTemplate]) -> 
         DeviceTypes.CPU,
         DeviceTypes.GPU,
     ]
-    device_sections.sort(
-        key=lambda x: device_order.index(x[0].device)
-        if x[0].device in device_order
-        else 999
+    seen_devices = set()
+    for template in templates:
+        for dev_spec in template.device_model_specs:
+            seen_devices.add(dev_spec.device)
+
+    # Return in standard order
+    return [d for d in device_order if d in seen_devices]
+
+
+def generate_model_device_page(
+    model_name: str,
+    templates: List[ModelSpecTemplate],
+    target_device: DeviceTypes,
+) -> str:
+    """
+    Generate markdown content for a model+device page.
+    Each page is specific to one device, with links to other supported devices.
+    """
+    lines = []
+
+    # Get model type for back link
+    model_type = get_model_type_for_templates(templates)
+
+    # Find the template and dev_spec for this device
+    target_template = None
+    target_dev_spec = None
+    for template in templates:
+        for dev_spec in template.device_model_specs:
+            if dev_spec.device == target_device:
+                target_template = template
+                target_dev_spec = dev_spec
+                break
+        if target_template:
+            break
+
+    if not target_template or not target_dev_spec:
+        return f"# {model_name} - Device {target_device.name} not found\n"
+
+    product_name = get_device_product_name(target_device)
+
+    # Page title with device
+    if target_device in [DeviceTypes.GALAXY_T3K]:
+        lines.append(
+            f"# {model_name} Tenstorrent Support on {product_name} ({target_device.name})"
+        )
+    else:
+        lines.append(f"# {model_name} Tenstorrent Support on {product_name}")
+    lines.append("")
+
+    # "Also supported on" section - links to other device pages
+    all_devices = get_all_devices_for_model(templates)
+    excluded_devices = [DeviceTypes.CPU, DeviceTypes.GPU]
+    other_devices = [
+        d for d in all_devices if (d != target_device) and (d not in excluded_devices)
+    ]
+
+    if other_devices:
+        lines.append(f"{model_name} is also supported on:")
+        lines.append("")
+        for other_device in other_devices:
+            other_product_name = get_device_product_name(other_device)
+            other_filename = get_model_device_filename(model_name, other_device)
+            if other_device in [DeviceTypes.GALAXY_T3K]:
+                lines.append(
+                    f"- [{other_product_name} ({other_device.name})]({other_filename})"
+                )
+            else:
+                lines.append(f"- [{other_product_name}]({other_filename})")
+        lines.append("")
+
+    # Back link to model type table (README.md in same directory)
+    lines.append(
+        "[Search model by model type](../../../README.md#models-by-model-type)"
     )
+    lines.append("")
 
-    # Generate one section per device
-    for dev_spec, template in device_sections:
-        device = dev_spec.device
-        product_name = get_device_product_name(device)
+    # Quickstart section
+    lines.append(
+        f"## Quickstart - Deploy {model_name} Inference Server on {product_name}"
+    )
+    lines.append("")
 
-        # Add device type suffix for disambiguation when product names are the same
-        # (e.g., GALAXY vs GALAXY_T3K both map to "Tenstorrent Galaxy")
-        if device in [DeviceTypes.GALAXY_T3K]:
-            section_title = f"## Run {model_name} on {product_name} ({device.name})"
-        else:
-            section_title = f"## Run {model_name} on {product_name}"
+    # Prerequisites link
+    lines.append(
+        "See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues."
+    )
+    lines.append("")
 
-        lines.append(section_title)
-        lines.append("")
+    # Supported weights (only show if multiple weights are supported)
+    if target_template.weights and len(target_template.weights) > 1:
+        default_weights = target_template.weights[0]
+        # Use model name without HF org prefix for display
+        default_weights_name = default_weights.split("/")[-1]
+        additional_weights = target_template.weights[1:]
 
-        # Back link to model type table (README.md in same directory)
-        lines.append(f"[{short_name} Model Support Table](README.md)")
-        lines.append("")
-
-        # Quickstart section
-        lines.append("### Quickstart - Deploy Inference Server")
-        lines.append("")
-
-        # Prerequisites link
         lines.append(
-            "See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues."
+            f"The default model weights for this implementation is `{default_weights_name}`, the following weights are supported as well:"
+        )
+        lines.append("")
+        for weight in additional_weights:
+            weight_name = weight.split("/")[-1]
+            lines.append(f"- `{weight_name}`")
+        lines.append("")
+        lines.append(
+            f"To use these weights simply swap `{default_weights_name}` for your desired weights in commands below."
         )
         lines.append("")
 
-        # Supported weights (only show if multiple weights are supported)
-        if template.weights and len(template.weights) > 1:
-            default_weights = template.weights[0]
-            # Use model name without HF org prefix for display
-            default_weights_name = default_weights.split("/")[-1]
-            additional_weights = template.weights[1:]
+    # run.py command
+    lines.append("**via run.py command**")
+    lines.append("")
+    device_arg = target_device.name.lower()
+    lines.append("```bash")
+    lines.append(
+        f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
+    )
+    lines.append("```")
+    lines.append("")
 
-            lines.append(
-                f"The default model weights for this implementation is `{default_weights_name}`, the following weights are supported as well:"
-            )
-            lines.append("")
-            for weight in additional_weights:
-                weight_name = weight.split("/")[-1]
-                lines.append(f"- `{weight_name}`")
-            lines.append("")
-            lines.append(
-                f"To use these weights simply swap `{default_weights_name}` for your desired weights in commands below."
-            )
-            lines.append("")
-
-        # Option 1: run.py
-        # lines.append("**Option 1: via run.py command**")
-        lines.append("**via run.py command**")
-        lines.append("")
-        device_arg = device.name.lower()
-        lines.append("```bash")
-        lines.append(
-            f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
+    # Get docker image
+    if target_template.docker_image:
+        docker_image = target_template.docker_image
+    else:
+        docker_image = generate_default_docker_link(
+            VERSION, target_template.tt_metal_commit, target_template.vllm_commit
         )
-        lines.append("```")
-        lines.append("")
 
-        # Get docker image
-        if template.docker_image:
-            docker_image = template.docker_image
-        else:
-            docker_image = generate_default_docker_link(
-                VERSION, template.tt_metal_commit, template.vllm_commit
-            )
+    # Model Parameters table
+    lines.append("## Model Parameters")
+    lines.append("")
+    lines.append("| Parameter | Value |")
+    lines.append("|-----------|-------|")
 
-        # TODO: add docker inferface post: https://github.com/tenstorrent/tt-inference-server/issues/1253
-        # hf_model = template.weights[0] if template.weights else model_name
-        # Option 2: Docker
-        # lines.append("**Option 2: Direct via Docker image**")
-        # lines.append("")
-        # lines.append("```bash")
-        # lines.append("docker run --rm \\")
-        # lines.append("  --device /dev/tenstorrent \\")
-        # lines.append("  -e HF_TOKEN=$HF_TOKEN \\")
-        # lines.append(f"  -e HF_MODEL={hf_model} \\")
-        # lines.append(f"  {docker_image}")
-        # lines.append("```")
-        # lines.append("")
+    # Weights with HuggingFace repo links
+    if target_template.weights:
+        weights_links = []
+        for weight in target_template.weights:
+            hf_url = f"https://huggingface.co/{weight}"
+            weights_links.append(f"[{weight}]({hf_url})")
+        lines.append(f"| Weights | {', '.join(weights_links)} |")
 
-        # Model Parameters table
-        lines.append("### Model Parameters")
-        lines.append("")
-        lines.append("| Parameter | Value |")
-        lines.append("|-----------|-------|")
+    # Model status
+    lines.append(f"| Model Status | {target_template.status.display_string} |")
 
-        # Weights with HuggingFace repo links
-        if template.weights:
-            weights_links = []
-            for weight in template.weights:
-                hf_url = f"https://huggingface.co/{weight}"
-                weights_links.append(f"[{weight}]({hf_url})")
-            lines.append(f"| Weights | {', '.join(weights_links)} |")
+    lines.append(f"| Max Batch Size | {target_dev_spec.max_concurrency} |")
+    # Max Context Length is only relevant for LLM and VLM models
+    if model_type in (ModelType.LLM, ModelType.VLM):
+        lines.append(f"| Max Context Length | {target_dev_spec.max_context} |")
 
-        # Model status
-        lines.append(f"| Model Status | {template.status.display_string} |")
+    # Code link
+    code_link = f"{target_template.impl.repo_url}/tree/{target_template.tt_metal_commit}/{target_template.impl.code_path}"
+    lines.append(
+        f"| Implementation Code | [{target_template.impl.impl_name}]({code_link}) |"
+    )
+    lines.append(f"| tt-metal Commit | `{target_template.tt_metal_commit}` |")
 
-        lines.append(f"| Max Batch Size | {dev_spec.max_concurrency} |")
-        # Max Context Length is only relevant for LLM and VLM models
-        if model_type in (ModelType.LLM, ModelType.VLM):
-            lines.append(f"| Max Context Length | {dev_spec.max_context} |")
+    if target_template.vllm_commit:
+        lines.append(f"| vLLM Commit | `{target_template.vllm_commit}` |")
 
-        # Code link
-        code_link = f"{template.impl.repo_url}/tree/{template.tt_metal_commit}/{template.impl.code_path}"
-        lines.append(
-            f"| Implementation Code | [{template.impl.impl_name}]({code_link}) |"
-        )
-        lines.append(f"| tt-metal Commit | `{template.tt_metal_commit}` |")
-
-        if template.vllm_commit:
-            lines.append(f"| vLLM Commit | `{template.vllm_commit}` |")
-
-        lines.append(f"| Docker Image | `{docker_image}` |")
-        lines.append("")
+    lines.append(f"| Docker Image | `{docker_image}` |")
+    lines.append("")
 
     return "\n".join(lines)
 
@@ -451,12 +466,14 @@ def generate_model_type_table(
     for model_name in sorted(filtered_groups.keys(), key=str.lower):
         model_templates = filtered_groups[model_name]
 
-        filename = f"{sanitize_filename(model_name)}.md"
+        # Model name links to first device page from template's DeviceSpec list
+        first_device = get_first_device_for_model(model_templates)
+        filename = get_model_device_filename(model_name, first_device)
 
         # Model name with link (same directory since README.md is in the model type subdir)
         row = [f"[{model_name}]({filename})"]
 
-        # Device status columns - link to specific device section on model page
+        # Device status columns - link to model+device page
         for device in devices:
             status_link = get_device_status_link(model_name, model_templates, device)
             row.append(status_link)
@@ -483,7 +500,9 @@ def generate_model_type_page(
     lines.append("")
 
     # Back link to model types index in root README (from docs/model_support/{type}/README.md)
-    lines.append("[Search model by model type](../../../README.md#models-by-model-type)")
+    lines.append(
+        "[Search model by model type](../../../README.md#models-by-model-type)"
+    )
     lines.append("")
 
     # Get devices that have models of this type
@@ -608,11 +627,9 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         for model_name, status, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
-            filename = f"{sanitize_filename(model_name)}.md"
-            section_title = get_device_section_title(model_name, device)
-            anchor = generate_section_anchor(section_title)
+            filename = get_model_device_filename(model_name, device)
 
-            model_link = f"[{model_name}]({subdir}/{filename}#{anchor})"
+            model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name
 
             lines.append(f"| {model_link} | {type_short} | {status} |")
@@ -752,7 +769,7 @@ def main():
         page_content = generate_model_type_page(templates, model_type)
         write_file(output_dir / subdir / "README.md", page_content, args.dry_run)
 
-    # Group templates by model name and generate consolidated pages in subdirectories
+    # Group templates by model name and generate per-device pages in subdirectories
     model_groups = group_templates_by_model(templates)
 
     for model_name, model_templates in model_groups.items():
@@ -760,14 +777,25 @@ def main():
         model_type = get_model_type_for_templates(model_templates)
         subdir = get_model_subdir(model_type)
 
-        filename = f"{sanitize_filename(model_name)}.md"
-        page_content = generate_model_page(model_name, model_templates)
-        write_file(output_dir / subdir / filename, page_content, args.dry_run)
+        # Get all devices for this model and generate a page for each
+        all_devices = get_all_devices_for_model(model_templates)
+        for device in all_devices:
+            filename = get_model_device_filename(model_name, device)
+            page_content = generate_model_device_page(
+                model_name, model_templates, device
+            )
+            write_file(output_dir / subdir / filename, page_content, args.dry_run)
 
     print()
     print("Documentation generation complete!")
     if not args.dry_run:
         print(f"Output directory: {output_dir}")
+        print()
+        print(
+            "NOTE: Old consolidated model pages (e.g., Llama-3.1-8B.md) should be removed"
+        )
+        print("      manually, as they have been replaced by per-device pages")
+        print("      (e.g., Llama-3.1-8B_n150.md, Llama-3.1-8B_n300.md, etc.)")
 
 
 if __name__ == "__main__":
