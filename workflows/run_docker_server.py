@@ -19,7 +19,13 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
-from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelSource, ModelType, WorkflowType
+from workflows.workflow_types import (
+    DeviceTypes,
+    InferenceEngine,
+    ModelSource,
+    ModelType,
+    WorkflowType,
+)
 
 logger = logging.getLogger("run_log")
 
