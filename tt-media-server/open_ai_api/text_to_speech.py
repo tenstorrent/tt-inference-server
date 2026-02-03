@@ -36,9 +36,7 @@ async def handle_tts_request(tts_request, service):
                 )
             media_type = TTS_MEDIA_TYPES.get(result.format, "audio/wav")
             suggested_name = f"speech.{result.format}"
-            headers = {
-                "Content-Disposition": f"attachment; filename={suggested_name}"
-            }
+            headers = {"Content-Disposition": f"attachment; filename={suggested_name}"}
             return Response(
                 content=content,
                 media_type=media_type,

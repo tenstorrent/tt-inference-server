@@ -241,6 +241,7 @@ class TestRealImplementation:
         mock_service = MagicMock()
         mock_response = MagicMock()
         mock_response.output_bytes = b"fake_mp3_data"
+        mock_response.format = "mp3"
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
@@ -259,6 +260,7 @@ class TestRealImplementation:
         mock_service = MagicMock()
         mock_response = MagicMock()
         mock_response.output_bytes = b"fake_ogg_data"
+        mock_response.format = "ogg"
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()

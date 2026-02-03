@@ -18,8 +18,12 @@ FFMPEG_REQUIRED_MSG = (
     "response_format={fmt} requires ffmpeg but ffmpeg is not in PATH. "
     "Install ffmpeg (e.g. apt install ffmpeg) for MP3/OGG output. Falling back to WAV."
 )
-POST_PROCESS_FAILED_MSG = "TTS post-process failed for response_format={fmt}: {e}. Falling back to WAV."
-WORKER_NONE_MSG = "TTS worker returned None for response_format={fmt}. Falling back to WAV."
+POST_PROCESS_FAILED_MSG = (
+    "TTS post-process failed for response_format={fmt}: {e}. Falling back to WAV."
+)
+WORKER_NONE_MSG = (
+    "TTS worker returned None for response_format={fmt}. Falling back to WAV."
+)
 
 
 def tts_worker_function(
