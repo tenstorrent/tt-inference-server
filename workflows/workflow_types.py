@@ -275,6 +275,18 @@ class InferenceEngine(Enum):
     MEDIA = "media"
     FORGE = "forge"
 
+    @property
+    def display_name(self) -> str:
+        return {
+            InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
+            InferenceEngine.MEDIA: "tt-media-server",
+            InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+        }[self]
+
+    @classmethod
+    def from_string(cls, name: str):
+        return cls[name.upper()]
+
 
 class ModelSource(Enum):
     HUGGINGFACE = "huggingface"

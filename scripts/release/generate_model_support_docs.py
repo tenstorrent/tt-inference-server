@@ -46,9 +46,9 @@ from workflows.workflow_types import (
 
 # Mapping inference engine to documentation link (reused from update_model_spec.py)
 INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "../../vllm-tt-metal-llama3/README.md",
-    InferenceEngine.MEDIA.value: "../../tt-media-server/README.md",
-    InferenceEngine.FORGE.value: "../../tt-media-server/README.md",
+    InferenceEngine.VLLM.value: "../../../vllm-tt-metal-llama3/README.md",
+    InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
+    InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
 }
 
 # Mapping device type to hardware link text (reused from update_model_spec.py)
@@ -348,6 +348,15 @@ def generate_model_device_page(
     )
     lines.append("")
 
+    # Inference Engine link
+    inference_engine_display_name = InferenceEngine.from_string(
+        target_template.inference_engine
+    ).display_name
+    lines.append(
+        f"This model is supported by [{inference_engine_display_name}]({INFERENCE_ENGINE_README_LINKS[target_template.inference_engine]}) inference engine."
+    )
+    lines.append("")
+
     # Supported weights (only show if multiple weights are supported)
     if target_template.weights and len(target_template.weights) > 1:
         default_weights = target_template.weights[0]
@@ -377,6 +386,9 @@ def generate_model_device_page(
         f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
     )
     lines.append("```")
+    lines.append(
+        "For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide."
+    )
     lines.append("")
 
     # Get docker image
