@@ -66,7 +66,7 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
             logger.info("Adding eval results from eval spec test to benchmark data")
-            benchmark_data["accuracy"] = eval_result.get("accuracy_status", 0)
+            benchmark_data["accuracy_check"] = eval_result.get("accuracy_status", 0)
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
