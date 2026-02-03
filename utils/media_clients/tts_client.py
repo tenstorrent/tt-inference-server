@@ -16,7 +16,12 @@ from transformers import AutoTokenizer
 
 
 from .base_strategy_interface import BaseMediaStrategy
-from .metrics_utils import MetricsAggregator
+from .metrics_utils import (
+    MetricsAggregator,
+    calculate_rtr,
+    calculate_tail_latency,
+    calculate_ttft,
+)
 from .test_status import TtsTestStatus
 
 # Add project root to Python path
@@ -87,11 +92,11 @@ class TtsClientStrategy(BaseMediaStrategy):
         """TTS eval payload: task_name, tolerance, score, rtr, p90/p95, results, configs."""
         if not status_list:
             return {}
-        ttft_value = self._calculate_ttft_value(status_list)
+        ttft_value = calculate_ttft(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value:.2f}ms")
-        rtr_value = self._calculate_rtr_value(status_list)
+        rtr_value = calculate_rtr(status_list)
         logger.info(f"Extracted RTR value: {rtr_value:.2f}")
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
+        p90_ttft, p95_ttft = calculate_tail_latency(status_list)
         logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
         task_name = self.all_params.tasks[0].task_name
@@ -186,8 +191,8 @@ class TtsClientStrategy(BaseMediaStrategy):
         """
         if not status_list:
             return ({}, {})
-        ttft_value = self._calculate_ttft_value(status_list)
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
+        ttft_value = calculate_ttft(status_list)
+        p90_ttft, p95_ttft = calculate_tail_latency(status_list)
         benchmark_extras = {
             "ttft": ttft_value / 1000,
             "ttft_p90": p90_ttft / 1000,
@@ -522,8 +527,6 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         wer_value = sum(valid_wer_values) / len(valid_wer_values)
         return wer_value
-
-    # _calculate_tail_latency -> inherited from BaseMediaStrategy
 
     def _calculate_accuracy_check(
         self, ttft_value: float, rtr_value: float, wer_value: Optional[float] = None

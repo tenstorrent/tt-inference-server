@@ -2,9 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import json
 import logging
-import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
@@ -12,8 +10,11 @@ from typing import Optional
 from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_classes import TestConfig
 
-# Import test framework components
-from .metrics_utils import calculate_rtr, calculate_tail_latency, calculate_ttft
+from .report_utils import (
+    ReportContext,
+    generate_benchmark_report,
+    generate_eval_report,
+)
 from .test_status import BaseTestStatus
 
 # BaseMediaStrategy constants
@@ -28,7 +29,7 @@ class BaseMediaStrategy(ABC):
 
     Subclasses MUST:
     1. Define TASK_TYPE class attribute (e.g., TASK_TYPE = "tts")
-    2. Implement _create_specific_benchmarks_data() method
+    2. Override _get_benchmark_report_extras() if the client uses _generate_report()
     """
 
     # Subclasses should override this with their task type
@@ -132,109 +133,98 @@ class BaseMediaStrategy(ABC):
             logger.error(f"Health check failed: {e}")
             return (False, None)
 
-    def generate_report(
+    def _get_report_context(self) -> ReportContext:
+        """Build ReportContext from strategy (model_spec, device, output_path)."""
+        device_name = (
+            self.device.name if hasattr(self.device, "name") else str(self.device)
+        )
+        return ReportContext(
+            model_name=self.model_spec.model_name,
+            device_name=device_name,
+            output_path=Path(self.output_path),
+            model_id=self.model_spec.model_id,
+            hf_model_repo=getattr(self.model_spec, "hf_model_repo", None),
+        )
+
+    def _generate_report(
         self,
         status_list: list[BaseTestStatus],
-        report_prefix: str = "benchmark",
+        pre_aggregated: Optional[dict] = None,
     ) -> Optional[Path]:
         """
-        Template Method - generates report with common structure.
+        Generate benchmark report: build context, get extras from strategy, call report_utils.
 
-        Subclasses override _create_specific_benchmarks_data() to add their metrics.
-
-        Args:
-            status_list: List of test status objects from benchmark run
-            report_prefix: Prefix for the report filename (e.g., "benchmark", "eval")
+        If pre_aggregated is provided (e.g. from MetricsAggregator.result() during the
+        benchmark loop), aggregation is not run again over status_list (one less pass).
 
         Returns:
-            Path to generated report file, or None if generation failed
+            Path to written report file, or None if status_list is empty and no pre_aggregated.
         """
-        if not status_list:
-            logger.warning("Empty status list, skipping report generation")
-            return None
-
-        logger.info("Generating benchmark report...")
-
-        filename = self._create_report_filename(report_prefix)
-
-        self._ensure_report_directory(filename)
-
-        base_data = self._create_base_report_data()
-
-        benchmarks_data = self._create_specific_benchmarks_data(status_list)
-
-        report_data = {**base_data, "benchmarks": benchmarks_data}
-        self._save_report(report_data, filename)
-
-        logger.info(f"Report generated: {filename}")
-        return filename
-
-    def _create_report_filename(self, prefix: str = "benchmark") -> Path:
-        """Create standardized report filename."""
-        return (
-            Path(self.output_path)
-            / f"{prefix}_{self.model_spec.model_id}_{time.time()}.json"
+        context = self._get_report_context()
+        benchmark_extras, top_level_extras = self._get_benchmark_report_extras(
+            status_list
+        )
+        return generate_benchmark_report(
+            context,
+            status_list,
+            self.TASK_TYPE,
+            extra_benchmarks=benchmark_extras,
+            extra_top_level=top_level_extras,
+            pre_aggregated=pre_aggregated,
         )
 
-    def _ensure_report_directory(self, filepath: Path) -> None:
-        """Ensure parent directory exists."""
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    def _create_base_report_data(self) -> dict:
-        """Create common report metadata."""
-        return {
-            "model": self.model_spec.model_name,
-            "device": self.device.name
-            if hasattr(self.device, "name")
-            else str(self.device),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": self.TASK_TYPE,
-        }
-
-    def _save_report(self, report_data: dict, filename: Path) -> None:
-        """Save report to JSON file."""
-        with open(filename, "w") as f:
-            json.dump(report_data, f, indent=4)
-
-    def _create_specific_benchmarks_data(
+    def _get_benchmark_report_extras(
         self, status_list: list[BaseTestStatus]
+    ) -> tuple[dict, dict]:
+        """
+        Return (benchmark_extras, top_level_extras) for the benchmark report.
+
+        - benchmark_extras: merged into report["benchmarks"] (e.g. ttft_p90, accuracy_check).
+        - top_level_extras: merged at report root (e.g. streaming_enabled, preprocessing_enabled).
+
+        Override in clients that use _generate_report() (e.g. TTS).
+        Default returns ({}, {}).
+        """
+        return ({}, {})
+
+    def _generate_eval_report(
+        self,
+        status_list: Optional[list[BaseTestStatus]] = None,
+        eval_result: Optional[dict] = None,
+        total_time: Optional[float] = None,
+        extra_data_override: Optional[dict] = None,
+    ) -> Path:
+        """
+        Generate eval report via report_utils.
+
+        If extra_data_override is set, use it; else call _create_eval_extra_data().
+        Returns path to written eval JSON file.
+        """
+        context = self._get_report_context()
+        if extra_data_override is not None:
+            extra_data = extra_data_override
+        else:
+            extra_data = self._create_eval_extra_data(
+                status_list=status_list,
+                eval_result=eval_result,
+                total_time=total_time,
+            )
+        return generate_eval_report(context, self.TASK_TYPE, extra_data)
+
+    def _create_eval_extra_data(
+        self,
+        status_list: Optional[list[BaseTestStatus]] = None,
+        eval_result: Optional[dict] = None,
+        total_time: Optional[float] = None,
     ) -> dict:
         """
-        Create benchmark-specific data. Subclasses should override this.
+        Return client-specific eval payload (task_name, tolerance, score, etc.).
 
-        Args:
-            status_list: List of test status objects
+        Override in clients. Merged with base metadata (model, device, timestamp, task_type)
+        by report_utils.generate_eval_report.
 
         Returns:
-            Dict with benchmark metrics specific to this media type
-
-        Example for audio:
-            return {
-                "num_requests": len(status_list),
-                "ttft": self._calculate_ttft(status_list),
-                "rtr": self._calculate_rtr(status_list),
-                "t/s/u": self._calculate_tsu(status_list),
-            }
+            Dict of eval fields; default {}.
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement _create_specific_benchmarks_data()"
-        )
+        return {}
 
-    # =========================================================================
-    # Common Calculation Methods
-    # Delegate to metrics_utils for pure function implementations.
-    # Can be overridden if client needs different calculation.
-    # =========================================================================
-    def _calculate_ttft_value(self, status_list: list[BaseTestStatus]) -> float:
-        """Calculate average TTFT. See metrics_utils.calculate_ttft for details."""
-        return calculate_ttft(status_list)
-
-    def _calculate_rtr_value(self, status_list: list[BaseTestStatus]) -> float:
-        """Calculate average RTR. See metrics_utils.calculate_rtr for details."""
-        return calculate_rtr(status_list)
-
-    def _calculate_tail_latency(
-        self, status_list: list[BaseTestStatus]
-    ) -> tuple[float, float]:
-        """Calculate P90/P95 tail latency. See metrics_utils.calculate_tail_latency for details."""
-        return calculate_tail_latency(status_list)
