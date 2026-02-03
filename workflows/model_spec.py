@@ -1345,6 +1345,40 @@ spec_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
+        tt_metal_commit="7665133",
+        vllm_commit="e25b4d7",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=32 * 8,
+                max_context=128 * 1024,
+                default_impl=False,
+                override_tt_config={
+                    "data_parallel": 8,
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 60000000,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
                 specifier=">=18.12.0",
@@ -1372,40 +1406,6 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
-    ),
-    ModelSpecTemplate(
-        weights=["Qwen/Qwen3-32B"],
-        impl=tt_transformers_impl,
-        tt_metal_commit="7665133",
-        vllm_commit="e25b4d7",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.P150X8,
-                max_concurrency=32 * 8,
-                max_context=128 * 1024,
-                default_impl=False,
-                override_tt_config={
-                    "data_parallel": 8,
-                    "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 60000000,
-                },
-            ),
-        ],
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.12.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.4.1",
-                mode=VersionMode.STRICT,
-            ),
-        ),
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
@@ -1700,10 +1700,12 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
-                max_concurrency=32,
+                max_concurrency=32 * 8,
                 max_context=128 * 1024,
-                default_impl=True,
+                default_impl=False,
                 override_tt_config={
+                    "data_parallel": 8,
+                    "sample_on_device_mode": "decode_only",
                     "trace_region_size": 71045120,
                 },
             ),
@@ -1734,12 +1736,10 @@ spec_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
-                max_concurrency=32 * 8,
+                max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
                 override_tt_config={
-                    "data_parallel": 8,
-                    "sample_on_device_mode": "decode_only",
                     "trace_region_size": 71045120,
                 },
             ),
