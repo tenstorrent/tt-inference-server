@@ -30,7 +30,7 @@ If running on a TT-LoudBox or TT-QuietBox, you will also need to set up `mesh` t
 
 ## tt-inference-server Software Requirements
 
-- **Docker**: Required for running inference server Docker images. Full Podman support is experimental and not guarenteed. It is recommended to 
+- **Docker**: Required for running inference server Docker images. Full Podman support is experimental and not guaranteed. It is recommended to 
 - **Python 3.8+**: this is the python version used to run `run.py`. Other versions will likely work, but 3.8 and 3.10 are tested with.
 
 ## HuggingFace Access

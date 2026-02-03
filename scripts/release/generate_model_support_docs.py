@@ -679,7 +679,7 @@ def generate_model_type_page(
     lines.append(f"# {short_name} Models")
     lines.append("")
     lines.append(
-        f"This page lists all supported {full_name.lower()}s and their device compatibility."
+        f"This page lists all supported {full_name.lower()} models and their device compatibility."
     )
     lines.append("")
 
