@@ -12,10 +12,6 @@ from datetime import datetime
 
 
 from workflows.log_setup import clean_log_file
-from workflows.model_spec import (
-    ModelSource,
-    ModelType,
-)
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -23,7 +19,7 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
-from workflows.workflow_types import DeviceTypes, WorkflowType
+from workflows.workflow_types import DeviceTypes, ModelSource, ModelType, WorkflowType
 
 logger = logging.getLogger("run_log")
 
@@ -121,7 +117,7 @@ def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
     cmd = ["docker", "pull", image_name]
-    pull_return_code = run_command(cmd, logger=logger, check=False)
+    pull_return_code = run_command(cmd, logger=logger)
     if pull_return_code != 0:
         logger.error(
             f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
@@ -154,7 +150,9 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
-    server_prefix = "vllm" if model_spec.model_type == ModelType.LLM else "media"
+    server_prefix = (
+        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
+    )
     docker_log_file_path = (
         docker_log_file_dir
         / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"

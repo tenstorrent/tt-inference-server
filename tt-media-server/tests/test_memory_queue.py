@@ -35,7 +35,20 @@ else:
 # The logger in conftest.py is already properly configured
 
 # Now import the actual module we're testing
-from model_services.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
+
+
+def make_chunk(task_id: str, is_final: int, text: str):
+    """Helper to create test data in the expected format."""
+    chunk_type = "final_result" if is_final else "streaming_chunk"
+    return (
+        "worker_id",
+        task_id,
+        CompletionOutput(
+            type=chunk_type,
+            data=CompletionResult(text=text),
+        ),
+    )
 
 
 def make_chunk(task_id: str, is_final: int, text: str):
@@ -233,13 +246,6 @@ class TestPutOperation:
 
         queue.close()
         queue.unlink()
-
-    def test_put_returns_false_when_queue_full(self, cleanup_queues):
-        """Test that put returns False when queue is full"""
-        # Note: This test is skipped because it requires proper struct.pack_into
-        # operations on shared memory which our mock doesn't fully support.
-        # The actual behavior is tested in integration tests.
-        pytest.skip("Requires full shared memory struct operations")
 
     def test_put_with_is_final_flag(self, cleanup_queues):
         """Test putting item with is_final flag"""

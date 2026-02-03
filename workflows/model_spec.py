@@ -6,7 +6,6 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, make_dataclass
-from enum import Enum, IntEnum, auto
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -16,7 +15,13 @@ from workflows.utils import (
     parse_commits_from_docker_image,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
+from workflows.workflow_types import (
+    DeviceTypes,
+    InferenceEngine,
+    ModelStatusTypes,
+    ModelType,
+    VersionMode,
+)
 
 VERSION = get_version()
 
@@ -178,28 +183,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
 
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
-
-
-class InferenceEngine(Enum):
-    VLLM = "vLLM"
-    MEDIA = "media"
-    FORGE = "forge"
-
-
-class ModelSource(Enum):
-    HUGGINGFACE = "huggingface"
-    LOCAL = "local"
-    NOACTION = "noaction"
-
-
-class ModelType(IntEnum):
-    LLM = auto()
-    CNN = auto()
-    AUDIO = auto()
-    IMAGE = auto()
-    EMBEDDING = auto()
-    TEXT_TO_SPEECH = auto()
-    VIDEO = auto()
 
 
 @dataclass(frozen=True)
@@ -1119,6 +1102,7 @@ spec_templates = [
                 },
             ),
         ],
+        model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
@@ -1198,6 +1182,7 @@ spec_templates = [
                 },
             ),
         ],
+        model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
@@ -1209,6 +1194,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1243,6 +1229,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -1280,6 +1267,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1302,6 +1290,7 @@ spec_templates = [
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1897,6 +1886,7 @@ spec_templates = [
                 default_impl=True,
             ),
         ],
+        model_type=ModelType.VLM,
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
@@ -1920,6 +1910,7 @@ spec_templates = [
                 },
             ),
         ],
+        model_type=ModelType.VLM,
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
@@ -2527,8 +2518,8 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "128",
-                    "VLLM__MAX_MODEL_LENGTH": "128",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
                     "VLLM__MAX_NUM_SEQS": "1",
                 },
@@ -2539,9 +2530,10 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
-                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "8192",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "2",
                 },
             ),
             DeviceModelSpec(
@@ -2550,9 +2542,10 @@ spec_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
-                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "8192",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "2",
                 },
             ),
             DeviceModelSpec(
@@ -2564,6 +2557,7 @@ spec_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                     "VLLM__MAX_MODEL_LENGTH": "1024",
                     "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
                 },
             ),
         ],

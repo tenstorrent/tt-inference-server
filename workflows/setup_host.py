@@ -23,15 +23,12 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import (
-    ModelSource,
-    ModelSpec,
-)
+from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import ModelSource, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -187,12 +184,9 @@ class HostSetupManager:
         self.hf_token = hf_token
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
-        def _stderr(msg: str) -> None:
-            print(msg, file=sys.stderr, flush=True)
-
         if not host_weights_dir or not host_weights_dir.exists():
-            _stderr(
-                f"[setup_host] Weights directory does not exist for {self.model_spec.model_name}."
+            logger.warning(
+                f"Weights directory does not exist for {self.model_spec.model_name}."
             )
             return False
 
@@ -224,13 +218,13 @@ class HostSetupManager:
 
             if has_weights and has_tokenizer and has_params:
                 self.setup_config.model_weights_format = fmt["format_name"]
-                _stderr(f"[setup_host] detected {fmt['format_name']} model format")
-                _stderr(
-                    f"[setup_host] ✅ Setup already completed for model {self.model_spec.model_name}."
+                logger.info(f"Detected {fmt['format_name']} model format")
+                logger.info(
+                    f"✅ Setup already completed for model {self.model_spec.model_name}."
                 )
                 return True
-        _stderr(
-            f"[setup_host] Incomplete model setup for {self.model_spec.model_name}. "
+        logger.warning(
+            f"Incomplete model setup for {self.model_spec.model_name}. "
             f"checked: {host_weights_dir}"
         )
         return False

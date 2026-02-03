@@ -8,6 +8,8 @@ from typing import Any, List, Optional
 from faster_fifo import Queue as FasterFifoQueue
 from model_services.tt_queue_interface import TTQueueInterface
 
+from queue import Empty
+
 
 class TTFasterFifoQueue(TTQueueInterface):
     """
