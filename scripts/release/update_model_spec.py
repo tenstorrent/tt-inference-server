@@ -43,9 +43,8 @@ from workflows.model_spec import (
     ModelSpecTemplate,
     generate_default_docker_link,
     VERSION,
-    InferenceEngine,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelStatusTypes
 
 
 def map_perf_status_to_model_status(perf_status):

@@ -44,6 +44,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
+    EVALS_GPT_OSS = auto()
     SERVER = auto()
     TT_SMI = auto()
     TT_TOPOLOGY = auto()
@@ -268,3 +269,40 @@ class VersionMode(IntEnum):
 
     STRICT = auto()  # Requirement must be met, raises an error otherwise.
     SUGGESTED = auto()  # A warning is issued if the requirement is not met.
+
+
+class InferenceEngine(Enum):
+    VLLM = "vLLM"
+    MEDIA = "media"
+    FORGE = "forge"
+
+
+class ModelSource(Enum):
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    NOACTION = "noaction"
+
+
+class ModelType(IntEnum):
+    LLM = auto()
+    CNN = auto()
+    AUDIO = auto()
+    IMAGE = auto()
+    EMBEDDING = auto()
+    TEXT_TO_SPEECH = auto()
+    VIDEO = auto()
+    VLM = auto()  # Vision-Language Models (text+image-to-text)
+
+    @property
+    def display_name(self) -> str:
+        display_names = {
+            ModelType.LLM: "Large Language Model",
+            ModelType.CNN: "Convolutional Neural Network",
+            ModelType.AUDIO: "Audio",
+            ModelType.IMAGE: "Image",
+            ModelType.EMBEDDING: "Embedding",
+            ModelType.TEXT_TO_SPEECH: "Text-to-Speech",
+            ModelType.VIDEO: "Video",
+            ModelType.VLM: "Vision-Language Model",
+        }
+        return display_names[self]

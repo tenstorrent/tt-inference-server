@@ -30,12 +30,12 @@ from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import InferenceEngine, ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
