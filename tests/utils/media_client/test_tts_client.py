@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from utils.media_clients.metrics_utils import (
+from utils.media_clients.utils.metrics_utils import (
     calculate_rtr,
     calculate_tail_latency,
     calculate_ttft,
@@ -735,10 +735,18 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
             TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
         ]
 
+        def mock_run_tts_benchmark(num_calls, calculate_wer=False, aggregator=None):
+            if aggregator is not None:
+                for s in status_list:
+                    aggregator.add(s.get_metrics())
+            return status_list
+
         with patch.object(
             strategy, "get_health", return_value=(True, "tt-speecht5-tts")
         ):
-            with patch.object(strategy, "_run_tts_benchmark", return_value=status_list):
+            with patch.object(
+                strategy, "_run_tts_benchmark", side_effect=mock_run_tts_benchmark
+            ):
                 result = strategy.run_benchmark()
 
         assert result == status_list  # run_benchmark returns status_list
