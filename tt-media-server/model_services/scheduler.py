@@ -15,9 +15,9 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
-from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
-from model_services.tt_queue import TTQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
+from model_services.queues.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
