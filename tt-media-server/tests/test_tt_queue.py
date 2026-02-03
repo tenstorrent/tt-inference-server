@@ -213,26 +213,6 @@ class TestTTQueueBatchEnabled:
         assert result == "main_item"
 
 
-class TestTTQueuePickling:
-    """Test TTQueue serialization for multiprocessing"""
-
-    @pytest.mark.skip(reason="__getstate__ can only be called during spawning context")
-    def test_getstate_setstate(self):
-        """Test __getstate__ and __setstate__ preserve custom attributes"""
-        queue = TTQueue(max_size=5, batch_enabled=True)
-        queue.put("test")
-        time.sleep(0.05)
-
-        # Simulate pickling
-        state = queue.__getstate__()
-
-        # Create new queue and restore state
-        new_queue = TTQueue()
-        new_queue.__setstate__(state)
-
-        assert new_queue.batch_enabled is True
-
-
 class TestTTQueueEdgeCases:
     """Test edge cases"""
 
