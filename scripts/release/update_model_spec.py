@@ -485,6 +485,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
         output_dir: Output directory for model support docs (default: docs/model_support)
     """
     from scripts.release.generate_model_support_docs import (
+        EXCLUDED_DEVICES,
         generate_models_by_hardware_page,
         generate_model_type_page,
         generate_model_device_page,
@@ -540,6 +541,8 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
         # Get all devices for this model and generate a page for each
         all_devices = get_all_devices_for_model(model_templates)
         for device in all_devices:
+            if device in EXCLUDED_DEVICES:
+                continue
             filename = get_model_device_filename(model_name, device)
             page_content = generate_model_device_page(
                 model_name, model_templates, device

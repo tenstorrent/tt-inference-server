@@ -53,14 +53,15 @@ INFERENCE_ENGINE_README_LINKS = {
 
 # Mapping device type to hardware link text (reused from update_model_spec.py)
 DEVICE_HARDWARE_LINKS = {
-    DeviceTypes.T3K: "[TT-LoudBox](https://tenstorrent.com/hardware/tt-loudbox)",
-    DeviceTypes.N150: "[n150](https://tenstorrent.com/hardware/wormhole)",
-    DeviceTypes.N300: "[n300](https://tenstorrent.com/hardware/wormhole)",
-    DeviceTypes.GALAXY: "[Galaxy](https://tenstorrent.com/hardware/galaxy)",
-    DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
-    DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
-    DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)",
-    DeviceTypes.P150X8: "[BH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox)",
+    DeviceTypes.T3K: "https://tenstorrent.com/hardware/tt-loudbox",
+    DeviceTypes.N150: "https://tenstorrent.com/hardware/wormhole",
+    DeviceTypes.N300: "https://tenstorrent.com/hardware/wormhole",
+    DeviceTypes.GALAXY: "https://tenstorrent.com/hardware/galaxy",
+    DeviceTypes.GALAXY_T3K: "https://tenstorrent.com/hardware/galaxy-t3k",
+    DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
+    DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
+    DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
+    DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
 }
 
 # Model type descriptions for directory page
@@ -81,6 +82,9 @@ SUPPORTED_STATUS_GROUPS = (
     ModelStatusTypes.COMPLETE,
     ModelStatusTypes.FUNCTIONAL,
 )
+
+# Devices to exclude from model+device page generation
+EXCLUDED_DEVICES = (DeviceTypes.CPU, DeviceTypes.GPU)
 
 
 def sanitize_filename(name: str) -> str:
@@ -300,9 +304,8 @@ def generate_model_device_page(
 
     # "Also supported on" section - links to other device pages
     all_devices = get_all_devices_for_model(templates)
-    excluded_devices = [DeviceTypes.CPU, DeviceTypes.GPU]
     other_devices = [
-        d for d in all_devices if (d != target_device) and (d not in excluded_devices)
+        d for d in all_devices if (d != target_device) and (d not in EXCLUDED_DEVICES)
     ]
 
     if other_devices:
@@ -320,8 +323,16 @@ def generate_model_device_page(
         lines.append("")
 
     # Back link to model type table (README.md in same directory)
+    lines.append("#### Back links")
+    lines.append("")
     lines.append(
-        "[Search model by model type](../../../README.md#models-by-model-type)"
+        f"- [{target_device.to_product_str()} details]({DEVICE_HARDWARE_LINKS[target_device]})"
+    )
+    lines.append(
+        f"- [Search other {model_type.short_name.lower()} models](./README.md)"
+    )
+    lines.append(
+        "- [Search other models by model type](../../../README.md#models-by-model-type)"
     )
     lines.append("")
 
@@ -501,7 +512,7 @@ def generate_model_type_page(
 
     # Back link to model types index in root README (from docs/model_support/{type}/README.md)
     lines.append(
-        "[Search model by model type](../../../README.md#models-by-model-type)"
+        "[Search other models by model type](../../../README.md#models-by-model-type)"
     )
     lines.append("")
 
@@ -780,6 +791,8 @@ def main():
         # Get all devices for this model and generate a page for each
         all_devices = get_all_devices_for_model(model_templates)
         for device in all_devices:
+            if device in EXCLUDED_DEVICES:
+                continue
             filename = get_model_device_filename(model_name, device)
             page_content = generate_model_device_page(
                 model_name, model_templates, device
