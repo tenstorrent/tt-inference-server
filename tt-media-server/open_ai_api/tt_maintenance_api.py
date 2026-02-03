@@ -40,13 +40,12 @@ def health(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
     """
     try:
         status = service.check_is_model_ready()
-        if not status.get("model_ready", False):
-            raise HTTPException(status_code=503, detail="Model not ready")
-        return {}  # Match vLLM's empty response on success
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
+
+    if not status.get("model_ready", False):
+        raise HTTPException(status_code=503, detail="Model not ready")
+    return {}
 
 
 @router.post("/tt-deep-reset")
