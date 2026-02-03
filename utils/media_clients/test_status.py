@@ -3,7 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
+
+
+def _metrics_from_attrs(obj: Any, attrs: Sequence[str]) -> Dict[str, float]:
+    """Build metrics dict from object attributes; only non-None numeric values."""
+    return {
+        k: float(getattr(obj, k)) for k in attrs if getattr(obj, k, None) is not None
+    }
 
 
 class BaseTestStatus(ABC):
@@ -12,6 +19,10 @@ class BaseTestStatus(ABC):
     def __init__(self, status: bool, elapsed: float):
         self.status = status
         self.elapsed = elapsed
+
+    def get_metrics(self) -> Dict[str, float]:
+        """Numeric metrics for report aggregation. Override in subclasses to add more."""
+        return {"elapsed": float(self.elapsed)}
 
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:
@@ -129,6 +140,8 @@ class EmbeddingTestStatus(BaseTestStatus):
 class TtsTestStatus(BaseTestStatus):
     """Test status for text-to-speech models."""
 
+    _METRIC_ATTRS = ("elapsed", "ttft_ms", "rtr", "audio_duration", "wer")
+
     def __init__(
         self,
         status: bool,
@@ -147,6 +160,10 @@ class TtsTestStatus(BaseTestStatus):
         self.audio_duration = audio_duration
         self.wer = wer
         self.reference_text = reference_text
+
+    def get_metrics(self) -> Dict[str, float]:
+        """Numeric metrics for report aggregation (elapsed, ttft_ms, rtr, etc.)."""
+        return _metrics_from_attrs(self, self._METRIC_ATTRS)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
