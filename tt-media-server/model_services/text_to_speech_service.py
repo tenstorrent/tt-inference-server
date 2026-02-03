@@ -105,11 +105,9 @@ class TextToSpeechService(BaseService):
             result.format = fmt
             self.logger.debug(f"TTS post-process {fmt}: {len(output_bytes)} bytes")
             return result
-            
+
         if needs_ffmpeg:
-            return await self._warn_and_fallback_to_wav(
-                result, fmt, WORKER_NONE_MSG
-            )
+            return await self._warn_and_fallback_to_wav(result, fmt, WORKER_NONE_MSG)
 
         result.output_bytes = output_bytes
         result.format = fmt
