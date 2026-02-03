@@ -82,6 +82,8 @@ class VideoClientStrategy(BaseMediaStrategy):
         else:
             logger.warning("No eval results from video generation test")
 
+        benchmark_data["fvd"] = None
+        benchmark_data["fvmd"] = None
         try:
             # Run video FVD and FVMD eval
             fvd_and_fvmd_result = self._run_video_fvd_and_fvmd_eval()
@@ -92,8 +94,6 @@ class VideoClientStrategy(BaseMediaStrategy):
                 benchmark_data["fvmd"] = fvd_and_fvmd_result.get("fvmd", 0)
         except Exception as e:
             logger.error(f"Error running video FVD and FVMD eval: {e}")
-            benchmark_data["fvd"] = None
-            benchmark_data["fvmd"] = None
 
         benchmark_data["published_score"] = self.all_params.tasks[
             0
