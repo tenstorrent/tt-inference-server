@@ -643,6 +643,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
+        ("total_token_throughput", "Total Token Throughput (tokens/duration)"),
     ]
 
     display_dict = {}
