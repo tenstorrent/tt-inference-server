@@ -4,7 +4,7 @@ This page lists all supported models organized by hardware type.
 
 [Search model by model type](../../README.md#models-by-model-type)
 
-## WH Galaxy
+## [WH Galaxy](https://tenstorrent.com/hardware/galaxy)
 
 | Status | Type | Model |
 |--------|------|-------|
@@ -31,7 +31,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
-## BH LoudBox
+## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
 | Status | Type | Model |
 |--------|------|-------|
@@ -39,26 +39,26 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x8.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p150x8.md) |
 
-## BH QuietBox
+## [BH QuietBox](https://tenstorrent.com/hardware/tt-quietbox)
 
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
-## p150
+## [p150](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
 |--------|------|-------|
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
 
-## p100
+## [p100](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
 |--------|------|-------|
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
 
-## WH LoudBox/QuietBox
+## [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox)
 
 | Status | Type | Model |
 |--------|------|-------|
@@ -95,7 +95,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-3B-Instruct](vlm/Qwen2.5-VL-3B-Instruct_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_t3k.md) |
 
-## n300
+## [n300](https://tenstorrent.com/hardware/wormhole)
 
 | Status | Type | Model |
 |--------|------|-------|
@@ -124,7 +124,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-3B-Instruct](vlm/Qwen2.5-VL-3B-Instruct_n300.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_n300.md) |
 
-## n150
+## [n150](https://tenstorrent.com/hardware/wormhole)
 
 | Status | Type | Model |
 |--------|------|-------|

@@ -824,9 +824,13 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
         if device not in devices_with_templates:
             continue
 
-        # Section header using unique device display name
+        # Section header using unique device display name with link to hardware page
         display_name = get_device_hardware_page_display_name(device)
-        lines.append(f"## {display_name}")
+        hardware_link = DEVICE_HARDWARE_LINKS.get(device)
+        if hardware_link:
+            lines.append(f"## [{display_name}]({hardware_link})")
+        else:
+            lines.append(f"## {display_name}")
         lines.append("")
 
         # Collect models that support this device
