@@ -8,8 +8,13 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from utils.media_clients.tts_client import DEFAULT_TTS_TEXT, TtsClientStrategy
+from utils.media_clients.metrics_utils import (
+    calculate_rtr,
+    calculate_tail_latency,
+    calculate_ttft,
+)
 from utils.media_clients.test_status import TtsTestStatus
+from utils.media_clients.tts_client import DEFAULT_TTS_TEXT, TtsClientStrategy
 
 
 class MockAsyncResponse:
@@ -194,92 +199,66 @@ class TestTtsClientStrategyComputeWer(unittest.TestCase):
 
 
 class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method."""
-
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
+    """Tests for calculate_ttft (metrics_utils) with TtsTestStatus — used by TTS report."""
 
     def test_calculate_ttft_with_valid_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=200.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = calculate_ttft(status_list)
         assert result == 200.0  # Average: (100 + 200 + 300) / 3
 
     def test_calculate_ttft_empty_list(self):
-        strategy = self._create_strategy()
-        result = strategy._calculate_ttft_value([])
+        result = calculate_ttft([])
         assert result == 0
 
     def test_calculate_ttft_with_none_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
-        result = strategy._calculate_ttft_value(status_list)
-        # Base uses metrics_utils.calculate_ttft with fallback (ttft_ms, ttft, elapsed)
-        # None ttft_ms falls back to elapsed=1.0; average(100, 1.0, 300) ≈ 133.67
+        result = calculate_ttft(status_list)
+        # Fallback (ttft_ms, ttft, elapsed): None ttft_ms → elapsed=1.0; average(100, 1.0, 300)
         assert abs(result - (100 + 1.0 + 300) / 3) < 0.01
 
     def test_calculate_ttft_all_none_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
         ]
-        result = strategy._calculate_ttft_value(status_list)
-        # Base uses metrics_utils.calculate_ttft: when ttft_ms is None, fallback is elapsed
+        result = calculate_ttft(status_list)
         assert result == 1.0
 
 
 class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
-    """Tests for _calculate_rtr_value method."""
-
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
+    """Tests for calculate_rtr (metrics_utils) with TtsTestStatus — used by TTS report."""
 
     def test_calculate_rtr_with_valid_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, rtr=2.0),
             TtsTestStatus(status=True, elapsed=1.0, rtr=4.0),
         ]
-        result = strategy._calculate_rtr_value(status_list)
+        result = calculate_rtr(status_list)
         assert result == 3.0  # Average: (2.0 + 4.0) / 2
 
     def test_calculate_rtr_empty_list(self):
-        strategy = self._create_strategy()
-        result = strategy._calculate_rtr_value([])
+        result = calculate_rtr([])
         assert result == 0
 
     def test_calculate_rtr_with_none_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, rtr=2.0),
             TtsTestStatus(status=True, elapsed=1.0, rtr=None),
         ]
-        result = strategy._calculate_rtr_value(status_list)
+        result = calculate_rtr(status_list)
         assert result == 2.0
 
     def test_calculate_rtr_all_none_values(self):
-        strategy = self._create_strategy()
         status_list = [TtsTestStatus(status=True, elapsed=1.0, rtr=None)]
-        result = strategy._calculate_rtr_value(status_list)
+        result = calculate_rtr(status_list)
         assert result == 0
 
 
@@ -330,18 +309,9 @@ class TestTtsClientStrategyCalculateWerValue(unittest.TestCase):
 
 
 class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
-    """Tests for _calculate_tail_latency method."""
-
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
+    """Tests for calculate_tail_latency (metrics_utils) with TtsTestStatus — used by TTS report."""
 
     def test_calculate_tail_latency_with_valid_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=200.0),
@@ -354,36 +324,28 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=900.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=1000.0),
         ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
-        # P90 should be 9th value (index 8) = 900.0
-        # P95 should be 10th value (index 9) = 1000.0
+        p90, p95 = calculate_tail_latency(status_list)
         assert p90 == 900.0
         assert p95 == 1000.0
 
     def test_calculate_tail_latency_empty_list(self):
-        strategy = self._create_strategy()
-        p90, p95 = strategy._calculate_tail_latency([])
-        assert p90 == 0.0  # Returns 0.0 for empty list
+        p90, p95 = calculate_tail_latency([])
+        assert p90 == 0.0
         assert p95 == 0.0
 
     def test_calculate_tail_latency_with_none_values(self):
-        strategy = self._create_strategy()
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
-        # Only 2 valid values, P90 and P95 should be the same (300.0)
+        p90, p95 = calculate_tail_latency(status_list)
         assert p90 == 300.0
         assert p95 == 300.0
 
     def test_calculate_tail_latency_single_value(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
-        ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
+        status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0)]
+        p90, p95 = calculate_tail_latency(status_list)
         assert p90 == 100.0
         assert p95 == 100.0
 
