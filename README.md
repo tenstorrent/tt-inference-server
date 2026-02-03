@@ -6,9 +6,9 @@
 
 ## Quickstart guide
 
-Please ensure you've met [prerequisites](docs/prerequisites.md), especially if model deployment is not working.
+On first-run please see the [prerequisites](docs/prerequisites.md) guide for general Tenstorrent hardware and software setup.
 
-Select your model and hardware configuration in Model Support pages and tables below to get specific quickstart commands and model implementation details.
+For the specific quickstart guide and details for your model, select your model and hardware configuration in Model Support pages and tables below. Alternatively you can see all models supported for your given Tenstorrent hardware.
 
 <!-- MODEL_SUPPORT_START -->
 ### Models by Model Type
