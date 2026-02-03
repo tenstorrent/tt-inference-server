@@ -456,20 +456,23 @@ def generate_model_page_group_page(
     if first_template.weights and len(first_template.weights) > 1:
         default_weights = first_template.weights[0]
         default_weights_name = default_weights.split("/")[-1]
-        additional_weights = first_template.weights[1:]
 
-        lines.append(
-            f"The default model weights for this implementation is `{default_weights_name}` ([{default_weights}](https://huggingface.co/{default_weights})), the following weights are supported as well:"
-        )
+        lines.append("Supported weights variants for this model implementation are:")
         lines.append("")
-        for weight in additional_weights:
+        for idx, weight in enumerate(first_template.weights):
             weight_name = weight.split("/")[-1]
-            lines.append(
-                f"- `{weight_name}`: [{weight}](https://huggingface.co/{weight})"
-            )
+            if idx == 0:
+                lines.append(
+                    f"- `{weight_name}`: [{weight}](https://huggingface.co/{weight}) **(default)** "
+                )
+            else:
+                lines.append(
+                    f"- `{weight_name}`: [{weight}](https://huggingface.co/{weight})"
+                )
+
         lines.append("")
         lines.append(
-            f"To use these weights simply swap `{default_weights_name}` for your desired weights in commands below."
+            f"To use non-default weights, replace `{default_weights_name}` in commands below."
         )
         lines.append("")
 
@@ -503,7 +506,7 @@ def generate_model_page_group_page(
                 break
 
     if other_page_groups:
-        lines.append(f"`{model_name}` is also supported on:")
+        lines.append(f"`{model_name}` is also supported on hardware:")
         lines.append("")
         for other_group in other_page_groups:
             other_filename = get_model_page_group_filename(model_name, other_group)

@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`QwQ-32B` is also supported on:
+`QwQ-32B` is also supported on hardware:
 
 - [WH Galaxy](QwQ-32B_galaxy.md)
 

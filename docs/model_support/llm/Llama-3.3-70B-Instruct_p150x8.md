@@ -1,12 +1,13 @@
 # Llama-3.3-70B-Instruct Tenstorrent Support on BH LoudBox
 
-The default model weights for this implementation is `Llama-3.3-70B-Instruct` ([meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Llama-3.3-70B-Instruct`: [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) **(default)** 
 - `Llama-3.1-70B`: [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B)
 - `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
 - `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
 
-To use these weights simply swap `Llama-3.3-70B-Instruct` for your desired weights in commands below.
+To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 #### Useful links
 
@@ -14,7 +15,7 @@ To use these weights simply swap `Llama-3.3-70B-Instruct` for your desired weigh
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Llama-3.3-70B-Instruct` is also supported on:
+`Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
 - [BH QuietBox](Llama-3.3-70B-Instruct_p150x4.md)

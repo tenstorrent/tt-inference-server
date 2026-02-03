@@ -6,7 +6,7 @@
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen2.5-VL-3B-Instruct` is also supported on:
+`Qwen2.5-VL-3B-Instruct` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](Qwen2.5-VL-3B-Instruct_t3k.md)
 

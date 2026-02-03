@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen3-8B` is also supported on:
+`Qwen3-8B` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](Qwen3-8B_t3k.md)
 - [N150/N300](Qwen3-8B_n150.md)

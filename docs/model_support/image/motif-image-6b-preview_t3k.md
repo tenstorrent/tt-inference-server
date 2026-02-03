@@ -6,7 +6,7 @@
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`motif-image-6b-preview` is also supported on:
+`motif-image-6b-preview` is also supported on hardware:
 
 - [WH Galaxy](motif-image-6b-preview_galaxy.md)
 

@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Mistral-7B-Instruct-v0.3` is also supported on:
+`Mistral-7B-Instruct-v0.3` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](Mistral-7B-Instruct-v0.3_t3k.md)
 

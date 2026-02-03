@@ -6,7 +6,7 @@
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen2.5-VL-7B-Instruct` is also supported on:
+`Qwen2.5-VL-7B-Instruct` is also supported on hardware:
 
 - [N150/N300](Qwen2.5-VL-7B-Instruct_n150.md)
 

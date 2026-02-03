@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`AFM-4.5B` is also supported on:
+`AFM-4.5B` is also supported on hardware:
 
 - [N150/N300](AFM-4.5B_n150.md)
 

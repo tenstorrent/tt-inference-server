@@ -1,10 +1,11 @@
 # Llama-3.2-3B Tenstorrent Support on WH LoudBox/QuietBox
 
-The default model weights for this implementation is `Llama-3.2-3B` ([meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Llama-3.2-3B`: [meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) **(default)** 
 - `Llama-3.2-3B-Instruct`: [meta-llama/Llama-3.2-3B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 
-To use these weights simply swap `Llama-3.2-3B` for your desired weights in commands below.
+To use non-default weights, replace `Llama-3.2-3B` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `Llama-3.2-3B` for your desired weights in comm
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Llama-3.2-3B` is also supported on:
+`Llama-3.2-3B` is also supported on hardware:
 
 - [N150/N300](Llama-3.2-3B_n150.md)
 

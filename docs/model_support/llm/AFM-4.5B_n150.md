@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`AFM-4.5B` is also supported on:
+`AFM-4.5B` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](AFM-4.5B_t3k.md)
 

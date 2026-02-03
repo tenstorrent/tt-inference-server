@@ -6,7 +6,7 @@
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`stable-diffusion-xl-1.0-inpainting-0.1` is also supported on:
+`stable-diffusion-xl-1.0-inpainting-0.1` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
 - [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)

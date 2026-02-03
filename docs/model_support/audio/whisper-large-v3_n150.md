@@ -1,10 +1,11 @@
 # whisper-large-v3 Tenstorrent Support on N150/N300
 
-The default model weights for this implementation is `whisper-large-v3` ([openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `whisper-large-v3`: [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3) **(default)** 
 - `distil-large-v3`: [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3)
 
-To use these weights simply swap `whisper-large-v3` for your desired weights in commands below.
+To use non-default weights, replace `whisper-large-v3` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `whisper-large-v3` for your desired weights in 
 - [Search other audio models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`whisper-large-v3` is also supported on:
+`whisper-large-v3` is also supported on hardware:
 
 - [WH Galaxy](whisper-large-v3_galaxy.md)
 - [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)

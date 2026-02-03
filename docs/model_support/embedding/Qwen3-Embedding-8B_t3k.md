@@ -6,7 +6,7 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen3-Embedding-8B` is also supported on:
+`Qwen3-Embedding-8B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-Embedding-8B_galaxy.md)
 - [N150/N300](Qwen3-Embedding-8B_n150.md)

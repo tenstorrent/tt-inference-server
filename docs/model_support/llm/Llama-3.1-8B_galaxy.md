@@ -1,10 +1,11 @@
 # Llama-3.1-8B Tenstorrent Support on WH Galaxy
 
-The default model weights for this implementation is `Llama-3.1-8B` ([meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
 - `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
-To use these weights simply swap `Llama-3.1-8B` for your desired weights in commands below.
+To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `Llama-3.1-8B` for your desired weights in comm
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Llama-3.1-8B` is also supported on:
+`Llama-3.1-8B` is also supported on hardware:
 
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH QuietBox](Llama-3.1-8B_p150x4.md)

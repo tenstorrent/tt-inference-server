@@ -1,10 +1,11 @@
 # Qwen-Image Tenstorrent Support on WH Galaxy
 
-The default model weights for this implementation is `Qwen-Image` ([Qwen/Qwen-Image](https://huggingface.co/Qwen/Qwen-Image)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Qwen-Image`: [Qwen/Qwen-Image](https://huggingface.co/Qwen/Qwen-Image) **(default)** 
 - `Qwen-Image-2512`: [Qwen/Qwen-Image-2512](https://huggingface.co/Qwen/Qwen-Image-2512)
 
-To use these weights simply swap `Qwen-Image` for your desired weights in commands below.
+To use non-default weights, replace `Qwen-Image` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `Qwen-Image` for your desired weights in comman
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen-Image` is also supported on:
+`Qwen-Image` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](Qwen-Image_t3k.md)
 

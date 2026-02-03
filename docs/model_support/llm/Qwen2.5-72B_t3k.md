@@ -1,10 +1,11 @@
 # Qwen2.5-72B Tenstorrent Support on WH LoudBox/QuietBox
 
-The default model weights for this implementation is `Qwen2.5-72B` ([Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Qwen2.5-72B`: [Qwen/Qwen2.5-72B](https://huggingface.co/Qwen/Qwen2.5-72B) **(default)** 
 - `Qwen2.5-72B-Instruct`: [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct)
 
-To use these weights simply swap `Qwen2.5-72B` for your desired weights in commands below.
+To use non-default weights, replace `Qwen2.5-72B` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `Qwen2.5-72B` for your desired weights in comma
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen2.5-72B` is also supported on:
+`Qwen2.5-72B` is also supported on hardware:
 
 - [WH Galaxy](Qwen2.5-72B_galaxy.md)
 

@@ -1,10 +1,11 @@
 # gemma-3-4b-it Tenstorrent Support on N150/N300
 
-The default model weights for this implementation is `gemma-3-4b-it` ([google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `gemma-3-4b-it`: [google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it) **(default)** 
 - `medgemma-4b-it`: [google/medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it)
 
-To use these weights simply swap `gemma-3-4b-it` for your desired weights in commands below.
+To use non-default weights, replace `gemma-3-4b-it` in commands below.
 
 #### Useful links
 

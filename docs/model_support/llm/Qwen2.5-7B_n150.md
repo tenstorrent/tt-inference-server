@@ -1,10 +1,11 @@
 # Qwen2.5-7B Tenstorrent Support on N150/N300
 
-The default model weights for this implementation is `Qwen2.5-7B` ([Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Qwen2.5-7B`: [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B) **(default)** 
 - `Qwen2.5-7B-Instruct`: [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)
 
-To use these weights simply swap `Qwen2.5-7B` for your desired weights in commands below.
+To use non-default weights, replace `Qwen2.5-7B` in commands below.
 
 #### Useful links
 

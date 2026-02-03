@@ -6,7 +6,7 @@
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`wan2.2-t2v-a14b-diffusers` is also supported on:
+`wan2.2-t2v-a14b-diffusers` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](wan2.2-t2v-a14b-diffusers_t3k.md)
 

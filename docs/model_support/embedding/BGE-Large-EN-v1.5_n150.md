@@ -6,7 +6,7 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`BGE-Large-EN-v1.5` is also supported on:
+`BGE-Large-EN-v1.5` is also supported on hardware:
 
 - [WH Galaxy](BGE-Large-EN-v1.5_galaxy.md)
 - [WH LoudBox/QuietBox](BGE-Large-EN-v1.5_t3k.md)

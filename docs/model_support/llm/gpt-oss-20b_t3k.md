@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`gpt-oss-20b` is also supported on:
+`gpt-oss-20b` is also supported on hardware:
 
 - [WH Galaxy](gpt-oss-20b_galaxy.md)
 

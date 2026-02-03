@@ -1,10 +1,11 @@
 # gemma-3-27b-it Tenstorrent Support on WH LoudBox/QuietBox
 
-The default model weights for this implementation is `gemma-3-27b-it` ([google/gemma-3-27b-it](https://huggingface.co/google/gemma-3-27b-it)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `gemma-3-27b-it`: [google/gemma-3-27b-it](https://huggingface.co/google/gemma-3-27b-it) **(default)** 
 - `medgemma-27b-it`: [google/medgemma-27b-it](https://huggingface.co/google/medgemma-27b-it)
 
-To use these weights simply swap `gemma-3-27b-it` for your desired weights in commands below.
+To use non-default weights, replace `gemma-3-27b-it` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `gemma-3-27b-it` for your desired weights in co
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`gemma-3-27b-it` is also supported on:
+`gemma-3-27b-it` is also supported on hardware:
 
 - [WH Galaxy](gemma-3-27b-it_galaxy.md)
 

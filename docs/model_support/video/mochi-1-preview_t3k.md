@@ -6,7 +6,7 @@
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`mochi-1-preview` is also supported on:
+`mochi-1-preview` is also supported on hardware:
 
 - [WH Galaxy](mochi-1-preview_galaxy.md)
 

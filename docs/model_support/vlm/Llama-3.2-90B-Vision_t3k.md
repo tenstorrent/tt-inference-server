@@ -1,10 +1,11 @@
 # Llama-3.2-90B-Vision Tenstorrent Support on WH LoudBox/QuietBox
 
-The default model weights for this implementation is `Llama-3.2-90B-Vision` ([meta-llama/Llama-3.2-90B-Vision](https://huggingface.co/meta-llama/Llama-3.2-90B-Vision)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `Llama-3.2-90B-Vision`: [meta-llama/Llama-3.2-90B-Vision](https://huggingface.co/meta-llama/Llama-3.2-90B-Vision) **(default)** 
 - `Llama-3.2-90B-Vision-Instruct`: [meta-llama/Llama-3.2-90B-Vision-Instruct](https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct)
 
-To use these weights simply swap `Llama-3.2-90B-Vision` for your desired weights in commands below.
+To use non-default weights, replace `Llama-3.2-90B-Vision` in commands below.
 
 #### Useful links
 

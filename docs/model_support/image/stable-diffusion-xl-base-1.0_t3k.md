@@ -1,10 +1,11 @@
 # stable-diffusion-xl-base-1.0 Tenstorrent Support on WH LoudBox/QuietBox
 
-The default model weights for this implementation is `stable-diffusion-xl-base-1.0` ([stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)), the following weights are supported as well:
+Supported weights variants for this model implementation are:
 
+- `stable-diffusion-xl-base-1.0`: [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) **(default)** 
 - `stable-diffusion-xl-base-1.0-img-2-img`: [stabilityai/stable-diffusion-xl-base-1.0-img-2-img](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0-img-2-img)
 
-To use these weights simply swap `stable-diffusion-xl-base-1.0` for your desired weights in commands below.
+To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands below.
 
 #### Useful links
 
@@ -12,7 +13,7 @@ To use these weights simply swap `stable-diffusion-xl-base-1.0` for your desired
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`stable-diffusion-xl-base-1.0` is also supported on:
+`stable-diffusion-xl-base-1.0` is also supported on hardware:
 
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
 - [N150/N300](stable-diffusion-xl-base-1.0_n150.md)

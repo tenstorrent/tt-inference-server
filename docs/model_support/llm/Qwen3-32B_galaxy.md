@@ -6,7 +6,7 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen3-32B` is also supported on:
+`Qwen3-32B` is also supported on hardware:
 
 - [BH LoudBox](Qwen3-32B_p150x8.md)
 - [WH LoudBox/QuietBox](Qwen3-32B_t3k.md)
