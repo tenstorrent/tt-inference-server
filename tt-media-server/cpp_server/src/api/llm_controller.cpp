@@ -8,6 +8,14 @@
 #include <iomanip>
 #include <chrono>
 #include <iostream>
+#include <thread>
+
+#include <json/json.h>
+#include <trantor/net/EventLoop.h>
+
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace tt::api {
 
@@ -71,9 +79,9 @@ void LLMController::completions(
         return;
     }
 
-    // Handle streaming or non-streaming
+    // Handle streaming or non-streaming (move request into streaming path to avoid copy)
     if (request.stream) {
-        handle_streaming(request, req, std::move(callback));
+        handle_streaming(std::move(request), req, std::move(callback));
     } else {
         handle_non_streaming(request, std::move(callback));
     }
@@ -83,71 +91,129 @@ void LLMController::handle_non_streaming(
     const domain::CompletionRequest& request,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
-    try {
-        auto future = service_->process_request(request);
-
-        // Wait for result (with timeout)
-        auto status = future.wait_for(std::chrono::seconds(30));
-        if (status == std::future_status::timeout) {
-            Json::Value error;
-            error["error"]["message"] = "Request timeout";
-            error["error"]["type"] = "timeout";
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-            resp->setStatusCode(drogon::k504GatewayTimeout);
-            callback(resp);
-            return;
-        }
-
-        auto response = future.get();
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
-        resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-        callback(resp);
-
-    } catch (const std::exception& e) {
+    auto future = service_->process_request(request);
+    trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+    if (!loop) {
         Json::Value error;
-        error["error"]["message"] = e.what();
+        error["error"]["message"] = "No event loop";
         error["error"]["type"] = "internal_error";
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-        resp->setStatusCode(drogon::k500InternalServerError);
-        callback(resp);
+        callback(drogon::HttpResponse::newHttpJsonResponse(error));
+        return;
     }
+
+    std::thread([future = std::move(future),
+                 callback = std::move(callback),
+                 loop]() mutable {
+        try {
+            auto status = future.wait_for(std::chrono::seconds(30));
+            if (status == std::future_status::timeout) {
+                Json::Value error;
+                error["error"]["message"] = "Request timeout";
+                error["error"]["type"] = "timeout";
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+                resp->setStatusCode(drogon::k504GatewayTimeout);
+                loop->queueInLoop([callback = std::move(callback), resp]() {
+                    callback(resp);
+                });
+                return;
+            }
+
+            domain::CompletionResponse response = future.get();
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
+            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            loop->queueInLoop([callback = std::move(callback), resp]() {
+                callback(resp);
+            });
+        } catch (...) {
+            Json::Value error;
+            try {
+                std::rethrow_exception(std::current_exception());
+            } catch (const std::exception& e) {
+                error["error"]["message"] = e.what();
+            } catch (...) {
+                error["error"]["message"] = "Unknown error";
+            }
+            error["error"]["type"] = "internal_error";
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+            resp->setStatusCode(drogon::k500InternalServerError);
+            loop->queueInLoop([callback = std::move(callback), resp]() {
+                callback(resp);
+            });
+        }
+    }).detach();
 }
 
 void LLMController::handle_streaming(
-    const domain::CompletionRequest& request,
+    domain::CompletionRequest request,
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
-    // Capture request by value since we need it in the async callback
-    auto req_copy = request;
+    const int64_t created = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    const std::string completion_id = "cmpl-" + request.task_id;
+    const std::string model = request.model.value_or("test-model");
 
-    // Create SSE response
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req_copy](drogon::ResponseStreamPtr stream) {
-            // Track completion for "data: [DONE]"
+        [this, req = std::move(request), completion_id, model, created](
+            drogon::ResponseStreamPtr stream) mutable {
             auto done = std::make_shared<std::atomic<bool>>(false);
-            // Wrap stream in shared_ptr for capturing in lambdas
-            auto stream_ptr = std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
+            auto stream_ptr =
+                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
+
+            // Reusable RapidJSON envelope: build once, update only choices[0] per chunk (shared for copyable lambda)
+            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
+            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
+            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
+            envelope->AddMember("object", "text_completion", a);
+            envelope->AddMember("created", static_cast<int64_t>(created), a);
+            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
+            rapidjson::Value choices(rapidjson::kArrayType);
+            rapidjson::Value choice(rapidjson::kObjectType);
+            choice.AddMember("text", rapidjson::Value("", a).Move(), a);
+            choice.AddMember("index", 0, a);
+            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
+            choices.PushBack(choice.Move(), a);
+            envelope->AddMember("choices", choices.Move(), a);
 
             service_->process_streaming_request(
-                req_copy,
-                // Chunk callback
-                [stream_ptr, done](const domain::StreamingChunkResponse& chunk) {
-                    if (!done->load() && *stream_ptr) {
-                        std::string sse = chunk.toSSE();
+                std::move(req),
+                [stream_ptr, done, envelope](const domain::StreamingChunkResponse& chunk) {
+                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        rapidjson::Value& choice = (*envelope)["choices"][0];
+                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
+                        choice["text"].SetString(
+                            chunk.choices[0].text.c_str(),
+                            static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
+                            alloc);
+                        choice["index"].SetInt(chunk.choices[0].index);
+                        if (chunk.choices[0].finish_reason.has_value()) {
+                            choice["finish_reason"].SetString(
+                                chunk.choices[0].finish_reason->c_str(),
+                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
+                                alloc);
+                        } else {
+                            choice["finish_reason"].SetNull();
+                        }
+
+                        static thread_local rapidjson::StringBuffer buf;
+                        buf.Clear();
+                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                        envelope->Accept(writer);
+                        std::string sse = "data: ";
+                        sse.append(buf.GetString(), buf.GetSize());
+                        sse.append("\n\n");
                         (*stream_ptr)->send(sse);
                     }
                 },
-                // Done callback
                 [stream_ptr, done]() {
                     if (!done->exchange(true) && *stream_ptr) {
                         (*stream_ptr)->send("data: [DONE]\n\n");
                         (*stream_ptr)->close();
                     }
-                }
-            );
-        }
-    );
+                });
+        });
 
     resp->setContentTypeCode(drogon::CT_TEXT_PLAIN);
     resp->addHeader("Content-Type", "text/event-stream");

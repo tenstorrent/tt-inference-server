@@ -1,0 +1,5 @@
+# Build output and CMake / FetchContent
+build/
+
+# Runtime logs (Drogon setLogPath)
+logs/

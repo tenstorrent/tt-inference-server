@@ -5,6 +5,7 @@
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
+#include <sys/stat.h>
 
 // Controllers are auto-registered via ADD_METHOD_TO macros
 #include "api/llm_controller.hpp"
@@ -68,6 +69,9 @@ int main(int argc, char* argv[]) {
               << "  Runner: " << runner_name << "\n"
               << "=================================================\n"
               << std::endl;
+
+    // Ensure log directory exists (Drogon requires it)
+    mkdir("./logs", 0755);
 
     // Configure Drogon
     drogon::app()
