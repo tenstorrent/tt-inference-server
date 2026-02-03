@@ -164,20 +164,6 @@ class TestSetupWorkerEnvironment:
 
                         mock_get_telemetry.assert_called_once()
 
-    def test_skips_telemetry_when_disabled(self):
-        """Test that telemetry is not initialized when disabled"""
-        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
-        mock_settings.enable_telemetry = False
-        mock_get_telemetry = Mock()
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "device_workers.worker_utils.get_telemetry_client", mock_get_telemetry
-            ):
-                setup_worker_environment("0")
-
-                mock_get_telemetry.assert_not_called()
-
     def test_calls_galaxy_setup_when_enabled(self):
         """Test that galaxy mesh config is set up when is_galaxy is True"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
@@ -198,20 +184,6 @@ class TestSetupWorkerEnvironment:
                             setup_worker_environment("0")
 
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
-
-    def test_skips_galaxy_setup_when_disabled(self):
-        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
-        """Test that galaxy mesh config is not set up when is_galaxy is False"""
-        mock_settings.is_galaxy = False
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.get_telemetry_client"):
-                with patch(
-                    "device_workers.worker_utils._setup_galaxy_mesh_config"
-                ) as mock_galaxy:
-                    setup_worker_environment("0")
-
-                    mock_galaxy.assert_not_called()
 
     def test_custom_cpu_threads(self):
         """Test custom cpu_threads parameter"""
