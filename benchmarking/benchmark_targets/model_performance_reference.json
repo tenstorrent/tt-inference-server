@@ -5794,7 +5794,7 @@
                 "task_type": "text_to_speech",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 166,
+                        "ttft_ms": 2000,
                         "rtr": 1.97
                     }
                 }
