@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import math
 import sys
 import time
 from pathlib import Path
@@ -102,6 +103,8 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
         task_name = self.all_params.tasks[0].task_name
+        performance_check = self._calculate_performance_check(ttft_value, rtr_value)
+        accuracy_check = self._calculate_accuracy_check()
         return {
             "task_type": "text_to_speech",
             "task_name": task_name,
@@ -112,6 +115,8 @@ class TtsClientStrategy(BaseMediaStrategy):
             "rtr": rtr_value,
             "p90_ttft": p90_ttft,
             "p95_ttft": p95_ttft,
+            "performance_check": performance_check,
+            "accuracy_check": accuracy_check,
             "results": {
                 task_name: {
                     "score": ttft_value,
@@ -239,8 +244,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 rtr=rtr,
                 text=test_text,
                 audio_duration=audio_duration,
-                wer=wer,
-                reference_text=reference_text,
+                reference_text=test_text,
             )
             status_list.append(s)
             if aggregator is not None:
