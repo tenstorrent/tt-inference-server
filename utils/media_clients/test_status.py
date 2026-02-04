@@ -149,7 +149,6 @@ class TtsTestStatus(BaseTestStatus):
         rtr: Optional[float] = None,
         text: Optional[str] = None,
         audio_duration: Optional[float] = None,
-        wer: Optional[float] = None,
         reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
@@ -157,7 +156,6 @@ class TtsTestStatus(BaseTestStatus):
         self.rtr = rtr
         self.text = text
         self.audio_duration = audio_duration
-        self.wer = wer
         self.reference_text = reference_text
 
     def to_dict(self) -> Dict[str, Any]:
@@ -168,7 +166,6 @@ class TtsTestStatus(BaseTestStatus):
             "rtr": self.rtr,
             "text": self.text,
             "audio_duration": self.audio_duration,
-            "wer": self.wer,
             "reference_text": self.reference_text,
         }
 
