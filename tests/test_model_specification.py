@@ -12,13 +12,12 @@ from workflows.model_spec import (
     VERSION,
     DeviceModelSpec,
     ImplSpec,
-    InferenceEngine,
     ModelSpec,
     ModelSpecTemplate,
     get_model_spec_map,
     spec_templates,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelStatusTypes
 
 
 @pytest.fixture

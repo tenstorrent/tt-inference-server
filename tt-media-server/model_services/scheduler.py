@@ -15,9 +15,9 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
-from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
-from model_services.tt_queue import TTQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
+from model_services.queues.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
@@ -32,10 +32,12 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = self._get_queue(name="task_queue", create=True, size=10000)
+        # Task queue must use a standard queue that can serialize arbitrary objects
+        # SharedMemoryChunkQueue is only for result streaming
+        self.task_queue = self._get_task_queue(size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
-        # Create one result queue per worker
+        # Create one result queue per worker (can use SharedMemoryChunkQueue)
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
@@ -49,7 +51,16 @@ class Scheduler:
 
         self.error_queue = Queue()
 
+    def _get_task_queue(self, size: int):
+        """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
+        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
+            return TTFasterFifoQueue(size)
+        else:
+            # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
+            return TTQueue(size)
+
     def _get_queue(self, name: str, create: bool, size: int):
+        """Get a queue for result/chunk streaming."""
         if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
             return TTFasterFifoQueue(size)
         elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:
@@ -140,8 +151,11 @@ class Scheduler:
 
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self, worker_id=None):
-        """Start a single worker process"""
+    def _start_worker(self, worker_id=None, queue_index=None):
+        """Start a single worker process.
+        When restarting, pass queue_index from the worker's existing info so the
+        correct result queue is used (worker_info is not reduced on restart).
+        """
         if worker_id is None:
             worker_id = (
                 self.workers_to_open.pop(0)
@@ -152,8 +166,11 @@ class Scheduler:
 
         self.logger.info(f"Starting worker {worker_id}")
 
-        # Get the queue index for this worker
-        worker_index = len(self.worker_info)
+        # Use existing queue index when restarting; otherwise assign by order
+        if queue_index is not None:
+            worker_index = queue_index
+        else:
+            worker_index = len(self.worker_info)
 
         result_queue = None
         if self.settings.use_queue_per_worker:
@@ -215,8 +232,11 @@ class Scheduler:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
                 self.logger.info(f"Old worker {worker_id} process does not exist")
 
+        # Use same queue index so worker reuses its result queue
+        existing_queue_index = old_info.get("queue_index")
+
         # Start new worker
-        self._start_worker(worker_id)
+        self._start_worker(worker_id, queue_index=existing_queue_index)
         self.worker_info[worker_id]["restart_count"] = restart_count
         # pass the error count from old worker -1 to give it a chance to recover
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
@@ -474,19 +494,28 @@ class Scheduler:
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
 
-                # Restart dead workers
+                # Restart dead workers (one failure must not block restarting others)
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get("restart_count", 0)
 
                     if restart_count < self.settings.max_worker_restart_count:
-                        self.restart_worker(worker_id)
+                        try:
+                            self.restart_worker(worker_id)
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to restart worker {worker_id}: {e}"
+                            )
+                            # Bump restart_count so we don't infinite-loop on this worker
+                            self.worker_info[worker_id]["restart_count"] = (
+                                self.worker_info[worker_id].get("restart_count", 0) + 1
+                            )
                     else:
                         self.logger.error(
                             f"Worker {worker_id} has died too many times ({restart_count}), restart did not help"
                         )
                         if self.settings.allow_deep_reset:
                             self.logger.info("Trying deep restart of all workers")
-                            self.deep_restart_workers()
+                            await self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
 
