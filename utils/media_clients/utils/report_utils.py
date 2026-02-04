@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """
 Report generation for media clients.
 
-Flow: strategy calls BaseMediaStrategy._generate_report(status_list);
-base builds ReportContext, gets extras from strategy hooks, uses ReportGenerator.
+Flow: strategy builds ReportContext.from_strategy(self), then calls
+ReportGenerator.generate_benchmark_report(...) or generate_eval_report(...)
+with context and client-specific extra_benchmarks/extra_data.
 Status objects must implement get_metrics() for aggregation (BaseTestStatus provides default).
 """
 
@@ -36,6 +37,27 @@ class ReportContext:
     output_path: Path
     model_id: str
     hf_model_repo: Optional[str] = None
+
+    @classmethod
+    def from_strategy(cls, strategy: Any) -> "ReportContext":
+        """Build context from a BaseMediaStrategy instance."""
+        device_name = (
+            strategy.device.name
+            if hasattr(strategy.device, "name")
+            else str(strategy.device)
+        )
+        output_path = (
+            strategy.output_path
+            if isinstance(strategy.output_path, Path)
+            else Path(strategy.output_path)
+        )
+        return cls(
+            model_name=strategy.model_spec.model_name,
+            device_name=device_name,
+            output_path=output_path,
+            model_id=strategy.model_spec.model_id,
+            hf_model_repo=getattr(strategy.model_spec, "hf_model_repo", None),
+        )
 
     def base_metadata(self) -> Dict[str, Any]:
         """Common report metadata from context."""
