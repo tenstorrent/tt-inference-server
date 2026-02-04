@@ -209,6 +209,11 @@ def parse_arguments():
         action="store_true",
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
+    parser.add_argument(
+        "--print-docker-cmd",
+        action="store_true",
+        help="Print simplified Docker run command and exit (does not start server)",
+    )
 
     args = parser.parse_args()
 
@@ -459,6 +464,14 @@ def main():
     else:
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
+
+    # Handle --print-docker-cmd: print simplified Docker commands and exit
+    if args.print_docker_cmd:
+        from workflows.run_docker_server import print_simplified_docker_commands
+
+        mesh_device = DeviceTypes.from_string(args.device).to_mesh_device_str()
+        print_simplified_docker_commands(model_spec, mesh_device)
+        return 0
 
     # step 2: validate runtime
     validate_runtime_args(model_spec)
