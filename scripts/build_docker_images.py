@@ -516,7 +516,7 @@ def check_image_exists_remote(image_tag):
     try:
         cmd = ["docker", "manifest", "inspect", image_tag]
         logger.info(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
             logger.info(f"✅ The image exists on GHCR: {image_tag}")
             return True
@@ -538,7 +538,6 @@ def check_image_exists_local(image_tag):
             ["docker", "inspect", "--type=image", image_tag],
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0:
             logger.info(f"✅ The image exists locally: {image_tag}")
@@ -636,7 +635,6 @@ def resolve_commit_to_full_sha(tt_metal_commit):
             shell=True,
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Parse the output: "SHA\trefs/..."

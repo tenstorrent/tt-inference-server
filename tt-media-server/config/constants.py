@@ -213,7 +213,27 @@ class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
-    AUDIO = "audio"
+
+
+class AudioResponseFormat(Enum):
+    """TTS workflow: supported binary response formats."""
+
+    WAV = "wav"
+    MP3 = "mp3"
+    OGG = "ogg"
+
+
+AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
+
+# TTS formats that require ffmpeg for encoding (WAV does not)
+FFMPEG_REQUIRED_FORMATS = frozenset(
+    (AudioResponseFormat.MP3.value, AudioResponseFormat.OGG.value)
+)
+
+# TTS: all allowed response_format values (binary + JSON)
+TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
+    (ResponseFormat.JSON.value, ResponseFormat.VERBOSE_JSON.value)
+)
 
 
 class JobTypes(Enum):
@@ -461,6 +481,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -512,6 +538,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -527,6 +554,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 2,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -542,6 +570,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -557,6 +586,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -573,6 +603,7 @@ ModelConfigs = {
         "max_batch_size": 8,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
     (ModelRunners.BGELargeEN_V1_5, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
@@ -581,6 +612,7 @@ ModelConfigs = {
         "max_batch_size": 16,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
     (ModelRunners.BGELargeEN_V1_5, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
@@ -589,6 +621,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 16,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
     (ModelRunners.BGELargeEN_V1_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -597,6 +630,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 8,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
 }
 
