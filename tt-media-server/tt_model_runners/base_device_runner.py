@@ -24,7 +24,7 @@ class BaseDeviceRunner(ABC):
             if not cpu_threads:
                 cpu_threads = "16" if self.settings.use_dynamic_batcher else "2"
             if not num_torch_threads:
-                num_torch_threads = 16 if self.settings.use_dynamic_batcher else 2
+                num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
             setup_runner_environment(device_id, cpu_threads, num_torch_threads)
 
         if not os.getenv("HF_TOKEN", None) and not (
