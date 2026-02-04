@@ -4,15 +4,15 @@
 
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Optional
+from enum import Enum
+from typing import Optional, Union
 
 from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_classes import TestConfig
 
 from .test_status import BaseTestStatus
 from .utils.metrics_utils import MetricsAggregator
-from .utils.report_utils import ReportContext, ReportGenerator
+from .utils.report_utils import ReportGenerator
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
@@ -20,17 +20,30 @@ DEVICE_LIVENESS_TEST_ALIVE = "alive"
 logger = logging.getLogger(__name__)
 
 
+class TaskType(str, Enum):
+    """Task type constants for report metadata. Value is used in JSON (e.g. text_to_speech)."""
+
+    TTS = "text_to_speech"
+    # AUDIO = "audio", CNN = "cnn", etc. when those clients are migrated
+
+
+# Removable after all clients use TaskType.
+def _task_type_value(task_type: Union["TaskType", str]) -> str:
+    """Return string value for report (enum.value or str as-is). Remove after all clients use TaskType."""
+    return task_type.value if isinstance(task_type, TaskType) else task_type
+
+
 class BaseMediaStrategy(ABC):
     """
     Abstract base class for media client strategies.
 
-    Subclasses MUST:
-    1. Define TASK_TYPE class attribute (e.g., TASK_TYPE = "tts")
-    2. Override _get_benchmark_report_extras() if the client uses _generate_report()
+    Subclasses MUST define task_type class attribute (TaskType enum or str, e.g. task_type = TaskType.TTS).
+    Clients that generate reports call ReportGenerator.generate_benchmark_report_for_strategy(self, ...)
+    or generate_eval_report_for_strategy(self, ...) and implement _get_benchmark_report_extras /
+    _create_eval_extra_data as needed.
     """
 
-    # Subclasses should override this with their task type
-    # Default is "unknown" for backward compatibility during migration
+    # Subclasses override: task_type = TaskType.TTS or TASK_TYPE = "audio" (legacy)
     TASK_TYPE: str = "unknown"
 
     def __init_subclass__(cls, **kwargs):
@@ -38,12 +51,13 @@ class BaseMediaStrategy(ABC):
         super().__init_subclass__(**kwargs)
         if ABC in cls.__bases__:
             return
-        if cls.TASK_TYPE == "unknown":
+        resolved = _task_type_value(getattr(cls, "task_type", cls.TASK_TYPE))
+        if resolved == "unknown":
             import warnings
 
             warnings.warn(
-                f"{cls.__name__} should define TASK_TYPE class attribute "
-                f"(e.g., TASK_TYPE = 'audio'). Using 'unknown' as default.",
+                f"{cls.__name__} should define task_type (e.g. task_type = TaskType.TTS). "
+                "Using 'unknown' as default.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -68,6 +82,9 @@ class BaseMediaStrategy(ABC):
         self.test_payloads_path = "utils/test_payloads"
         self._report_generator = report_generator or ReportGenerator()
         self._aggregator = aggregator or MetricsAggregator()
+        self._task_type_str: str = _task_type_value(
+            getattr(self.__class__, "task_type", self.TASK_TYPE)
+        )
 
     def _get_aggregator(self) -> MetricsAggregator:
         """Return the shared aggregator, reset for this benchmark run."""
@@ -146,100 +163,3 @@ class BaseMediaStrategy(ABC):
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return (False, None)
-
-    def _get_report_context(self) -> ReportContext:
-        """Build ReportContext from strategy (model_spec, device, output_path)."""
-        device_name = (
-            self.device.name if hasattr(self.device, "name") else str(self.device)
-        )
-        return ReportContext(
-            model_name=self.model_spec.model_name,
-            device_name=device_name,
-            output_path=Path(self.output_path),
-            model_id=self.model_spec.model_id,
-            hf_model_repo=getattr(self.model_spec, "hf_model_repo", None),
-        )
-
-    def _generate_report(
-        self,
-        status_list: list[BaseTestStatus],
-        pre_aggregated: Optional[dict] = None,
-    ) -> Optional[Path]:
-        """
-        Generate benchmark report: build context, get extras from strategy, call injected ReportGenerator.
-
-        If pre_aggregated is provided (e.g. from MetricsAggregator.result() during the
-        benchmark loop), aggregation is not run again over status_list (one less pass).
-
-        Returns:
-            Path to written report file, or None if status_list is empty and no pre_aggregated.
-        """
-        context = self._get_report_context()
-        benchmark_extras, top_level_extras = self._get_benchmark_report_extras(
-            status_list
-        )
-        return self._report_generator.generate_benchmark_report(
-            context,
-            status_list,
-            self.TASK_TYPE,
-            extra_benchmarks=benchmark_extras,
-            extra_top_level=top_level_extras,
-            pre_aggregated=pre_aggregated,
-        )
-
-    def _get_benchmark_report_extras(
-        self, status_list: list[BaseTestStatus]
-    ) -> tuple[dict, dict]:
-        """
-        Return (benchmark_extras, top_level_extras) for the benchmark report.
-
-        - benchmark_extras: merged into report["benchmarks"] (e.g. ttft_p90, accuracy_check).
-        - top_level_extras: merged at report root (e.g. streaming_enabled, preprocessing_enabled).
-
-        Override in clients that use _generate_report() (e.g. TTS).
-        Default returns ({}, {}).
-        """
-        return ({}, {})
-
-    def _generate_eval_report(
-        self,
-        status_list: Optional[list[BaseTestStatus]] = None,
-        eval_result: Optional[dict] = None,
-        total_time: Optional[float] = None,
-        extra_data_override: Optional[dict] = None,
-    ) -> Path:
-        """
-        Generate eval report via injected ReportGenerator.
-
-        If extra_data_override is set, use it; else call _create_eval_extra_data().
-        Returns path to written eval JSON file.
-        """
-        context = self._get_report_context()
-        if extra_data_override is not None:
-            extra_data = extra_data_override
-        else:
-            extra_data = self._create_eval_extra_data(
-                status_list=status_list,
-                eval_result=eval_result,
-                total_time=total_time,
-            )
-        return self._report_generator.generate_eval_report(
-            context, self.TASK_TYPE, extra_data
-        )
-
-    def _create_eval_extra_data(
-        self,
-        status_list: Optional[list[BaseTestStatus]] = None,
-        eval_result: Optional[dict] = None,
-        total_time: Optional[float] = None,
-    ) -> dict:
-        """
-        Return client-specific eval payload (task_name, tolerance, score, etc.).
-
-        Override in clients. Merged with base metadata (model, device, timestamp, task_type)
-        by ReportGenerator.generate_eval_report.
-
-        Returns:
-            Dict of eval fields; default {}.
-        """
-        return {}
