@@ -1,11 +1,10 @@
 aiohttp
 asyncio
 colorama
-datasets>=2.20.0,<3.3.0
 fastapi
 faster_fifo
 httpx
-huggingface_hub>=0.25.0,<0.28.0
+huggingface_hub
 imageio-ffmpeg
 loguru
 prometheus-client
@@ -15,10 +14,8 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-requests
 silero_vad
 tqdm
 uvicorn
 whisperx
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.7.1+cpu
