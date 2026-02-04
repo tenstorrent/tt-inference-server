@@ -12,7 +12,6 @@ with 32 workers doing get_many() calls. By batching puts, we:
 3. Improve overall throughput
 """
 
-import asyncio
 import threading
 import time
 from typing import Optional
@@ -68,6 +67,13 @@ class RequestCoalescer:
         with self._lock:
             self._pending_requests.append(request)
             self.total_requests += 1
+
+            # Log every 100 requests to show coalescer is active
+            if self.total_requests % 100 == 0:
+                self.logger.info(
+                    f"Coalescer: received {self.total_requests} requests total, "
+                    f"pending={len(self._pending_requests)}"
+                )
 
             if len(self._pending_requests) >= self.max_batch_size:
                 # Batch is full, flush immediately
@@ -133,10 +139,17 @@ class RequestCoalescer:
                     self.task_queue.put(request, timeout=timeout)
 
             avg_batch = self.total_batch_size / max(self.total_batches, 1)
-            self.logger.debug(
-                f"Coalescer flushed batch_size={batch_size}, "
-                f"avg={avg_batch:.1f}, total_batches={self.total_batches}"
-            )
+            # Log every 10th batch at INFO level for visibility
+            if self.total_batches % 10 == 0 or batch_size >= 8:
+                self.logger.info(
+                    f"Coalescer: flushed batch_size={batch_size}, "
+                    f"avg={avg_batch:.1f}, total_batches={self.total_batches}"
+                )
+            else:
+                self.logger.debug(
+                    f"Coalescer flushed batch_size={batch_size}, "
+                    f"avg={avg_batch:.1f}, total_batches={self.total_batches}"
+                )
         except Exception as e:
             self.logger.error(f"Failed to flush batch: {e}")
             raise
@@ -161,9 +174,7 @@ class RequestCoalescer:
     def qsize(self) -> int:
         """Get approximate queue size including pending."""
         pending = len(self._pending_requests)
-        queue_size = (
-            self.task_queue.qsize() if hasattr(self.task_queue, "qsize") else 0
-        )
+        queue_size = self.task_queue.qsize() if hasattr(self.task_queue, "qsize") else 0
         return pending + queue_size
 
     def get_stats(self) -> dict:

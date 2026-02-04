@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = "1"
-    is_galaxy: bool = False  # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     max_batch_size: int = 8
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
-    use_queue_per_worker: bool = True
+    use_queue_per_worker: bool = False
     queue_for_multiprocessing: str = QueueType.FasterFifo.value
 
     # Worker management settings

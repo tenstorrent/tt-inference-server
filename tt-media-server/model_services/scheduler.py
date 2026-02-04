@@ -16,7 +16,6 @@ from device_workers.device_worker_dynamic_batch import (
 )
 from fastapi import HTTPException
 from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.request_coalescer import RequestCoalescer
 from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
@@ -36,23 +35,37 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self._raw_task_queue = self._get_queue(name="task_queue", create=True, size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
-        # Use coalescer when many workers compete for the queue
-        # This batches put() calls to reduce lock contention with get_many()
-        if worker_count >= COALESCER_WORKER_THRESHOLD:
+        # Per-worker task queues (eliminates worker racing)
+        self.use_per_worker_task_queue = worker_count >= COALESCER_WORKER_THRESHOLD
+        self._task_queues_by_worker = {}
+        self._round_robin_index = 0
+        # Use threading lock (not ProcessLock) - all HTTP requests are in same process
+        import threading
+
+        self._round_robin_lock = threading.Lock()
+        self._pending_requests = []  # Buffer for batch accumulation
+        self._flush_timer_active = False
+
+        if self.use_per_worker_task_queue:
             self.logger.info(
-                f"Enabling request coalescer for {worker_count} workers "
+                f"Using per-worker task queues for {worker_count} workers "
                 f"(threshold={COALESCER_WORKER_THRESHOLD})"
             )
-            self._coalescer = RequestCoalescer(
-                self._raw_task_queue,
-                max_batch_size=self.settings.max_batch_size * 4,  # 4x batch size
-                max_delay_ms=5.0,  # 5ms max wait
-            )
-            self.task_queue = self._coalescer
+            for i in range(worker_count):
+                self._task_queues_by_worker[i] = self._get_queue(
+                    name=f"task_queue_{i}", create=True, size=1000
+                )
+            # No shared task_queue when using per-worker queues
+            self._raw_task_queue = None
+            self._coalescer = None
+            self.task_queue = self  # Use self as proxy for round-robin put
         else:
+            # Single shared queue for small worker counts
+            self._raw_task_queue = self._get_queue(
+                name="task_queue", create=True, size=10000
+            )
             self._coalescer = None
             self.task_queue = self._raw_task_queue
 
@@ -130,6 +143,108 @@ class Scheduler:
             raise HTTPException(405, "Model is not ready")
         return True
 
+    # Batch-based load balancer methods (used when self.task_queue = self)
+    def put(self, request, timeout=None):
+        """
+        Accumulate requests and distribute in batches to worker queues.
+        This ensures each worker gets full batches instead of single requests.
+        """
+        if not self.use_per_worker_task_queue:
+            raise RuntimeError("put() called but not using per-worker queues")
+
+        import threading
+
+        batch_to_flush = None
+        worker_index = None
+
+        with self._round_robin_lock:
+            self._pending_requests.append(request)
+
+            # Check if we should flush
+            if len(self._pending_requests) >= self.settings.max_batch_size:
+                # Extract batch and worker index inside lock
+                batch_to_flush = self._pending_requests[: self.settings.max_batch_size]
+                self._pending_requests = self._pending_requests[
+                    self.settings.max_batch_size :
+                ]
+                worker_index = self._round_robin_index
+                self._round_robin_index = (self._round_robin_index + 1) % len(
+                    self._task_queues_by_worker
+                )
+            elif not self._flush_timer_active:
+                # Start timer for partial batch flush
+                self._flush_timer_active = True
+
+                def flush_callback():
+                    self._timer_flush(timeout)
+
+                timer = threading.Timer(0.002, flush_callback)  # 2ms delay
+                timer.daemon = True
+                timer.start()
+
+        # Flush OUTSIDE the lock to avoid blocking other requests
+        if batch_to_flush is not None:
+            self._send_batch_to_worker(batch_to_flush, worker_index, timeout)
+
+    def _timer_flush(self, timeout=None):
+        """Called by timer to flush partial batches."""
+        batch_to_flush = None
+        worker_index = None
+
+        with self._round_robin_lock:
+            self._flush_timer_active = False
+            if self._pending_requests:
+                batch_to_flush = self._pending_requests[: self.settings.max_batch_size]
+                self._pending_requests = self._pending_requests[
+                    self.settings.max_batch_size :
+                ]
+                worker_index = self._round_robin_index
+                self._round_robin_index = (self._round_robin_index + 1) % len(
+                    self._task_queues_by_worker
+                )
+
+        # Flush OUTSIDE the lock
+        if batch_to_flush is not None:
+            self._send_batch_to_worker(batch_to_flush, worker_index, timeout)
+
+    def _send_batch_to_worker(self, batch, worker_index, timeout=None):
+        """Send a batch to a specific worker queue (called outside lock)."""
+        queue = self._task_queues_by_worker[worker_index]
+
+        # Use put_many if available for efficiency
+        if hasattr(queue, "put_many"):
+            if timeout is not None:
+                queue.put_many(batch, timeout=timeout)
+            else:
+                queue.put_many(batch)
+        else:
+            for req in batch:
+                if timeout is not None:
+                    queue.put(req, timeout=timeout)
+                else:
+                    queue.put(req)
+
+    def _flush_to_worker(self, timeout=None):
+        """Legacy method for compatibility - flushes inside lock context."""
+        if not self._pending_requests:
+            return
+
+        batch = self._pending_requests[: self.settings.max_batch_size]
+        self._pending_requests = self._pending_requests[self.settings.max_batch_size :]
+
+        worker_index = self._round_robin_index
+        self._round_robin_index = (self._round_robin_index + 1) % len(
+            self._task_queues_by_worker
+        )
+
+        self._send_batch_to_worker(batch, worker_index, timeout)
+
+    def full(self):
+        """Check if all worker queues are full."""
+        if not self.use_per_worker_task_queue:
+            return False
+        return all(q.full() for q in self._task_queues_by_worker.values())
+
     @log_execution_time("Scheduler - starting workers")
     async def start_workers(self):
         # keep result listener in the main event loop
@@ -182,9 +297,13 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
-        # Workers always read from raw queue (not coalescer)
-        # Coalescer is only for batching put() calls
-        worker_task_queue = self._raw_task_queue
+        # Each worker gets its own task queue (no racing!)
+        if self.use_per_worker_task_queue:
+            worker_task_queue = self._task_queues_by_worker[worker_index]
+            batch_get_lock = None  # No lock needed with dedicated queue
+        else:
+            worker_task_queue = self._raw_task_queue
+            batch_get_lock = None
 
         p = Process(
             target=device_worker_dynamic_batch
@@ -200,6 +319,7 @@ class Scheduler:
                 if self.settings.queue_for_multiprocessing
                 == QueueType.MemoryQueue.value
                 else None,
+                batch_get_lock,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -288,9 +408,9 @@ class Scheduler:
                     except Exception:
                         pass  # Queue empty, continue to next
 
-                # Only sleep if no results found
+                # Only sleep if no results found (reduced for lower latency)
                 if not result_found:
-                    await asyncio.sleep(0.001)
+                    await asyncio.sleep(0.0001)  # 0.1ms
 
             except Exception as e:
                 self.logger.error(f"Error in result_listener: {e}")
@@ -387,12 +507,30 @@ class Scheduler:
                 self._coalescer.flush(timeout=2.0)
                 self.logger.info(f"Coalescer stats: {self._coalescer.get_stats()}")
 
-            # Send shutdown signals directly to raw queue (bypass coalescer)
-            for _ in self.worker_info:
-                try:
-                    self._raw_task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
-                except Exception:
-                    self.logger.warning("Timeout sending shutdown signal to worker")
+            # Flush pending requests from batch accumulator
+            if self.use_per_worker_task_queue and self._pending_requests:
+                with self._round_robin_lock:
+                    while self._pending_requests:
+                        self._flush_to_worker(timeout=2.0)
+                self.logger.info("Flushed pending batch accumulator requests")
+
+            # Send shutdown signals to worker task queues
+            if self.use_per_worker_task_queue:
+                # Per-worker queues: send shutdown to each worker's queue
+                for worker_index, task_queue in self._task_queues_by_worker.items():
+                    try:
+                        task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
+                    except Exception:
+                        self.logger.warning(
+                            f"Timeout sending shutdown to worker {worker_index}"
+                        )
+            else:
+                # Shared queue: send one shutdown per worker
+                for _ in self.worker_info:
+                    try:
+                        self._raw_task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
+                    except Exception:
+                        self.logger.warning("Timeout sending shutdown signal to worker")
 
             for i, worker_element in self.worker_info.items():
                 worker = worker_element["process"]
@@ -426,11 +564,16 @@ class Scheduler:
             if self._coalescer is not None:
                 self._coalescer.shutdown()
 
-            # Close all worker queues (use raw queue, not coalescer)
-            self._close_queues(
-                [self._raw_task_queue, self.warmup_signals_queue, self.error_queue]
-                + list(self.result_queues_by_worker.values())
-            )
+            # Close all queues
+            queues_to_close = [self.warmup_signals_queue, self.error_queue]
+            queues_to_close.extend(self.result_queues_by_worker.values())
+
+            if self.use_per_worker_task_queue:
+                queues_to_close.extend(self._task_queues_by_worker.values())
+            elif self._raw_task_queue is not None:
+                queues_to_close.append(self._raw_task_queue)
+
+            self._close_queues(queues_to_close)
 
             self.logger.info("Queues closed successfully")
             self.result_queues.clear()

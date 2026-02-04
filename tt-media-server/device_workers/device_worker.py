@@ -21,6 +21,7 @@ def device_worker(
     warmup_signals_queue: Queue,
     error_queue: Queue,
     result_queue_name: None | str = None,
+    batch_get_lock=None,  # Shared lock for serializing batch gets
 ):
     setup_worker_environment(worker_id, "2")
     logger = TTLogger()
@@ -48,20 +49,84 @@ def device_worker(
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
     # Main processing loop
+    import time
+
+    total_wait_time = 0
+    total_process_time = 0
+    batch_count = 0
+
+    # Batch accumulation settings
+    BATCH_WAIT_TIMEOUT_MS = (
+        5  # Max time to wait for batch to fill (reduced for lower latency)
+    )
+
+    def get_batch_with_accumulation(queue, max_size, timeout_ms):
+        """
+        Get a batch, waiting briefly for more items to accumulate.
+        With per-worker queues, no lock needed - this worker owns the queue.
+        """
+        # Get first items (blocking wait)
+        batch = queue.get_many(max_messages_to_get=max_size, block=True)
+
+        if not batch or batch[0] == SHUTDOWN_SIGNAL:
+            return batch
+
+        # If batch is already full, return immediately
+        if len(batch) >= max_size:
+            return batch
+
+        # Wait for more items to accumulate
+        deadline = time.perf_counter() + (timeout_ms / 1000.0)
+
+        while len(batch) < max_size:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+
+            try:
+                more = queue.get_many(
+                    max_messages_to_get=max_size - len(batch),
+                    block=True,
+                    timeout=remaining,
+                )
+                if more:
+                    if more[0] == SHUTDOWN_SIGNAL:
+                        batch.append(more[0])
+                        break
+                    batch.extend(more)
+            except Exception:
+                break
+
+        return batch
+
     while True:
-        requests: list[object] = task_queue.get_many(
-            max_messages_to_get=settings.max_batch_size, block=True
+        wait_start = time.perf_counter()
+        requests = get_batch_with_accumulation(
+            task_queue, settings.max_batch_size, BATCH_WAIT_TIMEOUT_MS
         )
+        wait_time = time.perf_counter() - wait_start
+        total_wait_time += wait_time
+
         if requests is None or len(requests) == 0:
             continue
 
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
+            avg_wait = (total_wait_time / batch_count * 1000) if batch_count else 0
+            avg_proc = (total_process_time / batch_count * 1000) if batch_count else 0
+            logger.info(
+                f"Worker {worker_id} stats: batches={batch_count}, "
+                f"avg_wait={avg_wait:.1f}ms, avg_proc={avg_proc:.1f}ms"
+            )
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
 
-        logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
+        batch_count += 1
+        process_start = time.perf_counter()
+        logger.info(
+            f"Worker {worker_id} processing tasks: {len(requests)} (waited {wait_time * 1000:.1f}ms)"
+        )
         responses = None
 
         successful = False
@@ -139,9 +204,13 @@ def device_worker(
 
             successful = True
             timeout_timer.cancel()
+            process_time = time.perf_counter() - process_start
+            total_process_time += process_time
 
         except Exception as e:
             timeout_timer.cancel()
+            process_time = time.perf_counter() - process_start
+            total_process_time += process_time
             error_msg = f"Worker {worker_id} execution error: {str(e)}"
             logger.error(error_msg)
             for request in requests:
@@ -149,7 +218,7 @@ def device_worker(
             continue
 
         logger.debug(
-            f"Worker {worker_id} finished processing tasks: {requests.__len__()}"
+            f"Worker {worker_id} finished processing tasks: {requests.__len__()} in {process_time * 1000:.1f}ms"
         )
 
         # Process result only if timer didn't run out
