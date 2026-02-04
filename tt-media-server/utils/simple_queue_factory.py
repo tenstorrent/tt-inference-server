@@ -5,7 +5,9 @@ from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue_interface import TTQueueInterface
 
 
-def get_queue(queue_type: str, size: int = 0, name: str = "queue", create: bool = True) -> TTQueueInterface:
+def get_queue(
+    queue_type: str, size: int = 0, name: str = "queue", create: bool = True
+) -> TTQueueInterface:
     if queue_type == QueueType.FasterFifo.value:
         return TTFasterFifoQueue(size)
     elif queue_type == QueueType.TTQueue.value:

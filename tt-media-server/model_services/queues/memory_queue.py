@@ -148,7 +148,6 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         else:
             return (self.capacity - read_idx) + write_idx
 
-
     def _get_next_write_slot(self) -> int:
         # Rough size check without lock (acceptable race)
         write_idx = self._get_write_idx()
@@ -435,7 +434,9 @@ class SharedMemoryChunkQueue(TTQueueInterface):
 
     def full(self) -> bool:
         """Return True if the queue is full, False otherwise (approximate)."""
-        return self._get_size() >= self.capacity - 10  # Same margin as _get_next_write_slot
+        return (
+            self._get_size() >= self.capacity - 10
+        )  # Same margin as _get_next_write_slot
 
     def put_many(
         self, items: List[Any], block: bool = True, timeout: Optional[float] = None
@@ -518,7 +519,6 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         except Exception as e:
             self.logger.error(f"Error in put_many batch write: {e}")
             raise
-
 
     def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
         """Peek at next item for conditional processing."""

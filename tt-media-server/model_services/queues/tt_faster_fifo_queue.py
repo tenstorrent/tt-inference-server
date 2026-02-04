@@ -108,8 +108,12 @@ class TTFasterFifoQueue(TTQueueInterface):
 
     def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
         """Peek at next item for conditional processing."""
-        raise NotImplementedError("peek_next is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking")
+        raise NotImplementedError(
+            "peek_next is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking"
+        )
 
     def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
         """Peek at next n items for conditional processing."""
-        raise NotImplementedError("peek is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking")
+        raise NotImplementedError(
+            "peek is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking"
+        )

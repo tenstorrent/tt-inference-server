@@ -15,9 +15,6 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
-from model_services.queues.memory_queue import SharedMemoryChunkQueue
-from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
-from model_services.queues.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
@@ -35,7 +32,9 @@ class Scheduler:
         worker_count = self.get_worker_count()
         # Task queue must use a standard queue that can serialize arbitrary objects
         # SharedMemoryChunkQueue is only for result streaming
-        self.task_queue = get_task_queue(queue_type=self.settings.queue_for_multiprocessing, size=10000)
+        self.task_queue = get_task_queue(
+            queue_type=self.settings.queue_for_multiprocessing, size=10000
+        )
         self.warmup_signals_queue = Queue(worker_count)
 
         # Create one result queue per worker (can use SharedMemoryChunkQueue)
@@ -43,14 +42,14 @@ class Scheduler:
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
                 self.result_queues_by_worker[i] = get_queue(
-                    queue_type=self.settings.queue_for_multiprocessing,
-                    size=10000
+                    queue_type=self.settings.queue_for_multiprocessing, size=10000
                 )
         else:
-            self.result_queues_by_worker[0] = get_queue(queue_type=self.settings.queue_for_multiprocessing, size=10000)
+            self.result_queues_by_worker[0] = get_queue(
+                queue_type=self.settings.queue_for_multiprocessing, size=10000
+            )
 
         self.error_queue = Queue()
-
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):

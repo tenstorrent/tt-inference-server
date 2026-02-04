@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from ast import List
 from multiprocessing import get_context
 from multiprocessing.queues import Queue
 from queue import Empty
@@ -110,4 +109,6 @@ class TTQueue(Queue, TTQueueInterface):
 
     def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
         """Peek at next n items for conditional processing."""
-        raise NotImplementedError("peek is not implemented for TTQueue - multiprocessing.Queue does not support true peeking")
+        raise NotImplementedError(
+            "peek is not implemented for TTQueue - multiprocessing.Queue does not support true peeking"
+        )

@@ -51,19 +51,6 @@ def make_chunk(task_id: str, is_final: int, text: str):
     )
 
 
-def make_chunk(task_id: str, is_final: int, text: str):
-    """Helper to create test data in the expected format."""
-    chunk_type = "final_result" if is_final else "streaming_chunk"
-    return (
-        "worker_id",
-        task_id,
-        CompletionOutput(
-            type=chunk_type,
-            data=CompletionResult(text=text),
-        ),
-    )
-
-
 @pytest.fixture
 def cleanup_queues():
     """Cleanup any existing shared memory from previous tests"""
