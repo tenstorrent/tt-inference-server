@@ -1,8 +1,8 @@
 from config.constants import QueueType
-from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
-from model_services.tt_queue import TTQueue
-from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.tt_queue_interface import TTQueueInterface
+from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
+from model_services.queues.tt_queue import TTQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 
 def get_queue(queue_type: str, size: int = 0, name: str = "queue", create: bool = True) -> TTQueueInterface:
@@ -14,10 +14,10 @@ def get_queue(queue_type: str, size: int = 0, name: str = "queue", create: bool 
         return SharedMemoryChunkQueue(capacity=size, name=name, create=create)
 
 
-def get_task_queue(self, size: int):
-        """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
-        if queue_type == QueueType.FasterFifo.value:
-            return TTFasterFifoQueue(size)
-        else:
-            # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
-            return TTQueue(size)
+def get_task_queue(queue_type: str, size: int) -> TTQueueInterface:
+    """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
+    if queue_type == QueueType.FasterFifo.value:
+        return TTFasterFifoQueue(size)
+    else:
+        # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
+        return TTQueue(size)

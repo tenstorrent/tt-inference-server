@@ -8,7 +8,7 @@ from multiprocessing.queues import Queue
 from queue import Empty
 from typing import Any, List, Optional
 
-from model_services.tt_queue_interface import TTQueueInterface
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 
 class TTQueue(Queue, TTQueueInterface):

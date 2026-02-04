@@ -6,7 +6,7 @@ from queue import Empty
 from typing import Any, List, Optional
 
 from faster_fifo import Queue as FasterFifoQueue
-from model_services.tt_queue_interface import TTQueueInterface
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 from queue import Empty
 

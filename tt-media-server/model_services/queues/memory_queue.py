@@ -6,7 +6,7 @@ from typing import Any, List, Optional
 import numpy as np
 from domain.completion_response import CompletionResult
 from utils.logger import TTLogger
-from model_services.tt_queue_interface import TTQueueInterface
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 MAX_TEXT_LEN = 450
 MAX_TASK_ID_LEN = 100
