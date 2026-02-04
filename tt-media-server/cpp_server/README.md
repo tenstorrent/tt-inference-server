@@ -219,8 +219,7 @@ cpp_server/
 │   │   ├── ttnn_test_runner.hpp    # TTNN device I/O runner
 │   │   └── runner_factory.hpp      # Runner factory (env-based selection)
 │   ├── scheduler/
-│   │   ├── scheduler.hpp           # Task scheduler
-│   │   └── thread_safe_queue.hpp   # Thread-safe queue
+│   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
 │   └── services/
 │       ├── base_service.hpp        # Base service class
 │       └── llm_service.hpp         # LLM service

@@ -30,7 +30,6 @@ set(SOURCES
     src/api/llm_controller.cpp
     src/api/openapi.cpp
     src/runners/embedding_runner.cpp
-    src/scheduler/scheduler.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
     src/services/embedding_service.cpp
