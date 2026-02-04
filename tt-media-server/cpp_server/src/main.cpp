@@ -6,8 +6,9 @@
 #include <csignal>
 #include <cstdlib>
 
-// Controllers are auto-registered via ADD_METHOD_TO macros
+// Controllers - only one is registered based on TT_MODEL_SERVICE
 #include "api/llm_controller.hpp"
+#include "api/embedding_controller.hpp"
 #include "runners/runner_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
@@ -20,6 +21,22 @@ namespace {
         std::cout << "\n[Main] Received signal " << signal << ", initiating shutdown..." << std::endl;
         g_shutdown_requested = 1;
         drogon::app().quit();
+    }
+
+    enum class ModelService {
+        LLM,
+        EMBEDDING
+    };
+
+    ModelService get_model_service() {
+        const char* env = std::getenv("TT_MODEL_SERVICE");
+        if (env) {
+            std::string service(env);
+            if (service == "embedding") {
+                return ModelService::EMBEDDING;
+            }
+        }
+        return ModelService::LLM;  // Default
     }
 }
 
@@ -55,7 +72,11 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    // Get runner info
+    // Get model service type
+    auto model_service = get_model_service();
+    std::string service_name = (model_service == ModelService::EMBEDDING) ? "embedding" : "llm";
+
+    // Get runner info (only relevant for LLM service)
     auto runner_type = tt::runners::RunnerFactory::get_runner_type();
     std::string runner_name = tt::runners::RunnerFactory::get_runner_name(runner_type);
 
@@ -65,8 +86,15 @@ int main(int argc, char* argv[]) {
               << "  Host: " << host << "\n"
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
-              << "  Runner: " << runner_name << "\n"
-              << "=================================================\n"
+              << "  Model Service: " << service_name << "\n";
+
+    if (model_service == ModelService::LLM) {
+        std::cout << "  Runner: " << runner_name << "\n";
+    } else {
+        std::cout << "  Runner: BGELargeENRunner (Python)\n";
+    }
+
+    std::cout << "=================================================\n"
               << std::endl;
 
     // Configure Drogon
@@ -84,13 +112,22 @@ int main(int argc, char* argv[]) {
         .setStaticFilesCacheTime(0);
 
     std::cout << "[Main] Starting Drogon server at http://" << host << ":" << port << std::endl;
-    std::cout << "[Main] Endpoints:\n"
-              << "  POST /v1/completions  - OpenAI-compatible completions\n"
-              << "  GET  /health          - Health check\n"
-              << "  GET  /ready           - Readiness check\n"
-              << "  GET  /docs            - Swagger UI\n"
-              << "  GET  /openapi.json    - OpenAPI specification\n"
-              << std::endl;
+
+    if (model_service == ModelService::EMBEDDING) {
+        std::cout << "[Main] Endpoints:\n"
+                  << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
+                  << "  GET  /health          - Health check\n"
+                  << "  GET  /ready           - Readiness check\n"
+                  << std::endl;
+    } else {
+        std::cout << "[Main] Endpoints:\n"
+                  << "  POST /v1/completions  - OpenAI-compatible completions\n"
+                  << "  GET  /health          - Health check\n"
+                  << "  GET  /ready           - Readiness check\n"
+                  << "  GET  /docs            - Swagger UI\n"
+                  << "  GET  /openapi.json    - OpenAPI specification\n"
+                  << std::endl;
+    }
 
     // Run the server
     drogon::app().run();
