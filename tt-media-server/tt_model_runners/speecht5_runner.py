@@ -264,7 +264,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             await self._run_async(
                 [
                     TextToSpeechRequest.model_construct(
-                        text="Hello world", response_format="audio"
+                        text="Hello world", response_format="wav"
                     )
                 ]
             )

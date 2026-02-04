@@ -8,12 +8,11 @@ import time
 from typing import AsyncGenerator
 
 from domain.completion_request import CompletionRequest
-from domain.completion_response import (
-    CompletionStreamChunk,
-    FinalResultOutput,
-    StreamingChunkOutput,
-)
+from domain.completion_response import CompletionOutput, CompletionResult
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+
+CHUNK_TYPE = "streaming_chunk"
+FINAL_TYPE = "final_result"
 
 
 class LLMTestRunner(BaseDeviceRunner):
@@ -30,7 +29,7 @@ class LLMTestRunner(BaseDeviceRunner):
         self.num_torch_threads = num_torch_threads
         # Frequency is set via TEST_RUNNER_FREQUENCY_MS env var, configured in
         # performance_tests/conftest.py which is the single source of truth
-        self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "50"))
+        self.streaming_frequency_ms = float(os.getenv("TEST_RUNNER_FREQUENCY_MS", "1"))
 
         self.logger.info(
             f"LLMTestRunner initialized for device {self.device_id}: "
@@ -42,35 +41,38 @@ class LLMTestRunner(BaseDeviceRunner):
         return True
 
     async def _run_async(self, requests: list[CompletionRequest]):
-        """Returns an async generator for streaming inference."""
+        """Match VLLMRunner behavior: async generator for streaming, list for non-streaming."""
         request = requests[0]
-        return self._generate_streaming(request)
+        if request.stream:
+            return self._generate_streaming(request)
+        else:
+            return await self._generate_non_streaming(requests)
+
+    async def _generate_non_streaming(self, requests: list[CompletionRequest]):
+        """Non-streaming async inference - returns list of CompletionOutput."""
+        results = []
+        for request in requests:
+            tokens = [f"token_{i}" for i in range(request.max_tokens)]
+            final_text = "".join(tokens)
+            results.append(
+                CompletionOutput(
+                    type=FINAL_TYPE,
+                    data=CompletionResult(text=final_text),
+                )
+            )
+        return results
 
     async def _generate_streaming(
         self, request: CompletionRequest
-    ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
+    ) -> AsyncGenerator[CompletionOutput, None]:
         frequency_seconds = (
             self.streaming_frequency_ms / LLMTestRunner.MILLISECONDS_PER_SECOND
         )
-        task_id = request._task_id
 
-        # StreamingChunkOutput format
-        streaming_chunks = [
-            StreamingChunkOutput(
-                type="streaming_chunk",
-                chunk=CompletionStreamChunk(
-                    text=f"token_{i}",
-                    index=i,
-                    finish_reason=None,
-                ),
-                task_id=task_id,
-            )
-            for i in range(request.max_tokens)
-        ]
-
+        chunks = []
         start_time = time.perf_counter()
 
-        for i, chunk in enumerate(streaming_chunks):
+        for i in range(request.max_tokens):
             # Calculate exact target time for this token
             target_time = start_time + (i * frequency_seconds)
             current_time = time.perf_counter()
@@ -80,14 +82,33 @@ class LLMTestRunner(BaseDeviceRunner):
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
-            yield chunk
+            chunk_text = f"token_{i}"
+            chunks.append(chunk_text)
 
-        yield FinalResultOutput(
-            type="final_result",
-            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
-            task_id=task_id,
-            return_result=True,
+            yield CompletionOutput(
+                type=CHUNK_TYPE,
+                data=CompletionResult(text=chunk_text),
+            )
+
+        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+
+        final_text = ""
+
+        yield CompletionOutput(
+            type=FINAL_TYPE,
+            data=CompletionResult(text=final_text),
         )
 
     def run(self, requests: list[CompletionRequest]):
-        return []
+        """Non-streaming inference - returns complete results."""
+        results = []
+        for request in requests:
+            tokens = [f"token_{i}" for i in range(request.max_tokens)]
+            final_text = "".join(tokens)
+            results.append(
+                CompletionOutput(
+                    type=FINAL_TYPE,
+                    data=CompletionResult(text=final_text),
+                )
+            )
+        return results
