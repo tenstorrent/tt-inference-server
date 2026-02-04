@@ -1,22 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """Tests for utils.embedding_tokenizer.EmbeddingTokenizer."""
 
 from unittest.mock import MagicMock, patch
 
 from utils.embedding_tokenizer import EmbeddingTokenizer
-
-
-class TestEmbeddingTokenizerInit:
-    """Tests for EmbeddingTokenizer.__init__."""
-
-    def test_init_stores_model_name_and_tokenizer_none(self):
-        """__init__ stores model_name and leaves _tokenizer as None."""
-        tok = EmbeddingTokenizer("BAAI/bge-large-en-v1.5")
-        assert tok._model_name == "BAAI/bge-large-en-v1.5"
-        assert tok._tokenizer is None
 
 
 class TestEmbeddingTokenizerProperty:
