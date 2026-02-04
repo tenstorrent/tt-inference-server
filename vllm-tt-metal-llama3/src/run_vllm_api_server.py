@@ -9,7 +9,6 @@ import os
 import runpy
 import sys
 from pathlib import Path
-from pprint import pprint
 
 from vllm import ModelRegistry
 
@@ -18,7 +17,6 @@ from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
     create_model_symlink,
     get_encoded_api_key,
-    resolve_commit,
 )
 
 logging.basicConfig(
@@ -26,19 +24,6 @@ logging.basicConfig(
     format="%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def handle_code_versions(model_spec_json):
-    tt_metal_home = os.getenv("TT_METAL_HOME")
-    vllm_dir = os.getenv("vllm_dir")
-
-    tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
-    logger.info(f"TT_METAL_HOME: {tt_metal_home}")
-    logger.info(f"commit SHA: {tt_metal_sha}")
-
-    vllm_sha = resolve_commit("HEAD", vllm_dir)
-    logger.info(f"vllm_dir: {vllm_dir}")
-    logger.info(f"commit SHA: {vllm_sha}")
 
 
 def _load_model_spec_json():
@@ -73,8 +58,6 @@ def register_tt_models(impl_id=None):
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
-    elif impl_id == "llama2_70b":
-        os.environ["TT_LLAMA_TEXT_VER"] = "llama2_70b"
     else:  # default: tt_transformers
         os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
 
@@ -97,7 +80,7 @@ _IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
 register_tt_models(_IMPL_ID)
 
 
-def model_setup(model_spec_json, impl_id):
+def model_setup(model_spec_json):
     # step 1: validate env vars passed in
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
@@ -118,36 +101,15 @@ def model_setup(model_spec_json, impl_id):
     logger.info(f"setting vllm logging config at: {config_path}")
     logger.info(f"setting vllm logging file at: {log_path}")
 
-    dynamic_env_vars = {
-        "VLLM_LOGGING_CONFIG": str(config_path),
-    }
-    model_env_vars = {}
-
     # set HF_MODEL environment variable for loading
     logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
     model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
     hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-    model_env_vars["HF_MODEL"] = hf_dir
-    logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
-    if impl_id == "subdevices":
-        model_env_vars["LLAMA_VERSION"] = "subdevices"
-    elif impl_id == "llama2-t3000":
-        model_env_vars.update(
-            {
-                "meta-llama/Llama-3.1-70B-Instruct": {
-                    "LLAMA_VERSION": "llama3",
-                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-                },
-                "meta-llama/Llama-3.3-70B-Instruct": {
-                    "LLAMA_VERSION": "llama3",
-                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-                },
-            }.get(model_spec_json["hf_model_repo"], {})
-        )
-
-    # merge dynamic and model-specific env vars
-    dynamic_env_vars = {**dynamic_env_vars, **model_env_vars}
+    dynamic_env_vars = {
+        "VLLM_LOGGING_CONFIG": str(config_path),
+        "HF_MODEL": hf_dir,
+    }
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
@@ -206,12 +168,12 @@ def handle_secrets(model_spec_json):
         )
 
 
-def runtime_settings(model_spec_json, impl_id):
+def runtime_settings(model_spec_json):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(model_spec_json)
 
     # TODO: check HF repo access with HF_TOKEN supplied
-    model_setup(model_spec_json, impl_id)
+    model_setup(model_spec_json)
 
 
 def set_runtime_env_vars(model_spec_json):
@@ -284,14 +246,14 @@ def start_trace_capture(model_spec_json):
 
 def main():
     set_runtime_env_vars(_MODEL_SPEC)
-    handle_code_versions(_MODEL_SPEC)
 
-    runtime_settings(_MODEL_SPEC, _IMPL_ID)
+    runtime_settings(_MODEL_SPEC)
     start_trace_capture(_MODEL_SPEC)
 
     # vLLM CLI arguments
-    logger.info("vllm_args:")
-    pprint(_MODEL_SPEC["device_model_spec"]["vllm_args"])
+    logger.info(
+        f"vllm_args: {json.dumps(_MODEL_SPEC['device_model_spec']['vllm_args'], indent=4)}"
+    )
     for key, value in _MODEL_SPEC["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
