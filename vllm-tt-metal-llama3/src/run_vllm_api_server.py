@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import argparse
 import json
 import logging
 import multiprocessing
@@ -10,6 +11,7 @@ import runpy
 import sys
 from pathlib import Path
 
+from huggingface_hub import snapshot_download
 from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
@@ -26,23 +28,128 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _load_model_spec_json():
-    """Load ModelSpec JSON from TT_MODEL_SPEC_JSON_PATH.
+def parse_args():
+    """Parse CLI arguments before any model loading."""
+    parser = argparse.ArgumentParser(description="TT vLLM API Server")
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="HuggingFace model repo (e.g., meta-llama/Llama-3.1-8B)",
+    )
+    # Parse known args to allow vLLM args to pass through
+    args, _ = parser.parse_known_args()
+    return args
+
+
+def load_all_model_specs() -> dict:
+    """Load all model specs from JSON file.
+
+    Supports two modes:
+    1. Legacy mode: TT_MODEL_SPEC_JSON_PATH points to a single spec (used by run_docker_server.py)
+    2. New multi-spec mode: MODEL_SPECS_JSON_PATH points to all specs (for simplified docker run)
 
     Returns:
-        dict: The loaded ModelSpec JSON.
+        dict: Dictionary of model specs keyed by model_id
+    """
+    # Support legacy TT_MODEL_SPEC_JSON_PATH for single-spec mode
+    legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
+    if legacy_path and Path(legacy_path).exists():
+        logger.info(
+            f"Loading single model spec from TT_MODEL_SPEC_JSON_PATH: {legacy_path}"
+        )
+        with open(legacy_path, "r") as f:
+            spec = json.load(f)
+        # Return as dict keyed by model_id for compatibility
+        return {spec["model_id"]: spec}
+
+    # New multi-spec mode
+    specs_path = os.getenv(
+        "MODEL_SPECS_JSON_PATH",
+        "/home/container_app_user/model_specs/model_specs_defaults.json",
+    )
+    logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
+    with open(specs_path, "r") as f:
+        return json.load(f)
+
+
+def lookup_model_spec(all_specs: dict, model_arg: str, mesh_device: str) -> dict:
+    """Look up the correct model spec by hf_model_repo and device_type.
+
+    Args:
+        all_specs: Dictionary of all model specs keyed by model_id
+        model_arg: The --model argument (HuggingFace repo or model name)
+        mesh_device: The MESH_DEVICE environment variable value
+
+    Returns:
+        dict: The matching model spec
 
     Raises:
-        RuntimeError: If TT_MODEL_SPEC_JSON_PATH environment variable is not set.
-        FileNotFoundError: If the specified file does not exist.
-        JSONDecodeError: If the file contains invalid JSON.
+        ValueError: If no matching spec is found
     """
-    model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
-    if model_spec_path is None:
-        raise RuntimeError("TT_MODEL_SPEC_JSON_PATH environment variable is not set")
+    for model_id, spec in all_specs.items():
+        # Match by full HF repo or just model name
+        hf_match = (
+            spec.get("hf_model_repo") == model_arg
+            or spec.get("model_name") == model_arg.split("/")[-1]
+        )
+        # device_type is serialized as enum name (e.g., "N300")
+        device_match = spec.get("device_type") == mesh_device
 
-    with open(model_spec_path, "r") as f:
-        return json.load(f)
+        if hf_match and device_match:
+            return spec
+
+    available_models = [
+        f"{spec.get('hf_model_repo')} ({spec.get('device_type')})"
+        for spec in all_specs.values()
+    ]
+    raise ValueError(
+        f"No model spec found for model={model_arg}, MESH_DEVICE={mesh_device}. "
+        f"Available models: {available_models[:10]}..."
+    )
+
+
+def ensure_weights_available(model_spec: dict) -> Path:
+    """Download weights if not present. Returns weights path.
+
+    Args:
+        model_spec: The model specification dictionary
+
+    Returns:
+        Path: Path to the model weights directory
+    """
+    cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+    model_name = model_spec["model_name"]
+
+    # Use model-specific weights directory
+    weights_path = cache_root / "weights" / model_name
+
+    if not weights_path.exists() or not any(weights_path.iterdir()):
+        hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+        logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
+        weights_path.mkdir(parents=True, exist_ok=True)
+        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+    else:
+        logger.info(f"Weights already exist at {weights_path}")
+
+    os.environ["MODEL_WEIGHTS_PATH"] = str(weights_path)
+    return weights_path
+
+
+def set_cache_paths(model_spec: dict):
+    """Set TT_CACHE_PATH with model-specific subdirectory.
+
+    Args:
+        model_spec: The model specification dictionary
+    """
+    cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+    model_name = model_spec["model_name"]
+    mesh_device = os.getenv("MESH_DEVICE")
+
+    # Preserve model/device-specific cache structure
+    tt_cache_path = cache_root / "tt_metal_cache" / f"cache_{model_name}" / mesh_device
+    tt_cache_path.mkdir(parents=True, exist_ok=True)
+    os.environ["TT_CACHE_PATH"] = str(tt_cache_path)
+    logger.info(f"Set TT_CACHE_PATH to {tt_cache_path}")
 
 
 def register_tt_models(impl_id=None):
@@ -72,12 +179,6 @@ def register_tt_models(impl_id=None):
         "TTArceeForCausalLM",
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
-
-
-# Load model spec at import time for vLLM model registration
-_MODEL_SPEC = _load_model_spec_json()
-_IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
-register_tt_models(_IMPL_ID)
 
 
 def model_setup(model_spec_json):
@@ -245,16 +346,57 @@ def start_trace_capture(model_spec_json):
 
 
 def main():
-    set_runtime_env_vars(_MODEL_SPEC)
+    # Step 1: Parse --model argument (if provided)
+    args = parse_args()
 
-    runtime_settings(_MODEL_SPEC)
-    start_trace_capture(_MODEL_SPEC)
+    # Step 2: Load model specs and determine which spec to use
+    all_specs = load_all_model_specs()
 
-    # vLLM CLI arguments
+    # Check if we're in legacy single-spec mode (TT_MODEL_SPEC_JSON_PATH set)
+    # or new simplified mode (--model argument provided)
+    legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
+
+    if legacy_path and Path(legacy_path).exists():
+        # Legacy mode: use the single spec from TT_MODEL_SPEC_JSON_PATH
+        # (all_specs will have exactly one entry in this case)
+        model_spec = list(all_specs.values())[0]
+        logger.info("Legacy mode: using model spec from TT_MODEL_SPEC_JSON_PATH")
+    elif args.model:
+        # New simplified mode: look up spec by --model and MESH_DEVICE
+        mesh_device = os.getenv("MESH_DEVICE")
+        if not mesh_device:
+            raise RuntimeError(
+                "MESH_DEVICE environment variable is required when using --model argument"
+            )
+        model_spec = lookup_model_spec(all_specs, args.model, mesh_device)
+        logger.info(
+            f"Simplified mode: found model spec for --model={args.model}, MESH_DEVICE={mesh_device}"
+        )
+
+        # Set cache paths and ensure weights are available (new simplified mode only)
+        set_cache_paths(model_spec)
+        ensure_weights_available(model_spec)
+    else:
+        raise RuntimeError(
+            "Either TT_MODEL_SPEC_JSON_PATH must be set or --model argument must be provided"
+        )
+
+    logger.info(f"Using model spec: {model_spec['model_id']}")
+
+    # Step 3: Register TT models (after lookup, with correct impl_id)
+    impl_id = model_spec.get("impl", {}).get("impl_id")
+    register_tt_models(impl_id)
+
+    # Step 4: Set runtime environment variables and run setup
+    set_runtime_env_vars(model_spec)
+    runtime_settings(model_spec)
+    start_trace_capture(model_spec)
+
+    # Step 5: Add vLLM CLI arguments
     logger.info(
-        f"vllm_args: {json.dumps(_MODEL_SPEC['device_model_spec']['vllm_args'], indent=4)}"
+        f"vllm_args: {json.dumps(model_spec['device_model_spec']['vllm_args'], indent=4)}"
     )
-    for key, value in _MODEL_SPEC["device_model_spec"]["vllm_args"].items():
+    for key, value in model_spec["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):
@@ -263,6 +405,7 @@ def main():
             else:
                 sys.argv.extend(["--" + key, str(value)])
 
+    # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
 
