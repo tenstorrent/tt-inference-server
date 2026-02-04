@@ -3,18 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import base64
-import logging
 
 import aiohttp
 from server_tests.base_test import BaseTest
-
-logger = logging.getLogger(__name__)
-
-headers = {
-    "accept": "application/json",
-    "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
-}
 
 
 class SpeechT5TTSTest(BaseTest):
@@ -23,17 +14,11 @@ class SpeechT5TTSTest(BaseTest):
     async def _run_specific_test_async(self):
         """Run SpeechT5 TTS tests"""
         results = {}
-
-        # Test: Basic TTS generation
-        logger.info("Testing basic TTS generation...")
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
-            logger.info("✅ Basic TTS test passed")
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
-            logger.error(f"❌ Basic TTS test failed: {e}")
-
         return results
 
     async def _test_basic_tts(self):
@@ -46,7 +31,7 @@ class SpeechT5TTSTest(BaseTest):
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload, headers=headers) as response:
+            async with session.post(url, json=payload) as response:
                 assert response.status == 200, (
                     f"Expected status 200, got {response.status}"
                 )

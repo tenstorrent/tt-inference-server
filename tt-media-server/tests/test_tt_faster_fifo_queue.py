@@ -5,7 +5,7 @@
 import time
 
 import pytest
-from model_services.tt_faster_fifo_queue import TTFasterFifoQueue
+from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
 
 
 class TestTTFasterFifoQueueInit:
