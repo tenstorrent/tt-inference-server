@@ -20,6 +20,7 @@ from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.queues.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+from utils.simple_queue_factory import get_queue, get_task_queue
 
 
 class Scheduler:
@@ -34,41 +35,22 @@ class Scheduler:
         worker_count = self.get_worker_count()
         # Task queue must use a standard queue that can serialize arbitrary objects
         # SharedMemoryChunkQueue is only for result streaming
-        self.task_queue = self._get_task_queue(size=10000)
+        self.task_queue = get_task_queue(queue_type=self.settings.queue_for_multiprocessing, size=10000)
         self.warmup_signals_queue = Queue(worker_count)
 
         # Create one result queue per worker (can use SharedMemoryChunkQueue)
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
-                self.result_queues_by_worker[i] = self._get_queue(
-                    name=f"chunk_queue_{i}", create=True, size=10000
+                self.result_queues_by_worker[i] = get_queue(
+                    queue_type=self.settings.queue_for_multiprocessing,
+                    size=10000
                 )
         else:
-            self.result_queues_by_worker[0] = self._get_queue(
-                name="chunk_queue_0", create=True, size=10000
-            )
+            self.result_queues_by_worker[0] = get_queue(queue_type=self.settings.queue_for_multiprocessing, size=10000)
 
         self.error_queue = Queue()
 
-    def _get_task_queue(self, size: int):
-        """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
-        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
-            return TTFasterFifoQueue(size)
-        else:
-            # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
-            return TTQueue(size)
-
-    def _get_queue(self, name: str, create: bool, size: int):
-        """Get a queue for result/chunk streaming."""
-        if self.settings.queue_for_multiprocessing == QueueType.FasterFifo.value:
-            return TTFasterFifoQueue(size)
-        elif self.settings.queue_for_multiprocessing == QueueType.TTQueue.value:
-            return TTQueue(size)
-        elif self.settings.queue_for_multiprocessing == QueueType.MemoryQueue.value:
-            return SharedMemoryChunkQueue(capacity=size, name=name, create=create)
-        else:
-            return Queue()
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
