@@ -127,11 +127,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# Install tt-vllm-plugin
+# Install tt-vllm-plugin and remove xformers (CUDA-only, breaks CPU PyTorch)
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+    && uv pip install . \
+    && uv pip uninstall -y xformers || true"
 
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
