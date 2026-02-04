@@ -22,7 +22,7 @@ export ENVIRONMENT=development
 export TT_METAL_HOME=/home/ubuntu/tt-metal
 export PYTHONPATH=/home/ubuntu/tt-metal
 export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
-export HF_TOKEN="${HF_TOKEN:-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}"
+export HF_TOKEN="${HF_TOKEN:-}"
 export PYTHONUNBUFFERED=1
 
 PYTHON="${PYTHON:-/home/ubuntu/tt-metal/python_env/bin/python}"
