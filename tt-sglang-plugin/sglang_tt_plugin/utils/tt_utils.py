@@ -1,201 +1,190 @@
 import ast
 import logging
 import os
+from abc import ABC
 from typing import Optional
 
-import ttnn
+import torch
+from sglang.srt.server_args import get_global_server_args
 
 logger = logging.getLogger(__name__)
 
-def get_dispatch_core_config(override_tt_config):
-    dispatch_core_axis: Optional[ttnn.DispatchCoreAxis] = None
-    if (override_tt_config is not None
-            and "dispatch_core_axis" in override_tt_config):
-        assert override_tt_config["dispatch_core_axis"] in [
-            "row", "col"
-        ], ("Invalid dispatch_core_axis:"
-            f"{override_tt_config['dispatch_core_axis']}. "
-            "Expected: row, col.")
-        dispatch_core_axis = (ttnn.DispatchCoreAxis.COL
-                              if override_tt_config["dispatch_core_axis"]
-                              == "col" else ttnn.DispatchCoreAxis.ROW)
 
-    return ttnn.DispatchCoreConfig(axis=dispatch_core_axis)
+class BaseMetalDeviceRunner(ABC):
+    def __init__(self, device_id: str, num_torch_threads: int = 1):
+        self.device_id = device_id
+        self.logger = logger
+        self.ttnn_device = None
 
+        self.set_torch_thread_limits(num_torch_threads)
 
-def get_fabric_config(override_tt_config, num_devices):
-    if num_devices == 1:
-        # No fabric config for single device
-        fabric_config = None
-    else:
-        # Set the most common value as default
-        is_6u = (
-            ttnn.cluster.get_cluster_type() == ttnn.cluster.ClusterType.GALAXY)
-        fabric_config = (ttnn.FabricConfig.FABRIC_1D_RING
-                         if is_6u else ttnn.FabricConfig.FABRIC_1D)
-    # Override fabric_config if specified in override_tt_config
-    if (override_tt_config is not None
-            and "fabric_config" in override_tt_config):
-        fabric_config_str = override_tt_config["fabric_config"]
-        fabric_config_map = {
-            "DISABLED": ttnn.FabricConfig.DISABLED,
-            "FABRIC_1D": ttnn.FabricConfig.FABRIC_1D,
-            "FABRIC_1D_RING": ttnn.FabricConfig.FABRIC_1D_RING,
-            "FABRIC_2D": ttnn.FabricConfig.FABRIC_2D,
-            "CUSTOM": ttnn.FabricConfig.CUSTOM,
+        if not os.getenv("HF_TOKEN", None) and not (
+            os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
+        ):
+            self.logger.warning(
+                "HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly."
+            )
+
+        self.is_tensor_parallel = False
+
+    def get_pipeline_device_params(self):
+        """Return device params including trace_region_size for tracing support."""
+        return {
+            "trace_region_size": 50000000,  # ~50MB for trace buffers
         }
-        fabric_config = fabric_config_map.get(fabric_config_str)
-        assert fabric_config is not None, (
-            f"Invalid fabric_config: {fabric_config_str}. "
-            f"Expected one of {list(fabric_config_map.keys())}.")
-    return fabric_config
 
+    def set_device(self):
+        if self.ttnn_device is None:
+            # Worker environment setup (TT_VISIBLE_DEVICES, TT_METAL_CACHE, TT_CACHE_HOME)
+            # is done in TTModels.__init__ BEFORE this is called, to ensure it runs
+            # before any tt-metal imports that might read cache paths
+            
+            # Now open device - will see only the devices assigned to this worker
+            self.ttnn_device = self._mesh_device()
+        server_args = get_global_server_args()
+        self.max_batch_size = server_args.max_running_requests or 32
+        return self.ttnn_device
 
-# From tt-metal/conftest.py:
-# Set fabric config to passed in value
-# Do nothing if not set
-# Must be called before creating the mesh device
-def set_fabric(override_tt_config, num_devices):
-    fabric_config = get_fabric_config(override_tt_config, num_devices)
-    if fabric_config:
-        ttnn.set_fabric_config(fabric_config)
-
-
-# From tt-metal/conftest.py:
-# Reset fabric config to DISABLED if not None, and do nothing otherwise
-# Temporarily require previous state to be passed
-# in as even setting it to DISABLED might be unstable
-# This is to ensure that we don't propagate
-# the instability to the rest of CI
-def reset_fabric(override_tt_config, num_devices):
-    fabric_config = get_fabric_config(override_tt_config, num_devices)
-    if fabric_config:
-        ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
-
-def device_params_from_override_tt_config(override_tt_config, trace_mode, model_config=None):
-    device_params = {}
-
-    if trace_mode:
-        # Set the most common value as default, override later
-        device_params["trace_region_size"] = 50000000
-        if override_tt_config and "trace_region_size" in override_tt_config:
-            device_params["trace_region_size"] = override_tt_config[
-                "trace_region_size"]
-
-    if override_tt_config and "worker_l1_size" in override_tt_config:
-        device_params["worker_l1_size"] = override_tt_config["worker_l1_size"]
-
-    if override_tt_config and "l1_small_size" in override_tt_config:
-        device_params["l1_small_size"] = override_tt_config["l1_small_size"]
-
-    # Support num_command_queues parameter
-    if override_tt_config and "num_command_queues" in override_tt_config:
-        device_params["num_command_queues"] = override_tt_config["num_command_queues"]
-    
-    # Auto-detect BGE models and set required parameters
-    # BGE models need 2 command queues for _capture_bge_trace_2cqs()
-    if model_config is not None:
-        # Check model name from various possible attributes
-        model_name = None
-        if hasattr(model_config, 'model'):
-            model_name = model_config.model
-        elif hasattr(model_config, 'hf_config'):
-            hf_config = model_config.hf_config
-            if hasattr(hf_config, 'name_or_path'):
-                model_name = hf_config.name_or_path
-            elif hasattr(hf_config, '_name_or_path'):
-                model_name = hf_config._name_or_path
-            elif isinstance(hf_config, dict):
-                model_name = hf_config.get('name_or_path') or hf_config.get('_name_or_path')
-        
-        # Check if this is a BGE model by model name
-        # BGE models typically have "bge" in their HuggingFace model name
-        is_bge = model_name and 'bge' in str(model_name).lower()
-        
-        # For BGE models, set required device parameters if not already set
-        if is_bge and "num_command_queues" not in device_params:
-            logger.info(f"Detected BGE model ({model_name}), setting num_command_queues=2")
-            device_params["num_command_queues"] = 2
-            if "l1_small_size" not in device_params:
-                device_params["l1_small_size"] = 24576
-            if trace_mode and (not override_tt_config or "trace_region_size" not in override_tt_config):
-                device_params["trace_region_size"] = 6434816
-
-    return device_params
-
-
-def get_mesh_grid(dp_rank=0):
-    if dp_rank == 0:
-        # Only DP rank 0 should get device ids, otherwise device init may hang.
-        num_devices_available = len(ttnn.get_device_ids())
-    mesh_grid_dict = {
-        "N150": (1, 1),
-        "P100": (1, 1),
-        "P150": (1, 1),
-        "P150x2": (1, 2),
-        "N300": (1, 2),
-        "P300": (1, 2),
-        "N150x4": (1, 4),
-        "P150x4": (1, 4),
-        "T3K": (1, 8),
-        "P150x8": (1, 8),
-        "TG": (8, 4)
-    }
-    mesh_device_env = os.environ.get("MESH_DEVICE")
-    if mesh_device_env is not None:
+    def close_device(self):
+        import ttnn
         try:
-            # Try to parse as a literal tuple first
-            parsed_value = ast.literal_eval(mesh_device_env)
-            if isinstance(parsed_value, tuple) and len(parsed_value) == 2:
-                logger.debug("MESH_DEVICE is a tuple", mesh_device_env)
-                mesh_grid = parsed_value
+            self.logger.info(f"Device {self.device_id}: Closing mesh device...")
+            if self.ttnn_device is not None:
+                ttnn.close_mesh_device(self.ttnn_device)
+                self.logger.info(
+                    f"Device {self.device_id}: Successfully closed mesh device"
+                )
             else:
-                raise ValueError("Not a valid tuple")
-        except (ValueError, SyntaxError):
-            # If parsing fails, treat as a string key for mesh_grid_dict
-            assert mesh_device_env in mesh_grid_dict, (
-                f"Invalid MESH_DEVICE: {mesh_device_env}")
-            mesh_grid = mesh_grid_dict[mesh_device_env]
-    else:
-        assert dp_rank == 0, (
-            "MESH_DEVICE must be set when running with data_parallel_size > 1")
-        mesh_grid = (1, num_devices_available)
+                self.logger.info(
+                    f"Device {self.device_id}: Device is None, no need to close"
+                )
+        except Exception as e:
+            self.logger.error(f"Device {self.device_id}: Failed to close device: {e}")
+            raise RuntimeError(
+                f"Device {self.device_id}: Device cleanup failed: {str(e)}"
+            ) from e
 
-    assert dp_rank != 0 or (
-        mesh_grid[0] * mesh_grid[1] <= num_devices_available), (
-            f"Requested mesh grid shape {mesh_grid} is larger than "
-            f"number of available devices {num_devices_available}")
+    def get_updated_device_params(self, device_params):
+        import ttnn
+        if device_params is None:
+            device_params = {}
 
-    return mesh_grid
+        new_device_params = device_params.copy()
 
+        dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
+        dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
+        fabric_tensix_config = new_device_params.get("fabric_tensix_config", None)
 
-def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=None):
-    assert dp_rank == 0, "open_mesh_device must run on DP rank 0"
-    mesh_grid = get_mesh_grid(dp_rank)
-    device_params = device_params_from_override_tt_config(
-        override_tt_config, trace_mode, model_config)
-    # Set fabric before opening the device
-    num_devices_requested = mesh_grid[0] * mesh_grid[1]
-    set_fabric(override_tt_config, num_devices_requested)
+        if ttnn.device.is_blackhole():
+            # Only when both fabric_config and fabric_tensix_config are set, we can use ROW dispatch, otherwise force to use COL dispatch
+            fabric_config = new_device_params.get("fabric_config", None)
+            if not (fabric_config and fabric_tensix_config):
+                # When not both are set, force COL dispatch
+                if dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
+                    self.logger.warning(
+                        "ROW dispatch requires both fabric and tensix config, using DispatchCoreAxis.COL instead."
+                    )
+                    dispatch_core_axis = ttnn.DispatchCoreAxis.COL
+            elif fabric_config and fabric_tensix_config:
+                self.logger.warning(
+                    f"Blackhole with fabric_config and fabric_tensix_config enabled, using fabric_tensix_config={fabric_tensix_config}"
+                )
 
-    mesh_device = ttnn.open_mesh_device(
-        ttnn.MeshShape(*mesh_grid),
-        dispatch_core_config=get_dispatch_core_config(override_tt_config),
-        **device_params,
-    )
-    logger.info("multidevice with %d devices and grid %s is created",
-                mesh_device.get_num_devices(), mesh_grid)
-    if "num_command_queues" in device_params:
-        logger.info("Device initialized with %d command queues", device_params["num_command_queues"])
-    return mesh_device
+        dispatch_core_config = ttnn.DispatchCoreConfig(
+            dispatch_core_type, dispatch_core_axis, fabric_tensix_config
+        )
+        new_device_params["dispatch_core_config"] = dispatch_core_config
 
+        return new_device_params
 
-def close_mesh_device(mesh_device, override_tt_config):
-    # Read device profiler (no-op if not profiling with tracy)
-    ttnn.ReadDeviceProfiler(mesh_device)
-    # Close devices
-    num_devices = mesh_device.get_num_devices()
-    ttnn.close_mesh_device(mesh_device)
-    # Reset fabric
-    reset_fabric(override_tt_config, num_devices)
+    def _mesh_device(self):
+        import ttnn
+        try:
+            # Get available devices
+            device_ids = ttnn.get_device_ids()
+            if not device_ids:
+                raise RuntimeError("No TTNN devices available")
+            
+            num_devices_available = len(device_ids)
+            self.logger.info(
+                f"Device {self.device_id}: Found {num_devices_available} available TTNN devices: {device_ids}"
+            )
+
+            # Get mesh shape from DEVICE_MESH_SHAPE env var (set by --mesh-shape CLI arg)
+            mesh_shape_str = os.environ.get("DEVICE_MESH_SHAPE")
+            if mesh_shape_str:
+                rows, cols = map(int, mesh_shape_str.split(","))
+                mesh_shape = ttnn.MeshShape(rows, cols)
+                num_devices_requested = rows * cols
+                self.logger.info(f"Device {self.device_id}: Using mesh shape ({rows}, {cols}) from --mesh-shape CLI arg")
+            else:
+                # Default: 1 row, N columns (width sharding for LLMs)
+                mesh_shape = ttnn.MeshShape(1, num_devices_available)
+                num_devices_requested = num_devices_available
+                self.logger.info(f"Device {self.device_id}: Using default mesh shape (1, {num_devices_available})")
+
+            # Configure fabric BEFORE opening mesh device
+            # Use requested device count, not available - fabric requires all devices be active
+            fabric_config = self._configure_fabric(num_devices_requested)
+
+            device_params = self.get_pipeline_device_params()
+            updated_device_params = self.get_updated_device_params(device_params)
+            mesh_device = self._initialize_mesh_device(
+                mesh_shape, updated_device_params, fabric_config
+            )
+
+            self.logger.info(
+                f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
+            )
+            return mesh_device
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+            )
+            raise RuntimeError(
+                f"Unexpected device initialization error: {str(e)}"
+            ) from e
+
+    def _configure_fabric(self, num_devices: int):
+        """Configure fabric before opening mesh device.
+        
+        For multi-device setups (N300 with 2 chips), we need FABRIC_1D
+        for CCL operations (all_gather, reduce_scatter).
+        
+        Each worker process has its own MetalContext, and TT_VISIBLE_DEVICES
+        restricts which physical devices it can see. This is the same approach
+        used by tt-sglang-plugin in tt-inference-server.
+        """
+        import ttnn
+        
+        if num_devices == 1:
+            self.logger.info(f"Device {self.device_id}: Single device, no fabric config needed")
+            return None
+        
+        # FABRIC_1D for N300 (linear topology with 2 chips connected via Ethernet)
+        fabric_config = ttnn.FabricConfig.FABRIC_1D
+        
+        self.logger.info(
+            f"Device {self.device_id}: Setting fabric config to {fabric_config} for {num_devices} devices"
+        )
+        
+        ttnn.set_fabric_config(fabric_config)
+        
+        return fabric_config
+
+    def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
+        import ttnn
+        try:
+            mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Mesh device initialization failed: {e}"
+            )
+            raise RuntimeError(f"Mesh device initialization failed: {str(e)}") from e
+        return mesh_device
+    
+    def set_torch_thread_limits(self, num_threads: int = 1):
+        if torch.get_num_threads() != num_threads:
+            torch.set_num_threads(num_threads)
+        if torch.get_num_interop_threads() != num_threads:
+            torch.set_num_interop_threads(num_threads)

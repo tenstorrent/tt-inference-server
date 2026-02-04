@@ -1,17 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 import torch
 from torch import nn
-import ttnn
 from contextlib import suppress
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, ForwardMode
 from sglang.srt.layers.logits_processor import LogitsProcessorOutput
-from models.tt_transformers.tt.generator_sglang import (
-    LlamaForCausalLM as TT_Llama,
-    QwenForCausalLM as TT_Qwen,
-    MistralForCausalLM as TT_Mistral,
-    GptOssForCausalLM as TT_GptOss,
-)
-from models.tt_transformers.tt.model_config import DecodersPrecision
-from ..utils.tt_utils import open_mesh_device, close_mesh_device, get_mesh_grid
+from ..utils.tt_utils import BaseMetalDeviceRunner
 import logging
 from sglang.srt.server_args import get_global_server_args
 import os
@@ -20,30 +16,49 @@ import math
 logger = logging.getLogger(__name__)
 
 class TTModels(nn.Module):
+    # Class-level constants for default/fallback values
+    DEFAULT_BLOCK_SIZE = 64
+    DEFAULT_MAX_BATCH_SIZE = 32
+    DEFAULT_NUM_LAYERS = 32
+    DEFAULT_NUM_KV_HEADS = 8
+    DEFAULT_MAX_TOKENS = 131072
+    MAX_TOKENS_GPT_OSS = 1024
+    MAX_TOKENS_DEEPSEEK_WORMHOLE = 32768
+    MAX_TOKENS_WORMHOLE_CONSTRAINED = 65536
+    
     def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
         super().__init__()
+        
+        # Setup worker environment FIRST, before any tt-metal imports or model init
+        # This sets TT_METAL_CACHE and TT_CACHE_HOME per worker for isolation
+        from sglang_tt_plugin.worker_setup.worker_setup import setup_worker_from_process_title
+        setup_worker_from_process_title()
+        
         self.config = config # hf model config
         self.kv_caches = None # will be allocated on device in allocate_on_device()
-        self.block_size = get_global_server_args().page_size or 64  # Block size comes from server's --page-size arg Fall back to 64 if server args not yet available
+        self.block_size = get_global_server_args().page_size or self.DEFAULT_BLOCK_SIZE  # Block size comes from server's --page-size arg
 
         if tt_model is not None: #model initialized only once 
             self.tt_model = tt_model
         else:
             server_args = get_global_server_args() # Initialize TT model - get params from server args 
-            self.max_batch_size = server_args.max_running_requests or 32 #fallback to 32 if not set
+            self.max_batch_size = server_args.max_running_requests or self.DEFAULT_MAX_BATCH_SIZE
             self.max_seq_len = server_args.context_length 
-            self.tt_data_parallel = server_args.dp_size  
+            # For multi-worker data parallelism, each SGLang worker handles its own DP slice
+            # so tt_data_parallel should be 1 per worker (SGLang's dp_size workers provide the parallelism)
+            self.tt_data_parallel = 1  # Each worker uses all devices on its assigned slot
             self.optimizations = os.environ.get("TT_METAL_OPTIMIZATIONS", "performance")  # From --optimizations CLI arg
             self.override_tt_config = None
             
-            logger.info(f"[TT-SGLANG] Model init: max_batch_size={self.max_batch_size}, "f"max_seq_len={self.max_seq_len}, page_size={self.block_size}")
-            # Initialize TT device (rank 0 for single-device, or from distributed if multi-device)
+            logger.info(f"[TT-SGLANG] Model init: max_batch_size={self.max_batch_size}, max_seq_len={self.max_seq_len}, page_size={self.block_size}")
+            # Initialize TT device using BaseMetalDeviceRunner
             rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
             os.environ["HF_MODEL"] = get_global_server_args().model_path
 
-            self.mesh_device =open_mesh_device(self.override_tt_config, trace_mode=False, dp_rank=rank) #open communication with device
+            self.device_runner = BaseMetalDeviceRunner(device_id=str(rank))
+            self.mesh_device = self.device_runner.set_device()
 
-    def forward(
+    def forward(    # function running on either prefil or decode mode
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
@@ -57,14 +72,18 @@ class TTModels(nn.Module):
         
             padded_tokens = self._flatten_to_padded(input_ids, forward_batch)
             
+            # Use extend_seq_lens (NEW token lengths) for prompt_lens, not seq_lens (TOTAL length)
+            # seq_lens includes cached prefix tokens, but padded_tokens only contains NEW tokens
+            prompt_lens = forward_batch.extend_seq_lens if forward_batch.extend_seq_lens is not None else forward_batch.seq_lens
+            
             logits = self.tt_model.prefill_forward(
                 tokens=padded_tokens,
                 page_table=page_table,
                 kv_cache=self.kv_caches,
-                prompt_lens=forward_batch.seq_lens,
-                enable_trace=False 
+                prompt_lens=prompt_lens,
+                enable_trace=True 
             )
-            logger.info( f"tt_model.prefill_forward executed")
+            logger.debug("tt_model.prefill_forward executed")
             # returns scores for every possible next word and sglang picks the most likely one ( it will become the next token )
             return LogitsProcessorOutput(next_token_logits=logits.squeeze(1))
 
@@ -80,10 +99,10 @@ class TTModels(nn.Module):
                 start_pos=start_pos,
                 page_table=page_table,
                 kv_cache=self.kv_caches,
-                enable_trace=False,
+                enable_trace=True,
                 read_from_device=True,
             )
-            logger.info(f"tt_model.decode_forward executed")
+            logger.debug("tt_model.decode_forward executed")
             # returns scores for every possible next word and sglang picks the most likely one ( it will become the next token )
             logits = decode_output[0]
             logits = logits[:actual_bsz] # ignore output of padded requests
@@ -92,30 +111,28 @@ class TTModels(nn.Module):
         else:
             raise ValueError(f"Unsupported forward mode: {forward_batch.forward_mode}")
 
-    def allocate_on_device(self):
+    def allocate_on_device(self):   #function aloocating kv cache
         """
         Allocate the actual KV cache on the TT-Metal device.
         This method should be called from the SGlang's ModelRunner after the pool is initialized.
         """
-        # Get mesh grid and hardware info
-        mesh_grid = get_mesh_grid(dp_rank=0)
-        num_devices_per_model = mesh_grid[0] * mesh_grid[1]
+        import ttnn
+        # Get hardware info from mesh_device (already opened by device_runner in tt_utils)
+        num_devices_per_model = self.mesh_device.get_num_devices()
         is_wormhole = "wormhole_b0" in ttnn.get_arch_name()
         model_path = get_global_server_args().model_path or ""
         # Get max tokens based on hardware + model configuration
         max_tokens_all_users = self._get_max_tokens_for_hardware(model_path, num_devices_per_model, is_wormhole)
         
-        logger.info(f"[TT-SGLANG] Token limit: {max_tokens_all_users} "f"(model={model_path}, devices={num_devices_per_model}, wormhole={is_wormhole})")
-        
         # Build KV Cache Shape
         # 1. Account for worst-case batch allocation, Each user in batch might touch a new block
         page_size = get_global_server_args().page_size # get page size from server args ( how many tokens fit in one block )
-        max_batch = get_global_server_args().max_running_requests or 32 # max concurrent requests
+        max_batch = get_global_server_args().max_running_requests or self.DEFAULT_MAX_BATCH_SIZE # max concurrent requests
         max_tokens_all_users += page_size * max_batch # if all users need new block at the same time
         num_tt_blocks = math.ceil(max_tokens_all_users / page_size) # total number of blocks after worst case scenario
         # 2. Calculate num_kv_heads with tensor parallelism adjustment
         num_devices = self.mesh_device.get_num_devices() // self.tt_data_parallel  # Calculate num_kv_heads with tensor parallelism adjustment
-        total_kv_heads = getattr(self.config, 'num_key_value_heads', getattr(self.config, 'num_attention_heads', 8))
+        total_kv_heads = getattr(self.config, 'num_key_value_heads', getattr(self.config, 'num_attention_heads', self.DEFAULT_NUM_KV_HEADS))
         num_kv_heads = total_kv_heads // min(num_devices, total_kv_heads) # kv heads per device
         head_size = getattr(self.config, 'head_dim', self.config.hidden_size // self.config.num_attention_heads)
         
@@ -125,18 +142,16 @@ class TTModels(nn.Module):
             page_size,        # block_size
             head_size,        # head_size
         )
-        # Get num_layers from config (like vLLM's model_config.get_num_layers_by_block_type())
-        num_layers = getattr(self.config, 'num_hidden_layers', getattr(self.config, 'n_layers', getattr(self.config, 'n_layer', 32)))  # Llama/Mistral, GPT-Neo, GPT-2
+        # Get num_layers from config (like sglang's model_config.get_num_layers_by_block_type())
+        num_layers = getattr(self.config, 'num_hidden_layers', getattr(self.config, 'n_layers', getattr(self.config, 'n_layer', self.DEFAULT_NUM_LAYERS)))  # Llama/Mistral, GPT-Neo, GPT-2
         dtype = torch.bfloat16
-
-        logger.info(f"Allocating KV Cache on device with shape: {kv_cache_shape}, dtype: {dtype}, layers: {num_layers}")
         # Allocate KV cache directly on TT-Metal
         self.kv_caches = self.tt_model.allocate_kv_cache(
             kv_cache_shape=kv_cache_shape,
             dtype=dtype,
             num_layers=num_layers
         )
-        logger.info(f"tt_model.allocate_kv_cache executed")
+        logger.debug("tt_model.allocate_kv_cache executed")
 
     def load_weights(self, weights): # TT model loads weights during initialization
         pass
@@ -160,6 +175,7 @@ class TTModels(nn.Module):
             not the full sequence. Use extend_seq_lens (new token counts) NOT seq_lens (total length).
         """
         batch_size = forward_batch.batch_size # number of requests
+        
         # Use extend_seq_lens (new tokens only) if available, otherwise fall back to seq_lens
         # extend_seq_lens = length of NEW tokens in input_ids
         # seq_lens = TOTAL sequence length (including already-cached prefix)
@@ -213,19 +229,19 @@ class TTModels(nn.Module):
         """Calculates max token limit based on model and hardware configuration.
             Helper function for allocate_on_device """
         # Default token limit (generous for Blackhole, multi-device, etc.)
-        max_tokens = 131072
+        max_tokens = self.DEFAULT_MAX_TOKENS
         
-        # Override for memory-constrained cases (same as vLLM plugin)
+        # Override for memory-constrained cases (same as sglang plugin)
         if "gpt-oss" in model_path.lower():
-            max_tokens = 1024  # Very limited context
+            max_tokens = self.MAX_TOKENS_GPT_OSS
         elif "DeepSeek-R1-0528" in model_path and is_wormhole:
-            max_tokens = 32768
+            max_tokens = self.MAX_TOKENS_DEEPSEEK_WORMHOLE
         elif is_wormhole:
             # Wormhole-specific memory constraints based on model + device count
             wormhole_limits = [
-                (["Llama-3.1-8B", "Mistral-7B", "gemma-3-4b"], 1, 65536),  # N150
-                (["DeepSeek-R1-Distill-Qwen-14B", "Qwen2.5-14B"], 2, 65536),  # N300
-                (["Llama-3.2-90B", "Qwen2.5-VL-72B"], 8, 65536),  # T3K
+                (["Llama-3.1-8B", "Mistral-7B", "gemma-3-4b"], 1, self.MAX_TOKENS_WORMHOLE_CONSTRAINED),  # N150
+                (["DeepSeek-R1-Distill-Qwen-14B", "Qwen2.5-14B"], 2, self.MAX_TOKENS_WORMHOLE_CONSTRAINED),  # N300
+                (["Llama-3.2-90B", "Qwen2.5-VL-72B"], 8, self.MAX_TOKENS_WORMHOLE_CONSTRAINED),  # T3K
             ]
             for models, devices, limit in wormhole_limits:
                 if num_devices == devices and any(m in model_path for m in models):
@@ -239,81 +255,69 @@ class TTModels(nn.Module):
         with suppress(AttributeError):
             if hasattr(self, 'tt_model'): # Delete TT model first in case there are model artifacts
                 del self.tt_model
-            # Close mesh device
-            if hasattr(self, 'mesh_device') and self.mesh_device is not None: 
-                close_mesh_device(self.mesh_device, self.override_tt_config)
-                del self.mesh_device
+            # Close mesh device using device runner
+            if hasattr(self, 'device_runner') and self.device_runner is not None:
+                self.device_runner.close_device()
                 logger.info("Mesh device closed in destructor")
 
 
 
-class TTLlamaForCausalLM(TTModels):
-    """SGLang wrapper for Llama models (Llama-3.1-8B, Llama-3.1-70B, Llama-3.2-11B, etc.)"""
-    def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
-        super().__init__(config, quant_config, tt_model, **kwargs)
-
-        self.tt_model = TT_Llama.initialize_vllm_model(
-            config,
-            self.mesh_device,
-            self.max_batch_size,
-            self.max_seq_len,
-            tt_data_parallel=self.tt_data_parallel,
-            optimizations=self.optimizations
-        )
-        logger.info(f"TT_Llama.initialize_vllm_model executed")
-        self.allocate_on_device()
-
-
-class TTQwenForCausalLM(TTModels):
-    """SGLang wrapper for Qwen models (Qwen2.5-7B, Qwen2.5-14B, Qwen2.5-72B, etc.)"""
-    def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
-        super().__init__(config, quant_config, tt_model, **kwargs)
-
-        self.tt_model = TT_Qwen.initialize_vllm_model(
-            config,
-            self.mesh_device,
-            self.max_batch_size,
-            self.max_seq_len,
-            tt_data_parallel=self.tt_data_parallel,
-            optimizations=self.optimizations
-        )
-        logger.info(f"TT_Qwen.initialize_vllm_model executed")
-        self.allocate_on_device()
-
-
-class TTMistralForCausalLM(TTModels):
-    """SGLang wrapper for Mistral models (Mistral-7B, etc.)"""
-    def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
-        super().__init__(config, quant_config, tt_model, **kwargs)
-
-        self.tt_model = TT_Mistral.initialize_vllm_model(
-            config,
-            self.mesh_device,
-            self.max_batch_size,
-            self.max_seq_len,
-            tt_data_parallel=self.tt_data_parallel,
-            optimizations=self.optimizations
-        )
-        logger.info(f"TT_Mistral.initialize_vllm_model executed")
-        self.allocate_on_device()
+def _create_tt_model_class(backend_module_path: str, backend_class_name: str, class_name: str):
+    """Factory to create SGLang wrapper classes for TT-Metal models.
+    
+    Args:
+        backend_module_path: Import path for the backend module
+        backend_class_name: Name of the class to import from the backend module
+        class_name: Name for the created wrapper class
+    """
+    class TTModelForCausalLM(TTModels):
+        def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
+            super().__init__(config, quant_config, tt_model, **kwargs)
+            
+            # Lazy import of TT backend class
+            from models.tt_transformers.tt.generator_sglang import (
+                LlamaForCausalLM as TT_Llama,
+                QwenForCausalLM as TT_Qwen,
+                MistralForCausalLM as TT_Mistral,
+                GptOssForCausalLM as TT_GptOss,
+            )
+            backend_classes = {
+                "LlamaForCausalLM": TT_Llama,
+                "QwenForCausalLM": TT_Qwen,
+                "MistralForCausalLM": TT_Mistral,
+                "GptOssForCausalLM": TT_GptOss,
+            }
+            tt_backend_class = backend_classes[backend_class_name]
+            
+            self.tt_model = tt_backend_class.initialize_sglang_model(
+                config,
+                self.mesh_device,
+                self.max_batch_size,
+                self.max_seq_len,
+                tt_data_parallel=self.tt_data_parallel,
+                optimizations=self.optimizations
+            )
+            logger.info(f"{backend_class_name}.initialize_sglang_model executed")
+            self.allocate_on_device()
+    
+    TTModelForCausalLM.__name__ = class_name
+    TTModelForCausalLM.__qualname__ = class_name
+    return TTModelForCausalLM
 
 
-class TTGptOssForCausalLM(TTModels):
-    """SGLang wrapper for GPT-OSS models"""
-    def __init__(self, config, quant_config=None, tt_model=None, **kwargs):
-        super().__init__(config, quant_config, tt_model, **kwargs)
-
-        self.tt_model = TT_GptOss.initialize_vllm_model(
-            config,
-            self.mesh_device,
-            self.max_batch_size,
-            self.max_seq_len,
-            tt_data_parallel=self.tt_data_parallel,
-            optimizations=self.optimizations
-        )
-        logger.info(f"TT_GptOss.initialize_vllm_model executed")
-        self.allocate_on_device()
-
+# Create all TT model wrapper classes using factory pattern
+TTLlamaForCausalLM = _create_tt_model_class(
+    "models.tt_transformers.tt.generator_sglang", "LlamaForCausalLM", "TTLlamaForCausalLM"
+)
+TTQwenForCausalLM = _create_tt_model_class(
+    "models.tt_transformers.tt.generator_sglang", "QwenForCausalLM", "TTQwenForCausalLM"
+)
+TTMistralForCausalLM = _create_tt_model_class(
+    "models.tt_transformers.tt.generator_sglang", "MistralForCausalLM", "TTMistralForCausalLM"
+)
+TTGptOssForCausalLM = _create_tt_model_class(
+    "models.tt_transformers.tt.generator_sglang", "GptOssForCausalLM", "TTGptOssForCausalLM"
+)
 
 # All available TT model classes for SGLang
 EntryClass = [TTLlamaForCausalLM, TTQwenForCausalLM, TTMistralForCausalLM, TTGptOssForCausalLM]
