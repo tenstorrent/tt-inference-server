@@ -9,6 +9,16 @@ from unittest.mock import MagicMock, patch
 from utils.embedding_tokenizer import EmbeddingTokenizer
 
 
+class TestEmbeddingTokenizerInit:
+    """Tests for EmbeddingTokenizer.__init__."""
+
+    def test_init_stores_model_name_and_tokenizer_none(self):
+        """__init__ stores model_name and leaves _tokenizer as None."""
+        tok = EmbeddingTokenizer("BAAI/bge-large-en-v1.5")
+        assert tok._model_name == "BAAI/bge-large-en-v1.5"
+        assert tok._tokenizer is None
+
+
 class TestEmbeddingTokenizerProperty:
     """Tests for EmbeddingTokenizer.tokenizer property (lazy load)."""
 

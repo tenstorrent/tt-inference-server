@@ -26,11 +26,14 @@ option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 # Source files
 set(SOURCES
     src/main.cpp
+    src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
+    src/runners/embedding_runner.cpp
     src/scheduler/scheduler.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
+    src/services/embedding_service.cpp
 )
 
 # Create executable

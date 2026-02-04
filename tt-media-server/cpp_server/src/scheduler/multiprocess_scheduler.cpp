@@ -3,6 +3,7 @@
 
 #include "scheduler/multiprocess_scheduler.hpp"
 #include "runners/llm_test_runner.hpp"
+#include "runners/runner_factory.hpp"
 
 #include <iostream>
 #include <chrono>
@@ -167,8 +168,8 @@ void MultiprocessScheduler::stop() {
     ipc::TokenRingBuffer<RING_BUFFER_CAPACITY> token_buffer(token_shm_name, false);
     ipc::TokenRingBuffer<1024> task_buffer(task_shm_name, false);
 
-    // 3. Create the device runner (NOW it reads the correct environment)
-    auto runner = std::make_unique<runners::LLMTestRunner>("device_" + std::to_string(worker_id));
+    // 3. Create the device runner using factory (reads TT_RUNNER_TYPE from environment)
+    auto runner = runners::RunnerFactory::create("device_" + std::to_string(worker_id));
     runner->warmup();
 
     std::cout << "[Worker " << worker_id << "] Ready\n";
