@@ -48,16 +48,16 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLM: lambda wid: __import__(
         "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
     ).VLLMRunner(wid),
-    ModelRunners.VLLMBGELargeEN_V1_5: lambda wid: __import__(
-        "tt_model_runners.vllm_embedding_runner", fromlist=["VLLMBGELargeENRunner"]
-    ).VLLMBGELargeENRunner(wid),
+    ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
+    ).BGELargeENRunner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
-    ModelRunners.VLLM_QWEN_EMBEDDING_8B: lambda wid: __import__(
-        "tt_model_runners.vllm_embedding_runner",
-        fromlist=["VLLMQwen3Embedding8BRunner"],
-    ).VLLMQwen3Embedding8BRunner(wid),
+    ModelRunners.QWEN_EMBEDDING_8B: lambda wid: __import__(
+        "tt_model_runners.embedding_runner",
+        fromlist=["Qwen3Embedding8BRunner"],
+    ).Qwen3Embedding8BRunner(wid),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
