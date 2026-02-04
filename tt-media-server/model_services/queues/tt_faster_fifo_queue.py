@@ -8,8 +8,6 @@ from typing import Any, List, Optional
 from faster_fifo import Queue as FasterFifoQueue
 from model_services.queues.tt_queue_interface import TTQueueInterface
 
-from queue import Empty
-
 
 class TTFasterFifoQueue(TTQueueInterface):
     """
@@ -110,8 +108,8 @@ class TTFasterFifoQueue(TTQueueInterface):
 
     def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
         """Peek at next item for conditional processing."""
-        raise NotImplementedError("peek_next is not implemented for TTFasterFifoQueue")
+        raise NotImplementedError("peek_next is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking")
 
     def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
         """Peek at next n items for conditional processing."""
-        raise NotImplementedError("peek is not implemented for TTFasterFifoQueue")
+        raise NotImplementedError("peek is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking")

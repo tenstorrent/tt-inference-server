@@ -148,11 +148,6 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         else:
             return (self.capacity - read_idx) + write_idx
 
-    def full(self) -> bool:
-        """Check if the queue is full (or nearly full)."""
-        return (
-            self._get_size() >= self.capacity - 10
-        )  # Same margin as _get_next_write_slot
 
     def _get_next_write_slot(self) -> int:
         # Rough size check without lock (acceptable race)
@@ -318,7 +313,7 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         timeout: float = None,
     ) -> list:
         """
-        Get multiple items at once - more efficient than individual gets.
+        Get multiple items at once - optimized batch version.
 
         Args:
             max_messages_to_get: Maximum number of items to retrieve
@@ -328,69 +323,83 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         Returns:
             List of items (may be empty if block=False and queue is empty)
         """
-        results = []
         start_time = time.time() if timeout else None
 
-        # Get first item (blocking if requested)
+        # Wait for at least one item if blocking
         while True:
             if timeout and (time.time() - start_time) > timeout:
-                if not results:
-                    raise TimeoutError(f"Queue get_many timed out after {timeout}s")
-                return results
+                raise TimeoutError(f"Queue get_many timed out after {timeout}s")
 
             read_idx = self._get_read_idx()
             write_idx = self._get_write_idx()
 
             if read_idx == write_idx:
                 if not block:
-                    return results
+                    return []
                 time.sleep(0.0001)
                 continue
 
             # We have at least one item, break out of the waiting loop
             break
 
-        # Now read as many items as available, up to max_messages_to_get
-        items_read = 0
-        while items_read < max_messages_to_get:
-            read_idx = self._get_read_idx()
-            write_idx = self._get_write_idx()
+        # Calculate how many items we can read in one batch
+        if read_idx < 0 or read_idx >= self.capacity:
+            self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+            return []
 
-            if read_idx == write_idx:
-                break
+        # Calculate available items
+        if write_idx >= read_idx:
+            available_items = write_idx - read_idx
+        else:
+            available_items = (self.capacity - read_idx) + write_idx
 
-            if read_idx < 0 or read_idx >= self.capacity:
-                self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
-                break
+        items_to_read = min(max_messages_to_get, available_items)
 
-            slot_idx = read_idx
-            data = self.buffer[slot_idx].copy()
-            self.buffer[slot_idx]["item_available"] = 0
-            self._set_read_idx(read_idx + 1)
+        # Batch read from buffer
+        results = []
+        try:
+            for i in range(items_to_read):
+                slot_idx = (read_idx + i) % self.capacity
 
-            task_id = str(data["task_id"]).rstrip("\x00")
-            text = str(data["text"]).rstrip("\x00")
-            is_final = int(data["is_final"])
+                if slot_idx < 0 or slot_idx >= self.capacity:
+                    self.logger.error(f"CORRUPTION: slot_idx {slot_idx} out of bounds!")
+                    break
 
-            chunk = CompletionResult(
-                text=text,
-                index=None,
-                finish_reason=None,
-            )
+                # Copy data before marking as unavailable
+                data = self.buffer[slot_idx].copy()
+                self.buffer[slot_idx]["item_available"] = 0
 
-            if is_final == 1:
-                chunk_dict = {
-                    "type": "final_result",
-                    "data": chunk,
-                }
-            else:
-                chunk_dict = {
-                    "type": "streaming_chunk",
-                    "data": chunk,
-                }
+                task_id = str(data["task_id"]).rstrip("\x00")
+                text = str(data["text"]).rstrip("\x00")
+                is_final = int(data["is_final"])
 
-            results.append(("1", task_id, chunk_dict))
-            items_read += 1
+                chunk = CompletionResult(
+                    text=text,
+                    index=None,
+                    finish_reason=None,
+                )
+
+                if is_final == 1:
+                    chunk_dict = {
+                        "type": "final_result",
+                        "data": chunk,
+                    }
+                else:
+                    chunk_dict = {
+                        "type": "streaming_chunk",
+                        "data": chunk,
+                    }
+
+                results.append(("1", task_id, chunk_dict))
+
+            # Update read_idx once for the entire batch
+            self._set_read_idx(read_idx + len(results))
+        except Exception as e:
+            self.logger.error(f"Error in get_many batch read: {e}")
+            # Still update read_idx for items we successfully read
+            if results:
+                self._set_read_idx(read_idx + len(results))
+            raise
 
         return results
 
@@ -414,15 +423,15 @@ class SharedMemoryChunkQueue(TTQueueInterface):
 
     def put_nowait(self, item: Any):
         """Equivalent to put(obj, False)."""
-        raise NotImplementedError("put_nowait is not implemented for SharedMemoryChunkQueue")
+        return self.put(item, block=False, timeout=None)
 
     def qsize(self) -> int:
         """Return the approximate size of the queue."""
-        raise NotImplementedError("qsize is not implemented for SharedMemoryChunkQueue")
+        return self._get_size()
 
     def empty(self) -> bool:
         """Return True if the queue is empty, False otherwise (approximate)."""
-        raise NotImplementedError("empty is not implemented for SharedMemoryChunkQueue")
+        return self._get_size() == 0
 
     def full(self) -> bool:
         """Return True if the queue is full, False otherwise (approximate)."""
@@ -431,47 +440,188 @@ class SharedMemoryChunkQueue(TTQueueInterface):
     def put_many(
         self, items: List[Any], block: bool = True, timeout: Optional[float] = None
     ):
-        """Put multiple items into the queue."""
-        for item in items:
-            self.put(item, block=block, timeout=timeout)
+        """Put multiple items into the queue - optimized batch version."""
+        if not items:
+            return
 
-    def get_many(
-        self,
-        max_messages_to_get: int = 100,
-        block: bool = True,
-        timeout: Optional[float] = None,
-    ) -> List[Any]:
-        """Get multiple items from the queue."""
-        batch = []
+        start_time = time.time() if timeout else None
+        num_items = len(items)
 
-        # Get first item (blocking or non-blocking based on params)
-        if block:
-            try:
-                first_item = self.get(timeout=timeout)
-                if first_item is not None:
-                    batch.append(first_item)
-            except TimeoutError:
-                return batch
+        # Pre-process all items to extract fields
+        processed_items = []
+        for obj in items:
+            # Extract from tuple: (worker_id, task_id, data_dict)
+            _, task_id, data = obj
+
+            # Extract fields from the dict
+            chunk_type = data.get("type", "streaming_chunk")
+            is_final = 1 if chunk_type == "final_result" else 0
+
+            # Get text from chunk or result
+            chunk_obj = data.get("data")
+            text = chunk_obj.text if chunk_obj else ""
+
+            # Truncate if needed
+            if len(task_id) > MAX_TASK_ID_LEN:
+                task_id = task_id[:MAX_TASK_ID_LEN]
+            if len(text) > MAX_TEXT_LEN:
+                text = text[:MAX_TEXT_LEN]
+
+            processed_items.append((task_id, text, is_final))
+
+        # Calculate available space upfront
+        write_idx = self._get_write_idx()
+        read_idx = self._get_read_idx()
+
+        if write_idx >= read_idx:
+            available_space = (self.capacity - write_idx) + read_idx - 10
         else:
-            first_item = self.get_nowait()
-            if first_item is not None:
-                batch.append(first_item)
-            else:
-                return batch  # Return empty if non-blocking and empty
+            available_space = read_idx - write_idx - 10
 
-        # Try to get more items non-blocking
-        for _ in range(max_messages_to_get - 1):
-            item = self.get_nowait()
-            if item is None:
+        # Ensure non-negative
+        available_space = max(0, available_space)
+
+        # Wait for space if blocking
+        while available_space < num_items:
+            if not block:
+                # Put as many as we can
+                num_items = available_space
+                processed_items = processed_items[:num_items]
                 break
-            batch.append(item)
 
-        return batch
+            if timeout and (time.time() - start_time) > timeout:
+                raise TimeoutError(f"Queue put_many timed out after {timeout}s")
+
+            time.sleep(0.0001)
+            write_idx = self._get_write_idx()
+            read_idx = self._get_read_idx()
+
+            if write_idx >= read_idx:
+                available_space = (self.capacity - write_idx) + read_idx - 10
+            else:
+                available_space = read_idx - write_idx - 10
+
+        if num_items == 0:
+            return
+
+        # Batch write to buffer
+        try:
+            for i, (task_id, text, is_final) in enumerate(processed_items):
+                slot_idx = (write_idx + i) % self.capacity
+                self.buffer[slot_idx]["task_id"] = task_id
+                self.buffer[slot_idx]["text"] = text
+                self.buffer[slot_idx]["is_final"] = is_final
+                self.buffer[slot_idx]["item_available"] = 2  # Mark ready
+
+            # Update write_idx once for the entire batch
+            self._set_write_idx(write_idx + num_items)
+        except Exception as e:
+            self.logger.error(f"Error in put_many batch write: {e}")
+            raise
+
 
     def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
         """Peek at next item for conditional processing."""
-        raise NotImplementedError("peek_next is not implemented for SharedMemoryChunkQueue")
+        start_time = time.time() if timeout else None
+
+        while True:
+            if timeout and (time.time() - start_time) > timeout:
+                return None
+
+            read_idx = self._get_read_idx()
+            write_idx = self._get_write_idx()
+
+            if read_idx == write_idx:
+                if timeout:
+                    time.sleep(0.0001)
+                    continue
+                return None
+
+            if read_idx < 0 or read_idx >= self.capacity:
+                self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+                return None
+
+            # Read without advancing read_idx
+            data = self.buffer[read_idx].copy()
+
+            task_id = str(data["task_id"]).rstrip("\x00")
+            text = str(data["text"]).rstrip("\x00")
+            is_final = int(data["is_final"])
+
+            chunk = CompletionResult(
+                text=text,
+                index=None,
+                finish_reason=None,
+            )
+
+            if is_final == 1:
+                chunk_dict = {
+                    "type": "final_result",
+                    "data": chunk,
+                }
+            else:
+                chunk_dict = {
+                    "type": "streaming_chunk",
+                    "data": chunk,
+                }
+
+            return ("1", task_id, chunk_dict)
 
     def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
         """Peek at next n items for conditional processing."""
-        raise NotImplementedError("peek is not implemented for SharedMemoryChunkQueue")
+        results = []
+        start_time = time.time() if timeout else None
+
+        # Wait for at least one item if timeout is provided
+        if timeout:
+            while True:
+                if (time.time() - start_time) > timeout:
+                    return results
+
+                read_idx = self._get_read_idx()
+                write_idx = self._get_write_idx()
+
+                if read_idx != write_idx:
+                    break
+
+                time.sleep(0.0001)
+
+        # Read up to n items without advancing read_idx
+        read_idx = self._get_read_idx()
+        write_idx = self._get_write_idx()
+
+        items_to_read = min(n, self._get_size())
+
+        for i in range(items_to_read):
+            current_idx = (read_idx + i) % self.capacity
+
+            if current_idx < 0 or current_idx >= self.capacity:
+                self.logger.error(f"CORRUPTION: peek idx {current_idx} out of bounds!")
+                break
+
+            data = self.buffer[current_idx].copy()
+
+            task_id = str(data["task_id"]).rstrip("\x00")
+            text = str(data["text"]).rstrip("\x00")
+            is_final = int(data["is_final"])
+
+            chunk = CompletionResult(
+                text=text,
+                index=None,
+                finish_reason=None,
+            )
+
+            if is_final == 1:
+                chunk_dict = {
+                    "type": "final_result",
+                    "data": chunk,
+                }
+            else:
+                chunk_dict = {
+                    "type": "streaming_chunk",
+                    "data": chunk,
+                }
+
+            results.append(("1", task_id, chunk_dict))
+
+        return results

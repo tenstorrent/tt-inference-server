@@ -110,4 +110,4 @@ class TTQueue(Queue, TTQueueInterface):
 
     def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
         """Peek at next n items for conditional processing."""
-        raise NotImplementedError("peek is not implemented for TTQueue")
+        raise NotImplementedError("peek is not implemented for TTQueue - multiprocessing.Queue does not support true peeking")
