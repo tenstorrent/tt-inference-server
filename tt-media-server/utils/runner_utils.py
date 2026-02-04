@@ -11,14 +11,14 @@ from utils.torch_utils import set_torch_thread_limits
 
 
 def setup_runner_environment(
-    worker_id: str, cpu_threads: str = "2", num_torch_threads: int = 1
+    device_id: str, cpu_threads: str = "2", num_torch_threads: int = 1
 ):
     """Set up environment variables and configuration for a device runner"""
     setup_cpu_threading_limits(cpu_threads, num_torch_threads)
 
     # Set device visibility
-    os.environ["TT_VISIBLE_DEVICES"] = str(worker_id)
-    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(worker_id)
+    os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
+    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(device_id)
 
     if settings.enable_telemetry:
         get_telemetry_client()
@@ -26,7 +26,7 @@ def setup_runner_environment(
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
     # use cache per device to reduce number of "binary not found" errors
     os.environ["TT_METAL_CACHE"] = (
-        f"{tt_metal_home}/built/{str(worker_id).replace(',', '_')}"
+        f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}"
     )
 
     if settings.is_galaxy:
