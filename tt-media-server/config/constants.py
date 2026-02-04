@@ -213,7 +213,27 @@ class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
-    AUDIO = "audio"
+
+
+class AudioResponseFormat(Enum):
+    """TTS workflow: supported binary response formats."""
+
+    WAV = "wav"
+    MP3 = "mp3"
+    OGG = "ogg"
+
+
+AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
+
+# TTS formats that require ffmpeg for encoding (WAV does not)
+FFMPEG_REQUIRED_FORMATS = frozenset(
+    (AudioResponseFormat.MP3.value, AudioResponseFormat.OGG.value)
+)
+
+# TTS: all allowed response_format values (binary + JSON)
+TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
+    (ResponseFormat.JSON.value, ResponseFormat.VERBOSE_JSON.value)
+)
 
 
 class JobTypes(Enum):
@@ -456,6 +476,12 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
