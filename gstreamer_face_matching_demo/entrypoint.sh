@@ -13,6 +13,13 @@ export GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
 export PYTHONPATH=/app/models:$PYTHONPATH
 export GST_DEBUG=${GST_DEBUG:-1}
 
+# Enable pipeline timing if BENCHMARK mode
+if [ "$1" = "benchmark" ]; then
+    export GST_DEBUG="GST_TRACER:7,GST_ELEMENT:4"
+    export GST_TRACERS="latency(flags=pipeline+element);stats"
+    echo "[BENCHMARK] GStreamer tracing ENABLED"
+fi
+
 # Clear GStreamer cache
 rm -f ~/.cache/gstreamer-1.0/registry.x86_64.bin 2>/dev/null || true
 
@@ -57,7 +64,9 @@ if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "    stream-file      - Custom video file"
     echo "    stream-rtsp      - RTSP IP camera"
     echo "    stream-webcam    - USB webcam on server"
-    echo "    parallel-8device - 8-device parallel face recognition"
+    echo "    parallel-8device   - 8-device parallel face recognition"
+    echo "    benchmark          - Run pipeline with detailed timing breakdown"
+    echo "    accuracy-benchmark - LFW accuracy & latency (PyTorch vs TTNN)"
     echo ""
     echo "  Examples:"
     echo "    docker run --network host ... face-matching-demo"
@@ -98,7 +107,7 @@ case $MODE in
         echo "Streaming test pattern..."
         echo "  Browser: http://localhost:$STREAM_PORT"
         start_http_wrapper
-        gst-launch-1.0 -v videotestsrc ! \
+        gst-launch-1.0 videotestsrc ! \
             "video/x-raw,width=640,height=640,framerate=30/1,format=UYVY" ! \
             $FACE_PROCESS ! $STREAM_OUTPUT
         ;;
@@ -108,7 +117,7 @@ case $MODE in
         echo "Streaming video: $VIDEO_PATH"
         echo "  Browser: http://localhost:$STREAM_PORT"
         start_http_wrapper
-        gst-launch-1.0 -v filesrc location="$VIDEO_PATH" ! \
+        gst-launch-1.0 filesrc location="$VIDEO_PATH" ! \
             decodebin ! videoconvert ! videoscale ! videorate ! \
             "video/x-raw,width=640,height=640,framerate=30/1" ! \
             $FACE_PROCESS ! $STREAM_OUTPUT
@@ -119,7 +128,7 @@ case $MODE in
         echo "Streaming from RTSP: $RTSP_URL"
         echo "  Browser: http://localhost:$STREAM_PORT"
         start_http_wrapper
-        gst-launch-1.0 -v rtspsrc location="$RTSP_URL" latency=0 protocols=tcp ! \
+        gst-launch-1.0 rtspsrc location="$RTSP_URL" latency=0 protocols=tcp ! \
             rtph264depay ! h264parse ! avdec_h264 ! \
             videoconvert ! videoscale ! videorate ! \
             "video/x-raw,width=640,height=640,framerate=30/1" ! \
@@ -131,7 +140,7 @@ case $MODE in
         echo "Streaming from USB webcam: $DEVICE"
         echo "  Browser: http://localhost:$STREAM_PORT"
         start_http_wrapper
-        gst-launch-1.0 -v v4l2src device=$DEVICE ! \
+        gst-launch-1.0 v4l2src device=$DEVICE ! \
             "video/x-raw,width=640,height=640,framerate=30/1" ! \
             $FACE_PROCESS ! $STREAM_OUTPUT
         ;;
@@ -164,6 +173,43 @@ case $MODE in
         export HTTP_MODE=webcam
         start_http_wrapper
         python3 /app/websocket_server.py "$@"
+        ;;
+
+    "benchmark")
+        echo ""
+        echo "======================================================================"
+        echo "  GSTREAMER PIPELINE BENCHMARK MODE"
+        echo "======================================================================"
+        echo ""
+        echo "Measuring timing for EVERY GStreamer element:"
+        echo "  - decodebin (video decoder)"
+        echo "  - videoconvert (color conversion)"
+        echo "  - videoscale (resize)"
+        echo "  - face_recognition (YuNet + SFace on TTNN)"
+        echo "  - jpegenc (JPEG encoder)"
+        echo ""
+        
+        VIDEO_PATH=${1:-/app/demo/test_video.mp4}
+        
+        # Run Python script with pad probes on each element
+        python3 /app/benchmark_gst_elements.py "$VIDEO_PATH"
+        ;;
+
+    "accuracy-benchmark")
+        echo ""
+        echo "======================================================================"
+        echo "  LFW ACCURACY & LATENCY BENCHMARK"
+        echo "======================================================================"
+        echo ""
+        echo "Running face recognition benchmark on LFW dataset:"
+        echo "  - PyTorch (CPU) baseline"
+        echo "  - TTNN (Tenstorrent) accelerated"
+        echo ""
+        echo "Metrics: TPR @ 0.1% FAR, P95 latency"
+        echo ""
+        
+        PAIRS=${1:-500}
+        python3 /app/benchmark_lfw.py --pairs $PAIRS
         ;;
 
     "custom")

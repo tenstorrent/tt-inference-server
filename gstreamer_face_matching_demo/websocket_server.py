@@ -69,13 +69,16 @@ def process_pending_faces():
                 
                 if face_path.exists():
                     try:
-                        # Load face image
+                        # Load face image (already aligned 112x112 from registration)
                         face_img = cv2.imread(str(face_path))
                         face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-                        face_resized = cv2.resize(face_rgb, (112, 112))
+                        
+                        # If it's not 112x112, resize (legacy faces)
+                        if face_rgb.shape[:2] != (112, 112):
+                            face_rgb = cv2.resize(face_rgb, (112, 112))
                         
                         # Get embedding
-                        embedding = get_embedding(face_resized)
+                        embedding = get_embedding(face_rgb)
                         
                         # Save embedding
                         np.save(person_dir / "embedding.npy", embedding)
@@ -290,6 +293,47 @@ def get_embedding(face_image):
     return embedding
 
 
+def align_face_keypoints(image: np.ndarray, keypoints: list, target_size: int = 112) -> np.ndarray:
+    """Align face using 5 keypoints (eyes, nose, mouth corners).
+    
+    Uses affine transformation to:
+    1. Make eyes horizontal
+    2. Center the face
+    3. Scale to target size
+    
+    Args:
+        image: numpy array (H, W, 3) - full frame
+        keypoints: List of 5 [x, y] pairs in PIXEL coordinates:
+                   [[left_eye], [right_eye], [nose], [left_mouth], [right_mouth]]
+        target_size: output size (default 112x112 for SFace)
+    
+    Returns:
+        Aligned face image (target_size x target_size x 3)
+    """
+    # Source points (detected keypoints) - already in pixel coords
+    left_eye = np.array(keypoints[0], dtype=np.float32)
+    right_eye = np.array(keypoints[1], dtype=np.float32)
+    nose = np.array(keypoints[2], dtype=np.float32)
+    
+    src_pts = np.float32([left_eye, right_eye, nose])
+    
+    # Reference destination points for 112x112 aligned face
+    # Standard positions for SFace/ArcFace alignment
+    dst_pts = np.float32([
+        [38.2946, 51.6963],  # left eye
+        [73.5318, 51.5014],  # right eye
+        [56.0252, 71.7366],  # nose
+    ])
+    
+    # Compute affine transform
+    M = cv2.getAffineTransform(src_pts, dst_pts)
+    
+    # Apply transform
+    aligned = cv2.warpAffine(image, M, (target_size, target_size), borderMode=cv2.BORDER_REPLICATE)
+    
+    return aligned
+
+
 def match_face(embedding, threshold=0.5):
     """Match embedding against face database."""
     if not face_database:
@@ -309,34 +353,58 @@ def match_face(embedding, threshold=0.5):
     return "Unknown", best_score
 
 
+# Frame counter for timing prints
+_frame_count = 0
+
 def process_frame(frame_rgb):
-    """Process frame: detect faces and recognize."""
+    """Process frame: detect faces and recognize (legacy, no timing return)."""
+    faces, _ = process_frame_with_timing(frame_rgb, 0)
+    return faces
+
+def process_frame_with_timing(frame_rgb, decode_ms=0):
+    """Process frame: detect faces and recognize, with full timing."""
+    global _frame_count
+    _frame_count += 1
+    
     results = []
+    timing = {'decode': decode_ms}
     
-    # Detect faces
+    # Detect faces (YuNet)
+    t0 = time.time()
     detections = detect_faces(frame_rgb)
+    timing['yunet'] = (time.time() - t0) * 1000
     
-    # Recognize each face
+    # Recognize each face (SFace)
+    t1 = time.time()
+    sface_times = []
     for det in detections:
         x1, y1, x2, y2 = map(int, det["box"])
         
-        # Add margin
-        w, h = x2 - x1, y2 - y1
-        margin = int(max(w, h) * 0.1)
-        x1 = max(0, x1 - margin)
-        y1 = max(0, y1 - margin)
-        x2 = min(frame_rgb.shape[1], x2 + margin)
-        y2 = min(frame_rgb.shape[0], y2 + margin)
-        
         # Skip small faces
-        if (x2 - x1) < 30 or (y2 - y1) < 30:
+        face_w, face_h = x2 - x1, y2 - y1
+        if face_w < 30 or face_h < 30:
             continue
         
-        face_crop = frame_rgb[y1:y2, x1:x2]
-        face_resized = cv2.resize(face_crop, (112, 112))
+        t_face = time.time()
         
-        embedding = get_embedding(face_resized)
+        # Use keypoint alignment if available (proper SFace alignment)
+        keypoints = det.get("keypoints")
+        if keypoints and len(keypoints) >= 5:
+            # Align face using 5 keypoints - this is critical for accuracy!
+            face_aligned = align_face_keypoints(frame_rgb, keypoints, target_size=112)
+        else:
+            # Fallback: simple crop and resize (lower accuracy)
+            margin = int(max(face_w, face_h) * 0.1)
+            x1 = max(0, x1 - margin)
+            y1 = max(0, y1 - margin)
+            x2 = min(frame_rgb.shape[1], x2 + margin)
+            y2 = min(frame_rgb.shape[0], y2 + margin)
+            face_crop = frame_rgb[y1:y2, x1:x2]
+            face_aligned = cv2.resize(face_crop, (112, 112))
+        
+        embedding = get_embedding(face_aligned)
         identity, score = match_face(embedding)
+        sface_times.append((time.time() - t_face) * 1000)
         
         results.append({
             "x1": det["box"][0],
@@ -349,7 +417,22 @@ def process_frame(frame_rgb):
             "conf": det["conf"],
         })
     
-    return results
+    timing['sface'] = (time.time() - t1) * 1000
+    timing['total'] = timing['decode'] + timing['yunet'] + timing['sface']
+    timing['num_faces'] = len(results)
+    
+    # Print timing for first 10 frames and every 10th frame
+    if _frame_count <= 10 or _frame_count % 10 == 0:
+        if _frame_count == 1:
+            print("\n" + "="*70, flush=True)
+            print("  WEBCAM PIPELINE - TIMING BREAKDOWN (TTNN)", flush=True)
+            print("  Decode=JPEG decode | YuNet=detection | SFace=recognition", flush=True)
+            print("="*70, flush=True)
+        
+        total = timing['total'] if timing['total'] > 0 else 1
+        print(f"Frame {_frame_count}: Decode={timing['decode']:.1f}ms  YuNet={timing['yunet']:.1f}ms  SFace={timing['sface']:.1f}ms({timing['num_faces']})  Total={total:.1f}ms  FPS={1000/total:.0f}", flush=True)
+    
+    return results, timing
 
 
 def register_face_from_frame(frame_rgb, name):
@@ -365,17 +448,23 @@ def register_face_from_frame(frame_rgb, name):
     det = max(detections, key=lambda d: d["conf"])
     
     x1, y1, x2, y2 = map(int, det["box"])
-    margin = int(max(x2 - x1, y2 - y1) * 0.1)
-    x1 = max(0, x1 - margin)
-    y1 = max(0, y1 - margin)
-    x2 = min(frame_rgb.shape[1], x2 + margin)
-    y2 = min(frame_rgb.shape[0], y2 + margin)
     
-    face_crop = frame_rgb[y1:y2, x1:x2]
-    face_resized = cv2.resize(face_crop, (112, 112))
+    # Use keypoint alignment if available
+    keypoints = det.get("keypoints")
+    if keypoints and len(keypoints) >= 5:
+        face_aligned = align_face_keypoints(frame_rgb, keypoints, target_size=112)
+    else:
+        # Fallback: simple crop
+        margin = int(max(x2 - x1, y2 - y1) * 0.1)
+        x1 = max(0, x1 - margin)
+        y1 = max(0, y1 - margin)
+        x2 = min(frame_rgb.shape[1], x2 + margin)
+        y2 = min(frame_rgb.shape[0], y2 + margin)
+        face_crop = frame_rgb[y1:y2, x1:x2]
+        face_aligned = cv2.resize(face_crop, (112, 112))
     
-    embedding = get_embedding(face_resized)
-    return True, "OK", (embedding, face_resized)
+    embedding = get_embedding(face_aligned)
+    return True, "OK", (embedding, face_aligned)
 
 
 def register_face_from_multiple_frames(frames_rgb_list, name):
@@ -397,21 +486,27 @@ def register_face_from_multiple_frames(frames_rgb_list, name):
         det = max(detections, key=lambda d: d["conf"])
         
         x1, y1, x2, y2 = map(int, det["box"])
-        margin = int(max(x2 - x1, y2 - y1) * 0.1)
-        x1 = max(0, x1 - margin)
-        y1 = max(0, y1 - margin)
-        x2 = min(frame_rgb.shape[1], x2 + margin)
-        y2 = min(frame_rgb.shape[0], y2 + margin)
         
-        face_crop = frame_rgb[y1:y2, x1:x2]
-        face_resized = cv2.resize(face_crop, (112, 112))
+        # Use keypoint alignment if available
+        keypoints = det.get("keypoints")
+        if keypoints and len(keypoints) >= 5:
+            face_aligned = align_face_keypoints(frame_rgb, keypoints, target_size=112)
+        else:
+            # Fallback: simple crop
+            margin = int(max(x2 - x1, y2 - y1) * 0.1)
+            x1 = max(0, x1 - margin)
+            y1 = max(0, y1 - margin)
+            x2 = min(frame_rgb.shape[1], x2 + margin)
+            y2 = min(frame_rgb.shape[0], y2 + margin)
+            face_crop = frame_rgb[y1:y2, x1:x2]
+            face_aligned = cv2.resize(face_crop, (112, 112))
         
-        embedding = get_embedding(face_resized)
+        embedding = get_embedding(face_aligned)
         embeddings.append(embedding)
         
         if det["conf"] > best_conf:
             best_conf = det["conf"]
-            best_face_image = face_resized
+            best_face_image = face_aligned
         
         print(f"[Register] Photo {i+1}: face detected with conf {det['conf']:.2f}", flush=True)
     
@@ -442,14 +537,16 @@ async def handle_websocket(websocket):
                 # Process frame
                 t_start = time.time()
                 
-                # Decode JPEG
+                # Decode JPEG (this is the "decoder" in webcam flow)
+                t_decode = time.time()
                 img_data = base64.b64decode(data["frame"])
                 img_np = np.frombuffer(img_data, dtype=np.uint8)
                 frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                decode_ms = (time.time() - t_decode) * 1000
                 
-                # Run inference
-                faces = process_frame(frame_rgb)
+                # Run inference (returns timing dict)
+                faces, timing = process_frame_with_timing(frame_rgb, decode_ms)
                 
                 t_end = time.time()
                 inference_ms = (t_end - t_start) * 1000

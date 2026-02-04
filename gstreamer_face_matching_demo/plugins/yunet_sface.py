@@ -316,14 +316,28 @@ class FaceRecognition(Gst.Element):
             self.frame_count += 1
             self.total_inference_time += timing["total_ms"]
 
-            # Print detailed stats every 30 frames
-            if self.frame_count % 30 == 0:
+            # Print timing every frame (first 10) then every 10th frame
+            if self.frame_count <= 10 or self.frame_count % 10 == 0:
                 avg_ms = self.total_inference_time / self.frame_count
                 fps = 1000 / avg_ms if avg_ms > 0 else 0
-                print(f"[FaceRecognition] Frame {self.frame_count} | Total: {timing['total_ms']:.1f}ms | "
-                      f"Preprocess: {timing['preprocess_ms']:.1f}ms | YuNet: {timing['yunet_ms']:.1f}ms | "
-                      f"SFace: {timing['sface_ms']:.1f}ms ({timing['num_faces']} faces) | "
-                      f"Draw: {timing['draw_ms']:.1f}ms | Avg FPS: {fps:.0f}", flush=True)
+                
+                # Print header once
+                if self.frame_count == 1:
+                    print("\n" + "="*80, flush=True)
+                    print("  GSTREAMER PIPELINE - REAL-TIME LATENCY (per frame)", flush=True)
+                    print("="*80, flush=True)
+                    print(f"{'Frame':<8} {'Decode':<10} {'YuNet':<10} {'SFace':<12} {'Encode':<10} {'TOTAL':<10} {'FPS':<6}", flush=True)
+                    print(f"{'':8} {'(est.)':10} {'(TTNN)':10} {'(TTNN)':12} {'(est.)':10} {'':10} {'':<6}", flush=True)
+                    print("-"*80, flush=True)
+                
+                # Estimated decode/encode times (measured separately)
+                decode_est = 2.0  # ~2ms for MPEG4/H264 decode
+                encode_est = 3.0  # ~3ms for JPEG encode
+                total_pipeline = decode_est + timing['total_ms'] + encode_est
+                
+                # Single line per frame - easy to read
+                sface_str = f"{timing['sface_ms']:.1f}({timing['num_faces']})"
+                print(f"{self.frame_count:<8} {decode_est:<10.1f} {timing['yunet_ms']:<10.1f} {sface_str:<12} {encode_est:<10.1f} {total_pipeline:<10.1f} {fps:<6.0f}", flush=True)
 
             # 5. Convert BGR back to BGRx (add alpha channel)
             out_bgrx = cv2.cvtColor(out_image, cv2.COLOR_BGR2BGRA)
@@ -454,21 +468,41 @@ class FaceRecognition(Gst.Element):
         return inter / max(union, 1e-6)
 
     def _crop_and_align_face(self, image, detection, target_size=112):
-        """Crop and align face for SFace."""
+        """Crop and align face for SFace using keypoint alignment."""
         x1, y1, x2, y2 = map(int, detection["box"])
         
-        # Add margin
+        # Skip very small faces (< 50px for reliable recognition)
+        if (x2 - x1) < 50 or (y2 - y1) < 50:
+            return None
+        
+        # Try keypoint alignment first (matches registration in GUI)
+        keypoints = detection.get("keypoints")
+        if keypoints and len(keypoints) >= 5:
+            # Use affine transform based on eye and nose positions
+            left_eye = np.array(keypoints[0], dtype=np.float32)
+            right_eye = np.array(keypoints[1], dtype=np.float32)
+            nose = np.array(keypoints[2], dtype=np.float32)
+            
+            src_pts = np.float32([left_eye, right_eye, nose])
+            
+            # Standard destination points for 112x112 aligned face (SFace/ArcFace)
+            dst_pts = np.float32([
+                [38.2946, 51.6963],  # left eye
+                [73.5318, 51.5014],  # right eye
+                [56.0252, 71.7366],  # nose
+            ])
+            
+            M = cv2.getAffineTransform(src_pts, dst_pts)
+            face_aligned = cv2.warpAffine(image, M, (target_size, target_size), borderMode=cv2.BORDER_REPLICATE)
+            return face_aligned
+        
+        # Fallback: simple crop + resize (if no keypoints)
         w, h = x2 - x1, y2 - y1
         margin = int(max(w, h) * 0.1)
         x1 = max(0, x1 - margin)
         y1 = max(0, y1 - margin)
         x2 = min(image.shape[1], x2 + margin)
         y2 = min(image.shape[0], y2 + margin)
-        
-        # Skip very small faces (< 50px for reliable recognition)
-        # Matches SFace demo MIN_FACE_SIZE = 50
-        if (x2 - x1) < 50 or (y2 - y1) < 50:
-            return None
         
         face_crop = image[y1:y2, x1:x2]
         face_resized = cv2.resize(face_crop, (target_size, target_size))

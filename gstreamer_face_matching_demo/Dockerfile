@@ -44,7 +44,7 @@ RUN /home/container_app_user/python_env_gst/bin/pip install --upgrade pip && \
     /home/container_app_user/python_env_gst/bin/pip install \
         torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     /home/container_app_user/python_env_gst/bin/pip install \
-        graphviz numpy_ringbuffer opencv-python-headless pytest websockets onnx
+        graphviz numpy_ringbuffer opencv-python-headless pytest websockets onnx scikit-learn
 
 # Install tt-metal
 RUN /home/container_app_user/python_env_gst/bin/pip install -e .
@@ -60,6 +60,10 @@ RUN cd /home/container_app_user/tt-metal/models/experimental/yunet && bash setup
 # Copy SFace model (not in base image)
 COPY --chown=container_app_user:container_app_user models/sface /home/container_app_user/tt-metal/models/experimental/sface/
 
+# Copy patched model files with mesh/data-parallel support
+COPY --chown=container_app_user:container_app_user model_patches/ttnn_yunet.py /home/container_app_user/tt-metal/models/experimental/yunet/tt/ttnn_yunet.py
+COPY --chown=container_app_user:container_app_user model_patches/ttnn_sface.py /home/container_app_user/tt-metal/models/experimental/sface/tt/ttnn_sface.py
+
 # Set ownership
 RUN chown -R container_app_user:container_app_user /home/container_app_user/python_env_gst /app
 
@@ -69,12 +73,16 @@ USER container_app_user
 ENV GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
 ENV PYTHONPATH=/home/container_app_user/tt-metal
 ENV GST_DEBUG=1
+# Enable ethernet dispatch for multi-device mesh (8-device parallel mode)
+ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
 # Copy entrypoint and server scripts
 COPY --chown=container_app_user:container_app_user entrypoint.sh /app/entrypoint.sh
 COPY --chown=container_app_user:container_app_user http_stream.py /app/http_stream.py
 COPY --chown=container_app_user:container_app_user websocket_server.py /app/websocket_server.py
 COPY --chown=container_app_user:container_app_user parallel_8device_stream.py /app/parallel_8device_stream.py
+COPY --chown=container_app_user:container_app_user benchmark_gst_elements.py /app/benchmark_gst_elements.py
+COPY --chown=container_app_user:container_app_user benchmark_lfw.py /app/benchmark_lfw.py
 
 # Copy demo videos if available (optional)
 # Copy demo assets including test video
