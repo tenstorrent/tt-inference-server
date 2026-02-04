@@ -14,7 +14,7 @@ from utils.media_clients.utils.metrics_utils import (
     calculate_ttft,
 )
 from utils.media_clients.test_status import TtsTestStatus
-from utils.media_clients.tts_client import DEFAULT_TTS_TEXT, TtsClientStrategy
+from utils.media_clients.tts_client import TtsClientStrategy
 
 
 class MockAsyncResponse:
