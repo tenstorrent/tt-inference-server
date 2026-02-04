@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """
 Metrics calculation utilities for benchmark status aggregation.
@@ -23,7 +23,6 @@ class MetricsAggregator:
 
     Update in the same loop where you build status_list; then call .result()
     so report generation does not need a second pass over status_list.
-
     """
 
     __slots__ = ("_counts", "_means")
@@ -38,7 +37,7 @@ class MetricsAggregator:
         self._means.clear()
 
     def add(self, metrics: Dict[str, float]) -> None:
-        """Update running mean per key (Welford). O(k) for k keys."""
+        """Update running mean per key (Welford)."""
         for key, value in metrics.items():
             if key in self._counts:
                 self._counts[key] += 1
