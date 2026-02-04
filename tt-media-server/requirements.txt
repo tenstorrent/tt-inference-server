@@ -1,11 +1,11 @@
 aiohttp
 asyncio
 colorama
-datasets
+datasets>=2.20.0,<3.3.0
 fastapi
 faster_fifo
 httpx
-huggingface_hub
+huggingface_hub>=0.25.0,<0.28.0
 imageio-ffmpeg
 loguru
 prometheus-client
