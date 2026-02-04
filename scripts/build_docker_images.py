@@ -29,6 +29,38 @@ from workflows.utils import get_repo_root_path
 logger = logging.getLogger(__file__)
 
 
+def generate_model_specs_json(output_path: Path = None) -> Path:
+    """Generate model_specs_defaults.json by serializing all MODEL_SPECS.
+
+    This function generates a JSON file containing all model specifications
+    that will be embedded in the Docker image. The JSON can be used at runtime
+    to look up model configurations by hf_model_repo and device_type.
+
+    Args:
+        output_path: Path where the JSON file should be written.
+                    Defaults to repo_root / "model_specs_defaults.json"
+
+    Returns:
+        Path to the generated JSON file
+    """
+    if output_path is None:
+        output_path = get_repo_root_path() / "model_specs_defaults.json"
+
+    # Serialize all MODEL_SPECS
+    serialized_specs = {}
+    for model_id, model_spec in MODEL_SPECS.items():
+        serialized_specs[model_id] = model_spec.get_serialized_dict()
+
+    # Write to JSON file
+    with open(output_path, "w") as f:
+        json.dump(serialized_specs, f, indent=2)
+
+    logger.info(
+        f"Generated model_specs_defaults.json with {len(serialized_specs)} specs at {output_path}"
+    )
+    return output_path
+
+
 def _format_commit_for_id(commit, fallback):
     """
     Safely format a commit-like value for inclusion in combination IDs.
@@ -885,12 +917,19 @@ def build_cloud_image(
 def build_dev_image(image_tags, logger):
     """
     Build the dev Docker image.
+
+    This function generates model_specs_defaults.json before building the dev image.
+    The JSON file is copied into the image and used at runtime for model lookups.
     """
     repo_root = get_repo_root_path()
     dev_image_tag = image_tags["dev"]
     cloud_image_tag = image_tags["cloud"]
 
     logger.info(f"Building dev image: {dev_image_tag}")
+
+    # Generate model_specs_defaults.json before building
+    model_specs_json_path = generate_model_specs_json()
+    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
     build_command = [
         "docker",
@@ -911,12 +950,19 @@ def build_dev_image(image_tags, logger):
 def build_release_image(image_tags, logger):
     """
     Build the release Docker image.
+
+    This function generates model_specs_defaults.json before building the release image.
+    The JSON file is copied into the image and used at runtime for model lookups.
     """
     repo_root = get_repo_root_path()
     release_image_tag = image_tags["release"]
     cloud_image_tag = image_tags["cloud"]
 
     logger.info(f"Building release image: {release_image_tag}")
+
+    # Generate model_specs_defaults.json before building
+    model_specs_json_path = generate_model_specs_json()
+    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
     build_command = [
         "docker",

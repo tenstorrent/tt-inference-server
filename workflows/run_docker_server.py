@@ -4,6 +4,7 @@
 
 import atexit
 import logging
+import os
 import shlex
 import subprocess
 import time
@@ -142,6 +143,92 @@ def ensure_docker_image(image_name):
         return False
     logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
     return True
+
+
+def generate_docker_volume_name(model_spec) -> str:
+    """Generate consistent volume name for model weights/cache persistence.
+
+    The volume name excludes version to allow image upgrades without creating new volumes.
+
+    Args:
+        model_spec: ModelSpec object containing impl and model_name
+
+    Returns:
+        str: Docker volume name (e.g., "volume_id_tt_transformers-Llama-3.1-8B")
+    """
+    return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
+
+
+def generate_simplified_docker_run_command(model_spec, mesh_device: str) -> list:
+    """Generate the simplified Docker run command for a model.
+
+    This generates a minimal Docker run command that relies on embedded
+    model specs in the image for configuration lookup at runtime.
+
+    Args:
+        model_spec: ModelSpec object
+        mesh_device: Device type string (e.g., "N300", "T3K")
+
+    Returns:
+        list: Docker run command as a list of strings
+    """
+    volume_name = generate_docker_volume_name(model_spec)
+    service_port = (
+        getattr(model_spec.cli_args, "service_port", "8000")
+        if hasattr(model_spec, "cli_args")
+        else "8000"
+    )
+
+    cmd = [
+        "docker",
+        "run",
+        "--device",
+        "/dev/tenstorrent",
+        "--cap-add",
+        "SYS_NICE",
+        "--shm-size",
+        "32G",
+        "--publish",
+        f"{service_port}:{service_port}",
+        "--mount",
+        "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
+        "--volume",
+        f"{volume_name}:/home/container_app_user/cache_root",
+        "-e",
+        f"MESH_DEVICE={mesh_device}",
+    ]
+
+    # HF_TOKEN only required for gated models
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token:
+        cmd.extend(["-e", f"HF_TOKEN={hf_token}"])
+
+    cmd.append(model_spec.docker_image)
+    cmd.extend(["--model", model_spec.hf_model_repo])
+
+    return cmd
+
+
+def print_simplified_docker_commands(model_spec, mesh_device: str):
+    """Print user-friendly Docker commands for running a model.
+
+    Prints both the volume creation command (run once) and the docker run command.
+
+    Args:
+        model_spec: ModelSpec object
+        mesh_device: Device type string (e.g., "N300", "T3K")
+    """
+    volume_name = generate_docker_volume_name(model_spec)
+    docker_cmd = generate_simplified_docker_run_command(model_spec, mesh_device)
+
+    print("\n" + "=" * 60)
+    print("Simplified Docker Commands")
+    print("=" * 60)
+    print("\n# Create persistent volume (run once):")
+    print(f"docker volume create {volume_name}")
+    print("\n# Run the server:")
+    print(" \\\n  ".join(docker_cmd))
+    print("\n" + "=" * 60 + "\n")
 
 
 def run_docker_server(model_spec, setup_config, json_fpath):

@@ -40,6 +40,9 @@ unzipped_tti/
 db.sqlite3
 **/generated/inspector/
 
+# Generated model specs JSON (embedded in Docker images at build time)
+model_specs_defaults.json
+
 # secrets
 .env
 
