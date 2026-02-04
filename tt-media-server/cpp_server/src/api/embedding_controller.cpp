@@ -86,9 +86,19 @@ namespace {
         static CallbackThreadPool pool(16);  // 16 threads for handling callbacks
         return pool;
     }
+
+    bool is_embedding_service_enabled() {
+        const char* env = std::getenv("TT_MODEL_SERVICE");
+        return env && std::string(env) == "embedding";
+    }
 }
 
 EmbeddingController::EmbeddingController() {
+    // Only initialize if TT_MODEL_SERVICE=embedding
+    if (!is_embedding_service_enabled()) {
+        return;
+    }
+
     std::cout << "[EmbeddingController] Creating service...\n";
 
     service_ = std::make_shared<services::EmbeddingService>();

@@ -20,7 +20,21 @@
 
 namespace tt::api {
 
+namespace {
+    bool is_llm_service_enabled() {
+        const char* env = std::getenv("TT_MODEL_SERVICE");
+        // LLM is the default, so enable if not set or if set to "llm"
+        return !env || std::string(env) == "llm";
+    }
+}
+
 LLMController::LLMController() {
+    // Only initialize if TT_MODEL_SERVICE=llm or not set
+    if (!is_llm_service_enabled()) {
+        std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
+        return;
+    }
+
     service_ = std::make_shared<services::LLMService>();
     service_->start();
     std::cout << "[LLMController] Initialized and service started" << std::endl;
