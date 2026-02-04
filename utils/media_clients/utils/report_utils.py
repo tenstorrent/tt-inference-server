@@ -106,7 +106,9 @@ class ReportGenerator:
             benchmarks.update(extra_benchmarks)
         report_data = {**base, "benchmarks": benchmarks}
 
-        filepath = context.output_path / f"benchmark_{context.model_id}_{time.time()}.json"
+        filepath = (
+            context.output_path / f"benchmark_{context.model_id}_{time.time()}.json"
+        )
         filepath.parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, "w") as f:
             json.dump(report_data, f, indent=4)
