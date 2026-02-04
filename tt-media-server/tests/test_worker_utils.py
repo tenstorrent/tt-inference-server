@@ -46,7 +46,7 @@ from device_workers.worker_utils import (
     _setup_galaxy_mesh_config,
     initialize_device_worker,
     setup_cpu_threading_limits,
-    setup_worker_environment,
+    setup_runner_environment,
 )
 
 
@@ -110,8 +110,8 @@ class TestSetupCPUThreadingLimits:
                 mock_set.assert_called_with(num_threads=1)
 
 
-class TestSetupWorkerEnvironment:
-    """Test cases for setup_worker_environment function"""
+class TestSetupRunnerEnvironment:
+    """Test cases for setup_runner_environment function"""
 
     def test_sets_device_visibility(self):
         """Test that device visibility environment variables are set"""
@@ -119,7 +119,7 @@ class TestSetupWorkerEnvironment:
 
         with patch.dict(os.environ, {}, clear=True):
             with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_VISIBLE_DEVICES"] == "0"
                 assert os.environ["TT_METAL_VISIBLE_DEVICES"] == "0"
@@ -130,7 +130,7 @@ class TestSetupWorkerEnvironment:
 
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0"
 
@@ -140,7 +140,7 @@ class TestSetupWorkerEnvironment:
 
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0_1"
 
@@ -160,7 +160,7 @@ class TestSetupWorkerEnvironment:
                     with patch(
                         "device_workers.worker_utils.settings", mock_settings_telemetry
                     ):
-                        setup_worker_environment("0")
+                        setup_runner_environment("0")
 
                         mock_get_telemetry.assert_called_once()
 
@@ -181,7 +181,7 @@ class TestSetupWorkerEnvironment:
                         with patch(
                             "device_workers.worker_utils.settings", mock_settings_galaxy
                         ):
-                            setup_worker_environment("0")
+                            setup_runner_environment("0")
 
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
 
@@ -192,7 +192,7 @@ class TestSetupWorkerEnvironment:
                 "device_workers.worker_utils.set_torch_thread_limits"
             ) as mock_set:
                 with patch("device_workers.worker_utils.get_telemetry_client"):
-                    setup_worker_environment("0", cpu_threads="8", num_threads=4)
+                    setup_runner_environment("0", cpu_threads="8", num_threads=4)
 
                     assert os.environ["OMP_NUM_THREADS"] == "8"
                     mock_set.assert_called_with(num_threads=4)

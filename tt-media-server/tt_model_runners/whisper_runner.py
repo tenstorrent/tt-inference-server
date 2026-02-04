@@ -10,13 +10,13 @@ import numpy as np
 import torch
 import ttnn
 from config.constants import ResponseFormat, SupportedModels
-from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.audio_processing_request import AudioProcessingRequest
 from domain.audio_text_response import (
     AudioStreamChunk,
     AudioTextResponse,
     AudioTextSegment,
 )
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
@@ -28,7 +28,6 @@ from models.demos.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
-from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
     AutoFeatureExtractor,
@@ -42,10 +41,9 @@ from utils.text_utils import TextUtils
 
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.pipeline = None
-        setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
         device_params = {
@@ -562,8 +560,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             # Preprocess model parameters in thread pool to avoid blocking
             def _preprocess_parameters():
-                setup_cpu_threading_limits("1")
-
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
                     convert_to_ttnn=convert_to_ttnn,
