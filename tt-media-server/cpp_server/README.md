@@ -424,3 +424,8 @@ To compare with the Python server:
 ### Server crashes
 
 Check the logs in `./logs/` directory or stderr output for error messages.
+
+
+### Starting embedding model
+
+MAX_BATCH_SIZE=8 TT_BATCH_SIZE=8 TT_METAL_HOME=/localdev/idjuric/tt-metal/ PYTHONPATH=/localdev/idjuric/tt-metal/ TT_METAL_CACHE=/... TT_MODEL_SERVICE=embedding TT_NUM_WORKERS=2 TT_PYTHON_PATH=...tt-inference-server/tt-media-server ./cpp_server/build/tt_media_server_cpp -p 8000 2>&1

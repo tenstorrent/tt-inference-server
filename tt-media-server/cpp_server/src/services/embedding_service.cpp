@@ -128,7 +128,7 @@ struct EmbeddingService::Impl {
 
                 std::cout << "[EmbeddingService] Spawned worker " << i
                           << " with PID " << pid
-                          << " (TT_VISIBLE_DEVICES=" << (i + 1) << ")"
+                          << " (TT_VISIBLE_DEVICES=" << (i) << ")"
                           << " request_pipe[1]=" << worker->request_pipe[1]
                           << " response_pipe[0]=" << worker->response_pipe[0] << "\n";
 
@@ -199,6 +199,14 @@ struct EmbeddingService::Impl {
         setenv("TT_VISIBLE_DEVICES", visible_devices_str.c_str(), 1);
         setenv("TT_DEVICE_ID", std::to_string(worker_id).c_str(), 1);
         setenv("TT_WORKER_ID", std::to_string(worker_id).c_str(), 1);
+
+        // Set TT_MESH_GRAPH_DESC_PATH for mesh graph descriptor
+        const char* tt_metal_home = std::getenv("TT_METAL_HOME");
+        if (tt_metal_home) {
+            std::string mesh_graph_desc_path = std::string(tt_metal_home) + 
+                "/tt_metal/fabric/mesh_graph_descriptors/n150_mesh_graph_descriptor.textproto";
+            setenv("TT_MESH_GRAPH_DESC_PATH", mesh_graph_desc_path.c_str(), 1);
+        }
 
         std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";
         std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_device << "\n";
@@ -280,19 +288,19 @@ struct EmbeddingService::Impl {
             //     [embedding_dim: uint32_t][embedding: floats]
             //     [total_tokens: int32_t]
             //     [model_len: uint32_t][model: chars]
-            
+
             std::vector<uint8_t> response_buffer;
             response_buffer.reserve(batch.size() * (4 + 32 + 1 + 4 + 1024 * 4 + 4 + 4 + 32));  // Estimate size
-            
+
             // Helper to append data
             auto append_uint32 = [&](uint32_t val) {
-                response_buffer.insert(response_buffer.end(), 
-                    reinterpret_cast<uint8_t*>(&val), 
+                response_buffer.insert(response_buffer.end(),
+                    reinterpret_cast<uint8_t*>(&val),
                     reinterpret_cast<uint8_t*>(&val) + sizeof(val));
             };
             auto append_int32 = [&](int32_t val) {
-                response_buffer.insert(response_buffer.end(), 
-                    reinterpret_cast<uint8_t*>(&val), 
+                response_buffer.insert(response_buffer.end(),
+                    reinterpret_cast<uint8_t*>(&val),
                     reinterpret_cast<uint8_t*>(&val) + sizeof(val));
             };
             auto append_string = [&](const std::string& s) {
@@ -304,12 +312,12 @@ struct EmbeddingService::Impl {
                 const uint8_t* data = reinterpret_cast<const uint8_t*>(floats.data());
                 response_buffer.insert(response_buffer.end(), data, data + floats.size() * sizeof(float));
             };
-            
+
             append_uint32(static_cast<uint32_t>(batch.size()));
-            
+
             for (size_t i = 0; i < batch.size(); ++i) {
                 append_string(batch[i].task_id);
-                
+
                 if (i < responses.size() && responses[i].error.empty()) {
                     response_buffer.push_back(0);  // has_error = false
                     append_floats(responses[i].embedding);
@@ -554,7 +562,7 @@ struct EmbeddingService::Impl {
         //     [embedding_dim: uint32_t][embedding: floats]
         //     [total_tokens: int32_t]
         //     [model_len: uint32_t][model: chars]
-        
+
         size_t offset = 0;
         auto read_uint32 = [&]() -> uint32_t {
             uint32_t val;
@@ -581,17 +589,17 @@ struct EmbeddingService::Impl {
             offset += count * sizeof(float);
             return floats;
         };
-        
+
         // Parse responses into a map by task_id
         std::unordered_map<std::string, domain::EmbeddingResponse> response_map;
         uint32_t num_responses = read_uint32();
         response_map.reserve(num_responses);
-        
+
         for (uint32_t i = 0; i < num_responses && offset < response_buffer.size(); ++i) {
             domain::EmbeddingResponse resp;
             resp.task_id = read_string();
             uint8_t has_error = response_buffer[offset++];
-            
+
             if (has_error) {
                 resp.error = read_string();
             } else {
@@ -599,7 +607,7 @@ struct EmbeddingService::Impl {
                 resp.total_tokens = read_int32();
                 resp.model = read_string();
             }
-            
+
             response_map[resp.task_id] = std::move(resp);
         }
 
