@@ -199,18 +199,6 @@ tt_transformers_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/tt_transformers",
 )
-llama3_impl = ImplSpec(
-    impl_id="llama3",
-    impl_name="llama3",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/llama3",
-)
-t3000_llama2_70b_impl = ImplSpec(
-    impl_id="llama2_70b",
-    impl_name="llama2-70b",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/t3000/llama2_70b",
-)
 llama3_70b_galaxy_impl = ImplSpec(
     impl_id="llama3_70b_galaxy",
     impl_name="llama3-70b-galaxy",
