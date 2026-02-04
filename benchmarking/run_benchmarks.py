@@ -105,6 +105,11 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -254,7 +259,11 @@ def main():
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
-    if bool(cli_args.get("concurrency_sweeps", False)):
+    # CLI arg takes precedence, fallback to model spec cli_args
+    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
+        "concurrency_sweeps", False
+    )
+    if concurrency_sweeps:
         max_context = model_spec.device_model_spec.max_context
         model_max_concurrency = model_spec.device_model_spec.max_concurrency
         candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
