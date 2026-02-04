@@ -10,6 +10,7 @@
 #include <functional>
 #include <future>
 #include <variant>
+#include <vector>
 
 #include "scheduler/thread_safe_queue.hpp"
 #include "domain/completion_request.hpp"
@@ -134,6 +135,11 @@ private:
     void result_listener_loop();
 
     /**
+     * Refresh worker_info_cache_ from worker_info_. Call with workers_mutex_ held.
+     */
+    void refresh_worker_info_cache();
+
+    /**
      * Process a single task. Streaming calls callback directly, non-streaming uses result_queue_.
      */
     void process_task(SchedulerTask& task, runners::BaseDeviceRunner& runner, const std::string& worker_id);
@@ -165,6 +171,7 @@ private:
 
     mutable std::mutex workers_mutex_;
     std::unordered_map<std::string, WorkerInfo> worker_info_;
+    std::vector<WorkerInfo> worker_info_cache_;
 
     int worker_count_ = DEFAULT_WORKER_COUNT;
 };

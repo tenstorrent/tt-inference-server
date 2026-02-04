@@ -38,6 +38,7 @@ void Scheduler::start() {
         {
             std::lock_guard<std::mutex> lock(workers_mutex_);
             worker_info_[worker_id] = WorkerInfo{worker_id, false, 0};
+            refresh_worker_info_cache();
         }
 
         worker_threads_.emplace_back(&Scheduler::worker_loop, this, worker_id);
@@ -98,6 +99,7 @@ void Scheduler::stop() {
     {
         std::lock_guard<std::mutex> lock(workers_mutex_);
         worker_info_.clear();
+        worker_info_cache_.clear();
     }
 
     std::cout << "[Scheduler] All workers stopped" << std::endl;
@@ -153,14 +155,17 @@ void Scheduler::submit_streaming_request(
     }
 }
 
+void Scheduler::refresh_worker_info_cache() {
+    worker_info_cache_.clear();
+    worker_info_cache_.reserve(worker_info_.size());
+    for (const auto& [id, info] : worker_info_) {
+        worker_info_cache_.push_back(info);
+    }
+}
+
 std::vector<Scheduler::WorkerInfo> Scheduler::get_worker_info() const {
     std::lock_guard<std::mutex> lock(workers_mutex_);
-    std::vector<WorkerInfo> result;
-    result.reserve(worker_info_.size());
-    for (const auto& [id, info] : worker_info_) {
-        result.push_back(info);
-    }
-    return result;
+    return worker_info_cache_;
 }
 
 void Scheduler::result_listener_loop() {
@@ -237,6 +242,7 @@ void Scheduler::worker_loop(const std::string& worker_id) {
     {
         std::lock_guard<std::mutex> lock(workers_mutex_);
         worker_info_[worker_id].is_ready = true;
+        refresh_worker_info_cache();
     }
     std::cout << "[Worker " << worker_id << "] Ready" << std::endl;
 
@@ -250,10 +256,16 @@ void Scheduler::worker_loop(const std::string& worker_id) {
         auto& task = task_opt.value();
         process_task(task, *runner, worker_id);
 
-        // Update stats
+        // Update stats (increment cache entry to avoid full refresh)
         {
             std::lock_guard<std::mutex> lock(workers_mutex_);
             worker_info_[worker_id].processed_requests++;
+            for (auto& w : worker_info_cache_) {
+                if (w.worker_id == worker_id) {
+                    w.processed_requests++;
+                    break;
+                }
+            }
         }
     }
 

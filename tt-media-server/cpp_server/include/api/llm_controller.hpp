@@ -59,10 +59,10 @@ private:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
-     * Handle streaming completion request (SSE).
+     * Handle streaming completion request (SSE). Takes request by value so caller can move.
      */
     void handle_streaming(
-        const domain::CompletionRequest& request,
+        domain::CompletionRequest request,
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 

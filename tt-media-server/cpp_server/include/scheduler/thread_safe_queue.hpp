@@ -20,7 +20,7 @@ template<typename T>
 class ThreadSafeQueue {
 public:
     explicit ThreadSafeQueue(size_t max_size = 10000)
-        : max_size_(max_size), shutdown_(false) {}
+        : max_size_(max_size), size_(0), shutdown_(false) {}
 
     /**
      * Push an item to the queue. Blocks if queue is full.
@@ -29,12 +29,13 @@ public:
     bool push(T item) {
         std::unique_lock<std::mutex> lock(mutex_);
         not_full_.wait(lock, [this] {
-            return queue_.size() < max_size_ || shutdown_;
+            return size_.load(std::memory_order_relaxed) < max_size_ || shutdown_;
         });
 
         if (shutdown_) return false;
 
         queue_.push(std::move(item));
+        size_.fetch_add(1, std::memory_order_release);
         not_empty_.notify_one();
         return true;
     }
@@ -45,8 +46,10 @@ public:
      */
     bool try_push(T item) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (shutdown_ || queue_.size() >= max_size_) return false;
+        if (shutdown_ || size_.load(std::memory_order_relaxed) >= max_size_)
+            return false;
         queue_.push(std::move(item));
+        size_.fetch_add(1, std::memory_order_release);
         not_empty_.notify_one();
         return true;
     }
@@ -65,6 +68,7 @@ public:
 
         T item = std::move(queue_.front());
         queue_.pop();
+        size_.fetch_sub(1, std::memory_order_release);
         not_full_.notify_one();
         return item;
     }
@@ -78,6 +82,7 @@ public:
         if (queue_.empty()) return std::nullopt;
         T item = std::move(queue_.front());
         queue_.pop();
+        size_.fetch_sub(1, std::memory_order_release);
         not_full_.notify_one();
         return item;
     }
@@ -99,24 +104,23 @@ public:
 
         T item = std::move(queue_.front());
         queue_.pop();
+        size_.fetch_sub(1, std::memory_order_release);
         not_full_.notify_one();
         return item;
     }
 
     /**
-     * Get current queue size.
+     * Get current queue size. Lock-free read.
      */
     size_t size() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.size();
+        return size_.load(std::memory_order_acquire);
     }
 
     /**
-     * Check if queue is empty.
+     * Check if queue is empty. Lock-free read.
      */
     bool empty() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.empty();
+        return size_.load(std::memory_order_acquire) == 0;
     }
 
     /**
@@ -145,6 +149,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         std::queue<T> empty;
         std::swap(queue_, empty);
+        size_.store(0, std::memory_order_release);
         not_full_.notify_all();
     }
 
@@ -154,6 +159,7 @@ private:
     std::condition_variable not_empty_;
     std::condition_variable not_full_;
     size_t max_size_;
+    std::atomic<size_t> size_;
     std::atomic<bool> shutdown_;
 };
 

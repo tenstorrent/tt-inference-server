@@ -7,7 +7,7 @@ A high-performance C++ implementation of the TT Media Server using the Drogon we
 ```bash
 # Build
 cd cpp_server
-./build.sh Release
+./build.sh
 
 # Start the server (foreground)
 ./build/tt_media_server_cpp -p 8001

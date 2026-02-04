@@ -5,6 +5,7 @@
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
+#include <sys/stat.h>
 
 // Controllers - only one is registered based on TT_MODEL_SERVICE
 #include "api/llm_controller.hpp"
@@ -96,6 +97,9 @@ int main(int argc, char* argv[]) {
 
     std::cout << "=================================================\n"
               << std::endl;
+
+    // Ensure log directory exists (Drogon requires it)
+    mkdir("./logs", 0755);
 
     // Configure Drogon
     drogon::app()
