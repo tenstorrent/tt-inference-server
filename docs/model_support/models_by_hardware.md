@@ -19,8 +19,6 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) |
 | 🟢 Complete | Video | [wan2.2-t2v-a14b-diffusers](video/wan2.2-t2v-a14b-diffusers_galaxy.md) |
 | 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) |
-| 🟡 Functional | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
-| 🟡 Functional | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen2.5-72B](llm/Qwen2.5-72B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_galaxy.md) |
@@ -29,6 +27,8 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_galaxy.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_galaxy.md) |
 | 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_galaxy.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
@@ -73,8 +73,6 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_t3k.md) |
 | 🟢 Complete | Video | [wan2.2-t2v-a14b-diffusers](video/wan2.2-t2v-a14b-diffusers_t3k.md) |
 | 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_t3k.md) |
-| 🟡 Functional | LLM | [gpt-oss-120b](llm/gpt-oss-120b_t3k.md) |
-| 🟡 Functional | LLM | [gpt-oss-20b](llm/gpt-oss-20b_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_t3k.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_t3k.md) |
@@ -89,6 +87,8 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_t3k.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_t3k.md) |
 | 🛠️ Experimental | LLM | [AFM-4.5B](llm/AFM-4.5B_t3k.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_t3k.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_t3k.md) |
 | 🛠️ Experimental | LLM | [Qwen2.5-Coder-32B-Instruct](llm/Qwen2.5-Coder-32B-Instruct_t3k.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-32B-Instruct](vlm/Qwen2.5-VL-32B-Instruct_t3k.md) |
