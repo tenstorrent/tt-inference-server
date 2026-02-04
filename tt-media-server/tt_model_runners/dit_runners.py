@@ -243,7 +243,7 @@ class TTMochi1Runner(TTDiTRunner):
 
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
-        super().__init__(device_ids)
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
