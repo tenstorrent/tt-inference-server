@@ -15,7 +15,6 @@
 #include <signal.h>
 
 #include "ipc/shared_memory.hpp"
-#include "scheduler/thread_safe_queue.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "runners/base_device_runner.hpp"
