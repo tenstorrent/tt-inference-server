@@ -32,8 +32,8 @@ sys.modules["config.settings"].Settings = Mock()
 
 # Mock decorators and logger
 sys.modules["utils.decorators"] = Mock()
-sys.modules["utils.decorators"].log_execution_time = (
-    lambda *args, **kwargs: lambda func: func
+sys.modules["utils.decorators"].log_execution_time = lambda *args, **kwargs: (
+    lambda func: func
 )
 mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
@@ -117,8 +117,8 @@ class TestScheduler:
             ]
 
             lock_sequence = list(mock_locks)
-            mock_lock_constructor.side_effect = (
-                lambda: lock_sequence.pop(0) if lock_sequence else create_mock_lock()
+            mock_lock_constructor.side_effect = lambda: (
+                lock_sequence.pop(0) if lock_sequence else create_mock_lock()
             )
 
             return Scheduler()
