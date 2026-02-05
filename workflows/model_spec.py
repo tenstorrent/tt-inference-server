@@ -2235,6 +2235,15 @@ video_templates = [
                     "trace_region_size": 30000000,
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
@@ -2271,6 +2280,15 @@ video_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,

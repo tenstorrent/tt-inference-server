@@ -184,8 +184,9 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
     P300 = "p300"
-    P150X4 = "p150x4"  # BH QuietBox
-    P150X8 = "p150x8"  # BH LoudBox
+    P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
+    P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
+    QBGE = "qbge"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
 
 
 class QueueType(Enum):
@@ -444,6 +445,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.QBGE): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -466,6 +474,13 @@ ModelConfigs = {
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.QBGE): {
+        "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
