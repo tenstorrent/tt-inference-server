@@ -12,6 +12,8 @@
 #include "config/settings.hpp"
 #include "runners/runner_factory.hpp"
 
+// Include OpenAPI controller (defined in openapi.cpp)
+// The controller auto-registers itself with Drogon
 namespace {
     volatile std::sig_atomic_t g_shutdown_requested = 0;
 

@@ -29,11 +29,11 @@ struct EmbedLog {
  */
 struct EmbeddingRunner::Impl {
     bool python_initialized = false;
-    PyObject* runner_module = nullptr;
-    PyObject* runner_class = nullptr;
-    PyObject* runner_instance = nullptr;
-    PyObject* request_module = nullptr;
-    PyObject* request_class = nullptr;
+    PyObject* runner_module = nullptr;      // tt_model_runners.embedding_runner
+    PyObject* runner_class = nullptr;       // BGELargeENRunner class
+    PyObject* runner_instance = nullptr;    // BGELargeENRunner instance
+    PyObject* request_module = nullptr;     // domain.text_embedding_request
+    PyObject* request_class = nullptr;      // TextEmbeddingRequest class
     std::string device_id;
 
     explicit Impl(const std::string& dev_id) : device_id(dev_id) {}
@@ -330,8 +330,7 @@ EmbeddingRunner::~EmbeddingRunner() {
 }
 
 bool EmbeddingRunner::warmup() {
-    EMBED_LOG_INFO << "Starting warmup for device " << device_id_
-                   << " visible_device=" << visible_device_;
+    EMBED_LOG_INFO << "Starting warmup for device " << device_id_ << " visible_device=" << visible_device_;
 
     if (!impl_->init_python()) {
         return false;

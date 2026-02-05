@@ -87,15 +87,11 @@ namespace {
         static CallbackThreadPool pool(16);  // 16 threads for handling callbacks
         return pool;
     }
-
-    bool is_embedding_service_enabled() {
-        return tt::config::is_embedding_service();
-    }
 }
 
 EmbeddingController::EmbeddingController() {
     // Only initialize if TT_MODEL_SERVICE=embedding
-    if (!is_embedding_service_enabled()) {
+    if (!tt::config::is_embedding_service()()) {
         return;
     }
 
