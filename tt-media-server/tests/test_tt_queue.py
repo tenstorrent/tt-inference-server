@@ -7,7 +7,7 @@ from multiprocessing import get_context
 from queue import Empty
 
 import pytest
-from model_services.queues.tt_queue import TTQueue
+from model_services.tt_queue import TTQueue
 
 
 class TestTTQueueBasics:
@@ -211,6 +211,26 @@ class TestTTQueueBatchEnabled:
 
         result = queue.peek_next()
         assert result == "main_item"
+
+
+class TestTTQueuePickling:
+    """Test TTQueue serialization for multiprocessing"""
+
+    @pytest.mark.skip(reason="__getstate__ can only be called during spawning context")
+    def test_getstate_setstate(self):
+        """Test __getstate__ and __setstate__ preserve custom attributes"""
+        queue = TTQueue(max_size=5, batch_enabled=True)
+        queue.put("test")
+        time.sleep(0.05)
+
+        # Simulate pickling
+        state = queue.__getstate__()
+
+        # Create new queue and restore state
+        new_queue = TTQueue()
+        new_queue.__setstate__(state)
+
+        assert new_queue.batch_enabled is True
 
 
 class TestTTQueueEdgeCases:

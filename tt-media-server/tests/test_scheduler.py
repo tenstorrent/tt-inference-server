@@ -32,8 +32,8 @@ sys.modules["config.settings"].Settings = Mock()
 
 # Mock decorators and logger
 sys.modules["utils.decorators"] = Mock()
-sys.modules["utils.decorators"].log_execution_time = lambda *args, **kwargs: (
-    lambda func: func
+sys.modules["utils.decorators"].log_execution_time = (
+    lambda *args, **kwargs: lambda func: func
 )
 mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
@@ -117,8 +117,8 @@ class TestScheduler:
             ]
 
             lock_sequence = list(mock_locks)
-            mock_lock_constructor.side_effect = lambda: (
-                lock_sequence.pop(0) if lock_sequence else create_mock_lock()
+            mock_lock_constructor.side_effect = (
+                lambda: lock_sequence.pop(0) if lock_sequence else create_mock_lock()
             )
 
             return Scheduler()
@@ -142,6 +142,13 @@ class TestScheduler:
         # Verify logger was initialized
         mock_logger.info.assert_not_called()  # No logs yet
 
+    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
+    def test_check_is_model_ready_when_ready(self, scheduler):
+        """Test check_is_model_ready when model is ready"""
+        scheduler.is_ready = True
+        result = scheduler.check_is_model_ready()
+        assert result
+
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
         scheduler.is_ready = False
@@ -152,6 +159,21 @@ class TestScheduler:
         assert "405" in str(exc_info.value) or "Model is not ready" in str(
             exc_info.value
         )
+
+    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
+    def test_process_request_success(self, scheduler):
+        """Test process_request when successful"""
+        # Setup
+        scheduler.is_ready = True
+        mock_request = Mock()
+
+        # Patch the task_queue.put method
+        with patch.object(scheduler.task_queue, "put") as mock_put:
+            # Execute
+            scheduler.process_request(mock_request)
+
+            # Verify
+            mock_put.assert_called_once_with(mock_request, timeout=1.0)
 
     def test_process_request_queue_full(self, scheduler):
         """Test process_request when queue is full"""
@@ -201,133 +223,169 @@ class TestScheduler:
             exc_info.value
         )
 
+    @patch("asyncio.create_task")
     @patch("model_services.scheduler.Process")
-    def test_start_worker_with_queue_index_uses_given_index(
-        self, mock_process_cls, scheduler, mock_process
+    def test_start_workers(
+        self, mock_process_constructor, mock_create_task, scheduler, mock_process
     ):
-        """Test _start_worker with queue_index uses that index (restart path, lines 159-160)"""
-        mock_process_cls.return_value = mock_process
-        scheduler.result_queues_by_worker = {
-            0: create_mock_queue(),
-            1: create_mock_queue(),
-        }
-        scheduler.worker_info = {}
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        """Test start_workers method"""
+        # Setup
+        mock_process_constructor.return_value = mock_process
+        scheduler.worker_count = 2  # Should create 2 workers
 
-        scheduler._start_worker(worker_id="0", queue_index=1)
+        # Execute
+        scheduler.start_workers()
 
-        assert scheduler.worker_info["0"]["queue_index"] == 1
-        mock_process_cls.assert_called_once()
+        # Verify tasks were created
+        # result_listener, device_warmup_listener, error_listener, _start_workers_in_sequence
+        assert mock_create_task.call_count == 4
 
-    @patch("model_services.scheduler.Process")
-    def test_start_worker_without_queue_index_uses_len_worker_info(
-        self, mock_process_cls, scheduler, mock_process
-    ):
-        """Test _start_worker without queue_index uses len(worker_info) (first start, line 162)"""
-        mock_process_cls.return_value = mock_process
-        scheduler.result_queues_by_worker = {
-            0: create_mock_queue(),
-            1: create_mock_queue(),
-        }
-        scheduler.worker_info = {}
-
-        scheduler._start_worker(worker_id="0")
-
-        assert scheduler.worker_info["0"]["queue_index"] == 0
-        mock_process_cls.assert_called_once()
-
-    @patch("model_services.scheduler.Process")
-    def test_restart_worker_passes_existing_queue_index_to_start_worker(
-        self, mock_process_cls, scheduler, mock_process
-    ):
-        """Test restart_worker passes existing queue_index to _start_worker (lines 225, 228)"""
-        mock_process_cls.return_value = mock_process
-        scheduler.result_queues_by_worker = {
-            0: create_mock_queue(),
-            1: create_mock_queue(),
-        }
-        old_process = Mock(spec=Process)
-        old_process.is_alive = Mock(return_value=False)
-        scheduler.worker_info["0"] = {
-            "process": old_process,
-            "restart_count": 0,
-            "queue_index": 1,
-            "error_count": 0,
-        }
-
-        scheduler.restart_worker("0")
-
-        assert scheduler.worker_info["0"]["queue_index"] == 1
-        mock_process_cls.assert_called_once()
+        # Verify log message - use scheduler's logger directly
+        scheduler.logger.info.assert_any_call("Workers to start: 2")
 
     @pytest.mark.asyncio
-    async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(
-        self, scheduler
-    ):
-        """Test worker_health_monitor logs and bumps restart_count when restart_worker raises (491-494, 498)"""
-        dead_process = Mock(spec=Process)
-        dead_process.is_alive = Mock(return_value=False)
-        scheduler.worker_info["0"] = {
-            "process": dead_process,
-            "restart_count": 0,
-            "queue_index": 0,
-            "error_count": 0,
-        }
-        scheduler.is_ready = True
-        scheduler.monitor_running = True
-        first_sleep = True
+    async def test_result_listener(self, scheduler):
+        """Test the result_listener method"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # Setup test data
+        test_worker_id = "worker_0"
+        test_task_id = "test_task"
+        test_data = b"test_data"
 
-        async def stop_after_first_iteration(timeout):
-            nonlocal first_sleep
-            if first_sleep:
-                first_sleep = False
-                scheduler.monitor_running = False
+        # Create mock result queue that will be returned from result_queues_by_worker
+        mock_result_queue_by_worker = Mock()
+        mock_result_queue_by_worker.get_nowait = Mock(
+            side_effect=[
+                (test_worker_id, test_task_id, test_data),  # First call returns result
+                None,  # Subsequent calls return None (queue empty)
+            ]
+        )
 
-        with patch.object(
-            scheduler, "restart_worker", side_effect=RuntimeError("Restart failed")
-        ), patch(
-            "model_services.scheduler.asyncio.sleep",
-            side_effect=stop_after_first_iteration,
-        ):
-            await scheduler.worker_health_monitor()
+        # Create mock response queue where results will be put
+        mock_response_queue = AsyncMock()
 
-        mock_logger.error.assert_any_call("Failed to restart worker 0: Restart failed")
-        assert scheduler.worker_info["0"]["restart_count"] == 1
+        # Setup scheduler state
+        scheduler.result_queues_by_worker = {0: mock_result_queue_by_worker}
+        scheduler.result_queues = {test_task_id: mock_response_queue}
+
+        # Run result_listener for one iteration
+        # We'll set listener_running to False after getting the result
+        scheduler.listener_running = True
+
+        # Create a task that runs result_listener and stops it after first iteration
+        async def run_with_timeout():
+            # Give it a short time to process one result
+            await asyncio.sleep(0.01)
+            scheduler.listener_running = False
+
+        # Run listener and timeout task concurrently
+        await asyncio.gather(scheduler.result_listener(), run_with_timeout())
+
+        # Verify result was put into the response queue
+        mock_response_queue.put.assert_called_once_with(test_data)
+
+        # Verify listener is stopped
+        assert not scheduler.listener_running
+
+        # Verify log message
+        mock_logger.info.assert_any_call("Result listener stopped")
 
     @pytest.mark.asyncio
-    async def test_worker_health_monitor_calls_deep_restart_when_restart_count_exceeded(
-        self, scheduler
-    ):
-        """Test worker_health_monitor calls deep_restart_workers when restart_count >= max and allow_deep_reset (500-506)"""
-        dead_process = Mock(spec=Process)
-        dead_process.is_alive = Mock(return_value=False)
-        scheduler.settings.allow_deep_reset = True
-        scheduler.settings.max_worker_restart_count = 3
-        scheduler.worker_info["0"] = {
-            "process": dead_process,
-            "restart_count": 3,
-            "queue_index": 0,
-            "error_count": 0,
-        }
-        scheduler.is_ready = True
-        scheduler.monitor_running = True
-        first_sleep = True
+    async def test_error_listener(self, scheduler):
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        """Test the error_listener method"""
 
-        async def stop_after_first_iteration(timeout):
-            nonlocal first_sleep
-            if first_sleep:
-                first_sleep = False
-                scheduler.monitor_running = False
+        # Setup test data
+        test_worker_id = "worker_0"
+        test_task_id = "test_task"
+        test_error = "Test error message"
 
-        with patch.object(
-            scheduler, "deep_restart_workers", new_callable=AsyncMock
-        ) as mock_deep_restart, patch(
-            "model_services.scheduler.asyncio.sleep",
-            side_effect=stop_after_first_iteration,
+        # Setup scheduler state with worker info and result queues
+        scheduler.worker_info = {test_worker_id: {"error_count": 0}}
+        mock_result_queue = AsyncMock()
+        scheduler.result_queues = {test_task_id: mock_result_queue}
+
+        # Mock the error_queue.get to return error tuples
+        mock_error_queue = Mock()
+        mock_error_queue.get = Mock(
+            side_effect=[
+                (test_worker_id, test_task_id, test_error),  # First error
+                (test_worker_id, None, None),  # Shutdown signal
+            ]
+        )
+        scheduler.error_queue = mock_error_queue
+
+        # Run error_listener with timeout to prevent infinite loop
+        async def run_with_timeout():
+            await asyncio.sleep(0.05)
+            scheduler.listener_running = False
+
+        scheduler.listener_running = True
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            mock_to_thread.side_effect = [
+                (test_worker_id, test_task_id, test_error),
+                (test_worker_id, None, None),
+            ]
+            await asyncio.gather(scheduler.error_listener(), run_with_timeout())
+
+        # Verify error count was incremented twice
+        assert scheduler.worker_info[test_worker_id]["error_count"] == 2
+
+        # Verify error was put into the response queue as an Exception
+        mock_result_queue.put.assert_called_once()
+        put_arg = mock_result_queue.put.call_args[0][0]
+        assert isinstance(put_arg, Exception)
+        assert test_error in str(put_arg)
+
+        # Verify listener is stopped
+        assert not scheduler.listener_running
+
+        # Verify log messages
+        mock_logger.error.assert_any_call(
+            f"Error in worker {test_task_id}: {test_error}"
+        )
+        mock_logger.info.assert_any_call("Error listener stopped")
+
+    @pytest.mark.asyncio
+    async def test_device_warmup_listener(self, scheduler):
+        """Test the device_warmup_listener method"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # Setup test data
+        test_device_id = "0"
+
+        # Setup worker_info with the device
+        scheduler.worker_info = {test_device_id: {"is_ready": False}}
+
+        # Mock asyncio.to_thread to return device_id then None (shutdown signal)
+        # We need to provide multiple returns because the while loop calls it multiple times
+        mock_to_thread = AsyncMock(side_effect=[test_device_id, None])
+
+        # Mock asyncio.create_task to avoid creating actual tasks
+        mock_create_task = MagicMock()
+
+        scheduler.device_warmup_listener_running = True
+
+        with patch("model_services.scheduler.asyncio.to_thread", mock_to_thread), patch(
+            "model_services.scheduler.asyncio.create_task", mock_create_task
         ):
-            await scheduler.worker_health_monitor()
+            # Run the listener - it will exit when it gets None
+            await scheduler.device_warmup_listener()
 
-        mock_logger.info.assert_any_call("Trying deep restart of all workers")
-        mock_deep_restart.assert_called_once()
+        # Verify device is tracked as ready
+        assert scheduler.worker_info[test_device_id]["is_ready"]
+        assert "ready_time" in scheduler.worker_info[test_device_id]
+        assert scheduler.is_ready
+
+        # Verify asyncio.to_thread was called
+        assert mock_to_thread.call_count >= 2
+
+        # Verify log messages
+        mock_logger.info.assert_any_call(f"Device {test_device_id} is warmed up")
+        mock_logger.info.assert_any_call(
+            "First device warmed up, starting worker health monitor"
+        )
+        mock_logger.info.assert_any_call("Device warmup listener is done")
 
     def test_stop_workers(self, scheduler):
         """Test stop_workers method"""
@@ -429,6 +487,98 @@ class TestScheduler:
 
             # Verify worker_info was cleared
             assert len(scheduler.worker_info) == 0
+
+    def test_close_queues(self, scheduler):
+        """Test _close_queues method"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # Reset mock_logger to avoid accumulated calls from previous tests
+        mock_logger.reset_mock()
+
+        # Setup
+        mock_queue1 = Mock()
+        mock_queue1.close = Mock()
+        mock_queue1.join_thread = Mock()
+
+        mock_queue2 = Mock()
+        mock_queue2.close = Mock()
+        mock_queue2.join_thread = Mock()
+
+        mock_queue3 = Mock()
+        mock_queue3.close = Mock(side_effect=Exception("Test error"))
+
+        queues = [mock_queue1, mock_queue2, mock_queue3]
+
+        # Execute
+        scheduler._close_queues(queues)
+
+        # Verify
+        mock_queue1.close.assert_called_once()
+        mock_queue1.join_thread.assert_called_once()
+
+        mock_queue2.close.assert_called_once()
+        mock_queue2.join_thread.assert_called_once()
+
+        mock_queue3.close.assert_called_once()
+        mock_queue3.join_thread.assert_not_called()
+
+        # Verify log message
+        mock_logger.info.assert_any_call("Queues (2) closed successfully")
+        mock_logger.error.assert_called_once()  # For the error on mock_queue3
+
+    @pytest.mark.skip(reason="Disabling temporary for now, will re-enable after fix")
+    def test_calculate_worker_count(self, scheduler):
+        """Test _calculate_worker_count method with valid settings"""
+        # The method uses self.settings which is already mocked
+        # Execute
+        result = scheduler._calculate_worker_count()
+
+        # Verify - should return 2 based on mock_settings.device_ids = "(0),(1)"
+        assert result == 2
+
+    def test_calculate_worker_count_error(self, scheduler):
+        """Test _calculate_worker_count method with invalid settings"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # Setup - make device_ids an object without replace method to trigger exception
+        original_device_ids = scheduler.settings.device_ids
+        scheduler.settings.device_ids = None
+
+        try:
+            # Execute and verify
+            with pytest.raises(Exception) as exc_info:
+                scheduler._calculate_worker_count()
+
+            assert "500" in str(
+                exc_info.value
+            ) or "Workers cannot be initialized" in str(exc_info.value)
+            mock_logger.error.assert_called()
+        finally:
+            # Restore original value to avoid affecting subsequent tests
+            scheduler.settings.device_ids = original_device_ids
+
+    def test_get_max_queue_size(self, scheduler):
+        """Test _get_max_queue_size method with valid settings"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # The method uses self.settings which is already mocked with max_queue_size = 10
+        # Execute
+        result = scheduler._get_max_queue_size()
+
+        # Verify
+        assert result == 10
+
+    def test_get_max_queue_size_error(self, scheduler):
+        """Test _get_max_queue_size method with invalid settings"""
+        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
+        # Setup - change settings to have invalid max_queue_size
+        scheduler.settings.max_queue_size = 0
+
+        # Execute and verify
+        with pytest.raises(Exception) as exc_info:
+            scheduler._get_max_queue_size()
+
+        assert "500" in str(exc_info.value) or "Max queue size not provided" in str(
+            exc_info.value
+        )
+        mock_logger.error.assert_called()
 
 
 class TestSchedulerQueueTypes:
@@ -589,38 +739,6 @@ class TestSchedulerResultListener:
 
         # Should complete without raising
         await scheduler.result_listener()
-
-    @pytest.mark.asyncio
-    async def test_result_listener_continues_when_one_queue_get_many_raises(
-        self, scheduler_for_listener
-    ):
-        """Test result_listener inner except (271-272): one queue raises, listener continues"""
-        scheduler = scheduler_for_listener
-
-        queue_ok = Mock()
-        queue_ok.get_many = Mock(return_value=[])
-
-        queue_raises = Mock()
-        queue_raises.get_many = Mock(side_effect=RuntimeError("Queue read error"))
-
-        scheduler.result_queues_by_worker = {0: queue_ok, 1: queue_raises}
-        scheduler.result_queues = {}
-        call_count = [0]
-
-        async def stop_after_few(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] >= 4:
-                scheduler.listener_running = False
-
-        with patch(
-            "model_services.scheduler.asyncio.sleep",
-            side_effect=stop_after_few,
-        ):
-            await scheduler.result_listener()
-
-        queue_ok.get_many.assert_called()
-        queue_raises.get_many.assert_called()
-        assert not scheduler.listener_running
 
     @pytest.mark.asyncio
     async def test_result_listener_sleeps_when_no_results(self, scheduler_for_listener):

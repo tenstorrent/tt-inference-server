@@ -1009,8 +1009,7 @@ class TestJobManager:
     async def test_restore_jobs_workflow(self, job_manager, mock_request):
         """Verify that multiple jobs are correctly restored upon manager restart."""
         if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
+            pytest.skip("Job persistence is not enabled")
         job_ids = ["job-1", "job-2", "job-3"]
         db_path = job_manager.db.db_path
 
@@ -1057,8 +1056,7 @@ class TestJobManager:
     async def test_restore_stuck_jobs_from_db(self, job_manager):
         """Verify stuck jobs are synced to terminal states and completed jobs stay completed."""
         if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
+            pytest.skip("Persistence disabled")
 
         db_path = job_manager.db.db_path
 

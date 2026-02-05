@@ -17,9 +17,7 @@ class BaseDeviceRunner(ABC):
         self.settings = get_settings()
         self.ttnn_device = None
 
-        # Skip in main process when runner is only used for download_weights (device_id "-1")
-        if self.device_id != "-1":
-            set_torch_thread_limits(num_torch_threads)
+        set_torch_thread_limits(num_torch_threads)
 
         if not os.getenv("HF_TOKEN", None) and not (
             os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))

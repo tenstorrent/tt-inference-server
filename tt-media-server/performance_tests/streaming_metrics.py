@@ -30,10 +30,6 @@ class StreamingMetrics:
             self.samples[-1].receive_timestamp_ns - self.request_start_ns
         ) / 1_000_000
 
-    @property
-    def total_streaming_time_us(self) -> Optional[float]:
-        return (self.samples[-1].receive_timestamp_ns - self.request_start_ns) / 1_000
-
     def get_receive_intervals_ms(self) -> list[float]:
         if len(self.samples) < 2:
             return []
@@ -47,34 +43,13 @@ class StreamingMetrics:
             for i in range(1, len(sorted_samples))
         ]
 
-    def get_receive_intervals_us(self) -> list[float]:
-        if len(self.samples) < 2:
-            return []
-        sorted_samples = sorted(self.samples, key=lambda s: s.token_index)
-        return [
-            (
-                sorted_samples[i].receive_timestamp_ns
-                - sorted_samples[i - 1].receive_timestamp_ns
-            )
-            / 1_000
-            for i in range(1, len(sorted_samples))
-        ]
-
     @property
     def mean_receive_interval_ms(self) -> Optional[float]:
         intervals = self.get_receive_intervals_ms()
         return sum(intervals) / len(intervals) if intervals else None
 
-    @property
-    def mean_receive_interval_us(self) -> Optional[float]:
-        intervals = self.get_receive_intervals_us()
-        return sum(intervals) / len(intervals) if intervals else None
-
     def calculate_overhead_ms(self, test_runner_frequency_ms: int) -> float:
         return self.mean_receive_interval_ms - test_runner_frequency_ms
-
-    def calculate_overhead_us(self, test_runner_frequency_us: int) -> float:
-        return self.mean_receive_interval_us - test_runner_frequency_us
 
     @property
     def throughput_tokens_per_second(self) -> Optional[float]:

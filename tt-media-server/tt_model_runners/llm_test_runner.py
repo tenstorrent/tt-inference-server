@@ -8,17 +8,18 @@ import time
 from typing import AsyncGenerator
 
 from domain.completion_request import CompletionRequest
-from domain.completion_response import CompletionOutput, CompletionResult
+from domain.completion_response import (
+    CompletionStreamChunk,
+    FinalResultOutput,
+    StreamingChunkOutput,
+)
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-
-CHUNK_TYPE = "streaming_chunk"
-FINAL_TYPE = "final_result"
 
 
 class LLMTestRunner(BaseDeviceRunner):
     """Test runner for LLM streaming performance tests.
 
-    Generates fake tokens as fast as possible to test the streaming
+    Generates fake tokens at a configurable frequency to test the streaming
     infrastructure without requiring actual model inference.
     """
 
@@ -41,38 +42,35 @@ class LLMTestRunner(BaseDeviceRunner):
         return True
 
     async def _run_async(self, requests: list[CompletionRequest]):
-        """Match VLLMRunner behavior: async generator for streaming, list for non-streaming."""
+        """Returns an async generator for streaming inference."""
         request = requests[0]
-        if request.stream:
-            return self._generate_streaming(request)
-        else:
-            return await self._generate_non_streaming(requests)
-
-    async def _generate_non_streaming(self, requests: list[CompletionRequest]):
-        """Non-streaming async inference - returns list of CompletionOutput."""
-        results = []
-        for request in requests:
-            tokens = [f"token_{i}" for i in range(request.max_tokens)]
-            final_text = "".join(tokens)
-            results.append(
-                CompletionOutput(
-                    type=FINAL_TYPE,
-                    data=CompletionResult(text=final_text),
-                )
-            )
-        return results
+        return self._generate_streaming(request)
 
     async def _generate_streaming(
         self, request: CompletionRequest
-    ) -> AsyncGenerator[CompletionOutput, None]:
+    ) -> AsyncGenerator[StreamingChunkOutput | FinalResultOutput, None]:
         frequency_seconds = (
             self.streaming_frequency_ms / LLMTestRunner.MILLISECONDS_PER_SECOND
         )
+        task_id = request._task_id
 
-        chunks = []
+        # StreamingChunkOutput format
+        streaming_chunks = [
+            StreamingChunkOutput(
+                type="streaming_chunk",
+                chunk=CompletionStreamChunk(
+                    text=f"token_{i}",
+                    index=i,
+                    finish_reason=None,
+                ),
+                task_id=task_id,
+            )
+            for i in range(request.max_tokens)
+        ]
+
         start_time = time.perf_counter()
 
-        for i in range(request.max_tokens):
+        for i, chunk in enumerate(streaming_chunks):
             # Calculate exact target time for this token
             target_time = start_time + (i * frequency_seconds)
             current_time = time.perf_counter()
@@ -82,33 +80,14 @@ class LLMTestRunner(BaseDeviceRunner):
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
-            chunk_text = f"token_{i}"
-            chunks.append(chunk_text)
+            yield chunk
 
-            yield CompletionOutput(
-                type=CHUNK_TYPE,
-                data=CompletionResult(text=chunk_text),
-            )
-
-        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
-
-        final_text = ""
-
-        yield CompletionOutput(
-            type=FINAL_TYPE,
-            data=CompletionResult(text=final_text),
+        yield FinalResultOutput(
+            type="final_result",
+            result=CompletionStreamChunk(text="[DONE]", index=0, finish_reason=None),
+            task_id=task_id,
+            return_result=True,
         )
 
     def run(self, requests: list[CompletionRequest]):
-        """Non-streaming inference - returns complete results."""
-        results = []
-        for request in requests:
-            tokens = [f"token_{i}" for i in range(request.max_tokens)]
-            final_text = "".join(tokens)
-            results.append(
-                CompletionOutput(
-                    type=FINAL_TYPE,
-                    data=CompletionResult(text=final_text),
-                )
-            )
-        return results
+        return []
