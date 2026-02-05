@@ -36,9 +36,62 @@ def parse_args():
         type=str,
         help="HuggingFace model repo (e.g., meta-llama/Llama-3.1-8B)",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device type (e.g., n300, t3k, galaxy)",
+    )
     # Parse known args to allow vLLM args to pass through
     args, _ = parser.parse_known_args()
     return args
+
+
+# Device type name to mesh device string mapping
+# This maps the canonical device type names (used in model specs JSON) to
+# the mesh device strings used for cache paths
+DEVICE_TO_MESH_STR = {
+    "CPU": "CPU",
+    "E150": "E150",
+    "N150": "N150",
+    "P100": "P100",
+    "P150": "P150",
+    "P150X4": "P150x4",
+    "P150X8": "P150x8",
+    "N150X4": "N150x4",
+    "N300": "N300",
+    "T3K": "T3K",
+    "GALAXY": "TG",
+    "GALAXY_T3K": "T3K",
+    "DUAL_GALAXY": "DUAL",
+    "QUAD_GALAXY": "QUAD",
+    "GPU": "GPU",
+}
+
+
+def normalize_device_type(device_arg: str) -> str:
+    """Convert user-provided device string to canonical device type name.
+
+    Args:
+        device_arg: User-provided device type (e.g., "n300", "galaxy", "T3K")
+
+    Returns:
+        Canonical device type name (e.g., "N300", "GALAXY", "T3K")
+    """
+    return device_arg.upper()
+
+
+def device_to_mesh_str(device_type: str) -> str:
+    """Convert device type name to mesh device string for cache paths.
+
+    Args:
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
+
+    Returns:
+        Mesh device string (e.g., "N300", "TG")
+    """
+    if device_type not in DEVICE_TO_MESH_STR:
+        raise ValueError(f"Unknown device type: {device_type}")
+    return DEVICE_TO_MESH_STR[device_type]
 
 
 def load_all_model_specs() -> dict:
@@ -72,13 +125,13 @@ def load_all_model_specs() -> dict:
         return json.load(f)
 
 
-def lookup_model_spec(all_specs: dict, model_arg: str, mesh_device: str) -> dict:
+def lookup_model_spec(all_specs: dict, model_arg: str, device_type: str) -> dict:
     """Look up the correct model spec by hf_model_repo and device_type.
 
     Args:
         all_specs: Dictionary of all model specs keyed by model_id
         model_arg: The --model argument (HuggingFace repo or model name)
-        mesh_device: The MESH_DEVICE environment variable value
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
 
     Returns:
         dict: The matching model spec
@@ -92,8 +145,8 @@ def lookup_model_spec(all_specs: dict, model_arg: str, mesh_device: str) -> dict
             spec.get("hf_model_repo") == model_arg
             or spec.get("model_name") == model_arg.split("/")[-1]
         )
-        # device_type is serialized as enum name (e.g., "N300")
-        device_match = spec.get("device_type") == mesh_device
+        # device_type in JSON is serialized as enum name (e.g., "N300", "GALAXY")
+        device_match = spec.get("device_type") == device_type
 
         if hf_match and device_match:
             return spec
@@ -103,7 +156,7 @@ def lookup_model_spec(all_specs: dict, model_arg: str, mesh_device: str) -> dict
         for spec in all_specs.values()
     ]
     raise ValueError(
-        f"No model spec found for model={model_arg}, MESH_DEVICE={mesh_device}. "
+        f"No model spec found for model={model_arg}, device={device_type}. "
         f"Available models: {available_models[:10]}..."
     )
 
@@ -135,15 +188,20 @@ def ensure_weights_available(model_spec: dict) -> Path:
     return weights_path
 
 
-def set_cache_paths(model_spec: dict):
-    """Set TT_CACHE_PATH with model-specific subdirectory.
+def set_cache_paths(model_spec: dict, device_type: str):
+    """Set TT_CACHE_PATH and MESH_DEVICE for model-specific cache directory.
 
     Args:
         model_spec: The model specification dictionary
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
     """
     cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
     model_name = model_spec["model_name"]
-    mesh_device = os.getenv("MESH_DEVICE")
+    mesh_device = device_to_mesh_str(device_type)
+
+    # Set MESH_DEVICE env var for other components that need it
+    os.environ["MESH_DEVICE"] = mesh_device
+    logger.info(f"Set MESH_DEVICE to {mesh_device}")
 
     # Preserve model/device-specific cache structure
     tt_cache_path = cache_root / "tt_metal_cache" / f"cache_{model_name}" / mesh_device
@@ -278,7 +336,33 @@ def runtime_settings(model_spec_json):
 
 
 def set_runtime_env_vars(model_spec_json):
-    for key, value in model_spec_json["env_vars"].items():
+    """Set runtime environment variables from model spec.
+
+    Handles env_vars in two possible locations:
+    1. Top level: model_spec_json["env_vars"] (from ModelSpec.__post_init__ merge)
+    2. Nested: model_spec_json["device_model_spec"]["env_vars"] (raw JSON)
+
+    Both locations are checked and merged, with top-level taking precedence.
+    """
+    env_vars = {}
+
+    # Check nested location first (device_model_spec.env_vars)
+    device_model_spec = model_spec_json.get("device_model_spec", {})
+    if isinstance(device_model_spec, dict):
+        nested_env_vars = device_model_spec.get("env_vars", {})
+        if nested_env_vars:
+            env_vars.update(nested_env_vars)
+
+    # Check top-level location (takes precedence)
+    top_level_env_vars = model_spec_json.get("env_vars", {})
+    if top_level_env_vars:
+        env_vars.update(top_level_env_vars)
+
+    if not env_vars:
+        logger.info("No env_vars found in model spec")
+        return
+
+    for key, value in env_vars.items():
         if not isinstance(key, str):
             key = str(key)
             logger.warning(
@@ -361,24 +445,32 @@ def main():
         # (all_specs will have exactly one entry in this case)
         model_spec = list(all_specs.values())[0]
         logger.info("Legacy mode: using model spec from TT_MODEL_SPEC_JSON_PATH")
-    elif args.model:
-        # New simplified mode: look up spec by --model and MESH_DEVICE
-        mesh_device = os.getenv("MESH_DEVICE")
-        if not mesh_device:
+
+        # Validate required env vars are set in legacy mode
+        tt_cache_path = os.getenv("TT_CACHE_PATH")
+        model_weights_path = os.getenv("MODEL_WEIGHTS_PATH")
+        if not tt_cache_path or not model_weights_path:
             raise RuntimeError(
-                "MESH_DEVICE environment variable is required when using --model argument"
+                "TT_MODEL_SPEC_JSON_PATH mode requires TT_CACHE_PATH and MODEL_WEIGHTS_PATH "
+                "to be set. Use 'python run.py --docker-server' workflow or switch to simplified "
+                "mode with --model and --device arguments."
             )
-        model_spec = lookup_model_spec(all_specs, args.model, mesh_device)
+    elif args.model and args.device:
+        # New simplified mode: look up spec by --model and --device
+        device_type = normalize_device_type(args.device)
+        model_spec = lookup_model_spec(all_specs, args.model, device_type)
         logger.info(
-            f"Simplified mode: found model spec for --model={args.model}, MESH_DEVICE={mesh_device}"
+            f"Simplified mode: found model spec for --model={args.model}, --device={device_type}"
         )
 
         # Set cache paths and ensure weights are available (new simplified mode only)
-        set_cache_paths(model_spec)
+        set_cache_paths(model_spec, device_type)
         ensure_weights_available(model_spec)
     else:
         raise RuntimeError(
-            "Either TT_MODEL_SPEC_JSON_PATH must be set or --model argument must be provided"
+            "Either set TT_MODEL_SPEC_JSON_PATH env var (for 'python run.py --docker-server' "
+            "workflow) or provide both --model and --device arguments (for direct docker run). "
+            "Example: docker run <image> --model meta-llama/Llama-3.1-8B --device n300"
         )
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
