@@ -5,7 +5,7 @@
 from typing import Optional, Union
 
 import numpy as np
-from config.constants import ResponseFormat
+from config.constants import TTS_RESPONSE_FORMATS
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
@@ -39,8 +39,18 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
-    # Response format
-    response_format: str = ResponseFormat.AUDIO.value  # ResponseFormat.AUDIO for WAV bytes, ResponseFormat.VERBOSE_JSON or ResponseFormat.JSON for JSON
+    # Response format: wav (default), mp3, ogg, json, or verbose_json
+    response_format: str = "wav"
+
+    @field_validator("response_format", mode="before")
+    @classmethod
+    def validate_response_format(cls, v):
+        normalized = str(v).strip().lower() if v is not None else "wav"
+        if normalized not in TTS_RESPONSE_FORMATS:
+            raise ValueError(
+                f"response_format must be one of {sorted(TTS_RESPONSE_FORMATS)}"
+            )
+        return normalized
 
     # Private fields for internal processing
     _speaker_embedding_array: Optional[np.ndarray] = PrivateAttr(default=None)
