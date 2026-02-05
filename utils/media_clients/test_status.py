@@ -67,6 +67,8 @@ class ImageGenerationTestStatus(BaseTestStatus):
 class AudioTestStatus(BaseTestStatus):
     """Test status for audio transcription models."""
 
+    _METRIC_ATTRS = ("elapsed", "ttft", "tsu", "rtr")
+
     def __init__(
         self,
         status: bool,
