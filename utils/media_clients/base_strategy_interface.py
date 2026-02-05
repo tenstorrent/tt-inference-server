@@ -17,6 +17,12 @@ from .utils.report_utils import ReportGenerator
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
 
+
+TIMEOUT_SECONDS = 1200  # 20 minutes
+MAX_RETRY_ATTEMPTS = 229
+RETRY_DELAY_SECONDS = 10
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +30,8 @@ class TaskType(str, Enum):
     """Task type constants for report metadata. Value is used in JSON (e.g. text_to_speech)."""
 
     TTS = "text_to_speech"
-    # AUDIO = "audio", CNN = "cnn", etc. when those clients are migrated
+    AUDIO = "audio"
+    # CNN = "cnn", IMAGE = "image", etc. when those clients are migrated
 
 
 # Removable after all clients use TaskType.
@@ -38,9 +45,8 @@ class BaseMediaStrategy(ABC):
     Abstract base class for media client strategies.
 
     Subclasses MUST define task_type class attribute (TaskType enum or str, e.g. task_type = TaskType.TTS).
-    Clients that generate reports call ReportGenerator.generate_benchmark_report_for_strategy(self, ...)
-    or generate_eval_report_for_strategy(self, ...) and implement _get_benchmark_report_extras /
-    _create_eval_extra_data as needed.
+    Clients build ReportContext.from_strategy(self), then call ReportGenerator.generate_benchmark_report(...)
+    or generate_eval_report(...) with context and client-specific extra_benchmarks/extra_data.
     """
 
     # Subclasses override: task_type = TaskType.TTS or TASK_TYPE = "audio" (legacy)
@@ -71,7 +77,6 @@ class BaseMediaStrategy(ABC):
         service_port,
         *,
         report_generator: Optional[ReportGenerator] = None,
-        aggregator: Optional[MetricsAggregator] = None,
     ):
         self.all_params = all_params
         self.model_spec = model_spec
@@ -81,15 +86,13 @@ class BaseMediaStrategy(ABC):
         self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
         self._report_generator = report_generator or ReportGenerator()
-        self._aggregator = aggregator or MetricsAggregator()
         self._task_type_str: str = _task_type_value(
             getattr(self.__class__, "task_type", self.TASK_TYPE)
         )
 
-    def _get_aggregator(self) -> MetricsAggregator:
-        """Return the shared aggregator, reset for this benchmark run."""
-        self._aggregator.reset()
-        return self._aggregator
+    def _create_aggregator(self) -> MetricsAggregator:
+        """Create a fresh aggregator for a benchmark run."""
+        return MetricsAggregator()
 
     @abstractmethod
     def run_eval(self) -> None:
@@ -121,9 +124,9 @@ class BaseMediaStrategy(ABC):
         # Configure test with retry logic
         test_config = TestConfig(
             {
-                "test_timeout": 1200,  # 20 minutes
-                "retry_attempts": 229,  # 230 total attempts (0-indexed)
-                "retry_delay": 10,  # 10 seconds between attempts
+                "test_timeout": TIMEOUT_SECONDS,
+                "retry_attempts": MAX_RETRY_ATTEMPTS,
+                "retry_delay": RETRY_DELAY_SECONDS,
                 "break_on_failure": False,
             }
         )
