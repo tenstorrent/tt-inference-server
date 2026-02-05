@@ -5320,6 +5320,32 @@
                     }
                 }
             }
+        ],
+        "p300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "qbge": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
         ]
     },
     "FLUX.1-schnell": {
@@ -5363,6 +5389,32 @@
             }
         ],
         "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "qbge": [
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
