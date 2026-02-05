@@ -107,7 +107,7 @@ class ImageGenerationEvalsTest(BaseTest):
         status_list = self._generate_all_images(request, prompts)
         if len(status_list) < request.num_prompts:
             return self._error(
-                f"Only {len(status_list)}/{request.num_prompts} images generated"
+                f"ImageGenerationEvalTest only {len(status_list)}/{request.num_prompts} images generated"
             )
 
         return self._compute_and_check_metrics(request, status_list)
@@ -147,7 +147,7 @@ class ImageGenerationEvalsTest(BaseTest):
         raw = self.targets.get("request")
 
         if raw is None:
-            return self._error("request not provided in targets")
+            return self._error("ImageGenerationEvalTest request not provided in targets")
 
         if isinstance(raw, ImageGenerationEvalsTestRequest):
             return raw
@@ -156,9 +156,11 @@ class ImageGenerationEvalsTest(BaseTest):
             try:
                 return ImageGenerationEvalsTestRequest(**raw)
             except TypeError as e:
-                return self._error(f"Invalid request parameters: {e}")
+                return self._error(f"ImageGenerationEvalTest invalid request parameters: {e}")
 
-        return self._error("request must be dict or ImageGenerationEvalsTestRequest")
+        return self._error(
+            "ImageGenerationEvalTest request must be dict or ImageGenerationEvalsTestRequest"
+        )
 
     def _load_prompts(
         self, request: ImageGenerationEvalsTestRequest
@@ -169,7 +171,9 @@ class ImageGenerationEvalsTest(BaseTest):
             len(prompts := sdxl_get_prompts(request.start_from, request.num_prompts))
             < request.num_prompts
         ):
-            return self._error(f"Only got {len(prompts)}/{request.num_prompts} prompts")
+            return self._error(
+                f"ImageGenerationEvalTest only got {len(prompts)}/{request.num_prompts} prompts"
+            )
 
         return prompts
 
@@ -308,39 +312,3 @@ class ImageGenerationEvalsTest(BaseTest):
     def _error(message: str) -> dict:
         """Create error response."""
         return {"success": False, "error": message}
-
-
-def main() -> None:
-    """CLI entry point."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Image generation eval (FID/CLIP)")
-    parser.add_argument("--model_name", required=True)
-    parser.add_argument("--num_prompts", type=int, default=CONFIG.DEFAULT_NUM_PROMPTS)
-    parser.add_argument("--server_url", default=None)
-    parser.add_argument("--service_port", default=None)
-    parser.add_argument(
-        "--num_inference_steps",
-        type=int,
-        default=CONFIG.DEFAULT_INFERENCE_STEPS,
-    )
-
-    args = parser.parse_args()
-
-    request = ImageGenerationEvalsTestRequest(
-        model_name=args.model_name,
-        num_prompts=args.num_prompts,
-        server_url=args.server_url,
-        num_inference_steps=args.num_inference_steps,
-    )
-
-    test = ImageGenerationEvalsTest(TestConfig.create_default(), {"request": request})
-    if args.service_port:
-        test.service_port = str(args.service_port)
-
-    result = test.run_tests()
-    raise SystemExit(0 if result.get("success") else 1)
-
-
-if __name__ == "__main__":
-    main()
