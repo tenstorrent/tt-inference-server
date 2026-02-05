@@ -1,8 +1,9 @@
-import ast
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 import logging
 import os
 from abc import ABC
-from typing import Optional
 
 import torch
 from sglang.srt.server_args import get_global_server_args
@@ -38,7 +39,7 @@ class BaseMetalDeviceRunner(ABC):
             # Worker environment setup (TT_VISIBLE_DEVICES, TT_METAL_CACHE, TT_CACHE_HOME)
             # is done in TTModels.__init__ BEFORE this is called, to ensure it runs
             # before any tt-metal imports that might read cache paths
-            
+
             # Now open device - will see only the devices assigned to this worker
             self.ttnn_device = self._mesh_device()
         server_args = get_global_server_args()
@@ -47,6 +48,7 @@ class BaseMetalDeviceRunner(ABC):
 
     def close_device(self):
         import ttnn
+
         try:
             self.logger.info(f"Device {self.device_id}: Closing mesh device...")
             if self.ttnn_device is not None:
@@ -66,6 +68,7 @@ class BaseMetalDeviceRunner(ABC):
 
     def get_updated_device_params(self, device_params):
         import ttnn
+
         if device_params is None:
             device_params = {}
 
@@ -99,12 +102,13 @@ class BaseMetalDeviceRunner(ABC):
 
     def _mesh_device(self):
         import ttnn
+
         try:
             # Get available devices
             device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise RuntimeError("No TTNN devices available")
-            
+
             num_devices_available = len(device_ids)
             self.logger.info(
                 f"Device {self.device_id}: Found {num_devices_available} available TTNN devices: {device_ids}"
@@ -116,12 +120,16 @@ class BaseMetalDeviceRunner(ABC):
                 rows, cols = map(int, mesh_shape_str.split(","))
                 mesh_shape = ttnn.MeshShape(rows, cols)
                 num_devices_requested = rows * cols
-                self.logger.info(f"Device {self.device_id}: Using mesh shape ({rows}, {cols}) from --mesh-shape CLI arg")
+                self.logger.info(
+                    f"Device {self.device_id}: Using mesh shape ({rows}, {cols}) from --mesh-shape CLI arg"
+                )
             else:
                 # Default: 1 row, N columns (width sharding for LLMs)
                 mesh_shape = ttnn.MeshShape(1, num_devices_available)
                 num_devices_requested = num_devices_available
-                self.logger.info(f"Device {self.device_id}: Using default mesh shape (1, {num_devices_available})")
+                self.logger.info(
+                    f"Device {self.device_id}: Using default mesh shape (1, {num_devices_available})"
+                )
 
             # Configure fabric BEFORE opening mesh device
             # Use requested device count, not available - fabric requires all devices be active
@@ -147,33 +155,36 @@ class BaseMetalDeviceRunner(ABC):
 
     def _configure_fabric(self, num_devices: int):
         """Configure fabric before opening mesh device.
-        
+
         For multi-device setups (N300 with 2 chips), we need FABRIC_1D
         for CCL operations (all_gather, reduce_scatter).
-        
+
         Each worker process has its own MetalContext, and TT_VISIBLE_DEVICES
         restricts which physical devices it can see. This is the same approach
         used by tt-sglang-plugin in tt-inference-server.
         """
         import ttnn
-        
+
         if num_devices == 1:
-            self.logger.info(f"Device {self.device_id}: Single device, no fabric config needed")
+            self.logger.info(
+                f"Device {self.device_id}: Single device, no fabric config needed"
+            )
             return None
-        
+
         # FABRIC_1D for N300 (linear topology with 2 chips connected via Ethernet)
         fabric_config = ttnn.FabricConfig.FABRIC_1D
-        
+
         self.logger.info(
             f"Device {self.device_id}: Setting fabric config to {fabric_config} for {num_devices} devices"
         )
-        
+
         ttnn.set_fabric_config(fabric_config)
-        
+
         return fabric_config
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         import ttnn
+
         try:
             mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
         except Exception as e:
@@ -182,7 +193,7 @@ class BaseMetalDeviceRunner(ABC):
             )
             raise RuntimeError(f"Mesh device initialization failed: {str(e)}") from e
         return mesh_device
-    
+
     def set_torch_thread_limits(self, num_threads: int = 1):
         if torch.get_num_threads() != num_threads:
             torch.set_num_threads(num_threads)

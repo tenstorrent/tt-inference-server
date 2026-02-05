@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 #!/bin/bash
 # SGLang TT-Metal Plugin Setup Script
 # This script sets up SGLang with TT-Metal support
