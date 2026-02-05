@@ -47,6 +47,7 @@ db.sqlite3
 scripts/examples/example_data
 
 # unignore
+!**/CMakeLists.txt
 !requirements*.txt
 !workflows/model_performance_reference.json
 !tests/server_tests/test_config.json
