@@ -195,5 +195,18 @@ USER ${CONTAINER_APP_USERNAME}
 # Set working directory
 WORKDIR "${APP_DIR}/src"
 
-# Run command
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py"]
+# Environment variable defaults (can be overridden at runtime with -e)
+ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs \
+    CACHE_ROOT=/home/container_app_user/cache_root \
+    MODEL_SPECS_JSON_PATH=/home/container_app_user/model_specs/model_specs_defaults.json \
+    VLLM_TARGET_DEVICE=tt \
+    WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+
+# Copy pre-generated model specs JSON
+RUN mkdir -p /home/container_app_user/model_specs
+COPY --chown=container_app_user:container_app_user \
+    model_specs_defaults.json ${MODEL_SPECS_JSON_PATH}
+
+# Default CMD for legacy mode (when no args provided, e.g., TT_MODEL_SPEC_JSON_PATH set)
+# When user passes args like --model/--device, docker-entrypoint.sh handles the invocation
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && python run_vllm_api_server.py\"$@\"", "--"]
