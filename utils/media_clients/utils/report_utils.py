@@ -16,12 +16,22 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from ..test_status import BaseTestStatus
 from .metrics_utils import aggregate_metrics_from_status_list
 
+AggregateFunction = Callable[[List[BaseTestStatus]], Dict[str, float]]
+
 logger = logging.getLogger(__name__)
+
+
+class ReportContextStrategy(Protocol):
+    """Protocol for objects that can supply report context (device, output_path, model_spec)."""
+
+    device: Any
+    output_path: Any
+    model_spec: Any
 
 
 @dataclass
@@ -38,25 +48,24 @@ class ReportContext:
     model_id: str
     hf_model_repo: Optional[str] = None
 
+    @staticmethod
+    def _device_name(device: Any) -> str:
+        return device.name if hasattr(device, "name") else str(device)
+
+    @staticmethod
+    def _normalize_output_path(output_path: Any) -> Path:
+        return output_path if isinstance(output_path, Path) else Path(output_path)
+
     @classmethod
-    def from_strategy(cls, strategy: Any) -> "ReportContext":
-        """Build context from a BaseMediaStrategy instance."""
-        device_name = (
-            strategy.device.name
-            if hasattr(strategy.device, "name")
-            else str(strategy.device)
-        )
-        output_path = (
-            strategy.output_path
-            if isinstance(strategy.output_path, Path)
-            else Path(strategy.output_path)
-        )
+    def from_strategy(cls, strategy: ReportContextStrategy) -> "ReportContext":
+        """Build context from a strategy-like object (device, output_path, model_spec)."""
+        spec = strategy.model_spec
         return cls(
-            model_name=strategy.model_spec.model_name,
-            device_name=device_name,
-            output_path=output_path,
-            model_id=strategy.model_spec.model_id,
-            hf_model_repo=getattr(strategy.model_spec, "hf_model_repo", None),
+            model_name=spec.model_name,
+            device_name=cls._device_name(strategy.device),
+            output_path=cls._normalize_output_path(strategy.output_path),
+            model_id=spec.model_id,
+            hf_model_repo=getattr(spec, "hf_model_repo", None),
         )
 
     def base_metadata(self) -> Dict[str, Any]:
@@ -75,12 +84,7 @@ class ReportGenerator:
     Inject via BaseMediaStrategy(report_generator=...). If not provided, strategy uses ReportGenerator().
     """
 
-    def __init__(
-        self,
-        aggregate_fn: Optional[
-            Any
-        ] = None,  # Callable[[List[BaseTestStatus]], Dict[str, float]]
-    ):
+    def __init__(self, aggregate_fn: Optional[AggregateFunction] = None):
         self._aggregate_fn = aggregate_fn or aggregate_metrics_from_status_list
 
     def generate_benchmark_report(
@@ -127,15 +131,7 @@ class ReportGenerator:
         if extra_benchmarks:
             benchmarks.update(extra_benchmarks)
         report_data = {**base, "benchmarks": benchmarks}
-
-        filepath = (
-            context.output_path / f"benchmark_{context.model_id}_{time.time()}.json"
-        )
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, "w") as f:
-            json.dump(report_data, f, indent=4)
-        logger.info(f"Benchmark report generated: {filepath}")
-        return filepath
+        return self._write_json_report(self._benchmark_filepath(context), report_data)
 
     def generate_eval_report(
         self,
@@ -161,16 +157,26 @@ class ReportGenerator:
         base = {**context.base_metadata(), "task_type": task_type}
         payload = {**base, **extra_data}
         report_data = [payload]
+        return self._write_json_report(self._eval_filepath(context), report_data)
 
+    def _write_json_report(self, filepath: Path, data: Any) -> Path:
+        """Write JSON report to file, creating directories as needed."""
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w") as f:
+            json.dump(data, f, indent=4)
+        logger.info(f"Report generated: {filepath}")
+        return filepath
+
+    def _benchmark_filepath(self, context: ReportContext) -> Path:
+        """Generate benchmark report filepath."""
+        return context.output_path / f"benchmark_{context.model_id}_{time.time()}.json"
+
+    def _eval_filepath(self, context: ReportContext) -> Path:
+        """Generate eval report filepath."""
         repo_part = (context.hf_model_repo or "unknown").replace("/", "__")
-        filepath = (
+        return (
             context.output_path
             / f"eval_{context.model_id}"
             / repo_part
             / f"results_{time.time()}.json"
         )
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, "w") as f:
-            json.dump(report_data, f, indent=4)
-        logger.info(f"Eval report generated: {filepath}")
-        return filepath

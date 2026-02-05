@@ -2,26 +2,23 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-
 import asyncio
 import logging
 import time
 from typing import Optional
-from .utils.metrics_utils import MetricsAggregator
-
 
 import aiohttp
 from transformers import AutoTokenizer
 
-
 from .base_strategy_interface import BaseMediaStrategy, TaskType
+from .test_status import TtsTestStatus
 from .utils.metrics_utils import (
+    MetricsAggregator,
     aggregate_metrics_from_status_list,
     percentiles_from_metric,
 )
 from .utils.report_utils import ReportContext
 from utils.constants import PerformanceResult
-from .test_status import TtsTestStatus
 from workflows.utils import get_num_calls
 from workflows.utils_report import get_performance_targets
 
@@ -321,9 +318,9 @@ class TtsClientStrategy(BaseMediaStrategy):
             rtr_value: Real-time ratio (audio_duration / generation_time)
 
         Returns:
-            0 - undefined (no targets or values)
-            2 - passed (all metrics within tolerance)
-            3 - failed (any metric outside tolerance)
+            PerformanceResult.UNDEFINED - no targets available
+            PerformanceResult.PASS - all metrics within tolerance
+            PerformanceResult.FAIL - any metric outside tolerance
         """
         logger.info("Calculating performance check based on TTFT, RTR targets")
 
