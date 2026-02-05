@@ -375,6 +375,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P150X8): {
+        "device_mesh_shape": (1, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -399,6 +411,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P150X8): {
+        "device_mesh_shape": (1, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -407,6 +431,18 @@ ModelConfigs = {
     },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.P150X8): {
+        "device_mesh_shape": (1, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
