@@ -2,14 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from ast import List
 from multiprocessing import get_context
 from multiprocessing.queues import Queue
 from queue import Empty
-from typing import Optional
+from typing import Any, List, Optional
+
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 
-class TTQueue(Queue):
+class TTQueue(Queue, TTQueueInterface):
     def __init__(self, max_size=0, batch_enabled=False, *, ctx=None):
         if ctx is None:
             ctx = get_context()
@@ -105,3 +106,9 @@ class TTQueue(Queue):
     def return_item(self, item):
         """Return item to leftover cache for later processing"""
         self._leftover_items.put(item)
+
+    def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
+        """Peek at next n items for conditional processing."""
+        raise NotImplementedError(
+            "peek is not implemented for TTQueue - multiprocessing.Queue does not support true peeking"
+        )

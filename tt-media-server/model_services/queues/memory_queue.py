@@ -1,10 +1,12 @@
 import struct
 import time
 from multiprocessing import shared_memory
+from typing import Any, List, Optional
 
 import numpy as np
 from domain.completion_response import CompletionResult
 from utils.logger import TTLogger
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 MAX_TEXT_LEN = 450
 MAX_TASK_ID_LEN = 100
@@ -19,7 +21,7 @@ chunk_dtype = np.dtype(
 )
 
 
-class SharedMemoryChunkQueue:
+class SharedMemoryChunkQueue(TTQueueInterface):
     def __init__(self, capacity=200000, name="chunk_queue", create=True):
         self.capacity = capacity
         self.chunk_size = chunk_dtype.itemsize
@@ -145,12 +147,6 @@ class SharedMemoryChunkQueue:
             return write_idx - read_idx
         else:
             return (self.capacity - read_idx) + write_idx
-
-    def full(self) -> bool:
-        """Check if the queue is full (or nearly full)."""
-        return (
-            self._get_size() >= self.capacity - 10
-        )  # Same margin as _get_next_write_slot
 
     def _get_next_write_slot(self) -> int:
         # Rough size check without lock (acceptable race)
@@ -316,7 +312,7 @@ class SharedMemoryChunkQueue:
         timeout: float = None,
     ) -> list:
         """
-        Get multiple items at once - more efficient than individual gets.
+        Get multiple items at once - optimized batch version.
 
         Args:
             max_messages_to_get: Maximum number of items to retrieve
@@ -326,45 +322,284 @@ class SharedMemoryChunkQueue:
         Returns:
             List of items (may be empty if block=False and queue is empty)
         """
-        results = []
         start_time = time.time() if timeout else None
 
-        # Get first item (blocking if requested)
+        # Wait for at least one item if blocking
         while True:
             if timeout and (time.time() - start_time) > timeout:
-                if not results:
-                    raise TimeoutError(f"Queue get_many timed out after {timeout}s")
-                return results
+                raise TimeoutError(f"Queue get_many timed out after {timeout}s")
 
             read_idx = self._get_read_idx()
             write_idx = self._get_write_idx()
 
             if read_idx == write_idx:
                 if not block:
-                    return results
+                    return []
                 time.sleep(0.0001)
                 continue
 
             # We have at least one item, break out of the waiting loop
             break
 
-        # Now read as many items as available, up to max_messages_to_get
-        items_read = 0
-        while items_read < max_messages_to_get:
+        # Calculate how many items we can read in one batch
+        if read_idx < 0 or read_idx >= self.capacity:
+            self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+            return []
+
+        # Calculate available items
+        if write_idx >= read_idx:
+            available_items = write_idx - read_idx
+        else:
+            available_items = (self.capacity - read_idx) + write_idx
+
+        items_to_read = min(max_messages_to_get, available_items)
+
+        # Batch read from buffer
+        results = []
+        try:
+            for i in range(items_to_read):
+                slot_idx = (read_idx + i) % self.capacity
+
+                if slot_idx < 0 or slot_idx >= self.capacity:
+                    self.logger.error(f"CORRUPTION: slot_idx {slot_idx} out of bounds!")
+                    break
+
+                # Copy data before marking as unavailable
+                data = self.buffer[slot_idx].copy()
+                self.buffer[slot_idx]["item_available"] = 0
+
+                task_id = str(data["task_id"]).rstrip("\x00")
+                text = str(data["text"]).rstrip("\x00")
+                is_final = int(data["is_final"])
+
+                chunk = CompletionResult(
+                    text=text,
+                    index=None,
+                    finish_reason=None,
+                )
+
+                if is_final == 1:
+                    chunk_dict = {
+                        "type": "final_result",
+                        "data": chunk,
+                    }
+                else:
+                    chunk_dict = {
+                        "type": "streaming_chunk",
+                        "data": chunk,
+                    }
+
+                results.append(("1", task_id, chunk_dict))
+
+            # Update read_idx once for the entire batch
+            self._set_read_idx(read_idx + len(results))
+        except Exception as e:
+            self.logger.error(f"Error in get_many batch read: {e}")
+            # Still update read_idx for items we successfully read
+            if results:
+                self._set_read_idx(read_idx + len(results))
+            raise
+
+        return results
+
+    def close(self):
+        try:
+            self.shm.close()
+            print(f"[MemoryQueue] Closed: {self.name}")
+        except Exception as e:
+            self.logger.error(f"[MemoryQueue] Error closing: {e}")
+
+    def join_thread(self):
+        """Placeholder method to mimic a multiprocessing queue"""
+        return True
+
+    def unlink(self):
+        try:
+            self.shm.unlink()
+            print(f"[MemoryQueue] Unlinked: {self.name}")
+        except Exception as e:
+            self.logger.error(f"[MemoryQueue] Error unlinking: {e}")
+
+    def put_nowait(self, item: Any):
+        """Equivalent to put(obj, False)."""
+        return self.put(item, block=False, timeout=None)
+
+    def qsize(self) -> int:
+        """Return the approximate size of the queue."""
+        return self._get_size()
+
+    def empty(self) -> bool:
+        """Return True if the queue is empty, False otherwise (approximate)."""
+        return self._get_size() == 0
+
+    def full(self) -> bool:
+        """Return True if the queue is full, False otherwise (approximate)."""
+        return (
+            self._get_size() >= self.capacity - 10
+        )  # Same margin as _get_next_write_slot
+
+    def put_many(
+        self, items: List[Any], block: bool = True, timeout: Optional[float] = None
+    ):
+        """Put multiple items into the queue - optimized batch version."""
+        if not items:
+            return
+
+        start_time = time.time() if timeout else None
+        num_items = len(items)
+
+        # Pre-process all items to extract fields
+        processed_items = []
+        for obj in items:
+            # Extract from tuple: (worker_id, task_id, data_dict)
+            _, task_id, data = obj
+
+            # Extract fields from the dict
+            chunk_type = data.get("type", "streaming_chunk")
+            is_final = 1 if chunk_type == "final_result" else 0
+
+            # Get text from chunk or result
+            chunk_obj = data.get("data")
+            text = chunk_obj.text if chunk_obj else ""
+
+            # Truncate if needed
+            if len(task_id) > MAX_TASK_ID_LEN:
+                task_id = task_id[:MAX_TASK_ID_LEN]
+            if len(text) > MAX_TEXT_LEN:
+                text = text[:MAX_TEXT_LEN]
+
+            processed_items.append((task_id, text, is_final))
+
+        # Calculate available space upfront
+        write_idx = self._get_write_idx()
+        read_idx = self._get_read_idx()
+
+        if write_idx >= read_idx:
+            available_space = (self.capacity - write_idx) + read_idx - 10
+        else:
+            available_space = read_idx - write_idx - 10
+
+        # Ensure non-negative
+        available_space = max(0, available_space)
+
+        # Wait for space if blocking
+        while available_space < num_items:
+            if not block:
+                # Put as many as we can
+                num_items = available_space
+                processed_items = processed_items[:num_items]
+                break
+
+            if timeout and (time.time() - start_time) > timeout:
+                raise TimeoutError(f"Queue put_many timed out after {timeout}s")
+
+            time.sleep(0.0001)
+            write_idx = self._get_write_idx()
+            read_idx = self._get_read_idx()
+
+            if write_idx >= read_idx:
+                available_space = (self.capacity - write_idx) + read_idx - 10
+            else:
+                available_space = read_idx - write_idx - 10
+
+        if num_items == 0:
+            return
+
+        # Batch write to buffer
+        try:
+            for i, (task_id, text, is_final) in enumerate(processed_items):
+                slot_idx = (write_idx + i) % self.capacity
+                self.buffer[slot_idx]["task_id"] = task_id
+                self.buffer[slot_idx]["text"] = text
+                self.buffer[slot_idx]["is_final"] = is_final
+                self.buffer[slot_idx]["item_available"] = 2  # Mark ready
+
+            # Update write_idx once for the entire batch
+            self._set_write_idx(write_idx + num_items)
+        except Exception as e:
+            self.logger.error(f"Error in put_many batch write: {e}")
+            raise
+
+    def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
+        """Peek at next item for conditional processing."""
+        start_time = time.time() if timeout else None
+
+        while True:
+            if timeout and (time.time() - start_time) > timeout:
+                return None
+
             read_idx = self._get_read_idx()
             write_idx = self._get_write_idx()
 
             if read_idx == write_idx:
-                break
+                if timeout:
+                    time.sleep(0.0001)
+                    continue
+                return None
 
             if read_idx < 0 or read_idx >= self.capacity:
                 self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
+                return None
+
+            # Read without advancing read_idx
+            data = self.buffer[read_idx].copy()
+
+            task_id = str(data["task_id"]).rstrip("\x00")
+            text = str(data["text"]).rstrip("\x00")
+            is_final = int(data["is_final"])
+
+            chunk = CompletionResult(
+                text=text,
+                index=None,
+                finish_reason=None,
+            )
+
+            if is_final == 1:
+                chunk_dict = {
+                    "type": "final_result",
+                    "data": chunk,
+                }
+            else:
+                chunk_dict = {
+                    "type": "streaming_chunk",
+                    "data": chunk,
+                }
+
+            return ("1", task_id, chunk_dict)
+
+    def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
+        """Peek at next n items for conditional processing."""
+        results = []
+        start_time = time.time() if timeout else None
+
+        # Wait for at least one item if timeout is provided
+        if timeout:
+            while True:
+                if (time.time() - start_time) > timeout:
+                    return results
+
+                read_idx = self._get_read_idx()
+                write_idx = self._get_write_idx()
+
+                if read_idx != write_idx:
+                    break
+
+                time.sleep(0.0001)
+
+        # Read up to n items without advancing read_idx
+        read_idx = self._get_read_idx()
+        write_idx = self._get_write_idx()
+
+        items_to_read = min(n, self._get_size())
+
+        for i in range(items_to_read):
+            current_idx = (read_idx + i) % self.capacity
+
+            if current_idx < 0 or current_idx >= self.capacity:
+                self.logger.error(f"CORRUPTION: peek idx {current_idx} out of bounds!")
                 break
 
-            slot_idx = read_idx
-            data = self.buffer[slot_idx].copy()
-            self.buffer[slot_idx]["item_available"] = 0
-            self._set_read_idx(read_idx + 1)
+            data = self.buffer[current_idx].copy()
 
             task_id = str(data["task_id"]).rstrip("\x00")
             text = str(data["text"]).rstrip("\x00")
@@ -388,24 +623,5 @@ class SharedMemoryChunkQueue:
                 }
 
             results.append(("1", task_id, chunk_dict))
-            items_read += 1
 
         return results
-
-    def close(self):
-        try:
-            self.shm.close()
-            print(f"[MemoryQueue] Closed: {self.name}")
-        except Exception as e:
-            self.logger.error(f"[MemoryQueue] Error closing: {e}")
-
-    def join_thread(self):
-        """Placeholder method to mimic a multiprocessing queue"""
-        return True
-
-    def unlink(self):
-        try:
-            self.shm.unlink()
-            print(f"[MemoryQueue] Unlinked: {self.name}")
-        except Exception as e:
-            self.logger.error(f"[MemoryQueue] Error unlinking: {e}")
