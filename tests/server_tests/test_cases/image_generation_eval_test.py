@@ -147,7 +147,9 @@ class ImageGenerationEvalsTest(BaseTest):
         raw = self.targets.get("request")
 
         if raw is None:
-            return self._error("ImageGenerationEvalTest request not provided in targets")
+            return self._error(
+                "ImageGenerationEvalTest request not provided in targets"
+            )
 
         if isinstance(raw, ImageGenerationEvalsTestRequest):
             return raw
@@ -156,7 +158,9 @@ class ImageGenerationEvalsTest(BaseTest):
             try:
                 return ImageGenerationEvalsTestRequest(**raw)
             except TypeError as e:
-                return self._error(f"ImageGenerationEvalTest invalid request parameters: {e}")
+                return self._error(
+                    f"ImageGenerationEvalTest invalid request parameters: {e}"
+                )
 
         return self._error(
             "ImageGenerationEvalTest request must be dict or ImageGenerationEvalsTestRequest"
