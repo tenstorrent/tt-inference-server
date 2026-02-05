@@ -6,7 +6,7 @@
 Metrics aggregation for benchmark status.
 
 Status objects define _METRIC_ATTRS and get_metrics(). Use aggregate_metrics_from_status_list
-for means (one pass); use percentiles_from_metric for P90/P95 etc.
+for means; use percentiles_from_metric for P90/P95 etc.
 """
 
 import logging
