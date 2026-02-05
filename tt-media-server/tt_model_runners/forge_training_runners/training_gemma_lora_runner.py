@@ -4,19 +4,16 @@
 
 import os
 import traceback
-import uuid
 
 from transformers import AutoModelForCausalLM
 import torch
 from tqdm import tqdm
 import torch_xla
-import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 from peft import LoraConfig, get_peft_model
 
 
 from domain.training_request import TrainingRequest
-from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
@@ -38,7 +35,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.model_name, use_cache=False
         )
 
-        self.logger.info(f"Loaded Gemma 1.1 2B model for lora fine-tuning.")
+        self.logger.info("Loaded Gemma 1.1 2B model for lora fine-tuning.")
         self.logger.info(
             f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
         )
@@ -171,7 +168,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
-                        self.logger.info(f"Model checkpoint saved.")
+                        self.logger.info("Model checkpoint saved.")
 
                     # Validation phase
                     if do_validation:
@@ -192,7 +189,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             return model_path
 
     def run_validation(self):
-        self.logger.info(f"\n=== Starting Validation ===")
+        self.logger.info("\n=== Starting Validation ===")
         self.model.eval()
         total_val_loss = 0.0
         num_val_batches = 0

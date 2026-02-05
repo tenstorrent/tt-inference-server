@@ -4,7 +4,6 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer, DataCollatorForSeq2Seq
 from torch.utils.data import DataLoader
-import torch
 
 from utils.dataset_loaders.sst2.sst2_utils import (
     PROMPT_TEMPLATE,
