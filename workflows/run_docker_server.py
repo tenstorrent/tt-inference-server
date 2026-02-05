@@ -101,7 +101,9 @@ def generate_docker_volume_name(model_spec) -> str:
     return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
 
 
-def generate_simplified_docker_run_command(model_spec, mesh_device: str) -> list:
+def generate_simplified_docker_run_command(
+    model_spec, device_type_name: str, for_display: bool = False
+) -> list:
     """Generate the simplified Docker run command for a model.
 
     This generates a minimal Docker run command that relies on embedded
@@ -109,7 +111,8 @@ def generate_simplified_docker_run_command(model_spec, mesh_device: str) -> list
 
     Args:
         model_spec: ModelSpec object
-        mesh_device: Device type string (e.g., "N300", "T3K")
+        device_type_name: Device type name (e.g., "N300", "T3K", "GALAXY")
+        for_display: If True, use placeholders for secrets (safe to print)
 
     Returns:
         list: Docker run command as a list of strings
@@ -124,6 +127,7 @@ def generate_simplified_docker_run_command(model_spec, mesh_device: str) -> list
     cmd = [
         "docker",
         "run",
+        "--rm",
         "--device",
         "/dev/tenstorrent",
         "--cap-add",
@@ -136,36 +140,46 @@ def generate_simplified_docker_run_command(model_spec, mesh_device: str) -> list
         "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         "--volume",
         f"{volume_name}:/home/container_app_user/cache_root",
-        "-e",
-        f"MESH_DEVICE={mesh_device}",
     ]
 
     # HF_TOKEN only required for gated models
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token:
-        cmd.extend(["-e", f"HF_TOKEN={hf_token}"])
+    # Use placeholder for display to avoid exposing secrets in logs/output
+    if for_display:
+        cmd.extend(["-e", "HF_TOKEN=$HF_TOKEN"])
+    else:
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            cmd.extend(["-e", f"HF_TOKEN={hf_token}"])
 
     cmd.append(model_spec.docker_image)
+    # Use --model and --device arguments instead of MESH_DEVICE env var
     cmd.extend(["--model", model_spec.hf_model_repo])
+    cmd.extend(["--device", device_type_name.lower()])
 
     return cmd
 
 
-def print_simplified_docker_commands(model_spec, mesh_device: str):
+def print_simplified_docker_commands(model_spec, device_type_name: str):
     """Print user-friendly Docker commands for running a model.
 
     Prints both the volume creation command (run once) and the docker run command.
+    Uses placeholders for secrets like HF_TOKEN so output is safe to share.
 
     Args:
         model_spec: ModelSpec object
-        mesh_device: Device type string (e.g., "N300", "T3K")
+        device_type_name: Device type name (e.g., "N300", "T3K", "GALAXY")
     """
     volume_name = generate_docker_volume_name(model_spec)
-    docker_cmd = generate_simplified_docker_run_command(model_spec, mesh_device)
+    # Use for_display=True to get command with $HF_TOKEN placeholder
+    docker_cmd = generate_simplified_docker_run_command(
+        model_spec, device_type_name, for_display=True
+    )
 
     print("\n" + "=" * 60)
     print("Simplified Docker Commands")
     print("=" * 60)
+    print("\n# Set HF_TOKEN if using gated models (optional):")
+    print("export HF_TOKEN=<your-token>")
     print("\n# Create persistent volume (run once):")
     print(f"docker volume create {volume_name}")
     print("\n# Run the server:")

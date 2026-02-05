@@ -240,6 +240,24 @@ if [ "$build" = true ]; then
     # build dev image
     if [ "$build_dev_image" = true ]; then
         echo "building: ${dev_image_tag}"
+        
+        # Generate model_specs_defaults.json before building dev image
+        echo "Generating model_specs_defaults.json ..."
+        python3 -c "
+import sys
+from pathlib import Path
+project_root = Path('${repo_root}')
+if project_root not in sys.path:
+    sys.path.insert(0, str(project_root))
+from scripts.build_docker_images import generate_model_specs_json
+generate_model_specs_json()
+"
+        if [ $? -ne 0 ]; then
+            echo "⛔ Error: Failed to generate model_specs_defaults.json"
+            exit 1
+        fi
+        echo "✅ Generated model_specs_defaults.json"
+        
         docker build \
         -t "${dev_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
@@ -257,6 +275,24 @@ if [ "$build" = true ]; then
     # after the release candidate branch merges to main
     if [ "$release" = true ] && [ "$build_release_image" = true ]; then
         echo "building: ${release_image_tag}"
+        
+        # Generate model_specs_defaults.json before building release image
+        echo "Generating model_specs_defaults.json ..."
+        python3 -c "
+import sys
+from pathlib import Path
+project_root = Path('${repo_root}')
+if project_root not in sys.path:
+    sys.path.insert(0, str(project_root))
+from scripts.build_docker_images import generate_model_specs_json
+generate_model_specs_json()
+"
+        if [ $? -ne 0 ]; then
+            echo "⛔ Error: Failed to generate model_specs_defaults.json"
+            exit 1
+        fi
+        echo "✅ Generated model_specs_defaults.json"
+        
         docker build \
         -t "${release_image_tag}" \
         --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
