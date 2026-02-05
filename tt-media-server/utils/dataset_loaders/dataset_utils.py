@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+
 def collate_fn_for_causal_lm(batch):
     """
     Collate function that pre-shifts labels for Causal LM.
@@ -13,4 +14,8 @@ def collate_fn_for_causal_lm(batch):
 
     shifted_labels = labels[:, 1:].contiguous()
 
-    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": shifted_labels}
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "labels": shifted_labels,
+    }

@@ -10,6 +10,7 @@ from pydantic import model_validator
 from config.settings import settings
 from pydantic import PrivateAttr
 
+
 class TrainingRequest(BaseRequest):
     batch_size: int = 4
     learning_rate: float = 6e-5

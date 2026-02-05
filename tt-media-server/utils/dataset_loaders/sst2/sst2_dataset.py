@@ -20,7 +20,9 @@ from config.settings import get_settings
 class SSTDataset(BaseDataset):
     def __init__(self, model_name: str, split: str = "train", collate_fn=None):
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="right", use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, padding_side="right", use_fast=True
+        )
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.required_columns = ["input_ids", "attention_mask", "labels"]
         self.split = split
@@ -34,13 +36,17 @@ class SSTDataset(BaseDataset):
         response = RESPONSE_TEMPLATE.substitute(label=LBL2VALUE[example["label"]])
         full_text = prompt + response
 
-        encoding = self.tokenizer(full_text, truncation=False, padding=False, return_tensors="pt")
+        encoding = self.tokenizer(
+            full_text, truncation=False, padding=False, return_tensors="pt"
+        )
 
         input_ids = encoding["input_ids"].squeeze(0)
         attention_mask = encoding["attention_mask"].squeeze(0)
 
         labels = input_ids.clone()
-        prompt_encoding = self.tokenizer(prompt, truncation=False, padding=False, return_tensors="pt")
+        prompt_encoding = self.tokenizer(
+            prompt, truncation=False, padding=False, return_tensors="pt"
+        )
         prompt_input_ids = prompt_encoding["input_ids"].squeeze(0)
         prompt_len = prompt_input_ids.size(0)
         labels[:prompt_len] = -100
@@ -57,9 +63,15 @@ class SSTDataset(BaseDataset):
         raw_dataset = load_dataset(DATASET_BENCHMARK, DATASET_NAME, split=self.split)
 
         tokenized_dataset = raw_dataset.map(self._tokenize_function)
-        self.full_dataset = tokenized_dataset.filter(lambda example: example["len"] <= self.max_length)
+        self.full_dataset = tokenized_dataset.filter(
+            lambda example: example["len"] <= self.max_length
+        )
         self.dataset = self.full_dataset.remove_columns(
-            [col for col in self.full_dataset.column_names if col not in self.required_columns]
+            [
+                col
+                for col in self.full_dataset.column_names
+                if col not in self.required_columns
+            ]
         )
 
     def __len__(self):

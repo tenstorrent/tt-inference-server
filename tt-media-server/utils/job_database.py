@@ -115,8 +115,7 @@ class JobDatabase:
         """Update only the result_path for a job."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
-                "UPDATE jobs SET result_path = ? WHERE id = ?",
-                (result_path, job_id)
+                "UPDATE jobs SET result_path = ? WHERE id = ?", (result_path, job_id)
             )
             print(f"Rows affected: {cursor.rowcount}")
 

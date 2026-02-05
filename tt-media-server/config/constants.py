@@ -220,8 +220,10 @@ class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
 
+
 class DatasetLoaders(Enum):
     SST2 = "sst2"
+
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
 def _vllm_config(

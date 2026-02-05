@@ -84,7 +84,8 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
     ).ForgeVitRunner(wid, num_threads),
     ModelRunners.TRAINING_GEMMA_LORA: lambda wid, num_threads: __import__(
-        "tt_model_runners.forge_training_runners.training_gemma_lora_runner", fromlist=["TrainingGemmaLoraRunner"]
+        "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
+        fromlist=["TrainingGemmaLoraRunner"],
     ).TrainingGemmaLoraRunner(wid, num_threads),
     ModelRunners.MOCK: lambda wid, num_threads: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]

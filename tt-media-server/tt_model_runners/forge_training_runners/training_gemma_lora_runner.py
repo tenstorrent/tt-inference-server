@@ -31,14 +31,20 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
     @log_execution_time("Setting up Gemma Lora training")
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora training...")
-        
+
         # TODO: add repro manager setup
 
-        self.hf_model = AutoModelForCausalLM.from_pretrained(self.model_name, use_cache=False)
+        self.hf_model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, use_cache=False
+        )
 
         self.logger.info(f"Loaded Gemma 1.1 2B model for lora fine-tuning.")
-        self.logger.info(f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}")
-        self.logger.info(f"Trainable parameters: {sum(p.numel() for p in self.hf_model.parameters() if p.requires_grad)}")
+        self.logger.info(
+            f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
+        )
+        self.logger.info(
+            f"Trainable parameters: {sum(p.numel() for p in self.hf_model.parameters() if p.requires_grad)}"
+        )
 
         # single chip setup
         xr.set_device_type("TT")
@@ -46,10 +52,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
 
-        self.train_dataset = get_dataset_loader(self.model_name, split="train", collate_fn=collate_fn_for_causal_lm)
-        self.eval_dataset = get_dataset_loader(self.model_name, split="validation", collate_fn=collate_fn_for_causal_lm)
-        self.logger.info(f"Loaded train and eval datasets. Train dataset size: {len(self.train_dataset)}. \
-            Eval dataset size: {len(self.eval_dataset)}")
+        self.train_dataset = get_dataset_loader(
+            self.model_name, split="train", collate_fn=collate_fn_for_causal_lm
+        )
+        self.eval_dataset = get_dataset_loader(
+            self.model_name, split="validation", collate_fn=collate_fn_for_causal_lm
+        )
+        self.logger.info(
+            f"Loaded train and eval datasets. Train dataset size: {len(self.train_dataset)}. \
+            Eval dataset size: {len(self.eval_dataset)}"
+        )
 
         return True
 
@@ -62,7 +74,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         # Get the first request
         request = training_requests[0]
-        
+
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 
@@ -79,15 +91,21 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.model.to(self.device)
 
         model_path = request._output_model_path
-        
-        # use torch compile
-        self.model = torch.compile(self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False})
 
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=request.learning_rate)
+        # use torch compile
+        self.model = torch.compile(
+            self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False}
+        )
+
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(), lr=request.learning_rate
+        )
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)
 
-        self.logger.info(f"Device {self.device_id}: Gemma Lora training setup completed")
-        
+        self.logger.info(
+            f"Device {self.device_id}: Gemma Lora training setup completed"
+        )
+
         self.logger.debug("Sanity check if debug logging is working")
         self.logger.debug(f"Device {self.device_id}: Starting training...")
 
@@ -101,11 +119,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     # batch = device_manager.prepare_batch(batch)
                     batch = {k: v.to(self.device) for k, v in batch.items()}
-                    
+
                     self.logger.debug(f"Device {self.device_id}: Forward pass started")
                     # Forward pass
                     try:
-                        outputs = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                        outputs = self.model(
+                            input_ids=batch["input_ids"],
+                            attention_mask=batch["attention_mask"],
+                        )
                     except Exception as e:
                         self.logger.error(f"Forward pass failed: {e}")
                         self.logger.error(traceback.format_exc())
@@ -123,12 +144,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         batch["labels"].view(-1),
                     )
                     running_loss += loss.item()
-                    
+
                     self.logger.debug(f"Device {self.device_id}: Backward pass started")
                     # Backward pass
                     loss.backward()
                     torch_xla.sync(wait=True)
-                    self.logger.debug(f"Device {self.device_id}: Backward pass finished")
+                    self.logger.debug(
+                        f"Device {self.device_id}: Backward pass finished"
+                    )
 
                     # Update parameters
                     self.optimizer.step()
@@ -137,8 +160,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     do_validation = global_step % request.val_steps_freq == 0
 
                     if global_step % request.steps_freq == 0:
-                        avg_loss = running_loss / request.steps_freq if global_step > 0 else running_loss
-                        self.logger.info(f"Step {global_step} | train/loss: {avg_loss:.4f}")
+                        avg_loss = (
+                            running_loss / request.steps_freq
+                            if global_step > 0
+                            else running_loss
+                        )
+                        self.logger.info(
+                            f"Step {global_step} | train/loss: {avg_loss:.4f}"
+                        )
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
@@ -147,7 +176,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     # Validation phase
                     if do_validation:
                         avg_val_loss = self.run_validation()
-                        self.logger.info(f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}")
+                        self.logger.info(
+                            f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
+                        )
                         self.model.train()
 
                     global_step += 1
@@ -159,7 +190,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         finally:
             self.logger.debug(f"Device {self.device_id}: Training completed")
             return model_path
-    
+
     def run_validation(self):
         self.logger.info(f"\n=== Starting Validation ===")
         self.model.eval()
@@ -171,7 +202,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 # Forward pass + loss
-                outputs = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+                outputs = self.model(
+                    input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+                )
                 logits = outputs.logits
 
                 # Shift logits to match pre-shifted labels from collate_fn

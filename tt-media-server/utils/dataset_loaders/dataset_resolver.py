@@ -14,18 +14,23 @@ AVAILABLE_DATASET_LOADERS = {
     ).SSTDataset(model_name, split, collate_fn),
 }
 
+
 def get_dataset_loader(model_name: str, split: str, collate_fn=None) -> BaseDataset:
     dataset_loader_str = get_settings().dataset_loader
-    
+
     try:
         dataset_enum = DatasetLoaders(dataset_loader_str)
     except ValueError:
-        raise ValueError(f"'{dataset_loader_str}' is not a valid DatasetLoader. Check your Enum definition.")
+        raise ValueError(
+            f"'{dataset_loader_str}' is not a valid DatasetLoader. Check your Enum definition."
+        )
 
     loader_factory = AVAILABLE_DATASET_LOADERS.get(dataset_enum)
     if not loader_factory:
         available = ", ".join([d.value for d in AVAILABLE_DATASET_LOADERS.keys()])
-        raise ValueError(f"Loader for '{dataset_loader_str}' is defined but not implemented. Available: {available}")
+        raise ValueError(
+            f"Loader for '{dataset_loader_str}' is defined but not implemented. Available: {available}"
+        )
 
     try:
         return loader_factory(model_name, split, collate_fn)
