@@ -2236,7 +2236,7 @@ video_templates = [
                 },
             ),
             DeviceModelSpec(
-                device=DeviceTypes.QBGE,
+                device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
@@ -2288,7 +2288,7 @@ video_templates = [
                 },
             ),
             DeviceModelSpec(
-                device=DeviceTypes.QBGE,
+                device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
@@ -2429,7 +2429,7 @@ image_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            # TODO: Add P300 and QBGE
+            # TODO: Add P300 and P300X2
         ],
         status=ModelStatusTypes.COMPLETE,
     ),

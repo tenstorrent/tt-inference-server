@@ -71,7 +71,7 @@ class DeviceTypes(IntEnum):
     P150X4 = auto()  # 4x P150 cards (1,4 mesh)
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()    # Single P300 card (2 dies)
-    QBGE = auto()    # BH QuietBox GE - 2x P300 cards (2,2 mesh)
+    P300X2 = auto()  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -94,7 +94,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "P150x4",
             DeviceTypes.P150X8: "P150x8",
             DeviceTypes.P300: "P300",
-            DeviceTypes.QBGE: "QBGE",
+            DeviceTypes.P300X2: "P300x2",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -117,7 +117,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "4x P150",
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "p300",
-            DeviceTypes.QBGE: "BH QuietBox GE",
+            DeviceTypes.P300X2: "BH QuietBox GE",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -161,7 +161,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4,
             DeviceTypes.P150X8,
             DeviceTypes.P300,
-            DeviceTypes.QBGE,
+            DeviceTypes.P300X2,
         )
         return self in blackhole_devices
 
