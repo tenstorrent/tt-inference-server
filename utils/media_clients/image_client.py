@@ -68,9 +68,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             "tt-sdxl-image-to-image": self._run_img2img_generation_benchmark,
             "tt-sdxl-edit": self._run_inpainting_generation_benchmark,
             "tt-sd3.5": self._run_image_generation_benchmark,
-            "tt-flux.1-dev": None,
-            "tt-flux.1-schnell": None,
-            "tt-motif-image-6b-preview": None,
+            "tt-flux.1-dev": self._run_flux_1_dev_schnell_benchmark,
+            "tt-flux.1-schnell": self._run_flux_1_dev_schnell_benchmark,
+            "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_benchmark,
         }
 
         # Map runners to their eval methods (for future use)
@@ -988,7 +988,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         logger.info("Running Flux 1 Dev or Schnell benchmark.")
         status_list = []
         for i in range(num_calls):
-            logger.info(f"🔄 Flux benchmark iteration {i + 1}/{num_calls}")
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
             success, elapsed = self._generate_image_flux_1_dev_schnell()
             status_list.append(
                 ImageGenerationTestStatus(
