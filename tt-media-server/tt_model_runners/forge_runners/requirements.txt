@@ -5,3 +5,6 @@ torchvision
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
+
+datasets # model training
+peft # model training
