@@ -959,7 +959,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
@@ -989,7 +989,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",

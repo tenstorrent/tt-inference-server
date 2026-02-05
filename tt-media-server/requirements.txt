@@ -1,7 +1,6 @@
 aiohttp
 asyncio
 colorama
-datasets
 fastapi
 faster_fifo
 httpx
@@ -15,9 +14,9 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
-requests
 silero_vad
 tqdm
 uvicorn
 whisperx
+faster_fifo
 --extra-index-url https://download.pytorch.org/whl/cpu
