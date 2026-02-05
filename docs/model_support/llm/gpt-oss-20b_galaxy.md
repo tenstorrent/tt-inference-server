@@ -28,7 +28,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [openai/gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b) |
-| Model Status | 🟡 Functional |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 128 |
 | Max Context Length | 131072 |
 | Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/60ffb199/models/demos/gpt_oss) |
@@ -53,7 +53,7 @@ python3 run.py --model gpt-oss-20b --device galaxy_t3k --workflow server --docke
 | Parameter | Value |
 |-----------|-------|
 | Weights | [openai/gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b) |
-| Model Status | 🟡 Functional |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
 | Max Context Length | 1024 |
 | Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/60ffb199/models/demos/gpt_oss) |
