@@ -9,9 +9,8 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 from utils.media_clients.utils.metrics_utils import (
-    calculate_rtr,
-    calculate_tail_latency,
-    calculate_ttft,
+    aggregate_metrics_from_status_list,
+    percentiles_from_metric,
 )
 from utils.media_clients.test_status import TtsTestStatus
 from utils.media_clients.tts_client import TtsClientStrategy
@@ -96,7 +95,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
         device = MagicMock()
         strategy = TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-        result = strategy._get_tts_num_calls(is_eval=False)
+        result = strategy._get_num_calls(is_eval=False)
 
         assert result == 10  # TTS benchmark default
 
@@ -110,7 +109,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
         device = MagicMock()
         strategy = TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-        result = strategy._get_tts_num_calls(is_eval=True)
+        result = strategy._get_num_calls(is_eval=True)
 
         assert result == 5  # TTS eval default
 
@@ -126,113 +125,78 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
         device = MagicMock()
         strategy = TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-        result = strategy._get_tts_num_calls(is_eval=False)
+        result = strategy._get_num_calls(is_eval=False)
 
         assert result == 10  # Respects configured value
 
 
-class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for calculate_ttft (metrics_utils) with TtsTestStatus — used by TTS report."""
+class TestTtsClientStrategyAggregateMetrics(unittest.TestCase):
+    """Tests for aggregate_metrics_from_status_list with TtsTestStatus — used by TTS report."""
 
-    def test_calculate_ttft_with_valid_values(self):
+    def test_aggregate_ttft_ms_mean(self):
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=200.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
-        result = calculate_ttft(status_list)
-        assert result == 200.0  # Average: (100 + 200 + 300) / 3
+        result = aggregate_metrics_from_status_list(status_list)
+        assert result["num_requests"] == 3.0
+        assert result["ttft_ms"] == 200.0  # (100 + 200 + 300) / 3
 
-    def test_calculate_ttft_empty_list(self):
-        result = calculate_ttft([])
-        assert result == 0
-
-    def test_calculate_ttft_with_none_values(self):
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
-        ]
-        result = calculate_ttft(status_list)
-        # Fallback (ttft_ms, ttft, elapsed): None ttft_ms → elapsed=1.0; average(100, 1.0, 300)
-        assert abs(result - (100 + 1.0 + 300) / 3) < 0.01
-
-    def test_calculate_ttft_all_none_values(self):
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
-        ]
-        result = calculate_ttft(status_list)
-        assert result == 1.0
-
-
-class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
-    """Tests for calculate_rtr (metrics_utils) with TtsTestStatus — used by TTS report."""
-
-    def test_calculate_rtr_with_valid_values(self):
+    def test_aggregate_rtr_mean(self):
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, rtr=2.0),
             TtsTestStatus(status=True, elapsed=1.0, rtr=4.0),
         ]
-        result = calculate_rtr(status_list)
-        assert result == 3.0  # Average: (2.0 + 4.0) / 2
+        result = aggregate_metrics_from_status_list(status_list)
+        assert result["num_requests"] == 2.0
+        assert result["rtr"] == 3.0  # (2.0 + 4.0) / 2
 
-    def test_calculate_rtr_empty_list(self):
-        result = calculate_rtr([])
-        assert result == 0
+    def test_aggregate_empty_list(self):
+        result = aggregate_metrics_from_status_list([])
+        assert result == {}
 
-    def test_calculate_rtr_with_none_values(self):
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, rtr=2.0),
-            TtsTestStatus(status=True, elapsed=1.0, rtr=None),
-        ]
-        result = calculate_rtr(status_list)
-        assert result == 2.0
-
-    def test_calculate_rtr_all_none_values(self):
-        status_list = [TtsTestStatus(status=True, elapsed=1.0, rtr=None)]
-        result = calculate_rtr(status_list)
-        assert result == 0
-
-
-class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
-    """Tests for calculate_tail_latency (metrics_utils) with TtsTestStatus — used by TTS report."""
-
-    def test_calculate_tail_latency_with_valid_values(self):
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=200.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=400.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=500.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=600.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=700.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=800.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=900.0),
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=1000.0),
-        ]
-        p90, p95 = calculate_tail_latency(status_list)
-        assert p90 == 900.0
-        assert p95 == 1000.0
-
-    def test_calculate_tail_latency_empty_list(self):
-        p90, p95 = calculate_tail_latency([])
-        assert p90 == 0.0
-        assert p95 == 0.0
-
-    def test_calculate_tail_latency_with_none_values(self):
+    def test_aggregate_skips_none_metrics(self):
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
         ]
-        p90, p95 = calculate_tail_latency(status_list)
+        result = aggregate_metrics_from_status_list(status_list)
+        assert result["num_requests"] == 3.0
+        assert result["ttft_ms"] == 200.0  # (100 + 300) / 2, None excluded
+
+
+class TestTtsClientStrategyPercentilesFromMetric(unittest.TestCase):
+    """Tests for percentiles_from_metric with TtsTestStatus — used by TTS report."""
+
+    def test_percentiles_with_valid_values(self):
+        status_list = [
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=v)
+            for v in (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000)
+        ]
+        p90, p95 = percentiles_from_metric(status_list, "ttft_ms", (0.90, 0.95))
+        assert p90 == 900.0
+        assert p95 == 1000.0
+
+    def test_percentiles_empty_list(self):
+        p90, p95 = percentiles_from_metric([], "ttft_ms", (0.90, 0.95))
+        assert p90 == 0.0
+        assert p95 == 0.0
+
+    def test_percentiles_with_none_values(self):
+        status_list = [
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0),
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=None),
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=300.0),
+        ]
+        p90, p95 = percentiles_from_metric(status_list, "ttft_ms", (0.90, 0.95))
         assert p90 == 300.0
         assert p95 == 300.0
 
-    def test_calculate_tail_latency_single_value(self):
+    def test_percentiles_single_value(self):
         status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0)]
-        p90, p95 = calculate_tail_latency(status_list)
+        p90, p95 = percentiles_from_metric(status_list, "ttft_ms", (0.90, 0.95))
         assert p90 == 100.0
         assert p95 == 100.0
 
@@ -341,7 +305,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(strategy._generate_speech())
+            result = asyncio.run(strategy._generate_speech("test text"))
 
         assert result[0] is True  # success
         assert result[1] > 0  # elapsed time
@@ -357,7 +321,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(strategy._generate_speech())
+            result = asyncio.run(strategy._generate_speech("test text"))
 
         assert result[0] is False
 
@@ -373,7 +337,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(strategy._generate_speech())
+            result = asyncio.run(strategy._generate_speech("test text"))
 
         assert result[0] is True
         assert result[3] is None  # rtr should be None without duration
@@ -517,7 +481,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
             TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
         ]
 
-        def mock_run_tts_benchmark(num_calls, calculate_wer=False, aggregator=None):
+        def mock_run_tts_benchmark(num_calls, aggregator=None):
             if aggregator is not None:
                 for s in status_list:
                     aggregator.add(s.get_metrics())
@@ -563,7 +527,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "tts"
+        assert report_data["task_type"] == "text_to_speech"
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def test_run_benchmark_health_check_failed(self, mock_tokenizer):
@@ -576,12 +540,12 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         strategy = TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
         with patch.object(strategy, "get_health", return_value=(False, None)):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 strategy.run_benchmark()
 
 
 class TestTtsClientStrategyGenerateReport(unittest.TestCase):
-    """Tests for _generate_report method."""
+    """Tests for report generation via ReportGenerator.generate_benchmark_report."""
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -599,46 +563,55 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_generate_report(self, mock_mkdir, mock_file):
+        from utils.media_clients.utils.report_utils import ReportContext
+
         strategy = self._create_strategy()
-
         status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0)]
+        context = ReportContext.from_strategy(strategy)
+        aggregated = aggregate_metrics_from_status_list(status_list)
+        p90, p95 = percentiles_from_metric(status_list, "ttft_ms", (0.90, 0.95))
+        extras = {
+            "ttft": 0.1,
+            "ttft_p90": p90 / 1000,
+            "ttft_p95": p95 / 1000,
+        }
 
-        strategy._generate_report(status_list)
+        strategy._report_generator.generate_benchmark_report(
+            context,
+            status_list,
+            strategy._task_type_str,
+            extra_benchmarks=extras,
+            pre_aggregated=aggregated,
+        )
 
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
-
         open_call_args = mock_file.call_args[0][0]
         assert str(open_call_args).startswith("/tmp/output/benchmark_test_id_")
         assert str(open_call_args).endswith(".json")
-
         write_calls = mock_file().write.call_args_list
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
-
         assert "benchmarks" in report_data
         assert "model" in report_data
         assert "device" in report_data
         assert "timestamp" in report_data
-        assert "task_type" in report_data
-
+        assert report_data["task_type"] == "text_to_speech"
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 1
-        assert benchmarks["ttft"] == 0.1  # 100ms / 1000
+        assert benchmarks["ttft"] == 0.1
         assert benchmarks["rtr"] == 2.0
         assert "ttft_p90" in benchmarks
         assert "ttft_p95" in benchmarks
-        # accuracy_check is calculated in run_reports.py, not in tts_client.py
 
-        assert report_data["model"] == "test_model"
-        assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "tts"
+    def test_generate_report_empty_status_list_returns_none(self):
+        """Empty status_list: ReportGenerator skips write and returns None."""
+        from utils.media_clients.utils.report_utils import ReportContext
 
-    @patch("pathlib.Path.mkdir")
-    def test_generate_report_empty_status_list_returns_none(self, mock_mkdir):
-        """Empty status_list: shared report_utils skips write and returns None."""
         strategy = self._create_strategy()
+        context = ReportContext.from_strategy(strategy)
 
-        result = strategy._generate_report([])
+        result = strategy._report_generator.generate_benchmark_report(
+            context, [], strategy._task_type_str
+        )
 
         assert result is None
-        mock_mkdir.assert_not_called()
