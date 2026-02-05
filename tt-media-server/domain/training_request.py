@@ -27,3 +27,5 @@ class TrainingRequest(BaseRequest):
     ignored_index: int = -100
 
     _output_model_path: str = PrivateAttr(default=None)
+    _dataset_loader: str = PrivateAttr(default=None)
+    _dataset_max_length: int = PrivateAttr(default=None)

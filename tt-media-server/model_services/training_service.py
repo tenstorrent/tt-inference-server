@@ -19,10 +19,8 @@ class TrainingService(BaseJobService):
         if self.settings.dataset_loader == "" or self.settings.dataset_loader == None:
             raise ValueError("The dataset loader must be set")
         
-        dataset_dict = {} 
-        dataset_dict["dataset_loader"] = self.settings.dataset_loader
-        dataset_dict["dataset_max_length"] = self.settings.dataset_max_length
-        # TODO: place dataset_dict into job request parameters
+        request._dataset_loader = self.settings.dataset_loader
+        request._dataset_max_length = self.settings.dataset_max_length
 
         os.makedirs("models_save", exist_ok=True)
         request._output_model_path = f"models_save/{request._task_id}.pt"
