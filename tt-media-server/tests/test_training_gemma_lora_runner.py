@@ -5,7 +5,7 @@
 import pytest
 import torch
 import os
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch
 from tt_model_runners.forge_training_runners.training_gemma_lora_runner import (
     TrainingGemmaLoraRunner,
 )
@@ -32,6 +32,10 @@ class TestTrainingGemmaLoraRunner:
         request.lora_task_type = "CAUSAL_LM"
 
         request.ignored_index = -100
+
+        request._output_model_path = "models_save/test_model.pt"
+        request._dataset_loader = "sst2"
+        request._dataset_max_length = 32
 
         return request
 

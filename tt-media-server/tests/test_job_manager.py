@@ -574,6 +574,29 @@ class TestJobManager:
         assert result_path is None
 
     @pytest.mark.asyncio
+    async def test_get_job_result_path_set_on_creation(self, job_manager, mock_request):
+        """Test getting result path set on creation"""
+
+        async def task_func(req):
+            await asyncio.sleep(10)  # Long running
+            return "videos/test.mp4"
+
+        await job_manager.create_job(
+            job_id="job-with-result-path",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            result_path="direct_result_path.mp4",
+        )
+
+        assert job_manager.get_job_result_path("job-with-result-path") == "direct_result_path.mp4"
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-with-result-path")
+            assert db_job is not None
+            assert db_job.get("result_path") == "direct_result_path.mp4"
+
+    @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):
         """Test successful job processing"""
 

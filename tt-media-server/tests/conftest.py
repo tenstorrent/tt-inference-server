@@ -556,7 +556,7 @@ runner_mocks = {
         "MockRunner": create_mock_runner_class("MockRunner")
     },
     "tt_model_runners.forge_training_runners.training_gemma_lora_runner": {
-        "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+        "TrainingGemmaLoraRunner": create_mock_runner_class("TrainingGemmaLoraRunner")
     },
     "tt_model_runners.speecht5_runner": {
         "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
