@@ -22,6 +22,7 @@ class BaseDeviceRunner(ABC):
         # Skip in main process when runner is only used for download_weights (device_id "-1")
         if self.device_id != "-1":
             if not cpu_threads:
+                # Dynamic batcher is used for LLM workloads where VLLM performs better with higher thread counts
                 cpu_threads = "16" if self.settings.use_dynamic_batcher else "2"
             if not num_torch_threads:
                 num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
