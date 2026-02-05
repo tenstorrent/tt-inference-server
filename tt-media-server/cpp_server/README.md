@@ -55,8 +55,16 @@ pkill -f tt_media_server_cpp
 
 ### Environment Variables
 
+Configuration is read via `config/settings.hpp` (defaults with env overrides, similar to `tt-media-server/config/settings.py`). No direct `getenv` elsewhere.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `TT_MODEL_SERVICE` | Service mode: `embedding` or (omit for LLM) | LLM |
+| `TT_NUM_WORKERS` | Number of worker processes | `4` |
+| `TT_BATCH_SIZE` | Max requests per batch (embedding) | `1` |
+| `TT_BATCH_TIMEOUT_MS` | Max wait (ms) to fill batch (embedding) | `5` |
+| `TT_PYTHON_PATH` | Path added to Python `sys.path` (embedding runner) | `..` |
+| `TT_DEVICE_OFFSET` | Offset for visible device index: visible = worker_id + offset (embedding workers) | `1` |
 | `TT_RUNNER_TYPE` | Runner type: `llm_test` or `ttnn_test` | `llm_test` |
 
 ### Running in Background

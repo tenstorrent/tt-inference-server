@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "services/embedding_service.hpp"
+#include "config/settings.hpp"
 #include "runners/embedding_runner.hpp"
 
 #include <iostream>
@@ -65,18 +66,9 @@ struct EmbeddingService::Impl {
     std::chrono::milliseconds batch_timeout_{5};  // Max wait time to fill batch
 
     Impl() {
-        const char* num_workers_env = std::getenv("TT_NUM_WORKERS");
-        if (num_workers_env) {
-            num_workers_ = std::stoul(num_workers_env);
-        }
-        const char* batch_size_env = std::getenv("TT_BATCH_SIZE");
-        if (batch_size_env) {
-            max_batch_size_ = std::stoul(batch_size_env);
-        }
-        const char* batch_timeout_env = std::getenv("TT_BATCH_TIMEOUT_MS");
-        if (batch_timeout_env) {
-            batch_timeout_ = std::chrono::milliseconds(std::stoul(batch_timeout_env));
-        }
+        num_workers_ = tt::config::num_workers();
+        max_batch_size_ = tt::config::batch_size();
+        batch_timeout_ = std::chrono::milliseconds(tt::config::batch_timeout_ms());
         std::cout << "[EmbeddingService] Initialized with " << num_workers_ << " workers"
                   << ", batch_size=" << max_batch_size_
                   << ", batch_timeout=" << batch_timeout_.count() << "ms\n";
@@ -192,21 +184,18 @@ struct EmbeddingService::Impl {
         close(request_pipe[1]);   // Close write end of request pipe
         close(response_pipe[0]);  // Close read end of response pipe
 
-        // Set TT_VISIBLE_DEVICES environment variable
-        // Worker 0 -> device 1, Worker 1 -> device 2, Worker 2 -> device 3
-        int visible_device = worker_id + 1;
-        std::string visible_devices_str = std::to_string(visible_device);
-        setenv("TT_VISIBLE_DEVICES", visible_devices_str.c_str(), 1);
-        setenv("TT_DEVICE_ID", std::to_string(worker_id).c_str(), 1);
-        setenv("TT_WORKER_ID", std::to_string(worker_id).c_str(), 1);
+        size_t wid = static_cast<size_t>(worker_id);
+        setenv(tt::config::env_keys::TT_VISIBLE_DEVICES, tt::config::visible_devices_for_worker(wid).c_str(), 1);
+        setenv(tt::config::env_keys::TT_DEVICE_ID, tt::config::device_id_for_worker(wid).c_str(), 1);
+        setenv(tt::config::env_keys::TT_WORKER_ID, tt::config::worker_id_for_worker(wid).c_str(), 1);
 
+        int visible_device = tt::config::visible_device_index_for_worker(wid);
         std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";
         std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_device << "\n";
         std::cout << "[Worker " << worker_id << "] read_fd=" << read_fd << ", write_fd=" << write_fd << "\n";
 
-        // Create embedding runner
-        std::string device_id = "device_" + std::to_string(worker_id);
-        runners::EmbeddingRunner runner(device_id);
+        std::string device_id = "device_" + tt::config::device_id_for_worker(wid);
+        runners::EmbeddingRunner runner(device_id, visible_device);
 
         // Warmup
         if (!runner.warmup()) {

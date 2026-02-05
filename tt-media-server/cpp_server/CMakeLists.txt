@@ -29,6 +29,7 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
+    src/config/settings.cpp
     src/runners/embedding_runner.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
@@ -47,11 +48,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Link Drogon
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
 
+# Python required for embedding runner (BGELargeENRunner via Python C API)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+
 # TTNN support (optional)
 if(ENABLE_TTNN)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 endif()
 
 # Compiler warnings

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "api/embedding_controller.hpp"
+#include "config/settings.hpp"
 
 #include <iostream>
 #include <chrono>
@@ -88,8 +89,7 @@ namespace {
     }
 
     bool is_embedding_service_enabled() {
-        const char* env = std::getenv("TT_MODEL_SERVICE");
-        return env && std::string(env) == "embedding";
+        return tt::config::is_embedding_service();
     }
 }
 

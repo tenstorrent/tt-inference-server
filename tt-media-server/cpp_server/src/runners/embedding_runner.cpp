@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "runners/embedding_runner.hpp"
+#include "config/settings.hpp"
 
 #include <Python.h>
 #include <iostream>
@@ -28,14 +29,14 @@ struct EmbedLog {
  */
 struct EmbeddingRunner::Impl {
     bool python_initialized = false;
-    PyObject* runner_module = nullptr;      // tt_model_runners.embedding_runner
-    PyObject* runner_class = nullptr;       // BGELargeENRunner class
-    PyObject* runner_instance = nullptr;    // BGELargeENRunner instance
-    PyObject* request_module = nullptr;     // domain.text_embedding_request
-    PyObject* request_class = nullptr;      // TextEmbeddingRequest class
+    PyObject* runner_module = nullptr;
+    PyObject* runner_class = nullptr;
+    PyObject* runner_instance = nullptr;
+    PyObject* request_module = nullptr;
+    PyObject* request_class = nullptr;
     std::string device_id;
 
-    Impl(const std::string& dev_id) : device_id(dev_id) {}
+    explicit Impl(const std::string& dev_id) : device_id(dev_id) {}
 
     ~Impl() {
         cleanup();
@@ -64,23 +65,16 @@ struct EmbeddingRunner::Impl {
             EMBED_LOG_INFO << "Python interpreter initialized";
         }
 
-        // Add tt-media-server to Python path
-        // Look for TT_PYTHON_PATH environment variable, otherwise use relative path
-        const char* python_path = std::getenv("TT_PYTHON_PATH");
-        if (!python_path) {
-            // Default: go up from cpp_server/build to tt-media-server
-            python_path = "..";  // Relative to CWD
-        }
-
+        std::string python_path = tt::config::python_path();
         PyObject* sys_module = PyImport_ImportModule("sys");
         if (sys_module) {
             PyObject* sys_path = PyObject_GetAttrString(sys_module, "path");
             if (sys_path && PyList_Check(sys_path)) {
-                PyObject* path_str = PyUnicode_FromString(python_path);
+                PyObject* path_str = PyUnicode_FromString(python_path.c_str());
                 // Insert at beginning to take precedence
                 PyList_Insert(sys_path, 0, path_str);
                 Py_DECREF(path_str);
-                EMBED_LOG_INFO << "Added to sys.path: " << python_path;
+                EMBED_LOG_INFO << "Added to sys.path: " << python_path.c_str();
             }
             Py_XDECREF(sys_path);
             Py_DECREF(sys_module);
@@ -323,10 +317,12 @@ struct EmbeddingRunner::Impl {
 
 // Public interface implementation
 
-EmbeddingRunner::EmbeddingRunner(const std::string& device_id)
+EmbeddingRunner::EmbeddingRunner(const std::string& device_id, int visible_device)
     : BaseEmbeddingRunner(device_id)
+    , visible_device_(visible_device)
     , impl_(std::make_unique<Impl>(device_id)) {
-    EMBED_LOG_INFO << "EmbeddingRunner created for device " << device_id;
+    EMBED_LOG_INFO << "EmbeddingRunner created for device " << device_id
+                   << " visible_device=" << visible_device_;
 }
 
 EmbeddingRunner::~EmbeddingRunner() {
@@ -334,13 +330,8 @@ EmbeddingRunner::~EmbeddingRunner() {
 }
 
 bool EmbeddingRunner::warmup() {
-    EMBED_LOG_INFO << "Starting warmup for device " << device_id_;
-
-    // Log environment variables
-    const char* visible_devices = std::getenv("TT_VISIBLE_DEVICES");
-    const char* device_id_env = std::getenv("TT_DEVICE_ID");
-    EMBED_LOG_INFO << "TT_VISIBLE_DEVICES=" << (visible_devices ? visible_devices : "not set");
-    EMBED_LOG_INFO << "TT_DEVICE_ID=" << (device_id_env ? device_id_env : "not set");
+    EMBED_LOG_INFO << "Starting warmup for device " << device_id_
+                   << " visible_device=" << visible_device_;
 
     if (!impl_->init_python()) {
         return false;
