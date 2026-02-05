@@ -72,14 +72,29 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
+    # Drogon dependencies
+    libjsoncpp-dev \
+    uuid-dev \
+    zlib1g-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
-    chmod +x cmake.sh && \
-    ./cmake.sh --skip-license --prefix=/usr/local && \
-    rm cmake.sh && \
-    cmake --version
+# Remove any existing CMake installations to avoid conflicts
+RUN apt-get remove --purge -y cmake && rm -rf /usr/share/cmake* /usr/bin/cmake* /usr/local/share/cmake* /usr/local/bin/cmake*
+
+# Install the latest version of CMake
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.25.2/cmake-3.25.2-linux-x86_64.sh -o cmake.sh \
+    && chmod +x cmake.sh \
+    && ./cmake.sh --skip-license --prefix=/usr/local \
+    && rm cmake.sh \
+    && /usr/local/bin/cmake --version
+
+# Verify the CMake version being used
+RUN /usr/local/bin/cmake --version && which cmake && cmake --version
+
+# Ensure the correct CMake binary is prioritized in PATH
+ENV PATH="/usr/local/bin:$PATH"
 
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
@@ -132,6 +147,25 @@ COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
+
+# Install Drogon from GitHub
+RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
+    && cd /tmp/drogon \
+    && mkdir build && cd build \
+    && cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
+    && make -j$(nproc) \
+    && make install \
+    && cd / && rm -rf /tmp/drogon
+
+# Build the C++ server
+COPY "tt-media-server/cpp_server" "${TT_METAL_HOME}/server/cpp_server"
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && cd ${TT_METAL_HOME}/server/cpp_server \
+    && ./build.sh --ttnn"
+
+# Add script for running C++ server
+COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
+RUN chmod +x ${TT_METAL_HOME}/server/run_cpp.sh
 
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
@@ -226,4 +260,6 @@ RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
 
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+# Default to uvicorn
+ENV SERVER_MODE=uvicorn
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then ./run_cpp.sh; else ./run_uvicorn.sh; fi"]
