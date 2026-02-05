@@ -37,7 +37,7 @@ def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
     """Set up CPU threading limits for PyTorch to prevent CPU oversubscription"""
     os.environ["OMP_NUM_THREADS"] = cpu_threads
     os.environ["MKL_NUM_THREADS"] = cpu_threads
-    os.environ["TORCH_NUM_THREADS"] = cpu_threads
+    os.environ["TORCH_NUM_THREADS"] = str(num_torch_threads)
     set_torch_thread_limits(num_threads=num_torch_threads)
     if settings.default_throttle_level:
         os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
