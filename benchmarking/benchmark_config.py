@@ -63,6 +63,7 @@ class BenchmarkConfig:
 
 BENCHMARK_ISL_OSL_PAIRS = [
     (128, 128),
+    (128, 1024),
     (1024, 128),
     (2048, 128),
     (4096, 128),
@@ -153,7 +154,7 @@ def get_num_prompts(input_len, output_len, max_concurrency):
     # Large sequences (slowest) -> fewest prompts
     if output_len > 1024 or input_len > 16384:
         return 1 * max_concurrency
-    
+
     if input_len > 4096:
         return 2 * max_concurrency
 
@@ -332,9 +333,7 @@ def expand_concurrency_sweep_params(
         for concurrency in concurrencies:
             new_data = dict(base_data)
             new_data["max_concurrency"] = int(concurrency)
-            new_data["num_prompts"] = get_num_prompts(
-                isl, osl, int(concurrency)
-            )
+            new_data["num_prompts"] = get_num_prompts(isl, osl, int(concurrency))
 
             new_params = BenchmarkTaskParams(**new_data)
             key = _benchmark_param_dedupe_key(new_params)
@@ -437,7 +436,9 @@ for model_id, model_spec in MODEL_SPECS.items():
     if model_spec.model_type == ModelType.CNN:
         perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.EMBEDDING:
-        perf_ref_task = BenchmarkTaskEmbedding(param_map={device: capped_perf_reference})
+        perf_ref_task = BenchmarkTaskEmbedding(
+            param_map={device: capped_perf_reference}
+        )
     elif model_spec.model_type == ModelType.VIDEO:
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
     else:
