@@ -38,6 +38,7 @@ set(SOURCES
     src/main.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
+    src/config/settings.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
 )

@@ -15,14 +15,11 @@ namespace tt::runners {
  *
  * Uses Python C API to instantiate and call the BGELargeENRunner class
  * from tt_model_runners/embedding_runner.py.
- *
- * Environment variables used:
- * - TT_VISIBLE_DEVICES: Which Tenstorrent device to use (1, 2, 3, etc.)
- * - TT_DEVICE_ID: Worker device identifier
  */
 class EmbeddingRunner : public BaseEmbeddingRunner {
 public:
-    explicit EmbeddingRunner(const std::string& device_id);
+    /** @param device_id e.g. "device_0". @param visible_device TT device index (1-based) for logging. */
+    EmbeddingRunner(const std::string& device_id, int visible_device = 0);
     ~EmbeddingRunner() override;
 
     // Prevent copying
@@ -47,7 +44,7 @@ public:
         const std::vector<domain::EmbeddingRequest>& requests) override;
 
 private:
-    // Use Pimpl to hide Python.h from header
+    int visible_device_;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
