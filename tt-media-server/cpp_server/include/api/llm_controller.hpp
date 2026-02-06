@@ -18,6 +18,7 @@ class LLMController : public drogon::HttpController<LLMController> {
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
+    ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions", drogon::Post);
     ADD_METHOD_TO(LLMController::health, "/health", drogon::Get);
     ADD_METHOD_TO(LLMController::ready, "/ready", drogon::Get);
     METHOD_LIST_END
@@ -29,6 +30,15 @@ public:
      * OpenAI-compatible text completion endpoint.
      */
     void completions(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+
+    /**
+     * POST /v1/chat/completions
+     * OpenAI-compatible chat completions endpoint.
+     */
+    void chat_completions(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 

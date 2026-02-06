@@ -3,6 +3,8 @@
 
 #include "api/llm_controller.hpp"
 #include "config/settings.hpp"
+#include "domain/chat_completions_request.hpp"
+
 
 #include <random>
 #include <sstream>
@@ -67,6 +69,54 @@ void LLMController::completions(
     domain::CompletionRequest request;
     try {
         request = domain::CompletionRequest::fromJson(*json);
+        request.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
+    } catch (const std::exception& e) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            Json::Value(std::string("Failed to parse request: ") + e.what())
+        );
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    // Check if model is ready
+    if (!service_->is_model_ready()) {
+        Json::Value error;
+        error["error"]["message"] = "Model is not ready";
+        error["error"]["type"] = "service_unavailable";
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
+
+    // Handle streaming or non-streaming (move request into streaming path to avoid copy)
+    if (request.stream) {
+        handle_streaming(std::move(request), req, std::move(callback));
+    } else {
+        handle_non_streaming(request, std::move(callback));
+    }
+}
+
+void LLMController::chat_completions(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    // Parse JSON body
+    auto json = req->getJsonObject();
+    if (!json) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            Json::Value("Invalid JSON body")
+        );
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    // Parse request
+    domain::ChatCompletionRequest request;
+    try {
+        request = domain::ChatCompletionRequest::fromJson(*json);
         request.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
