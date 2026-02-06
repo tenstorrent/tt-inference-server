@@ -213,7 +213,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     batch["labels"].view(-1),
                 )
                 total_val_loss += loss.item()
-                predictions = shift_logits.argmax(dim=-1)
+                # predictions = shift_logits.argmax(dim=-1)
 
                 torch_xla.sync(wait=True)
 

@@ -91,7 +91,8 @@ class SSTDataset(BaseDataset):
         )
 
         if self.collate_fn is not None:
-            total_collate_fn = lambda batch: self.collate_fn(data_collator(batch))
+            def total_collate_fn(batch):
+                return self.collate_fn(data_collator(batch))
         else:
             total_collate_fn = data_collator
 
