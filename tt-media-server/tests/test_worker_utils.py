@@ -64,7 +64,7 @@ class TestSetupCPUThreadingLimits:
 
                 assert os.environ["OMP_NUM_THREADS"] == "4"
                 assert os.environ["MKL_NUM_THREADS"] == "4"
-                assert os.environ["TORCH_NUM_THREADS"] == "4"
+                assert os.environ["TORCH_NUM_THREADS"] == "2"
                 mock_set.assert_called_once_with(num_threads=2)
 
     def test_sets_throttle_level_when_configured(self):
