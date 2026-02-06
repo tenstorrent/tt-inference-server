@@ -29,6 +29,14 @@ Original demo (stdout only):
 ./build/engine_demo
 ```
 
+Run scheduler unit tests (Google Test):
+
+```bash
+cd build && ctest --output-on-failure
+# or run the test binary directly:
+./build/scheduler_test
+```
+
 ## Quick Start
 
 ```bash

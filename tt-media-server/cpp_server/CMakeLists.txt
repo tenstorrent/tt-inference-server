@@ -23,6 +23,14 @@ FetchContent_Declare(
 cmake_policy(SET CMP0169 OLD)  # allow FetchContent_Populate (RapidJSON's CMake is too old for MakeAvailable)
 FetchContent_Populate(rapidjson)
 
+# Google Test for unit tests
+FetchContent_Declare(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
@@ -54,6 +62,17 @@ target_include_directories(llm_engine_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_options(llm_engine_demo PRIVATE -Wall -Wextra -Wpedantic)
+
+# Unit tests (LLM engine scheduler)
+enable_testing()
+add_executable(scheduler_test tests/scheduler_test.cpp)
+target_link_libraries(scheduler_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(scheduler_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+include(GoogleTest)
+gtest_discover_tests(scheduler_test)
 
 # Source files
 set(SOURCES
