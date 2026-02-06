@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find Drogon
 find_package(Drogon REQUIRED)
 
+# Test build(used by PR gate). Pass -DTEST=ON or use build.sh --test.
+option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
+
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
 FetchContent_Declare(
@@ -23,17 +26,25 @@ FetchContent_Populate(rapidjson)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
+if(NOT TEST)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
+
 # Source files
 set(SOURCES
     src/main.cpp
-    src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
-    src/runners/embedding_runner.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
-    src/services/embedding_service.cpp
 )
+if(NOT TEST)
+    list(APPEND SOURCES
+        src/api/embedding_controller.cpp
+        src/runners/embedding_runner.cpp
+        src/services/embedding_service.cpp
+    )
+endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -46,12 +57,16 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link Drogon
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+if(TEST)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
+endif()
+if(NOT TEST)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+endif()
 
 # TTNN support (optional)
 if(ENABLE_TTNN)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 endif()
 
 # Compiler warnings
