@@ -1942,7 +1942,7 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="0b10c51",
+        tt_metal_commit="af4168d",
         vllm_commit="3499ffa",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
