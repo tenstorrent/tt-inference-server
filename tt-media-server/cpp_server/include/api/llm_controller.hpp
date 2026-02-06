@@ -67,6 +67,15 @@ private:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
+     * Handle streaming with 32KB write buffering for high-throughput scenarios
+     * where ITL measurement is not needed (e.g. zero-delay runners).
+     */
+    void handle_streaming_buffered(
+        domain::CompletionRequest request,
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    /**
      * Generate a unique completion ID.
      */
     static std::string generate_completion_id();

@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #include <json/json.h>
@@ -228,6 +229,104 @@ void LLMController::handle_streaming(
                 // Done callback - send termination and close
                 [stream_ptr, done]() {
                     if (!done->exchange(true) && *stream_ptr) {
+                        (*stream_ptr)->send("data: [DONE]\n\n");
+                        (*stream_ptr)->close();
+                    }
+                });
+        });
+
+    resp->setContentTypeString("text/event-stream");
+    resp->addHeader("Cache-Control", "no-cache");
+    resp->addHeader("Connection", "keep-alive");
+    resp->addHeader("X-Accel-Buffering", "no");
+
+    callback(resp);
+}
+
+void LLMController::handle_streaming_buffered(
+    domain::CompletionRequest request,
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    const int64_t created = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    const std::string completion_id = "cmpl-" + request.task_id;
+    const std::string model = request.model.value_or("test-model");
+
+    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+        [this, req = std::move(request), completion_id, model, created](
+            drogon::ResponseStreamPtr stream) mutable {
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto stream_ptr =
+                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
+
+            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
+            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
+            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
+            envelope->AddMember("object", "text_completion", a);
+            envelope->AddMember("created", static_cast<int64_t>(created), a);
+            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
+            rapidjson::Value choices(rapidjson::kArrayType);
+            rapidjson::Value choice(rapidjson::kObjectType);
+            choice.AddMember("text", rapidjson::Value("", a).Move(), a);
+            choice.AddMember("index", 0, a);
+            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
+            choices.PushBack(choice.Move(), a);
+            envelope->AddMember("choices", choices.Move(), a);
+
+            // 32KB write buffer to reduce syscalls for high-throughput scenarios
+            auto buffer = std::make_shared<std::string>();
+            buffer->reserve(64 * 1024);
+            auto buffer_mutex = std::make_shared<std::mutex>();
+            static constexpr size_t FLUSH_THRESHOLD = 32 * 1024;
+
+            service_->process_streaming_request(
+                std::move(req),
+                [stream_ptr, done, envelope, buffer, buffer_mutex](
+                    const domain::StreamingChunkResponse& chunk) {
+                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        rapidjson::Value& choice = (*envelope)["choices"][0];
+                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
+                        choice["text"].SetString(
+                            chunk.choices[0].text.c_str(),
+                            static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
+                            alloc);
+                        choice["index"].SetInt(chunk.choices[0].index);
+                        if (chunk.choices[0].finish_reason.has_value()) {
+                            choice["finish_reason"].SetString(
+                                chunk.choices[0].finish_reason->c_str(),
+                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
+                                alloc);
+                        } else {
+                            choice["finish_reason"].SetNull();
+                        }
+
+                        static thread_local rapidjson::StringBuffer buf;
+                        buf.Clear();
+                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                        envelope->Accept(writer);
+                        std::string sse = "data: ";
+                        sse.append(buf.GetString(), buf.GetSize());
+                        sse.append("\n\n");
+
+                        std::lock_guard<std::mutex> lock(*buffer_mutex);
+                        buffer->append(sse);
+
+                        if (buffer->size() >= FLUSH_THRESHOLD) {
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
+                        }
+                    }
+                },
+                [stream_ptr, done, buffer, buffer_mutex]() {
+                    if (!done->exchange(true) && *stream_ptr) {
+                        std::lock_guard<std::mutex> lock(*buffer_mutex);
+                        if (!buffer->empty()) {
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
+                        }
                         (*stream_ptr)->send("data: [DONE]\n\n");
                         (*stream_ptr)->close();
                     }
