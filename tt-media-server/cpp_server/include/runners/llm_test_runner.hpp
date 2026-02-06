@@ -7,6 +7,7 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <thread>
 
 #include "runners/base_device_runner.hpp"
 #include "domain/completion_request.hpp"
@@ -29,27 +30,17 @@ struct LogStream {
 
 /**
  * Test runner for LLM streaming performance tests.
- * Generates fake tokens at 120,000 tokens per second to test the streaming
- * infrastructure without requiring actual model inference.
- *
- * At 120,000 tokens/second:
- *   - Token interval: ~8.33 microseconds
- *   - This is significantly faster than real LLM inference
- *   - Used for benchmarking server overhead
+ * Generates fake tokens with a 24ms interval to simulate real model inference
+ * timing and allow meaningful ITL benchmarking.
  */
 class LLMTestRunner : public BaseDeviceRunner {
 public:
-    // Target: 120,000 tokens per second
-    static constexpr double TOKENS_PER_SECOND = 120000.0;
-    static constexpr double MICROSECONDS_PER_SECOND = 1000000.0;
-    static constexpr double TOKEN_INTERVAL_MICROSECONDS = MICROSECONDS_PER_SECOND / TOKENS_PER_SECOND;
+    static constexpr int TOKEN_INTERVAL_MS = 24;
 
     explicit LLMTestRunner(const std::string& device_id)
-        : BaseDeviceRunner(device_id)
-        , token_interval_us_(TOKEN_INTERVAL_MICROSECONDS) {
+        : BaseDeviceRunner(device_id) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
-                 << ": target " << TOKENS_PER_SECOND << " tokens/sec"
-                 << " (interval: " << token_interval_us_ << " µs)";
+                 << ": token interval " << TOKEN_INTERVAL_MS << " ms";
     }
 
     bool warmup() override {
@@ -96,12 +87,9 @@ public:
         std::function<void(const domain::StreamingChunkOutput&)> chunk_callback,
         std::function<void(const domain::FinalResultOutput&)> final_callback) override {
 
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        // Generate tokens as fast as possible - no artificial delay
-        // This simulates a very fast model to measure server overhead
         for (int i = 0; i < request.max_tokens; ++i) {
-            // Create and emit chunk immediately
+            std::this_thread::sleep_for(std::chrono::milliseconds(TOKEN_INTERVAL_MS));
+
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
             chunk.chunk.text = "tok";
@@ -119,22 +107,9 @@ public:
         final_result.return_result = true;
 
         final_callback(final_result);
-
-        // Log actual performance with worker ID to show parallel execution
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            end_time - start_time
-        ).count();
-
-        double actual_tokens_per_sec = (request.max_tokens * MICROSECONDS_PER_SECOND) / duration_us;
-        TT_LOG_DEBUG << "[" << device_id_ << "] generated " << request.max_tokens
-                  << " tokens in " << duration_us << " µs"
-                  << " (" << actual_tokens_per_sec << " tokens/sec)"
-                  << " task=" << request.task_id;
     }
 
 private:
-    double token_interval_us_;
 };
 
 #undef TT_LOG_INFO
