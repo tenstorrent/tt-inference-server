@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find Drogon
 find_package(Drogon REQUIRED)
 
+# Python required for embedding runner (Python C API)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
 FetchContent_Declare(
@@ -22,6 +25,35 @@ FetchContent_Populate(rapidjson)
 
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+
+# Nano vLLM engine (include/runners/nanovllm/, src/runners/nanovllm/)
+set(NANOVLLM_ENGINE_SOURCES
+    src/runners/nanovllm/engine/block_manager.cpp
+    src/runners/nanovllm/engine/hash.cpp
+    src/runners/nanovllm/engine/llm_engine.cpp
+    src/runners/nanovllm/engine/model_runner.cpp
+    src/runners/nanovllm/engine/scheduler.cpp
+    src/runners/nanovllm/engine/sequence.cpp
+)
+add_library(nanovllm_engine ${NANOVLLM_ENGINE_SOURCES})
+target_include_directories(nanovllm_engine PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_definitions(nanovllm_engine PUBLIC NANOVLLM_USE_EXTERNAL_LOG)
+target_compile_features(nanovllm_engine PUBLIC cxx_std_17)
+
+add_executable(engine_demo src/runners/nanovllm/demo.cpp)
+target_link_libraries(engine_demo PRIVATE nanovllm_engine)
+target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
+
+add_executable(nanovllm_demo src/nanovllm_demo.cpp)
+target_link_libraries(nanovllm_demo PRIVATE nanovllm_engine)
+target_include_directories(nanovllm_demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(nanovllm_demo PRIVATE -Wall -Wextra -Wpedantic)
 
 # Source files
 set(SOURCES
@@ -44,14 +76,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+# Link Drogon and Python (embedding runner uses Python C API)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon Python3::Python)
 
 # TTNN support (optional)
 if(ENABLE_TTNN)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 endif()
 
 # Compiler warnings

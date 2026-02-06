@@ -8,7 +8,13 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
+#include <csignal>
+#include <unistd.h>
+#include <sys/wait.h>
+#if defined(__linux__)
 #include <sys/eventfd.h>
+#endif
 #include <poll.h>
 
 namespace tt::scheduler {

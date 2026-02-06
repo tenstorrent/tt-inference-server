@@ -109,7 +109,8 @@ cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
 # Build
 echo ""
 echo "Building..."
-make -j$(nproc)
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+make -j"${NPROC}"
 
 echo ""
 echo "=============================================="
@@ -117,6 +118,10 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
+if [ -f "${BUILD_DIR}/nanovllm_demo" ] 2>/dev/null; then
+    echo "Nano vLLM demo: ./build/nanovllm_demo"
+    echo ""
+fi
 echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"

@@ -2,6 +2,22 @@
 
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
+## Nano vLLM engine
+
+The nano vLLM C++ engine is included as an in-tree copy under `include/runners/nanovllm/` (headers) and `src/runners/nanovllm/` (sources). The engine uses the server’s logging (`[DEBUG] [nanovllm:...]`) instead of its own.
+
+**Run the engine demo (same behavior as the original demo, with server-style logging):**
+
+```bash
+./build/nanovllm_demo
+```
+
+The original demo (stdout only) is built as:
+
+```bash
+./build/engine_demo
+```
+
 ## Quick Start
 
 ```bash
