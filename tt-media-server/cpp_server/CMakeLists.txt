@@ -20,7 +20,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
     GIT_TAG        v1.1.0
 )
-cmake_policy(SET CMP0169 OLD)  # allow FetchContent_Populate (RapidJSON's CMake is too old for MakeAvailable)
+# Conditionally set CMP0169 policy if supported
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
 FetchContent_Populate(rapidjson)
 
 # Option for TTNN support
@@ -44,6 +47,11 @@ if(NOT TEST)
         src/runners/embedding_runner.cpp
         src/services/embedding_service.cpp
     )
+endif()
+
+# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
+if(ENABLE_TTNN)
+    list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
 # Create executable
