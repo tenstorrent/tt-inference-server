@@ -1,0 +1,14 @@
+# Build output and CMake / FetchContent
+build/
+
+# Object and dependency files (in-source or stray)
+*.o
+*.o.d
+*.obj
+*.obj.d
+
+# In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
+CMakeFiles/
+
+# Runtime logs (Drogon setLogPath)
+logs/
