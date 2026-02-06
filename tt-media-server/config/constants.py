@@ -185,6 +185,8 @@ class DeviceTypes(Enum):
     T3K = "t3k"
     QBGE = "qbge"
     P300 = "p300"
+    P150X4 = "p150x4"
+    P150X8 = "p150x8"
 
 
 class QueueType(Enum):
