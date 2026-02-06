@@ -183,11 +183,11 @@ class JobManager:
         """Get job result path if completed."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            if job: 
+            if job:
                 if job.job_type != JobTypes.TRAINING.value and job.is_terminal():
                     return job.result_path if job.is_completed() else None
                 else:
-                    return job.result_path # for training jobs, the result path is set on job creation, so we return it here
+                    return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
 
     def cancel_job(self, job_id: str) -> bool:
