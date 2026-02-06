@@ -3,11 +3,11 @@
 #include <deque>
 #include <vector>
 
-#include "nanovllm/config.hpp"
-#include "nanovllm/engine/block_manager.hpp"
-#include "nanovllm/engine/sequence.hpp"
+#include "llm_engine/config.hpp"
+#include "llm_engine/engine/block_manager.hpp"
+#include "llm_engine/engine/sequence.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 /**
  * Schedules prefill and decode batches. Each step returns either a prefill-only
@@ -54,4 +54,4 @@ class Scheduler {
   std::deque<Sequence*> running_;
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

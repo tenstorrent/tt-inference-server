@@ -118,8 +118,8 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
-if [ -f "${BUILD_DIR}/nanovllm_demo" ] 2>/dev/null; then
-    echo "Nano vLLM demo: ./build/nanovllm_demo"
+if [ -f "${BUILD_DIR}/llm_engine_demo" ] 2>/dev/null; then
+    echo "LLM engine demo: ./build/llm_engine_demo"
     echo ""
 fi
 echo "Run with: ./build/tt_media_server_cpp [options]"

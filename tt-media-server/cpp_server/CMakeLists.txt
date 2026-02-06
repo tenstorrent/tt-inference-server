@@ -26,34 +26,34 @@ FetchContent_Populate(rapidjson)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
-# Nano vLLM engine (include/runners/nanovllm/, src/runners/nanovllm/)
-set(NANOVLLM_ENGINE_SOURCES
-    src/runners/nanovllm/engine/block_manager.cpp
-    src/runners/nanovllm/engine/hash.cpp
-    src/runners/nanovllm/engine/llm_engine.cpp
-    src/runners/nanovllm/engine/model_runner.cpp
-    src/runners/nanovllm/engine/scheduler.cpp
-    src/runners/nanovllm/engine/sequence.cpp
+# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+set(LLM_ENGINE_SOURCES
+    src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/hash.cpp
+    src/runners/llm_engine/engine/llm_engine.cpp
+    src/runners/llm_engine/engine/model_runner.cpp
+    src/runners/llm_engine/engine/scheduler.cpp
+    src/runners/llm_engine/engine/sequence.cpp
 )
-add_library(nanovllm_engine ${NANOVLLM_ENGINE_SOURCES})
-target_include_directories(nanovllm_engine PUBLIC
+add_library(llm_engine ${LLM_ENGINE_SOURCES})
+target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_compile_definitions(nanovllm_engine PUBLIC NANOVLLM_USE_EXTERNAL_LOG)
-target_compile_features(nanovllm_engine PUBLIC cxx_std_17)
+target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_USE_EXTERNAL_LOG)
+target_compile_features(llm_engine PUBLIC cxx_std_17)
 
-add_executable(engine_demo src/runners/nanovllm/demo.cpp)
-target_link_libraries(engine_demo PRIVATE nanovllm_engine)
+add_executable(engine_demo src/runners/llm_engine/demo.cpp)
+target_link_libraries(engine_demo PRIVATE llm_engine)
 target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
 
-add_executable(nanovllm_demo src/nanovllm_demo.cpp)
-target_link_libraries(nanovllm_demo PRIVATE nanovllm_engine)
-target_include_directories(nanovllm_demo PRIVATE
+add_executable(llm_engine_demo src/llm_engine_demo.cpp)
+target_link_libraries(llm_engine_demo PRIVATE llm_engine)
+target_include_directories(llm_engine_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_compile_options(nanovllm_demo PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(llm_engine_demo PRIVATE -Wall -Wextra -Wpedantic)
 
 # Source files
 set(SOURCES

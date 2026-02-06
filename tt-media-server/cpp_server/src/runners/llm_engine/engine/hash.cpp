@@ -1,7 +1,7 @@
-#include "nanovllm/engine/hash.hpp"
+#include "llm_engine/engine/hash.hpp"
 #include <cstring>
 
-namespace nanovllm {
+namespace llm_engine {
 
 static constexpr uint64_t kFnvPrime = 1099511628211ULL;
 static constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
@@ -25,4 +25,4 @@ int64_t hash_token_ids(const std::vector<int64_t>& token_ids, int64_t prefix) {
   return static_cast<int64_t>(h);
 }
 
-}  // namespace nanovllm
+}  // namespace llm_engine

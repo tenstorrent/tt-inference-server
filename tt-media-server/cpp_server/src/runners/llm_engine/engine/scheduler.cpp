@@ -1,9 +1,9 @@
-#include "nanovllm/engine/scheduler.hpp"
-#include "nanovllm/engine/debug.hpp"
+#include "llm_engine/engine/scheduler.hpp"
+#include "llm_engine/engine/debug.hpp"
 #include <algorithm>
 #include <cassert>
 
-namespace nanovllm {
+namespace llm_engine {
 
 Scheduler::Scheduler(const Config& config)
     : max_num_seqs_(config.max_num_seqs),
@@ -16,7 +16,7 @@ bool Scheduler::is_finished() const {
 }
 
 void Scheduler::add(Sequence& seq) {
-  NANOVLLM_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
   waiting_.push_back(&seq);
 }
 
@@ -42,7 +42,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     scheduled_seqs.push_back(seq);
   }
   if (!scheduled_seqs.empty()) {
-    NANOVLLM_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
+    LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
                               << " batched_tokens=" << num_batched_tokens << std::endl;
     return {scheduled_seqs, true};
   }
@@ -68,12 +68,12 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   for (auto it = scheduled_seqs.rbegin(); it != scheduled_seqs.rend(); ++it) {
     running_.push_front(*it);
   }
-  NANOVLLM_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size() << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size() << std::endl;
   return {scheduled_seqs, false};
 }
 
 void Scheduler::preempt(Sequence& seq) {
-  NANOVLLM_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   waiting_.push_front(&seq);
@@ -87,7 +87,7 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->append_token(token_id);
     if ((!seq->ignore_eos && token_id == eos_) ||
         seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) {
-      NANOVLLM_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
+      LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
                                << " (eos=" << (token_id == eos_) << " max_tokens="
                                << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
@@ -98,4 +98,4 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   }
 }
 
-}  // namespace nanovllm
+}  // namespace llm_engine

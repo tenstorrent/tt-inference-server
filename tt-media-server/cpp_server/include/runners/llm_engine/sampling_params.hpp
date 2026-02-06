@@ -1,6 +1,6 @@
 #pragma once
 
-namespace nanovllm {
+namespace llm_engine {
 
 struct SamplingParams {
   float temperature = 1.0f;
@@ -8,4 +8,4 @@ struct SamplingParams {
   bool ignore_eos = false;
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

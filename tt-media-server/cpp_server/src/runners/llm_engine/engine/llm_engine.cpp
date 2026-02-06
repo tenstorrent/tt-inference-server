@@ -1,10 +1,10 @@
-#include "nanovllm/engine/llm_engine.hpp"
-#include "nanovllm/engine/debug.hpp"
+#include "llm_engine/engine/llm_engine.hpp"
+#include "llm_engine/engine/debug.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 LLMEngine::LLMEngine(const Config& config) : config_(config) {
-  NANOVLLM_LOG("llm_engine") << "construct" << std::endl;
+  LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   model_runner_ = make_model_runner(config_);
   scheduler_ = std::make_unique<Scheduler>(config_);
   if (config_.eos < 0) {
@@ -18,7 +18,7 @@ LLMEngine::~LLMEngine() {
 
 void LLMEngine::exit() {
   if (model_runner_) {
-    NANOVLLM_LOG("llm_engine") << "exit" << std::endl;
+    LLM_ENGINE_LOG("llm_engine") << "exit" << std::endl;
     model_runner_->exit();
   }
 }
@@ -29,7 +29,7 @@ void LLMEngine::add_request(std::vector<int64_t> prompt,
   Sequence* ptr = seq.get();
   sequences_.push_back(std::move(seq));
   scheduler_->add(*ptr);
-  NANOVLLM_LOG("llm_engine") << "add_request seq_id=" << ptr->seq_id
+  LLM_ENGINE_LOG("llm_engine") << "add_request seq_id=" << ptr->seq_id
                              << " prompt_len=" << ptr->size()
                              << " max_tokens=" << ptr->max_tokens << std::endl;
 }
@@ -37,7 +37,7 @@ void LLMEngine::add_request(std::vector<int64_t> prompt,
 StepResult LLMEngine::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) {
-    NANOVLLM_LOG("llm_engine") << "step empty batch" << std::endl;
+    LLM_ENGINE_LOG("llm_engine") << "step empty batch" << std::endl;
     StepResult result;
     result.num_tokens = 0;
     return result;
@@ -55,13 +55,13 @@ StepResult LLMEngine::step() {
   } else {
     result.num_tokens = -static_cast<int>(seqs.size());
   }
-  NANOVLLM_LOG("llm_engine") << "step " << (is_prefill ? "prefill" : "decode")
+  LLM_ENGINE_LOG("llm_engine") << "step " << (is_prefill ? "prefill" : "decode")
                              << " n=" << seqs.size() << " num_tokens=" << result.num_tokens << std::endl;
 
   for (Sequence* seq : seqs) {
     if (seq->is_finished()) {
       result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
-      NANOVLLM_LOG("llm_engine") << "step seq_id=" << seq->seq_id << " finished"
+      LLM_ENGINE_LOG("llm_engine") << "step seq_id=" << seq->seq_id << " finished"
                                  << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
     }
   }
@@ -75,7 +75,7 @@ bool LLMEngine::is_finished() const {
 std::vector<std::vector<int64_t>> LLMEngine::generate(
     const std::vector<std::vector<int64_t>>& prompts,
     const std::vector<SamplingParams>& sampling_params) {
-  NANOVLLM_LOG("llm_engine") << "generate n_prompts=" << prompts.size() << std::endl;
+  LLM_ENGINE_LOG("llm_engine") << "generate n_prompts=" << prompts.size() << std::endl;
   std::vector<SamplingParams> params = sampling_params;
   if (params.size() != prompts.size()) {
     params.assign(prompts.size(), SamplingParams());
@@ -92,7 +92,7 @@ std::vector<std::vector<int64_t>> LLMEngine::generate(
     }
   }
 
-  NANOVLLM_LOG("llm_engine") << "generate done n_outputs=" << outputs.size() << std::endl;
+  LLM_ENGINE_LOG("llm_engine") << "generate done n_outputs=" << outputs.size() << std::endl;
   std::sort(outputs.begin(), outputs.end(),
             [](const auto& a, const auto& b) { return a.first < b.first; });
   std::vector<std::vector<int64_t>> result;
@@ -118,4 +118,4 @@ std::vector<std::vector<int64_t>> LLMEngine::generate(
   return generate(prompts, params);
 }
 
-}  // namespace nanovllm
+}  // namespace llm_engine

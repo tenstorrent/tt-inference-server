@@ -5,12 +5,12 @@
 #include <utility>
 #include <vector>
 
-#include "nanovllm/config.hpp"
-#include "nanovllm/engine/model_runner.hpp"
-#include "nanovllm/engine/scheduler.hpp"
-#include "nanovllm/sampling_params.hpp"
+#include "llm_engine/config.hpp"
+#include "llm_engine/engine/model_runner.hpp"
+#include "llm_engine/engine/scheduler.hpp"
+#include "llm_engine/sampling_params.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 struct StepResult {
   std::vector<std::pair<int, std::vector<int64_t>>> outputs;
@@ -45,4 +45,4 @@ class LLMEngine {
   std::vector<std::unique_ptr<Sequence>> sequences_;
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

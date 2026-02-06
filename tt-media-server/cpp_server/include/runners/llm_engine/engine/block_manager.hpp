@@ -6,9 +6,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "nanovllm/engine/sequence.hpp"
+#include "llm_engine/engine/sequence.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 class Block {
  public:
@@ -47,4 +47,4 @@ class BlockManager {
   std::unordered_set<int> used_block_ids_;
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

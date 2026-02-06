@@ -1,8 +1,8 @@
-#include "nanovllm/engine/sequence.hpp"
+#include "llm_engine/engine/sequence.hpp"
 #include <algorithm>
 #include <stdexcept>
 
-namespace nanovllm {
+namespace llm_engine {
 
 int Sequence::next_seq_id() {
   static int counter = 0;
@@ -46,4 +46,4 @@ void Sequence::append_token(int64_t token_id) {
   last_token = token_id;
 }
 
-}  // namespace nanovllm
+}  // namespace llm_engine

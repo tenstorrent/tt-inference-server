@@ -1,10 +1,10 @@
-#include "nanovllm/engine/block_manager.hpp"
-#include "nanovllm/engine/debug.hpp"
-#include "nanovllm/engine/hash.hpp"
+#include "llm_engine/engine/block_manager.hpp"
+#include "llm_engine/engine/debug.hpp"
+#include "llm_engine/engine/hash.hpp"
 #include <algorithm>
 #include <cassert>
 
-namespace nanovllm {
+namespace llm_engine {
 
 Block::Block(int block_id) : block_id(block_id) {}
 
@@ -42,7 +42,7 @@ Block& BlockManager::allocate_block(int block_id) {
   free_block_ids_.erase(
       std::find(free_block_ids_.begin(), free_block_ids_.end(), block_id));
   used_block_ids_.insert(block_id);
-  NANOVLLM_LOG("block_manager") << "allocate_block block_id=" << block_id
+  LLM_ENGINE_LOG("block_manager") << "allocate_block block_id=" << block_id
                                  << " free=" << free_block_ids_.size()
                                  << " used=" << used_block_ids_.size() << std::endl;
   return blocks_[static_cast<size_t>(block_id)];
@@ -52,7 +52,7 @@ void BlockManager::deallocate_block(int block_id) {
   assert(blocks_[static_cast<size_t>(block_id)].ref_count == 0);
   used_block_ids_.erase(block_id);
   free_block_ids_.push_back(block_id);
-  NANOVLLM_LOG("block_manager") << "deallocate_block block_id=" << block_id
+  LLM_ENGINE_LOG("block_manager") << "deallocate_block block_id=" << block_id
                                  << " free=" << free_block_ids_.size() << std::endl;
 }
 
@@ -63,7 +63,7 @@ bool BlockManager::can_allocate(const Sequence& seq) const {
 
 void BlockManager::allocate(Sequence& seq) {
   assert(seq.block_table_.empty());
-  NANOVLLM_LOG("block_manager") << "allocate seq_id=" << seq.seq_id
+  LLM_ENGINE_LOG("block_manager") << "allocate seq_id=" << seq.seq_id
                                 << " num_blocks=" << seq.num_blocks()
                                 << " free=" << free_block_ids_.size() << std::endl;
   int64_t h = -1;
@@ -104,7 +104,7 @@ void BlockManager::allocate(Sequence& seq) {
 }
 
 void BlockManager::deallocate(Sequence& seq) {
-  NANOVLLM_LOG("block_manager") << "deallocate seq_id=" << seq.seq_id
+  LLM_ENGINE_LOG("block_manager") << "deallocate seq_id=" << seq.seq_id
                                  << " num_blocks=" << seq.block_table_.size() << std::endl;
   for (auto it = seq.block_table_.rbegin(); it != seq.block_table_.rend();
        ++it) {
@@ -129,7 +129,7 @@ void BlockManager::may_append(Sequence& seq) {
   Block& last_block = blocks_[static_cast<size_t>(block_table.back())];
   size_t len = seq.size();
   if (len % static_cast<size_t>(block_size_) == 1) {
-    NANOVLLM_LOG("block_manager") << "may_append seq_id=" << seq.seq_id
+    LLM_ENGINE_LOG("block_manager") << "may_append seq_id=" << seq.seq_id
                                   << " new_block len=" << len << std::endl;
     assert(last_block.hash != -1);
     int block_id = free_block_ids_.front();
@@ -137,7 +137,7 @@ void BlockManager::may_append(Sequence& seq) {
     block_table.push_back(block_id);
   } else if (len % static_cast<size_t>(block_size_) == 0) {
     assert(last_block.hash == -1);
-    NANOVLLM_LOG("block_manager") << "may_append seq_id=" << seq.seq_id
+    LLM_ENGINE_LOG("block_manager") << "may_append seq_id=" << seq.seq_id
                                   << " fill_last_block len=" << len << std::endl;
     std::vector<int64_t> token_ids = seq.block(seq.num_blocks() - 1);
     int64_t prefix = (block_table.size() > 1)
@@ -151,4 +151,4 @@ void BlockManager::may_append(Sequence& seq) {
   }
 }
 
-}  // namespace nanovllm
+}  // namespace llm_engine

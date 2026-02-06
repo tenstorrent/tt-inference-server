@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "nanovllm/sampling_params.hpp"
+#include "llm_engine/sampling_params.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 enum class SequenceStatus { WAITING, RUNNING, FINISHED };
 
@@ -55,4 +55,4 @@ class Sequence {
   size_t num_tokens() const { return token_ids_.size(); }
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

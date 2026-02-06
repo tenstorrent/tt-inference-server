@@ -1,6 +1,6 @@
 #pragma once
 
-namespace nanovllm {
+namespace llm_engine {
 
 struct Config {
   int max_num_batched_tokens = 16384;
@@ -10,4 +10,4 @@ struct Config {
   int num_kvcache_blocks = -1;
 };
 
-}  // namespace nanovllm
+}  // namespace llm_engine

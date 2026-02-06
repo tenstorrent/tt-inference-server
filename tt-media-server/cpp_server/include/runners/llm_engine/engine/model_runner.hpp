@@ -4,10 +4,10 @@
 #include <memory>
 #include <vector>
 
-#include "nanovllm/config.hpp"
-#include "nanovllm/engine/sequence.hpp"
+#include "llm_engine/config.hpp"
+#include "llm_engine/engine/sequence.hpp"
 
-namespace nanovllm {
+namespace llm_engine {
 
 class IModelRunner {
  public:
@@ -31,4 +31,4 @@ class ModelRunnerStub : public IModelRunner {
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config);
 
-}  // namespace nanovllm
+}  // namespace llm_engine
