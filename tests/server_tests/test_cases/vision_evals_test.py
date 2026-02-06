@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+"""Eval test for vision/CNN models (ResNet, MobileNetV2, EfficientNet, etc.)."""
 
-import argparse
 import base64
 import itertools
 import json
@@ -10,8 +10,10 @@ import logging
 import shutil
 import sys
 import time
+from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional, Union
 
 import requests
 from datasets import DownloadConfig, Image, load_dataset
@@ -23,112 +25,195 @@ from tests.server_tests.test_cases.server_helper import (
 )
 from tests.server_tests.test_classes import TestConfig
 
-DATASET_DIR = "tests/server_tests/datasets/imagenet_subset"
-MODELS = [
-    "tt-xla-resnet",
-    "tt-xla-vovnet",
-    "tt-xla-mobilenetv2",
-    "tt-xla-efficientnet",
-    "tt-xla-segformer",
-    # "tt-xla-unet",
-    "tt-xla-vit",
-]
-REQUEST_TIMEOUT_SECONDS = 60.0
-ACCURACY_FILE_BY_MODE = {
-    "cpu": "cpu_accuracy.json",
-    "device": "device_accuracy.json",
-}
-ACCURACY_THRESHOLD = 0.05  # device accuracy must be within 5% of cpu accuracy
-
 logger = logging.getLogger(__name__)
 
-from dataclasses import dataclass
+
+class AccuracyResult(IntEnum):
+    """Accuracy check result codes."""
+
+    UNDEFINED = 0
+    BASELINE = 1
+    PASS = 2
+    FAIL = 3
+
+
+@dataclass(frozen=True)
+class VisionEvalsConfig:
+    """Vision evals configuration."""
+
+    DATASET_DIR: str = "tests/server_tests/datasets/imagenet_subset"
+    REQUEST_TIMEOUT_SECONDS: float = 60.0
+    ACCURACY_THRESHOLD: float = 0.05
+    CPU_ACCURACY_FILE: str = "cpu_accuracy.json"
+    DEVICE_ACCURACY_FILE: str = "device_accuracy.json"
+    DEFAULT_DOWNLOAD_COUNT: int = 20
+    MODELS: tuple = (
+        "tt-xla-resnet",
+        "tt-xla-vovnet",
+        "tt-xla-mobilenetv2",
+        "tt-xla-efficientnet",
+        "tt-xla-segformer",
+        "tt-xla-vit",
+    )
+
+
+@dataclass(frozen=True)
+class HealthCheckConfig:
+    """Health check configuration."""
+
+    MAX_ATTEMPTS: int = 230
+    RETRY_DELAY: int = 10
+    TIMEOUT: int = 10
+
+
+CONFIG = VisionEvalsConfig()
+HEALTH_CONFIG = HealthCheckConfig()
+
+ACCURACY_FILE_BY_MODE = {
+    "cpu": CONFIG.CPU_ACCURACY_FILE,
+    "device": CONFIG.DEVICE_ACCURACY_FILE,
+}
+
+DOWNLOAD_CLEANUP_DELAY = 5
 
 
 @dataclass
 class VisionEvalsTestRequest:
     action: Literal["download", "measure_accuracy", "compare"]
-    mode: Literal["cpu", "device"] = "device"  # for measure_accuracy action
-    models: list[str] | None = None  # None means all MODELS
-    server_url: str | None = None  # optional, for CI
-    download_count: int = 20  # for download action
+    mode: Literal["cpu", "device"] = "device"
+    models: Optional[list[str]] = None
+    server_url: Optional[str] = None
+    download_count: int = CONFIG.DEFAULT_DOWNLOAD_COUNT
 
 
 class VisionEvalsTest(BaseTest):
+    """Eval test for vision/CNN models."""
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
 
-    async def _run_specific_test_async(self):
-        request = self.targets.get("request")
-        logger.info("Running VisionEvalsTest with request: %s", request)
-        if not isinstance(request, VisionEvalsTestRequest):
-            return {
-                "success": False,
-                "error": "VisionEvalsTestRequest not provided in targets",
-            }
+    async def _run_specific_test_async(self) -> dict:
+        """Run the vision evaluation test."""
+        request = self._parse_request()
+        if isinstance(request, dict):
+            return request
 
         if request.server_url and not request.models:
-            return {
-                "success": False,
-                "error": "server_url requires models to be specified",
-            }
-
-        target_models = request.models or MODELS
-
-        if request.action == "download":
-            logger.info("Downloading samples: %s", request.download_count)
-            self._download_samples(count=request.download_count)
-            return {
-                "success": True,
-                "action": "download",
-                "count": request.download_count,
-            }
-
-        elif request.action == "measure_accuracy":
-            logger.info("Measuring accuracy for models: %s", target_models)
-
-            # Step 1: Download samples
-            logger.info("Step 1: Downloading samples")
-            self._download_samples(count=request.download_count)
-
-            # Step 2: Measure CPU accuracy (server already running)
-            logger.info("Step 2: Measuring CPU accuracy")
-            self._measure_accuracy(
-                models=target_models,
-                server_url=request.server_url,
-                mode="cpu",
+            return self._error(
+                "VisionEvalsTest server_url requires models to be specified"
             )
 
-            # Step 3: Measure device accuracy (server already running)
-            logger.info("Step 3: Measuring device accuracy")
-            self._measure_accuracy(
-                models=target_models,
-                server_url=request.server_url,
-                mode="device",
-            )
+        target_models = request.models or list(CONFIG.MODELS)
 
-            # Step 4: Compare results
-            logger.info("Step 4: Comparing CPU vs device results")
-            accuracy_status = self._compare_results()
+        action_handlers = {
+            "download": lambda: self._handle_download(request),
+            "measure_accuracy": lambda: self._handle_measure_accuracy(request, target_models),
+            "compare": lambda: self._handle_compare(),
+        }
+        handler = action_handlers.get(request.action)
+        if handler is None:
+            return self._error(f"Unknown action: {request.action}")
+        return handler()
 
-            # Add status to eval_results for each model
-            for model, status in accuracy_status.items():
-                if model in self.eval_results:
-                    self.eval_results[model]["accuracy_status"] = status
+    def _handle_download(self, request: VisionEvalsTestRequest) -> dict:
+        """Handle the download action."""
+        logger.info(f"Downloading samples: {request.download_count}")
+        self._download_samples(count=request.download_count)
+        return {
+            "success": True,
+            "action": "download",
+            "count": request.download_count,
+        }
 
-            return {
-                "success": True,
-                "action": "measure_accuracy",
-                "mode": "full",
-                "eval_results": self.eval_results,
-            }
+    def _handle_measure_accuracy(
+        self,
+        request: VisionEvalsTestRequest,
+        target_models: list[str],
+    ) -> dict:
+        """Handle the measure_accuracy action."""
+        logger.info(f"Measuring accuracy for models: {target_models}")
 
-        elif request.action == "compare":
-            self._compare_results()
-            return {"success": True, "action": "compare"}
+        logger.info("Step 1: Downloading samples")
+        self._download_samples(count=request.download_count)
 
-        raise ValueError(f"Unknown action: {request.action}")
+        logger.info("Step 2: Measuring CPU accuracy")
+        self._measure_accuracy(
+            models=target_models,
+            server_url=request.server_url,
+            mode="cpu",
+        )
+
+        logger.info("Step 3: Measuring device accuracy")
+        self._measure_accuracy(
+            models=target_models,
+            server_url=request.server_url,
+            mode="device",
+        )
+
+        logger.info("Step 4: Comparing CPU vs device results")
+        accuracy_status = self._compare_results()
+
+        for model, status in accuracy_status.items():
+            if model in self.eval_results:
+                self.eval_results[model]["accuracy_status"] = status
+
+        return {
+            "success": True,
+            "action": "measure_accuracy",
+            "mode": "full",
+            "eval_results": self.eval_results,
+        }
+
+    def _handle_compare(self) -> dict:
+        """Handle the compare action."""
+        self._compare_results()
+        return {"success": True, "action": "compare"}
+
+    def _parse_request(self) -> Union[VisionEvalsTestRequest, dict]:
+        """Parse and validate request from targets."""
+        raw = self.targets.get("request")
+        if raw is None:
+            return self._error("VisionEvalsTest request not provided in targets")
+        if isinstance(raw, VisionEvalsTestRequest):
+            return raw
+        if isinstance(raw, dict):
+            try:
+                return VisionEvalsTestRequest(**raw)
+            except TypeError as e:
+                return self._error(f"VisionEvalsTest invalid request parameters: {e}")
+        return self._error(
+            "VisionEvalsTest request must be dict or VisionEvalsTestRequest"
+        )
+
+    @staticmethod
+    def _error(message: str) -> dict:
+        """Create error response."""
+        return {"success": False, "error": message}
+
+    def _wait_for_server_ready(self) -> bool:
+        """Wait for server to be ready."""
+        health_url = f"http://localhost:{self.service_port}/tt-liveness"
+        logger.info(f"Waiting for server: {health_url}")
+        for attempt in range(1, HEALTH_CONFIG.MAX_ATTEMPTS + 1):
+            if self._check_health(health_url):
+                logger.info(f"Server ready after {attempt} attempt(s)")
+                return True
+            logger.debug(f"Not ready (attempt {attempt}/{HEALTH_CONFIG.MAX_ATTEMPTS})")
+            time.sleep(HEALTH_CONFIG.RETRY_DELAY)
+        logger.error(f"Server not ready after {HEALTH_CONFIG.MAX_ATTEMPTS} attempts")
+        return False
+
+    def _check_health(self, url: str) -> bool:
+        """Single health check attempt."""
+        try:
+            response = requests.get(url, timeout=HEALTH_CONFIG.TIMEOUT)
+        except requests.RequestException:
+            return False
+        if response.status_code != 200:
+            return False
+        data = response.json()
+        return data.get("status") == "alive" and data.get("model_ready", False)
 
     def _load_metadata(self, dataset_path: Path) -> list[dict]:
         logger.info(f"Loading metadata from {dataset_path}")
@@ -144,121 +229,81 @@ class VisionEvalsTest(BaseTest):
 
         return metadata
 
-    def _wait_for_server_ready(
-        self,
-        service_port: int = 8000,
-        max_attempts: int = 230,
-        retry_delay: int = 10,
-    ) -> bool:
-        """Wait for server to be ready using simple HTTP health check.
-
-        Args:
-            service_port: Port where the server is running.
-            max_attempts: Maximum number of retry attempts.
-            retry_delay: Seconds to wait between retries.
-
-        Returns:
-            bool: True if server is ready, False otherwise.
-        """
-        logger.info("Waiting for server to be ready...")
-        health_url = f"http://localhost:{service_port}/tt-liveness"
-        logger.info("Health URL: %s", health_url)
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                response = requests.get(health_url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("status") == "alive" and data.get("model_ready"):
-                        logger.info(
-                            "Server is ready after %s attempt(s)",
-                            attempt,
-                        )
-                        return True
-                logger.info(
-                    "Server not ready (attempt %s/%s), retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    retry_delay,
-                )
-            except requests.exceptions.RequestException as e:
-                logger.info(
-                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    e,
-                    retry_delay,
-                )
-            time.sleep(retry_delay)
-
-        logger.error("Server health check failed after %s attempts", max_attempts)
-        return False
-
     def _replay_samples(
         self,
         metadata: list[dict],
         dataset_path: Path,
         server_url: str,
-        authorization: str | None,
+        authorization: Optional[str],
         timeout: float,
     ) -> list[dict]:
+        """Replay dataset samples against the server and collect responses."""
         logger.info(f"Replaying samples from {dataset_path} to {server_url}")
-        headers = {
+        headers = self._build_headers(authorization)
+        results: list[dict] = []
+
+        with requests.Session() as session:
+            for entry in metadata:
+                result = self._process_single_sample(
+                    session, entry, dataset_path, server_url, headers, timeout,
+                )
+                results.append(result)
+
+        return results
+
+    @staticmethod
+    def _process_single_sample(
+        session: requests.Session,
+        entry: dict,
+        dataset_path: Path,
+        server_url: str,
+        headers: dict,
+        timeout: float,
+    ) -> dict:
+        """Send a single image sample to the server and return the result."""
+        image_file = dataset_path / entry["filename"]
+        if not image_file.exists():
+            raise FileNotFoundError(f"Missing image file: {image_file}")
+
+        with image_file.open("rb") as img_fp:
+            encoded = base64.b64encode(img_fp.read()).decode("ascii")
+
+        payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
+        response = session.post(
+            server_url, headers=headers, json=payload, timeout=timeout,
+        )
+        response.raise_for_status()
+        return {"sample": entry, "response": response.json()}
+
+    @staticmethod
+    def _build_headers(authorization: Optional[str] = None) -> dict[str, str]:
+        """Build request headers."""
+        return {
             "Accept": "application/json",
             "Authorization": f"Bearer {authorization or DEFAULT_AUTHORIZATION}",
             "Content-Type": "application/json",
         }
 
-        session = requests.Session()
-        results: list[dict] = []
-
-        try:
-            for entry in metadata:
-                image_file = dataset_path / entry["filename"]
-                if not image_file.exists():
-                    raise FileNotFoundError(f"Missing image file: {image_file}")
-
-                with image_file.open("rb") as img_fp:
-                    encoded = base64.b64encode(img_fp.read()).decode("ascii")
-
-                payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
-                response = session.post(
-                    server_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                body = response.json()
-                results.append({"sample": entry, "response": body})
-        finally:
-            session.close()
-
-        return results
-
-    def _normalize_label(self, raw: str | int | None) -> str:
-        logger.info("Normalizing label.")
+    @staticmethod
+    def _normalize_label(raw: Union[str, int, None]) -> str:
         if raw is None:
             return ""
         if isinstance(raw, int):
             return str(raw)
 
         normalized = str(raw).strip().lower()
-        normalized = normalized.replace("-", "_")
-        normalized = normalized.replace(" ", "_")
-        cleaned = []
-        for char in normalized:
-            cleaned.append(char if char.isalnum() or char == "_" else "_")
+        normalized = normalized.replace("-", "_").replace(" ", "_")
+        cleaned = [
+            char if char.isalnum() or char == "_" else "_" for char in normalized
+        ]
         collapsed = "".join(cleaned)
         while "__" in collapsed:
             collapsed = collapsed.replace("__", "_")
         return collapsed.strip("_")
 
-    def _extract_prediction(self, payload: dict) -> tuple[str | None, str | None]:
-        logger.info("Extracting prediction.")
+    def _extract_prediction(self, payload: dict) -> tuple[Optional[str], Optional[str]]:
         image_data = payload.get("image_data") if isinstance(payload, dict) else None
 
-        # Handle list response (image_data is List[ImageClassificationResult])
         if isinstance(image_data, list) and image_data:
             image_data = image_data[0]
 
@@ -278,7 +323,11 @@ class VisionEvalsTest(BaseTest):
         return label, probability
 
     def _analyze_results(self, entries: list[dict]) -> tuple[int, int, list[dict]]:
-        logger.info("Analyzing results.")
+        """Analyze inference results against expected labels.
+
+        Returns:
+            (correct_count, total_count, mismatches)
+        """
         total = len(entries)
         correct = 0
         mismatches: list[dict] = []
@@ -309,12 +358,13 @@ class VisionEvalsTest(BaseTest):
 
         return correct, total, mismatches
 
-    def _write_json(self, path: Path, payload: object) -> None:
+    @staticmethod
+    def _write_json(path: Path, payload: object) -> None:
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
             handle.write("\n")
 
-    def _download_samples(self, count: int = 20) -> None:
+    def _download_samples(self, count: int = CONFIG.DEFAULT_DOWNLOAD_COUNT) -> None:
         """Stream a small ImageNet subset and materialize images plus metadata."""
         logger.info(f"Downloading {count} samples.")
         if count <= 0:
@@ -329,7 +379,7 @@ class VisionEvalsTest(BaseTest):
         dataset = ds.cast_column("image", Image(decode=True))
         samples = itertools.islice(dataset, count)
 
-        output_path = Path(DATASET_DIR)
+        output_path = Path(CONFIG.DATASET_DIR)
         if output_path.exists():
             shutil.rmtree(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -367,165 +417,163 @@ class VisionEvalsTest(BaseTest):
             json.dump(metadata, f, indent=2)
 
         logger.info(
-            "Saved %s ImageNet samples to %s (metadata: %s)",
-            len(metadata),
-            output_path,
-            metadata_path,
+            f"Saved {len(metadata)} ImageNet samples to {output_path} (metadata: {metadata_path})"
         )
-        time.sleep(5)  # Workaround for streaming dataset cleanup issues
+        time.sleep(
+            DOWNLOAD_CLEANUP_DELAY
+        )  # Workaround for streaming dataset cleanup issues
 
     def _get_accuracy_status(
         self,
-        cpu_accuracy: float | None,
-        device_accuracy: float | None,
-        threshold: float = ACCURACY_THRESHOLD,
-    ) -> tuple[int, float | None]:
+        cpu_accuracy: Optional[float],
+        device_accuracy: Optional[float],
+        threshold: float = CONFIG.ACCURACY_THRESHOLD,
+    ) -> tuple[AccuracyResult, Optional[float]]:
         """Evaluate device accuracy against CPU accuracy.
 
-        Args:
-            cpu_accuracy: CPU accuracy as a ratio (0.0 to 1.0).
-            device_accuracy: Device accuracy as a ratio (0.0 to 1.0).
-            threshold: Maximum allowed relative difference (default 0.05 = 5%).
-
         Returns:
-            (status, min_acceptable):
-                status: 0=undefined, 2=pass, 3=fail
+            (AccuracyResult, min_acceptable):
+                AccuracyResult: UNDEFINED, PASS, or FAIL
                 min_acceptable: CPU * (1 - threshold), or None when undefined
-
-        Example:
-            CPU = 40%, threshold = 5%
-            Minimum acceptable device accuracy = 40% * 0.95 = 38%
-            If device < 38% -> Fail (return (3, 0.38))
-            If device >= 38% -> Pass (return (2, 0.38))
         """
         if cpu_accuracy is None or device_accuracy is None:
-            return (0, None)
+            return (AccuracyResult.UNDEFINED, None)
 
         min_acceptable = cpu_accuracy * (1 - threshold)
         if device_accuracy < min_acceptable:
-            return (3, min_acceptable)
+            return (AccuracyResult.FAIL, min_acceptable)
 
-        return (2, min_acceptable)
+        return (AccuracyResult.PASS, min_acceptable)
 
-    def _compare_results(self) -> dict[str, int]:
+    def _compare_results(self) -> dict[str, AccuracyResult]:
         """Compare CPU and device accuracy results and print a summary.
 
         Returns:
-            Dictionary mapping model names to accuracy status codes:
-                0: Undefined (missing data)
-                2: Pass - within threshold
-                3: Fail - device accuracy too low
+            Dictionary mapping model names to AccuracyResult values.
         """
-        logger.info("Comparing results CPU and device accuracy.")
-        dataset_path = Path(DATASET_DIR)
-        cpu_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
-        device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
+        logger.info("Comparing CPU and device accuracy results.")
+        cpu_accuracy, device_accuracy = self._load_accuracy_files()
+        if cpu_accuracy is None or device_accuracy is None:
+            return {}
 
-        accuracy_status: dict[str, int] = {}
-
-        if not cpu_accuracy_path.exists():
-            logger.warning("CPU accuracy file not found: %s", cpu_accuracy_path)
-            logger.info("Run CPU accuracy measurement with --measure_cpu_accuracy")
-            return accuracy_status
-        if not device_accuracy_path.exists():
-            logger.warning("Device accuracy file not found: %s", device_accuracy_path)
-            logger.info(
-                "Run device accuracy measurement with --measure_device_accuracy"
-            )
-            return accuracy_status
-
-        with cpu_accuracy_path.open("r", encoding="utf-8") as f:
-            cpu_accuracy = json.load(f)
-        with device_accuracy_path.open("r", encoding="utf-8") as f:
-            device_accuracy = json.load(f)
-
-        logger.info("Accuracy Comparison (CPU vs Device):")
-        logger.info(
-            f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18} {'Status':>8}"
-        )
-        logger.info("-" * 100)
-
-        unacceptable: list[str] = []
-
-        for model in sorted(set(cpu_accuracy.keys()).union(device_accuracy.keys())):
-            cpu_value = cpu_accuracy.get(model)
-            device_value = device_accuracy.get(model)
-
-            status, min_acceptable = self._get_accuracy_status(cpu_value, device_value)
-            accuracy_status[model] = status
-
-            cpu_pct = cpu_value * 100.0 if cpu_value is not None else None
-            device_pct = device_value * 100.0 if device_value is not None else None
-
-            if cpu_pct is not None and device_pct is not None:
-                diff = device_pct - cpu_pct
-                if status == 3:
-                    unacceptable.append(model)
-                diff_display = f"{diff:18.2f}"
-            else:
-                diff_display = f"{'N/A':>18}"
-
-            cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
-            device_display = (
-                f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
-            )
-            status_display = "✅" if status == 2 else "❌" if status == 3 else "N/A"
-
-            logger.info(
-                "%s %s %s %s %s",
-                f"{model:30}",
-                cpu_display,
-                device_display,
-                diff_display,
-                f"{status_display:>8}",
-            )
-
-            if status == 2 and min_acceptable is not None:
-                logger.info(
-                    f"Device accuracy {device_value} is above minimum acceptable {min_acceptable} ✅"
-                )
-            elif status == 3 and min_acceptable is not None:
-                logger.info(
-                    f"Device accuracy {device_value} is below minimum acceptable {min_acceptable} ❌"
-                )
-            elif status == 0:
-                logger.info("Undefined accuracy ❌")
+        accuracy_status, unacceptable = self._evaluate_models(cpu_accuracy, device_accuracy)
+        self._log_comparison_table(cpu_accuracy, device_accuracy, accuracy_status)
 
         if unacceptable:
             formatted = ", ".join(unacceptable)
             logger.error(
-                "Device accuracy is not acceptable: %s fell more than 5%% below the CPU baseline.",
-                formatted,
+                f"Device accuracy is not acceptable: {formatted} fell more than 5% below the CPU baseline."
             )
             sys.exit(1)
 
         return accuracy_status
 
+    def _load_accuracy_files(self) -> tuple[Optional[dict], Optional[dict]]:
+        """Load CPU and device accuracy JSON files.
+
+        Returns:
+            (cpu_accuracy, device_accuracy) dicts, or (None, None) if missing.
+        """
+        dataset_path = Path(CONFIG.DATASET_DIR)
+        cpu_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
+        device_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
+
+        if not cpu_path.exists():
+            logger.warning(f"CPU accuracy file not found: {cpu_path}")
+            return None, None
+        if not device_path.exists():
+            logger.warning(f"Device accuracy file not found: {device_path}")
+            return None, None
+
+        with cpu_path.open("r", encoding="utf-8") as f:
+            cpu_accuracy = json.load(f)
+        with device_path.open("r", encoding="utf-8") as f:
+            device_accuracy = json.load(f)
+
+        return cpu_accuracy, device_accuracy
+
+    def _evaluate_models(
+        self,
+        cpu_accuracy: dict[str, float],
+        device_accuracy: dict[str, float],
+    ) -> tuple[dict[str, AccuracyResult], list[str]]:
+        """Evaluate each model's device accuracy against CPU baseline.
+
+        Returns:
+            (accuracy_status, unacceptable_models)
+        """
+        accuracy_status: dict[str, AccuracyResult] = {}
+        unacceptable: list[str] = []
+
+        for model in sorted(set(cpu_accuracy.keys()).union(device_accuracy.keys())):
+            cpu_value = cpu_accuracy.get(model)
+            device_value = device_accuracy.get(model)
+            status, _ = self._get_accuracy_status(cpu_value, device_value)
+            accuracy_status[model] = status
+
+            if status == AccuracyResult.FAIL:
+                unacceptable.append(model)
+
+        return accuracy_status, unacceptable
+
+    def _log_comparison_table(
+        self,
+        cpu_accuracy: dict[str, float],
+        device_accuracy: dict[str, float],
+        accuracy_status: dict[str, AccuracyResult],
+    ) -> None:
+        """Log a formatted comparison table of CPU vs device accuracy."""
+        logger.info("Accuracy Comparison (CPU vs Device):")
+        logger.info(
+            f"{'Model':<30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18} {'Status':>8}"
+        )
+        logger.info("-" * 100)
+
+        for model in sorted(accuracy_status.keys()):
+            cpu_value = cpu_accuracy.get(model)
+            device_value = device_accuracy.get(model)
+            status = accuracy_status[model]
+            _, min_acceptable = self._get_accuracy_status(cpu_value, device_value)
+
+            cpu_pct = cpu_value * 100.0 if cpu_value is not None else None
+            device_pct = device_value * 100.0 if device_value is not None else None
+
+            if cpu_pct is not None and device_pct is not None:
+                diff_display = f"{device_pct - cpu_pct:18.2f}"
+            else:
+                diff_display = f"{'N/A':>18}"
+
+            cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
+            device_display = f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
+            status_label = "PASS" if status == AccuracyResult.PASS else "FAIL" if status == AccuracyResult.FAIL else "N/A"
+
+            logger.info(f"{model:<30} {cpu_display} {device_display} {diff_display} {status_label:>8}")
+
+            if min_acceptable is not None and status == AccuracyResult.PASS:
+                logger.info(f"Device accuracy {device_value:.4f} is above minimum acceptable {min_acceptable:.4f}")
+            elif min_acceptable is not None and status == AccuracyResult.FAIL:
+                logger.info(f"Device accuracy {device_value:.4f} is below minimum acceptable {min_acceptable:.4f}")
+
     def _measure_accuracy(
         self,
-        models: list[str] | None = None,
-        server_url: str = None,
+        models: Optional[list[str]] = None,
+        server_url: Optional[str] = None,
         mode: Literal["cpu", "device"] = "cpu",
-        authorization: str | None = None,
-        timeout: float = REQUEST_TIMEOUT_SECONDS,
+        authorization: Optional[str] = None,
+        timeout: float = CONFIG.REQUEST_TIMEOUT_SECONDS,
     ) -> None:
-        """Measure accuracy for models against an already-running server.
-
-        Note: Server must already be running. This method waits for health check
-        then runs accuracy measurements.
-        """
+        """Measure accuracy for models against an already-running server."""
         logger.info(f"Measuring accuracy for models: {models} in {mode} mode")
-        dataset_path = Path(DATASET_DIR)
+        dataset_path = Path(CONFIG.DATASET_DIR)
         metadata = self._load_metadata(dataset_path)
         summary_path = dataset_path / ACCURACY_FILE_BY_MODE[mode]
         accuracy_summary: dict[str, float] = {}
 
-        # Wait for server to be ready (assumes server is already running)
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed - server not ready")
 
         for model in models:
-            logger.info("Measuring accuracy for model: %s", model)
+            logger.info(f"Measuring accuracy for model: {model}")
 
             results = self._replay_samples(
                 metadata=metadata,
@@ -537,17 +585,13 @@ class VisionEvalsTest(BaseTest):
 
             correct, total, mismatches = self._analyze_results(results)
             logger.info(
-                "Correct: %s, Total: %s, Mismatches: %s",
-                correct,
-                total,
-                len(mismatches),
+                f"Correct: {correct}, Total: {total}, Mismatches: {len(mismatches)}"
             )
 
             accuracy = (correct / total) if total else 0.0
-            logger.info("Accuracy for model %s: %.2f%%", model, accuracy * 100)
+            logger.info(f"Accuracy for model {model}: {accuracy * 100:.2f}%")
             accuracy_summary[model] = accuracy
 
-            # Store detailed results for this model and mode
             if model not in self.eval_results:
                 self.eval_results[model] = {}
 
@@ -559,112 +603,13 @@ class VisionEvalsTest(BaseTest):
             }
 
             logger.info(
-                "[%s] %s: %.2f%% accuracy (%s/%s correct)",
-                mode.upper(),
-                model,
-                accuracy * 100,
-                correct,
-                total,
+                f"[{mode.upper()}] {model}: {accuracy * 100:.2f}% accuracy ({correct}/{total} correct)"
             )
 
             if mismatches:
                 mismatch_path = dataset_path / f"{model}_{mode}_mismatches.json"
                 self._write_json(mismatch_path, mismatches)
-                logger.info(
-                    "Saved %s mismatches to %s",
-                    len(mismatches),
-                    mismatch_path,
-                )
+                logger.info(f"Saved {len(mismatches)} mismatches to {mismatch_path}")
 
         self._write_json(summary_path, accuracy_summary)
-        logger.info("Saved %s accuracy summary to %s", mode, summary_path)
-
-
-"""
-Usage:
-1. Download the dataset (n images).
-2. Measure CPU accuracy for the dataset -> output JSON
-    For each model start the server in CPU mode
-    Run inference for all images
-    Compare the returned label with the one from metadata
-    Calculate the percentage of correct labels
-    Save to the JSON file cpu_accuracy.json { model: accuracy }
-3. Measure device accuracy for the dataset -> output JSON
-    There are two invocation variants
-        - CI: the server is already running for a given model, we need the server URL and the name of the model under test
-        - Local: start the server in device mode for each model
-
-Example commands:
-    python tests/server_tests/test_cases/vision_evals_test.py --download 20
-    python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy
-    python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
-    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy
-    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/cnn/search-image
-    python tests/server_tests/test_cases/vision_evals_test.py --compare_results
-"""
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Vision evaluation test utility")
-    parser.add_argument(
-        "--download",
-        nargs="?",
-        const=20,
-        type=int,
-        metavar="COUNT",
-        help="Download and prepare the dataset (defaults to 20 samples).",
-    )
-    parser.add_argument(
-        "--measure_cpu_accuracy",
-        action="store_true",
-        help="Measure CPU model accuracy",
-    )
-    parser.add_argument(
-        "--measure_device_accuracy",
-        action="store_true",
-        help="Measure device model accuracy",
-    )
-    parser.add_argument(
-        "--compare_results",
-        action="store_true",
-        help="Compare CPU and device accuracy results",
-    )
-    parser.add_argument(
-        "--model",
-        help="Specific model runner to compare; defaults to all configured models.",
-    )
-    parser.add_argument(
-        "--server_url", help="Server URL to use for TT device comparisons"
-    )
-    args = parser.parse_args()
-
-    if args.server_url and not args.model:
-        logger.error("When providing a server URL model must be specified (--model)")
-        exit(1)
-
-    target_models = [args.model] if args.model else None
-    config = TestConfig.create_default()
-    request = None
-
-    if args.download is not None:
-        request = VisionEvalsTestRequest(
-            action="download", download_count=args.download
-        )
-    elif args.measure_cpu_accuracy or args.measure_device_accuracy:
-        request = VisionEvalsTestRequest(
-            action="measure_accuracy",
-            mode="cpu" if args.measure_cpu_accuracy else "device",
-            models=target_models,
-            server_url=args.server_url,
-        )
-    elif args.compare_results:
-        request = VisionEvalsTestRequest(action="compare")
-
-    if request:
-        test = VisionEvalsTest(config, {"request": request})
-        result = test.run_tests()
-        if not result.get("success"):
-            logger.error("Test failed: %s", result)
-            exit(1)
-    else:
-        parser.print_help()
-        exit(1)
+        logger.info(f"Saved {mode} accuracy summary to {summary_path}")
