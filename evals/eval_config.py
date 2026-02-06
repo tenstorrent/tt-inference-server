@@ -1102,10 +1102,22 @@ _eval_config_list = [
                 ),
                 apply_chat_template=False,
                 batch_size=16,
+                model_kwargs={
+                    "model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "fix_mistral_regex": True,
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
                 gen_kwargs={
                     "max_gen_toks": "256",
                     "do_sample": "false",
                     "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
             EvalTask(
