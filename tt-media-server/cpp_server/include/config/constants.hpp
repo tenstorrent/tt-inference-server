@@ -69,10 +69,4 @@ namespace defaults {
     constexpr const char* TT_PYTHON_PATH = "..";
 }
 
-/** Environment variable names used when setting worker process env (e.g. in embedding_service). */
-namespace env_keys {
-    constexpr const char* TT_VISIBLE_DEVICES = "TT_VISIBLE_DEVICES";
-    constexpr const char* TT_DEVICE_ID = "TT_DEVICE_ID";
-}
-
 }  // namespace tt::config

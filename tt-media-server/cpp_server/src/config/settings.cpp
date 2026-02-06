@@ -65,17 +65,6 @@ const std::vector<std::string>& device_ids_parsed() {
     return cached;
 }
 
-int first_device_index_from_segment(const std::string& segment) {
-    if (segment.empty()) return 0;
-    try {
-        size_t end = 0;
-        while (end < segment.size() && segment[end] != ',') ++end;
-        return static_cast<int>(std::stoul(segment.substr(0, end)));
-    } catch (const std::exception&) {
-        return 0;
-    }
-}
-
 }  // namespace
 
 ModelService model_service() {
@@ -110,20 +99,10 @@ RunnerType runner_type() {
     return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
 
-std::string visible_devices_for_worker(size_t worker_id) {
+std::string visible_devices_for_worker(size_t worker_index) {
     const auto& ids = device_ids_parsed();
-    if (worker_id < ids.size()) return ids[worker_id];
+    if (worker_index < ids.size()) return ids[worker_index];
     return "";
-}
-
-int visible_device_index_for_worker(size_t worker_id) {
-    const auto& ids = device_ids_parsed();
-    if (worker_id < ids.size()) return first_device_index_from_segment(ids[worker_id]);
-    return 0;
-}
-
-std::string device_id_for_worker(size_t worker_id) {
-    return std::to_string(worker_id);
 }
 
 }  // namespace tt::config

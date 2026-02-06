@@ -40,12 +40,11 @@ std::string python_path();
 RunnerType runner_type();
 
 /**
- * Values to set in worker process env (used by embedding_service before creating runner).
- * DEVICE_IDS format: "(0,1,2,3),(4,5,6,7)" → each bracket pair = one worker's TT_VISIBLE_DEVICES.
+ * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
+ * DEVICE_IDS format: "(0,1,2,3),(4,5,6,7)" → worker 0 gets "0,1,2,3", worker 1 gets "4,5,6,7".
+ * This value is both the worker's identity and its TT_VISIBLE_DEVICES value,
+ * matching the Python scheduler flow in model_services/scheduler.py.
  */
-std::string visible_devices_for_worker(size_t worker_id);
-/** First device index in this worker's segment (for runner/logging). */
-int visible_device_index_for_worker(size_t worker_id);
-std::string device_id_for_worker(size_t worker_id);
+std::string visible_devices_for_worker(size_t worker_index);
 
 }  // namespace tt::config

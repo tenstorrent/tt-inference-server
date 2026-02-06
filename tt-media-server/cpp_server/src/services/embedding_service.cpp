@@ -185,16 +185,15 @@ struct EmbeddingService::Impl {
         close(response_pipe[0]);  // Close read end of response pipe
 
         size_t wid = static_cast<size_t>(worker_id);
-        setenv(tt::config::env_keys::TT_VISIBLE_DEVICES, tt::config::visible_devices_for_worker(wid).c_str(), 1);
-        setenv(tt::config::env_keys::TT_DEVICE_ID, tt::config::device_id_for_worker(wid).c_str(), 1);
+        std::string visible_devices = tt::config::visible_devices_for_worker(wid);
+        setenv("TT_VISIBLE_DEVICES", visible_devices.c_str(), 1);
 
-        int visible_device = tt::config::visible_device_index_for_worker(wid);
         std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";
-        std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_device << "\n";
+        std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_devices << "\n";
         std::cout << "[Worker " << worker_id << "] read_fd=" << read_fd << ", write_fd=" << write_fd << "\n";
 
-        std::string device_id = "device_" + tt::config::device_id_for_worker(wid);
-        runners::EmbeddingRunner runner(device_id, visible_device);
+        std::string device_id = "device_" + visible_devices;
+        runners::EmbeddingRunner runner(device_id, static_cast<int>(wid));
 
         // Warmup
         if (!runner.warmup()) {
