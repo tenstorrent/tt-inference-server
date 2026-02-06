@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
 
-    # Training settings
+    # Dataset settings
     dataset_loader: str = DatasetLoaders.SST2.value
     dataset_max_length: int = 32
 
