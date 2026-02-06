@@ -29,6 +29,7 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
+    src/config/settings.cpp
     src/runners/embedding_runner.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
@@ -46,7 +47,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link Drogon
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
-
 
 # TTNN support (optional)
 if(ENABLE_TTNN)

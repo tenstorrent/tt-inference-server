@@ -91,7 +91,7 @@ namespace {
 
 EmbeddingController::EmbeddingController() {
     // Only initialize if TT_MODEL_SERVICE=embedding
-    if (!tt::config::is_embedding_service()()) {
+    if (!tt::config::is_embedding_service()) {
         return;
     }
 

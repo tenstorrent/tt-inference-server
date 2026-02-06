@@ -120,7 +120,7 @@ struct EmbeddingService::Impl {
 
                 std::cout << "[EmbeddingService] Spawned worker " << i
                           << " with PID " << pid
-                          << " (TT_VISIBLE_DEVICES=" << (i + 1) << ")"
+                          << " (TT_VISIBLE_DEVICES=" << tt::config::visible_devices_for_worker(i) << ")"
                           << " request_pipe[1]=" << worker->request_pipe[1]
                           << " response_pipe[0]=" << worker->response_pipe[0] << "\n";
 
@@ -187,7 +187,6 @@ struct EmbeddingService::Impl {
         size_t wid = static_cast<size_t>(worker_id);
         setenv(tt::config::env_keys::TT_VISIBLE_DEVICES, tt::config::visible_devices_for_worker(wid).c_str(), 1);
         setenv(tt::config::env_keys::TT_DEVICE_ID, tt::config::device_id_for_worker(wid).c_str(), 1);
-        setenv(tt::config::env_keys::TT_WORKER_ID, tt::config::worker_id_for_worker(wid).c_str(), 1);
 
         int visible_device = tt::config::visible_device_index_for_worker(wid);
         std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";

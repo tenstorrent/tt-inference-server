@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 namespace tt::config {
@@ -16,7 +17,7 @@ enum class ModelService {
     EMBEDDING,
 };
 
-/** String value for env TT_MODEL_SERVICE (e.g. "llm", "embedding"). */
+/** String value for env MODEL_SERVICE (e.g. "llm", "embedding"). */
 inline std::string to_string(ModelService s) {
     switch (s) {
         case ModelService::EMBEDDING:
@@ -27,7 +28,7 @@ inline std::string to_string(ModelService s) {
     }
 }
 
-/** Parse TT_MODEL_SERVICE; empty or unknown -> LLM. */
+/** Parse MODEL_SERVICE; empty or unknown -> LLM. */
 inline ModelService model_service_from_string(const std::string& v) {
     if (v == "embedding") return ModelService::EMBEDDING;
     return ModelService::LLM;
@@ -38,7 +39,7 @@ enum class RunnerType {
     TTNN_TEST,
 };
 
-/** String value for env TT_RUNNER_TYPE (e.g. "llm_test", "ttnn_test"). */
+/** String value for env MODEL_RUNNER (e.g. "llm_test", "ttnn_test"). */
 inline std::string to_string(RunnerType r) {
     switch (r) {
         case RunnerType::TTNN_TEST:
@@ -49,17 +50,29 @@ inline std::string to_string(RunnerType r) {
     }
 }
 
-/** Parse TT_RUNNER_TYPE; unknown -> LLM_TEST. */
+/** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& v) {
     if (v == "ttnn_test" || v == "TTNN_TEST") return RunnerType::TTNN_TEST;
     return RunnerType::LLM_TEST;
+}
+
+/**
+ * Default values when the corresponding environment variable is not set or empty.
+ * Env overrides these when present.
+ */
+namespace defaults {
+    constexpr const char* DEVICE_IDS = "(0),(1),(2),(3)";
+    constexpr const char* MODEL_SERVICE = "llm";
+    constexpr size_t MAX_BATCH_SIZE = 1;
+    constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
+    constexpr const char* MODEL_RUNNER = "llm_test";
+    constexpr const char* TT_PYTHON_PATH = "..";
 }
 
 /** Environment variable names used when setting worker process env (e.g. in embedding_service). */
 namespace env_keys {
     constexpr const char* TT_VISIBLE_DEVICES = "TT_VISIBLE_DEVICES";
     constexpr const char* TT_DEVICE_ID = "TT_DEVICE_ID";
-    constexpr const char* TT_WORKER_ID = "TT_WORKER_ID";
 }
 
 }  // namespace tt::config

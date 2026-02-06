@@ -4,7 +4,9 @@
 #include "config/settings.hpp"
 
 #include <cstdlib>
+#include <cstddef>
 #include <string>
+#include <vector>
 
 namespace tt::config {
 
@@ -25,10 +27,59 @@ unsigned long env_ulong(const char* name, unsigned long default_value) {
     }
 }
 
+/** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3", "4,5,6,7"]. */
+std::vector<std::string> parse_device_ids(const std::string& raw) {
+    std::string s;
+    for (char c : raw) {
+        if (c != ' ') s += c;
+    }
+    if (s.empty()) {
+        return {""};  // DEVICE_IDS="" means one worker, visible devices empty (use all).
+    }
+    std::vector<std::string> out;
+    const std::string sep = "),(";
+    size_t pos = 0;
+    for (;;) {
+        size_t next = s.find(sep, pos);
+        std::string segment = (next == std::string::npos) ? s.substr(pos) : s.substr(pos, next - pos);
+        if (!segment.empty()) {
+            if (segment.front() == '(') segment.erase(0, 1);
+            if (segment.back() == ')') segment.pop_back();
+        }
+        out.push_back(std::move(segment));
+        if (next == std::string::npos) break;
+        pos = next + sep.size();
+    }
+    return out;
+}
+
+const std::vector<std::string>& device_ids_parsed() {
+    static std::vector<std::string> cached;
+    const char* env = std::getenv("DEVICE_IDS");
+    std::string current = (env && *env) ? std::string(env) : std::string(defaults::DEVICE_IDS);
+    static std::string last_env;
+    if (current != last_env) {
+        last_env = std::move(current);
+        cached = parse_device_ids(last_env);
+    }
+    return cached;
+}
+
+int first_device_index_from_segment(const std::string& segment) {
+    if (segment.empty()) return 0;
+    try {
+        size_t end = 0;
+        while (end < segment.size() && segment[end] != ',') ++end;
+        return static_cast<int>(std::stoul(segment.substr(0, end)));
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
 }  // namespace
 
 ModelService model_service() {
-    return model_service_from_string(env_string("TT_MODEL_SERVICE", to_string(ModelService::LLM)));
+    return model_service_from_string(env_string("MODEL_SERVICE", defaults::MODEL_SERVICE));
 }
 
 bool is_embedding_service() {
@@ -40,46 +91,38 @@ bool is_llm_service_enabled() {
 }
 
 size_t num_workers() {
-    return static_cast<size_t>(env_ulong("TT_NUM_WORKERS", 4));
+    return device_ids_parsed().size();
 }
 
 size_t batch_size() {
-    return static_cast<size_t>(env_ulong("TT_BATCH_SIZE", 1));
+    return static_cast<size_t>(env_ulong("MAX_BATCH_SIZE", defaults::MAX_BATCH_SIZE));
 }
 
 unsigned batch_timeout_ms() {
-    return static_cast<unsigned>(env_ulong("TT_BATCH_TIMEOUT_MS", 5));
+    return static_cast<unsigned>(env_ulong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
 }
 
 std::string python_path() {
-    return env_string("TT_PYTHON_PATH", "..");
+    return env_string("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
 }
 
 RunnerType runner_type() {
-    return runner_type_from_string(env_string("TT_RUNNER_TYPE", to_string(RunnerType::LLM_TEST)));
+    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
-
-namespace {
-
-unsigned device_offset() {
-    return static_cast<unsigned>(env_ulong("TT_DEVICE_OFFSET", 1));
-}
-
-}  // namespace
 
 std::string visible_devices_for_worker(size_t worker_id) {
-    return std::to_string(worker_id + device_offset());
+    const auto& ids = device_ids_parsed();
+    if (worker_id < ids.size()) return ids[worker_id];
+    return "";
 }
 
 int visible_device_index_for_worker(size_t worker_id) {
-    return static_cast<int>(worker_id + device_offset());
+    const auto& ids = device_ids_parsed();
+    if (worker_id < ids.size()) return first_device_index_from_segment(ids[worker_id]);
+    return 0;
 }
 
 std::string device_id_for_worker(size_t worker_id) {
-    return std::to_string(worker_id);
-}
-
-std::string worker_id_for_worker(size_t worker_id) {
     return std::to_string(worker_id);
 }
 

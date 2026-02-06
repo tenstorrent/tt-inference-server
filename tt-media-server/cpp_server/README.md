@@ -59,13 +59,12 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TT_MODEL_SERVICE` | Service mode: `embedding` or (omit for LLM) | LLM |
-| `TT_NUM_WORKERS` | Number of worker processes | `4` |
-| `TT_BATCH_SIZE` | Max requests per batch (embedding) | `1` |
-| `TT_BATCH_TIMEOUT_MS` | Max wait (ms) to fill batch (embedding) | `5` |
-| `TT_PYTHON_PATH` | Path added to Python `sys.path` (embedding runner) | `..` |
-| `TT_DEVICE_OFFSET` | Offset for visible device index: visible = worker_id + offset (embedding workers) | `1` |
-| `TT_RUNNER_TYPE` | Runner type: `llm_test` or `ttnn_test` | `llm_test` |
+| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0),(1),(2),(3)` |
+| `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
+| `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
+| `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
+| `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 
 ### Running in Background
 

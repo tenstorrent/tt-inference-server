@@ -65,7 +65,6 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         }
         // Always set device ID
         env_config.env_vars["TT_DEVICE_ID"] = std::to_string(i);
-        env_config.env_vars["TT_WORKER_ID"] = std::to_string(i);
 
         // Fork worker process
         pid_t pid = fork();
