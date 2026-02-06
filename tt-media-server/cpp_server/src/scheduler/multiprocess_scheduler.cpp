@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "scheduler/multiprocess_scheduler.hpp"
+#include "config/settings.hpp"
 #include "runners/llm_test_runner.hpp"
 #include "runners/runner_factory.hpp"
 
@@ -63,9 +64,8 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         if (i < env_configs.size()) {
             env_config = env_configs[i];
         }
-        // Always set device ID
-        env_config.env_vars["TT_DEVICE_ID"] = std::to_string(i);
-        env_config.env_vars["TT_WORKER_ID"] = std::to_string(i);
+        // Set TT_VISIBLE_DEVICES from parsed DEVICE_IDS (content inside Nth bracket pair)
+        env_config.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(i);
 
         // Fork worker process
         pid_t pid = fork();
