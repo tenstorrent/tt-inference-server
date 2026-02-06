@@ -199,6 +199,10 @@ void LLMController::handle_streaming(
                 [stream_ptr, done, envelope](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
+                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
+                            return;
+                        }
                         rapidjson::Value& choice = (*envelope)["choices"][0];
                         rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
                         choice["text"].SetString(
@@ -287,6 +291,10 @@ void LLMController::handle_streaming_buffered(
                 [stream_ptr, done, envelope, buffer, buffer_mutex](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
+                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
+                            return;
+                        }
                         rapidjson::Value& choice = (*envelope)["choices"][0];
                         rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
                         choice["text"].SetString(
