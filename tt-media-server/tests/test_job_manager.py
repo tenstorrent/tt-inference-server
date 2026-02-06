@@ -590,7 +590,10 @@ class TestJobManager:
             result_path="direct_result_path.mp4",
         )
 
-        assert job_manager.get_job_result_path("job-with-result-path") == "direct_result_path.mp4"
+        assert (
+            job_manager.get_job_result_path("job-with-result-path")
+            == "direct_result_path.mp4"
+        )
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("job-with-result-path")
             assert db_job is not None

@@ -19,7 +19,8 @@ class TrainingService(BaseJobService):
             raise ValueError(
                 "The job type must be TRAINING, since the chosen model service is TrainingService"
             )
-        if self.settings.dataset_loader == "" or self.settings.dataset_loader == None:
+        # check that dataset loader is set
+        if not self.settings.dataset_loader:
             raise ValueError("The dataset loader must be set")
 
         request._dataset_loader = self.settings.dataset_loader
