@@ -78,4 +78,3 @@ def test_expand_concurrency_sweeps_image_accounts_for_vision_tokens():
     )
     got = sorted(p.max_concurrency for p in expanded if p.task_type == "image")
     assert got == [1, 2, 4, 8]
-

@@ -124,7 +124,9 @@ def test_benchmark_configs_selected_models_print_sweeps(
             got = sorted(
                 p.max_concurrency
                 for p in sweep_params
-                if p.isl == isl and p.osl == osl and getattr(p, "task_type", "text") == "text"
+                if p.isl == isl
+                and p.osl == osl
+                and getattr(p, "task_type", "text") == "text"
             )
             assert got == expected_concurrency
 
@@ -155,4 +157,3 @@ def test_benchmark_configs_selected_models_print_sweeps(
     print("isl,osl,max_concurrency:")
     for isl, osl, c in triplets:
         print(f"{isl},{osl},{c}")
-
