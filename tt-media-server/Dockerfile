@@ -80,8 +80,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Remove any existing CMake installations to avoid conflicts
-RUN apt-get remove --purge -y cmake && rm -rf /usr/share/cmake* /usr/bin/cmake* /usr/local/share/cmake* /usr/local/bin/cmake*
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
+    chmod +x cmake.sh && \
+    ./cmake.sh --skip-license --prefix=/usr/local && \
+    rm cmake.sh && \
+    cmake --version
 
 # Install the latest version of CMake
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.25.2/cmake-3.25.2-linux-x86_64.sh -o cmake.sh \
@@ -89,12 +92,6 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.25.2/cmake-
     && ./cmake.sh --skip-license --prefix=/usr/local \
     && rm cmake.sh \
     && /usr/local/bin/cmake --version
-
-# Verify the CMake version being used
-RUN /usr/local/bin/cmake --version && which cmake && cmake --version
-
-# Ensure the correct CMake binary is prioritized in PATH
-ENV PATH="/usr/local/bin:$PATH"
 
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
@@ -157,8 +154,7 @@ RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/
     && make install \
     && cd / && rm -rf /tmp/drogon
 
-# Build the C++ server
-COPY "tt-media-server/cpp_server" "${TT_METAL_HOME}/server/cpp_server"
+# Build C++ server
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/server/cpp_server \
     && ./build.sh --ttnn"
