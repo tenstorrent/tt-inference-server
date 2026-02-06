@@ -157,7 +157,7 @@ RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/
 # Build C++ server
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh --ttnn"
+    && ./build.sh"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
@@ -222,6 +222,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
+    libjsoncpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -253,6 +254,7 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 USER root
 COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
 RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
+RUN chmod +x ${TT_METAL_HOME}/server/run_uvicorn.sh
 
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
