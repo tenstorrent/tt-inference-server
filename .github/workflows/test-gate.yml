@@ -535,7 +535,7 @@ jobs:
         run: |
           cd cpp_server/build
           export TT_RUNNER_TYPE=llm_test
-          export TEST_RUNNER_FREQUENCY_MS=20
+          export TEST_RUNNER_FREQUENCY_MS=1
           ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
@@ -560,7 +560,7 @@ jobs:
         env:
           EXTERNAL_LLM_SERVER: "1"
           SERVER_BASE_URL: "http://127.0.0.1:8000"
-          TEST_RUNNER_FREQUENCY_MS: "20"
+          TEST_RUNNER_FREQUENCY_MS: "1"
         run: |
           pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
           TEST_EXIT_CODE=${PIPESTATUS[0]}
