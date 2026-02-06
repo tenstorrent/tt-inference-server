@@ -1389,7 +1389,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="63d3c97b26",
+        tt_metal_commit="1f9635e0e5",
         vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
