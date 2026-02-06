@@ -86,8 +86,8 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-
     rm cmake.sh && \
     cmake --version
 
-# Install the latest version of CMake
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.25.2/cmake-3.25.2-linux-x86_64.sh -o cmake.sh \
+# Install CMake 3.26.4 to ensure compatibility with CMP0169
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh \
     && chmod +x cmake.sh \
     && ./cmake.sh --skip-license --prefix=/usr/local \
     && rm cmake.sh \

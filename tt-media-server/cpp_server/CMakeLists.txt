@@ -17,7 +17,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
     GIT_TAG        v1.1.0
 )
-cmake_policy(SET CMP0169 OLD)  # allow FetchContent_Populate (RapidJSON's CMake is too old for MakeAvailable)
+# Conditionally set CMP0169 policy if supported
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
 FetchContent_Populate(rapidjson)
 
 # Option for TTNN support
