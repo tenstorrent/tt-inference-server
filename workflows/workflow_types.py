@@ -70,6 +70,8 @@ class DeviceTypes(IntEnum):
     P150 = auto()
     P150X4 = auto()
     P150X8 = auto()
+    P300 = auto()
+    QBGE = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -91,6 +93,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
             DeviceTypes.P150X8: "P150x8",
+            DeviceTypes.P300: "P300",
+            DeviceTypes.QBGE: "QBGE",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -112,6 +116,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150: "p150",
             DeviceTypes.P150X4: "BH QuietBox",
             DeviceTypes.P150X8: "BH LoudBox",
+            DeviceTypes.P300: "p300",
+            DeviceTypes.QBGE: "qbge",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -154,6 +160,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150,
             DeviceTypes.P150X4,
             DeviceTypes.P150X8,
+            DeviceTypes.P300,
+            DeviceTypes.QBGE,
         )
         return True if self in blackhole_devices else False
 
@@ -175,6 +183,8 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
             (DeviceTypes.P150X8, 8): DeviceTypes.P150,
+            (DeviceTypes.P300, 1): DeviceTypes.P300,
+            (DeviceTypes.QBGE, 1): DeviceTypes.QBGE,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
