@@ -7,7 +7,9 @@
 #include <sys/stat.h>
 
 #include "api/llm_controller.hpp"
+#ifndef TEST
 #include "api/embedding_controller.hpp"
+#endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "runners/runner_factory.hpp"
@@ -120,3 +122,4 @@ int main(int argc, char* argv[]) {
     std::cout << "[Main] Server shutdown complete" << std::endl;
     return 0;
 }
+                  << "  POST /v1/completions  - OpenAI-compatible completions\n"

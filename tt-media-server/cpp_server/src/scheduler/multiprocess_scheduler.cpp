@@ -35,7 +35,7 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         return;  // Already running
     }
 
-    std::cout << "[MultiprocessScheduler] Starting with " << num_workers_ << " worker processes\n";
+    std::cout << "[MultiprocessScheduler] Starting with " << num_workers_ << " worker processes\n" << std::flush;
 
     workers_.resize(num_workers_);
 
@@ -79,7 +79,7 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         } else {
             // Parent process
             worker.pid = pid;
-            std::cout << "[MultiprocessScheduler] Spawned worker " << i << " with PID " << pid << "\n";
+            std::cout << "[MultiprocessScheduler] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
         }
     }
 
@@ -95,7 +95,7 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
     }
 
     is_ready_ = true;
-    std::cout << "[MultiprocessScheduler] All workers started\n";
+    std::cout << "[MultiprocessScheduler] All workers started\n" << std::flush;
 }
 
 void MultiprocessScheduler::stop() {
@@ -103,7 +103,7 @@ void MultiprocessScheduler::stop() {
         return;
     }
 
-    std::cout << "[MultiprocessScheduler] Stopping...\n";
+    std::cout << "[MultiprocessScheduler] Stopping...\n" << std::flush;
 
     // Signal shutdown to all workers
     for (auto& worker : workers_) {
@@ -139,13 +139,13 @@ void MultiprocessScheduler::stop() {
                     waitpid(worker.pid, &status, 0);
                 }
             }
-            std::cout << "[MultiprocessScheduler] Worker " << worker.worker_id << " exited\n";
+            std::cout << "[MultiprocessScheduler] Worker " << worker.worker_id << " exited\n" << std::flush;
         }
     }
 
     workers_.clear();
     is_ready_ = false;
-    std::cout << "[MultiprocessScheduler] Stopped\n";
+    std::cout << "[MultiprocessScheduler] Stopped\n" << std::flush;
 }
 
 [[noreturn]] void MultiprocessScheduler::worker_process_main(int worker_id, const WorkerEnvConfig& env_config) {
@@ -156,9 +156,9 @@ void MultiprocessScheduler::stop() {
         setenv(key.c_str(), value.c_str(), 1);
     }
 
-    std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";
+    std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n" << std::flush;
     for (const auto& [key, value] : env_config.env_vars) {
-        std::cout << "[Worker " << worker_id << "] ENV: " << key << "=" << value << "\n";
+        std::cout << "[Worker " << worker_id << "] ENV: " << key << "=" << value << "\n" << std::flush;
     }
 
     // 2. Attach to shared memory (don't create, just attach)
@@ -172,7 +172,7 @@ void MultiprocessScheduler::stop() {
     auto runner = runners::RunnerFactory::create("device_" + std::to_string(worker_id));
     runner->warmup();
 
-    std::cout << "[Worker " << worker_id << "] Ready\n";
+    std::cout << "[Worker " << worker_id << "] Ready\n" << std::flush;
 
     // 4. Main work loop
     while (!task_buffer.is_shutdown()) {
@@ -191,7 +191,8 @@ void MultiprocessScheduler::stop() {
         bool is_streaming = !(task_token.flags & ipc::SharedToken::FLAG_DONE);
 
         std::cout << "[Worker " << worker_id << "] Processing task " << task_id
-                  << " with " << max_tokens << " tokens\n";
+                  << " with " << max_tokens << " tokens\n"
+                  << std::flush;
 
         // Build request
         domain::CompletionRequest request;
@@ -258,12 +259,12 @@ void MultiprocessScheduler::stop() {
         }
     }
 
-    std::cout << "[Worker " << worker_id << "] Shutting down\n";
+    std::cout << "[Worker " << worker_id << "] Shutting down\n" << std::flush;
     _exit(0);
 }
 
 void MultiprocessScheduler::consumer_loop() {
-    std::cout << "[Consumer] Started\n";
+    std::cout << "[Consumer] Started\n" << std::flush;
 
     // Poll all worker token buffers
     while (running_) {
@@ -340,7 +341,7 @@ void MultiprocessScheduler::consumer_loop() {
         }
     }
 
-    std::cout << "[Consumer] Stopped\n";
+    std::cout << "[Consumer] Stopped\n" << std::flush;
 }
 
 void MultiprocessScheduler::dispatch_task(ProcessTask task) {
