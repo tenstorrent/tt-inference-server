@@ -29,11 +29,15 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
-    src/runners/embedding_runner.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
     src/services/embedding_service.cpp
 )
+
+# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
+if(ENABLE_TTNN)
+    list(APPEND SOURCES src/runners/embedding_runner.cpp)
+endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
