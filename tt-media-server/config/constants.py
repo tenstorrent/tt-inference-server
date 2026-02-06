@@ -466,7 +466,7 @@ ModelConfigs = {
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 2),
+        "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
@@ -500,7 +500,7 @@ ModelConfigs = {
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 2),
+        "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
