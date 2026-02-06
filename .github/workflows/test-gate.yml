@@ -514,7 +514,16 @@ jobs:
       - name: Install C++ build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq cmake g++ pkg-config libdrogon-dev
+          sudo apt-get install -y -qq cmake g++ pkg-config git \
+            libjsoncpp-dev uuid-dev zlib1g-dev
+
+      - name: Clone Drogon for build
+        run: |
+          mkdir -p cpp_server/deps
+          git clone --depth 1 --branch v1.9.8 https://github.com/drogonframework/drogon.git cpp_server/deps/drogon
+          cd cpp_server/deps/drogon
+          git submodule update --init
+          cd ../../..
 
       - name: Build C++ server
         run: |
