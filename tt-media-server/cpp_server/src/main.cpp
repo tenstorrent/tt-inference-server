@@ -122,4 +122,3 @@ int main(int argc, char* argv[]) {
     std::cout << "[Main] Server shutdown complete" << std::endl;
     return 0;
 }
-                  << "  POST /v1/completions  - OpenAI-compatible completions\n"
