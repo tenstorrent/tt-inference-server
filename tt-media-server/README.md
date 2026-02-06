@@ -263,149 +263,104 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 # Text-to-Speech (TTS) test call
 
-The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
+The Text-to-Speech API converts text to speech audio using the SpeechT5 model. The response is binary audio (WAV, MP3, OGG) or JSON with base64 audio and metadata.
 
-**Prerequisite for MP3/OGG output:** Install ffmpeg so the server can return `response_format="mp3"` or `"ogg"`. From tt-media-server: `sudo apt update && sudo apt install -y ffmpeg`. 
-Same as in [For development running](#for-development-running) step 4.
+**Endpoint:** `POST /audio/speech`  
+**Content-Type:** `application/json`
 
-- JSON Request: Send a JSON POST request to `/audio/speech`
+## Request parameters
 
-**Default behavior:** Returns WAV file directly (default `response_format="audio"`)
+| Parameter           | Required | Description |
+|--------------------|----------|-------------|
+| `text`             | Yes      | Input text to convert to speech. |
+| `response_format`  | No       | Output format: `wav` (default), `mp3`, `ogg`, `json`, or `verbose_json`. |
+
+## Response formats
+
+- **`wav`** (default) – Binary WAV (`Content-Type: audio/wav`). No ffmpeg required.
+- **`mp3`** – Binary MP3 (`Content-Type: audio/mpeg`). Requires ffmpeg on the server.
+- **`ogg`** – Binary OGG (`Content-Type: audio/ogg`). Requires ffmpeg on the server.
+- **`json`** / **`verbose_json`** – JSON body with base64-encoded audio (`audio`), `duration`, `sample_rate`, `format`. No ffmpeg required.
+
+If `response_format` is `mp3` or `ogg` but ffmpeg is not in PATH (or encoding fails), the server logs a warning and **falls back to WAV** (HTTP 200, `Content-Type: audio/wav`).
+
+**Prerequisite for MP3/OGG:** Install ffmpeg so the server can encode to MP3/OGG. From tt-media-server: `sudo apt update && sudo apt install -y ffmpeg`. Same as in [For development running](#for-development-running) step 4.
+
+## Content-Disposition and curl -J -O
+
+The server sends `Content-Disposition: attachment; filename=speech.<format>` (e.g. `speech.wav`, `speech.mp3`, `speech.ogg`) so the suggested filename matches the actual format. Use **`curl -J -O`** to save with that filename and avoid extension mismatch (e.g. requesting ogg but saving as `output.mp3`).
+
+## Examples
+
+**Default (WAV):**
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
-  -d '{
-    "text": "Hello, this is a test of the text to speech system."
-  }' \
+  -d '{"text": "Hello, this is a test of the text to speech system."}' \
   --output output.wav \
   --silent \
   --show-error
 ```
 
-**Request WAV file with explicit format:**
+**MP3:**
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
-  -d '{
-    "text": "Hello world, this is a test of text to speech",
-    "response_format": "audio"
-  }' \
-  --output output.wav \
-  --silent \
-  --show-error
-```
-
-**Request MP3 or OGG (binary):**
-
-You can request compressed audio formats; the server converts from WAV to the requested format in post-processing. Requires ffmpeg on the server.
-
-```bash
-# MP3 (Content-Type: audio/mpeg)
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "Hello world", "response_format": "mp3"}' \
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "mp3"}' \
   --output output.mp3 \
   --silent \
   --show-error
-
-# OGG (Content-Type: audio/ogg)
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Content-Type: application/json' \
-  -d '{"text": "Hello world", "response_format": "ogg"}' \
-  --output output.ogg \
-  --silent \
-  --show-error
 ```
 
-**Request JSON response with base64 audio:**
+**OGG (or use -J -O to save as speech.ogg from Content-Disposition):**
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
-  -d '{
-    "text": "This should return JSON",
-    "response_format": "verbose_json"
-  }' \
-  --silent \
-  --show-error
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "ogg"}' \
+  -J -O
 ```
 
-**Swagger/OpenAPI request body examples:**
+**JSON response (base64 audio + metadata):**
 
-```json
-{
-  "text": "Hello, this is a test of the text to speech system."
-}
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "verbose_json"}' \
+  --silent
 ```
 
+**Request body examples (Swagger/OpenAPI):**
+
 ```json
-{
-  "text": "Hello world, this is a test of text to speech",
-  "response_format": "audio"
-}
+{"text": "Hello, this is a test of the text to speech system."}
 ```
 
 ```json
-{
-  "text": "This is another test",
-  "response_format": "wav"
-}
+{"text": "Hello world", "response_format": "wav"}
 ```
 
 ```json
-{
-  "text": "Request MP3 output",
-  "response_format": "mp3"
-}
+{"text": "Hello world", "response_format": "mp3"}
 ```
 
 ```json
-{
-  "text": "Request OGG output",
-  "response_format": "ogg"
-}
+{"text": "Hello world", "response_format": "ogg"}
 ```
 
 ```json
-{
-  "text": "This should return JSON",
-  "response_format": "verbose_json"
-}
+{"text": "Hello world", "response_format": "json"}
 ```
 
 ```json
-{
-  "text": "This is a JSON format test",
-  "response_format": "json"
-}
+{"text": "Hello world", "response_format": "verbose_json"}
 ```
-
-```json
-{
-  "text": "Hello, this is a test of the text to speech system.",
-  "response_format": "audio",
-  "speaker_id": "default_speaker"
-}
-```
-
-**Available response formats:**
-- `"audio"` or `"wav"` (default) - Returns WAV file directly (binary, `Content-Type: audio/wav`)
-- `"mp3"` - Returns MP3 file (binary, `Content-Type: audio/mpeg`); requires ffmpeg on the server
-- `"ogg"` - Returns OGG file (binary, `Content-Type: audio/ogg`); requires ffmpeg on the server
-- `"verbose_json"` or `"json"` - Returns JSON with base64-encoded audio
-
-**Optional fields:**
-- `speaker_id` - ID for pre-configured speaker embeddings (0-7456 for CMU ARCTIC dataset)
-- `speaker_embedding` - Base64-encoded or raw bytes of speaker embedding (advanced)
-
-**Note:** Do NOT include `speaker_embedding` unless you have a valid base64-encoded embedding.
 
 # Image search test call
 

@@ -74,8 +74,8 @@ class ModelRunners(Enum):
     TT_WHISPER = "tt-whisper"
     VLLM = "vllm"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
-    VLLM_QWEN_EMBEDDING_8B = "vllm_qwen_embedding_8b"
-    VLLMBGELargeEN_V1_5 = "vllm_bge_large_en_v1_5"
+    QWEN_EMBEDDING_8B = "qwen_embedding_8b"
+    BGELargeEN_V1_5 = "bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -118,8 +118,8 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
-        ModelRunners.VLLM_QWEN_EMBEDDING_8B,
-        ModelRunners.VLLMBGELargeEN_V1_5,
+        ModelRunners.QWEN_EMBEDDING_8B,
+        ModelRunners.BGELargeEN_V1_5,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -170,8 +170,8 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
-    ModelRunners.VLLM_QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
-    ModelRunners.VLLMBGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
+    ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
 }
@@ -213,7 +213,27 @@ class ResponseFormat(Enum):
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
     TEXT = "text"
-    AUDIO = "audio"
+
+
+class AudioResponseFormat(Enum):
+    """TTS workflow: supported binary response formats."""
+
+    WAV = "wav"
+    MP3 = "mp3"
+    OGG = "ogg"
+
+
+AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
+
+# TTS formats that require ffmpeg for encoding (WAV does not)
+FFMPEG_REQUIRED_FORMATS = frozenset(
+    (AudioResponseFormat.MP3.value, AudioResponseFormat.OGG.value)
+)
+
+# TTS: all allowed response_format values (binary + JSON)
+TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
+    (ResponseFormat.JSON.value, ResponseFormat.VERBOSE_JSON.value)
+)
 
 
 class JobTypes(Enum):
@@ -465,6 +485,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -510,12 +536,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N150): {
+    (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -525,12 +552,13 @@ ModelConfigs = {
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
-    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.N300): {
+    (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 2,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -540,12 +568,13 @@ ModelConfigs = {
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
-    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
+    (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -555,12 +584,13 @@ ModelConfigs = {
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
-    (ModelRunners.VLLM_QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
+    (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
@@ -570,37 +600,41 @@ ModelConfigs = {
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
-    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N150): {
+    (ModelRunners.BGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.N300): {
+    (ModelRunners.BGELargeEN_V1_5, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.T3K): {
+    (ModelRunners.BGELargeEN_V1_5, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 16,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLMBGELargeEN_V1_5, DeviceTypes.GALAXY): {
+    (ModelRunners.BGELargeEN_V1_5, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 8,
         "default_throttle_level": 0,
+        "use_queue_per_worker": True,
     },
 }
 
