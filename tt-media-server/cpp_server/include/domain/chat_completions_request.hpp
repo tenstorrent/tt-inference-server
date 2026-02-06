@@ -6,45 +6,54 @@
 #include <string>
 #include <vector>
 #include <optional>
-#include <variant>
+#include <sstream>
+
+#include "domain/completion_request.hpp"
 #include <json/json.h>
 
 namespace tt::domain {
 
-/**
- * Stream options for OpenAI-compatible streaming responses.
- */
-struct StreamOptions {
-    bool include_usage = true;
-    bool continuous_usage_stats = false;
+/** OpenAI chat message: role + content (content may be string or array of parts). */
+struct ChatMessage {
+    std::string role;
+    std::string content;
 
-    static StreamOptions fromJson(const Json::Value& json) {
-        StreamOptions opts;
-        if (json.isMember("include_usage")) {
-            opts.include_usage = json["include_usage"].asBool();
+    static ChatMessage fromJson(const Json::Value& json) {
+        ChatMessage msg;
+        if (json.isMember("role") && !json["role"].isNull())
+            msg.role = json["role"].asString();
+        if (json.isMember("content") && !json["content"].isNull()) {
+            const auto& c = json["content"];
+            if (c.isString())
+                msg.content = c.asString();
+            else if (c.isArray())
+                for (const auto& part : c)
+                    if (part.isObject() && part.isMember("type") && part["type"].asString() == "text" && part.isMember("text"))
+                        msg.content += part["text"].asString();
         }
-        if (json.isMember("continuous_usage_stats")) {
-            opts.continuous_usage_stats = json["continuous_usage_stats"].asBool();
-        }
-        return opts;
+        return msg;
     }
 };
 
-/**
- * OpenAI-compatible completion request.
- * Based on OpenAI API specification.
- */
-struct ChatCompletionRequest {
-    // Internal task tracking
-    std::string task_id;
+/** Format messages as prompt: "Role: content\n\n" per message, ending with "Assistant: ". */
+inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) {
+    std::ostringstream out;
+    for (const auto& m : messages) {
+        std::string role = m.role.empty() ? "user" : m.role;
+        out << (role == "system" ? "System" : role == "user" ? "User" : role == "assistant" ? "Assistant" : role)
+            << ": " << m.content << "\n\n";
+    }
+    out << "Assistant: ";
+    return out.str();
+}
 
-    // Model identifier
+/** Chat completion request: messages (role/content) converted to prompt via messages_to_prompt. */
+struct ChatCompletionRequest {
+    std::string task_id;
     std::optional<std::string> model;
 
-    // Prompt can be a string or a list of token ids
-    std::variant<std::string, std::vector<int>> prompt;
+    std::vector<ChatMessage> messages;
 
-    // Response configuration
     bool echo = false;
     int max_tokens = 16;
     int n = 1;
@@ -54,21 +63,13 @@ struct ChatCompletionRequest {
     bool stream = false;
     std::optional<StreamOptions> stream_options;
 
-    // Stopping criteria
     std::vector<std::string> stop;
-
-    // Reproducibility
     std::optional<int> seed;
-
-    // Sampling params
     std::optional<float> temperature;
     std::optional<float> top_p;
-
-    // Logging and debugging
     std::optional<int> logprobs;
     std::optional<std::string> user;
 
-    // Completion sampling params
     bool use_beam_search = false;
     std::optional<int> top_k;
     std::optional<float> min_p;
@@ -91,20 +92,15 @@ struct ChatCompletionRequest {
             req.model = json["model"].asString();
         }
 
-        if (json.isMember("prompt")) {
-            if (json["prompt"].isString()) {
-                req.prompt = json["prompt"].asString();
-            } else if (json["prompt"].isArray()) {
-                std::vector<int> tokens;
-                for (const auto& token : json["prompt"]) {
-                    tokens.push_back(token.asInt());
-                }
-                req.prompt = tokens;
+        if (json.isMember("messages") && json["messages"].isArray()) {
+            for (const auto& m : json["messages"]) {
+                req.messages.push_back(ChatMessage::fromJson(m));
             }
         }
 
         if (json.isMember("echo")) req.echo = json["echo"].asBool();
         if (json.isMember("max_tokens")) req.max_tokens = json["max_tokens"].asInt();
+        if (json.isMember("max_completion_tokens")) req.max_tokens = json["max_completion_tokens"].asInt();
         if (json.isMember("n")) req.n = json["n"].asInt();
         if (json.isMember("presence_penalty")) req.presence_penalty = json["presence_penalty"].asFloat();
         if (json.isMember("frequency_penalty")) req.frequency_penalty = json["frequency_penalty"].asFloat();
@@ -171,6 +167,44 @@ struct ChatCompletionRequest {
         }
 
         return req;
+    }
+
+    /** Convert to CompletionRequest: messages -> prompt, then same pipeline as /completions. */
+    CompletionRequest to_completion_request() const {
+        CompletionRequest out;
+        out.task_id = task_id;
+        out.model = model;
+        out.prompt = messages_to_prompt(messages);
+
+        out.echo = echo;
+        out.max_tokens = max_tokens;
+        out.n = n;
+        out.presence_penalty = presence_penalty;
+        out.frequency_penalty = frequency_penalty;
+        out.suffix = suffix;
+        out.stream = stream;
+        out.stream_options = stream_options;
+        out.stop = stop;
+        out.seed = seed;
+        out.temperature = temperature;
+        out.top_p = top_p;
+        out.logprobs = logprobs;
+        out.user = user;
+        out.use_beam_search = use_beam_search;
+        out.top_k = top_k;
+        out.min_p = min_p;
+        out.repetition_penalty = repetition_penalty;
+        out.length_penalty = length_penalty;
+        out.stop_token_ids = stop_token_ids;
+        out.include_stop_str_in_output = include_stop_str_in_output;
+        out.ignore_eos = ignore_eos;
+        out.min_tokens = min_tokens;
+        out.skip_special_tokens = skip_special_tokens;
+        out.spaces_between_special_tokens = spaces_between_special_tokens;
+        out.allowed_token_ids = allowed_token_ids;
+        out.prompt_logprobs = prompt_logprobs;
+        out.truncate_prompt_tokens = truncate_prompt_tokens;
+        return out;
     }
 };
 

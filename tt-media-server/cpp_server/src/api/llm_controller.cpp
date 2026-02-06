@@ -23,6 +23,32 @@
 
 namespace tt::api {
 
+/**
+* Convert a completion response to a chat completion response.
+*/
+Json::Value completion_to_chat_json(const domain::CompletionResponse& r) {
+    Json::Value json;
+    json["id"] = r.id;
+    json["object"] = "chat.completion";
+    json["created"] = static_cast<Json::Int64>(r.created);
+    json["model"] = r.model;
+    Json::Value choicesArray(Json::arrayValue);
+    for (const auto& choice : r.choices) {
+        Json::Value c;
+        c["index"] = choice.index;
+        c["message"]["role"] = "assistant";
+        c["message"]["content"] = choice.text;
+        if (choice.finish_reason.has_value())
+            c["finish_reason"] = choice.finish_reason.value();
+        else
+            c["finish_reason"] = Json::nullValue;
+        choicesArray.append(c);
+    }
+    json["choices"] = choicesArray;
+    json["usage"] = r.usage.toJson();
+    return json;
+}
+
 
 LLMController::LLMController() {
     // Only initialize if TT_MODEL_SERVICE=llm or not set
@@ -114,10 +140,10 @@ void LLMController::chat_completions(
     }
 
     // Parse request
-    domain::ChatCompletionRequest request;
+    domain::ChatCompletionRequest chat_req;
     try {
-        request = domain::ChatCompletionRequest::fromJson(*json);
-        request.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
+        chat_req = domain::ChatCompletionRequest::fromJson(*json);
+        chat_req.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             Json::Value(std::string("Failed to parse request: ") + e.what())
@@ -127,7 +153,13 @@ void LLMController::chat_completions(
         return;
     }
 
-    // Check if model is ready
+    if (chat_req.messages.empty()) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(Json::Value("messages is required and must be a non-empty array"));
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
     if (!service_->is_model_ready()) {
         Json::Value error;
         error["error"]["message"] = "Model is not ready";
@@ -138,68 +170,163 @@ void LLMController::chat_completions(
         return;
     }
 
-    // Handle streaming or non-streaming (move request into streaming path to avoid copy)
+    // Convert chat request to completion request (messages -> prompt via chat template)
+    domain::CompletionRequest request = chat_req.to_completion_request();
     if (request.stream) {
-        handle_streaming(std::move(request), req, std::move(callback));
+        handle_chat_streaming(std::move(request), req, std::move(callback));
     } else {
-        handle_non_streaming(request, std::move(callback));
+        handle_chat_non_streaming(request, std::move(callback));
     }
+}
+
+void LLMController::run_async_completion(
+    const domain::CompletionRequest& request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    ResponseFormatter formatter) {
+
+    auto future = service_->process_request(request);
+    trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+    if (!loop) {
+        Json::Value err;
+        err["error"]["message"] = "No event loop";
+        err["error"]["type"] = "internal_error";
+        callback(drogon::HttpResponse::newHttpJsonResponse(err));
+        return;
+    }
+
+    std::thread([future = std::move(future), callback = std::move(callback), formatter = std::move(formatter), loop]() mutable {
+        try {
+            if (future.wait_for(std::chrono::seconds(30)) == std::future_status::timeout) {
+                Json::Value err;
+                err["error"]["message"] = "Request timeout";
+                err["error"]["type"] = "timeout";
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+                resp->setStatusCode(drogon::k504GatewayTimeout);
+                loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
+                return;
+            }
+            Json::Value json = formatter(future.get());
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(json);
+            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
+        } catch (...) {
+            Json::Value err;
+            err["error"]["type"] = "internal_error";
+            try { std::rethrow_exception(std::current_exception()); } catch (const std::exception& e) { err["error"]["message"] = e.what(); } catch (...) { err["error"]["message"] = "Unknown error"; }
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+            resp->setStatusCode(drogon::k500InternalServerError);
+            loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
+        }
+    }).detach();
 }
 
 void LLMController::handle_non_streaming(
     const domain::CompletionRequest& request,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    run_async_completion(request, std::move(callback), [](const domain::CompletionResponse& r) { return r.toJson(); });
+}
 
-    auto future = service_->process_request(request);
-    trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-    if (!loop) {
-        Json::Value error;
-        error["error"]["message"] = "No event loop";
-        error["error"]["type"] = "internal_error";
-        callback(drogon::HttpResponse::newHttpJsonResponse(error));
-        return;
-    }
+void LLMController::handle_chat_non_streaming(
+    const domain::CompletionRequest& request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    run_async_completion(request, std::move(callback), completion_to_chat_json);
+}
 
-    std::thread([future = std::move(future),
-                 callback = std::move(callback),
-                 loop]() mutable {
-        try {
-            auto status = future.wait_for(std::chrono::seconds(30));
-            if (status == std::future_status::timeout) {
-                Json::Value error;
-                error["error"]["message"] = "Request timeout";
-                error["error"]["type"] = "timeout";
-                auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-                resp->setStatusCode(drogon::k504GatewayTimeout);
-                loop->queueInLoop([callback = std::move(callback), resp]() {
-                    callback(resp);
+void LLMController::handle_chat_streaming(
+    domain::CompletionRequest request,
+    const drogon::HttpRequestPtr&,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    const int64_t created = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    const std::string completion_id = "chatcmpl-" + request.task_id;
+    const std::string model = request.model.value_or("test-model");
+
+    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+        [this, req = std::move(request), completion_id, model, created](
+            drogon::ResponseStreamPtr stream) mutable {
+            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto stream_ptr =
+                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
+            auto first_chunk = std::make_shared<std::atomic<bool>>(true);
+
+            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
+            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
+            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
+            envelope->AddMember("object", "chat.completion.chunk", a);
+            envelope->AddMember("created", static_cast<int64_t>(created), a);
+            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
+            rapidjson::Value choices(rapidjson::kArrayType);
+            rapidjson::Value choice(rapidjson::kObjectType);
+            rapidjson::Value delta(rapidjson::kObjectType);
+            choice.AddMember("delta", delta.Move(), a);
+            choice.AddMember("index", 0, a);
+            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
+            choices.PushBack(choice.Move(), a);
+            envelope->AddMember("choices", choices.Move(), a);
+
+            service_->process_streaming_request(
+                std::move(req),
+                [loop, stream_ptr, done, envelope, first_chunk](
+                    const domain::StreamingChunkResponse& chunk) {
+                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        rapidjson::Value& choice = (*envelope)["choices"][0];
+                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
+                        rapidjson::Value delta(rapidjson::kObjectType);
+                        if (first_chunk->load()) {
+                            first_chunk->store(false);
+                            delta.AddMember("role", rapidjson::Value("assistant", alloc).Move(), alloc);
+                        }
+                        delta.AddMember(
+                            "content",
+                            rapidjson::Value(
+                                chunk.choices[0].text.c_str(),
+                                static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
+                                alloc).Move(),
+                            alloc);
+                        choice["delta"] = delta.Move();
+                        choice["index"].SetInt(chunk.choices[0].index);
+                        if (chunk.choices[0].finish_reason.has_value()) {
+                            choice["finish_reason"].SetString(
+                                chunk.choices[0].finish_reason->c_str(),
+                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
+                                alloc);
+                        } else {
+                            choice["finish_reason"].SetNull();
+                        }
+
+                        static thread_local rapidjson::StringBuffer buf;
+                        buf.Clear();
+                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                        envelope->Accept(writer);
+                        std::string sse = "data: ";
+                        sse.append(buf.GetString(), buf.GetSize());
+                        sse.append("\n\n");
+
+                        std::string sse_copy = sse;
+                        loop->queueInLoop([stream_ptr, sse_copy]() {
+                            if (*stream_ptr) (*stream_ptr)->send(sse_copy);
+                        });
+                    }
+                },
+                [loop, stream_ptr, done]() {
+                    loop->queueInLoop([stream_ptr, done]() {
+                        if (!done->exchange(true) && *stream_ptr) {
+                            (*stream_ptr)->send("data: [DONE]\n\n");
+                            (*stream_ptr)->close();
+                        }
+                    });
                 });
-                return;
-            }
+        });
 
-            domain::CompletionResponse response = future.get();
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
-            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            loop->queueInLoop([callback = std::move(callback), resp]() {
-                callback(resp);
-            });
-        } catch (...) {
-            Json::Value error;
-            try {
-                std::rethrow_exception(std::current_exception());
-            } catch (const std::exception& e) {
-                error["error"]["message"] = e.what();
-            } catch (...) {
-                error["error"]["message"] = "Unknown error";
-            }
-            error["error"]["type"] = "internal_error";
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-            resp->setStatusCode(drogon::k500InternalServerError);
-            loop->queueInLoop([callback = std::move(callback), resp]() {
-                callback(resp);
-            });
-        }
-    }).detach();
+    resp->setContentTypeString("text/event-stream");
+    resp->addHeader("Cache-Control", "no-cache");
+    resp->addHeader("Connection", "keep-alive");
+    resp->addHeader("X-Accel-Buffering", "no");
+
+    callback(resp);
 }
 
 void LLMController::handle_streaming(
@@ -218,6 +345,7 @@ void LLMController::handle_streaming(
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created, task_id](
             drogon::ResponseStreamPtr stream) mutable {
+            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
@@ -239,8 +367,7 @@ void LLMController::handle_streaming(
 
             service_->process_streaming_request(
                 std::move(req),
-                // Chunk callback - serialize with RapidJSON and send immediately
-                [stream_ptr, done, envelope](
+                [loop, stream_ptr, done, envelope](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
                         // Skip sending final empty chunk as SSE data (client counts content tokens only)
@@ -271,15 +398,19 @@ void LLMController::handle_streaming(
                         sse.append(buf.GetString(), buf.GetSize());
                         sse.append("\n\n");
 
-                        (*stream_ptr)->send(sse);
+                        std::string sse_copy = sse;
+                        loop->queueInLoop([stream_ptr, sse_copy]() {
+                            if (*stream_ptr) (*stream_ptr)->send(sse_copy);
+                        });
                     }
                 },
-                // Done callback - send termination and close
-                [stream_ptr, done]() {
-                    if (!done->exchange(true) && *stream_ptr) {
-                        (*stream_ptr)->send("data: [DONE]\n\n");
-                        (*stream_ptr)->close();
-                    }
+                [loop, stream_ptr, done]() {
+                    loop->queueInLoop([stream_ptr, done]() {
+                        if (!done->exchange(true) && *stream_ptr) {
+                            (*stream_ptr)->send("data: [DONE]\n\n");
+                            (*stream_ptr)->close();
+                        }
+                    });
                 });
         });
 
@@ -306,6 +437,7 @@ void LLMController::handle_streaming_buffered(
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created](
             drogon::ResponseStreamPtr stream) mutable {
+            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
@@ -332,7 +464,7 @@ void LLMController::handle_streaming_buffered(
 
             service_->process_streaming_request(
                 std::move(req),
-                [stream_ptr, done, envelope, buffer, buffer_mutex](
+                [loop, stream_ptr, done, envelope, buffer, buffer_mutex](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
                         // Skip sending final empty chunk as SSE data (client counts content tokens only)
@@ -363,25 +495,36 @@ void LLMController::handle_streaming_buffered(
                         sse.append(buf.GetString(), buf.GetSize());
                         sse.append("\n\n");
 
-                        std::lock_guard<std::mutex> lock(*buffer_mutex);
-                        buffer->append(sse);
-
-                        if (buffer->size() >= FLUSH_THRESHOLD) {
-                            (*stream_ptr)->send(*buffer);
-                            buffer->clear();
+                        std::string to_send;
+                        {
+                            std::lock_guard<std::mutex> lock(*buffer_mutex);
+                            buffer->append(sse);
+                            if (buffer->size() >= FLUSH_THRESHOLD) {
+                                to_send = std::move(*buffer);
+                                buffer->clear();
+                            }
+                        }
+                        if (!to_send.empty()) {
+                            loop->queueInLoop([stream_ptr, to_send]() {
+                                if (*stream_ptr) (*stream_ptr)->send(to_send);
+                            });
                         }
                     }
                 },
-                [stream_ptr, done, buffer, buffer_mutex]() {
-                    if (!done->exchange(true) && *stream_ptr) {
+                [loop, stream_ptr, done, buffer, buffer_mutex]() {
+                    std::string tail;
+                    {
                         std::lock_guard<std::mutex> lock(*buffer_mutex);
-                        if (!buffer->empty()) {
-                            (*stream_ptr)->send(*buffer);
-                            buffer->clear();
-                        }
-                        (*stream_ptr)->send("data: [DONE]\n\n");
-                        (*stream_ptr)->close();
+                        tail = std::move(*buffer);
+                        buffer->clear();
                     }
+                    loop->queueInLoop([stream_ptr, done, tail]() {
+                        if (!done->exchange(true) && *stream_ptr) {
+                            if (!tail.empty()) (*stream_ptr)->send(tail);
+                            (*stream_ptr)->send("data: [DONE]\n\n");
+                            (*stream_ptr)->close();
+                        }
+                    });
                 });
         });
 
