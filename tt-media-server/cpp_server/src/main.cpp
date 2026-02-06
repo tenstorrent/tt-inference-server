@@ -9,7 +9,9 @@
 
 // Controllers - only one is registered based on TT_MODEL_SERVICE
 #include "api/llm_controller.hpp"
+#ifndef TEST
 #include "api/embedding_controller.hpp"
+#endif
 #include "runners/runner_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
