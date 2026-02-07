@@ -992,8 +992,8 @@ class ImageClientStrategy(BaseMediaStrategy):
             success, elapsed = self._generate_image_flux_1_dev_schnell()
             status_list.append(
                 ImageGenerationTestStatus(
-                    success=success,
-                    generation_time=elapsed,
+                    status=success,
+                    elapsed=elapsed,
                 )
             )
 
@@ -1013,12 +1013,12 @@ class ImageClientStrategy(BaseMediaStrategy):
         logger.info("Running Motif Image 6B Preview benchmark.")
         status_list = []
         for i in range(num_calls):
-            logger.info(f"🔄 Motif benchmark iteration {i + 1}/{num_calls}")
+            logger.info(f"🌅 Motif benchmark iteration {i + 1}/{num_calls}")
             success, elapsed = self._generate_image_motif_image_6b_preview()
             status_list.append(
                 ImageGenerationTestStatus(
-                    success=success,
-                    generation_time=elapsed,
+                    status=success,
+                    elapsed=elapsed,
                 )
             )
 
