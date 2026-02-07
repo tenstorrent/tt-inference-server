@@ -435,13 +435,9 @@ if "models" not in sys.modules:
     ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
     sys.modules["models.tt_dit"] = tt_dit_mock
     sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel
-    sys.modules["models.tt_dit.parallel.config"] = (
-        tt_dit_mock.parallel.config
-    )
+    sys.modules["models.tt_dit.parallel.config"] = tt_dit_mock.parallel.config
     sys.modules["models.tt_dit.pipelines"] = pipelines_mock
-    sys.modules["models.tt_dit.pipelines.stable_diffusion_35_large"] = (
-        sd35_large_mock
-    )
+    sys.modules["models.tt_dit.pipelines.stable_diffusion_35_large"] = sd35_large_mock
     sys.modules[
         "models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large"
     ] = sd35_large_mock.pipeline_stable_diffusion_35_large
@@ -458,9 +454,7 @@ if "models" not in sys.modules:
         motif_mock.pipeline_motif
     )
     sys.modules["models.tt_dit.pipelines.wan"] = wan_mock
-    sys.modules["models.tt_dit.pipelines.wan.pipeline_wan"] = (
-        wan_mock.pipeline_wan
-    )
+    sys.modules["models.tt_dit.pipelines.wan.pipeline_wan"] = wan_mock.pipeline_wan
     sys.modules["models.demos.whisper"] = whisper_mock
     sys.modules["models.demos.whisper.tt"] = whisper_tt_mock
     sys.modules["models.demos.whisper.tt.ttnn_optimized_functional_whisper"] = (
