@@ -108,7 +108,9 @@ class VisionEvalsTest(BaseTest):
 
         action_handlers = {
             "download": lambda: self._handle_download(request),
-            "measure_accuracy": lambda: self._handle_measure_accuracy(request, target_models),
+            "measure_accuracy": lambda: self._handle_measure_accuracy(
+                request, target_models
+            ),
             "compare": lambda: self._handle_compare(),
         }
         handler = action_handlers.get(request.action)
@@ -245,7 +247,12 @@ class VisionEvalsTest(BaseTest):
         with requests.Session() as session:
             for entry in metadata:
                 result = self._process_single_sample(
-                    session, entry, dataset_path, server_url, headers, timeout,
+                    session,
+                    entry,
+                    dataset_path,
+                    server_url,
+                    headers,
+                    timeout,
                 )
                 results.append(result)
 
@@ -270,7 +277,10 @@ class VisionEvalsTest(BaseTest):
 
         payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
         response = session.post(
-            server_url, headers=headers, json=payload, timeout=timeout,
+            server_url,
+            headers=headers,
+            json=payload,
+            timeout=timeout,
         )
         response.raise_for_status()
         return {"sample": entry, "response": response.json()}
@@ -456,7 +466,9 @@ class VisionEvalsTest(BaseTest):
         if cpu_accuracy is None or device_accuracy is None:
             return {}
 
-        accuracy_status, unacceptable = self._evaluate_models(cpu_accuracy, device_accuracy)
+        accuracy_status, unacceptable = self._evaluate_models(
+            cpu_accuracy, device_accuracy
+        )
         self._log_comparison_table(cpu_accuracy, device_accuracy, accuracy_status)
 
         if unacceptable:
@@ -544,15 +556,29 @@ class VisionEvalsTest(BaseTest):
                 diff_display = f"{'N/A':>18}"
 
             cpu_display = f"{cpu_pct:18.2f}" if cpu_pct is not None else f"{'N/A':>18}"
-            device_display = f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
-            status_label = "PASS" if status == AccuracyResult.PASS else "FAIL" if status == AccuracyResult.FAIL else "N/A"
+            device_display = (
+                f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
+            )
+            status_label = (
+                "PASS"
+                if status == AccuracyResult.PASS
+                else "FAIL"
+                if status == AccuracyResult.FAIL
+                else "N/A"
+            )
 
-            logger.info(f"{model:<30} {cpu_display} {device_display} {diff_display} {status_label:>8}")
+            logger.info(
+                f"{model:<30} {cpu_display} {device_display} {diff_display} {status_label:>8}"
+            )
 
             if min_acceptable is not None and status == AccuracyResult.PASS:
-                logger.info(f"Device accuracy {device_value:.4f} is above minimum acceptable {min_acceptable:.4f}")
+                logger.info(
+                    f"Device accuracy {device_value:.4f} is above minimum acceptable {min_acceptable:.4f}"
+                )
             elif min_acceptable is not None and status == AccuracyResult.FAIL:
-                logger.info(f"Device accuracy {device_value:.4f} is below minimum acceptable {min_acceptable:.4f}")
+                logger.info(
+                    f"Device accuracy {device_value:.4f} is below minimum acceptable {min_acceptable:.4f}"
+                )
 
     def _measure_accuracy(
         self,
