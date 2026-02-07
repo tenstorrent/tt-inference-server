@@ -196,6 +196,7 @@ class QueueType(Enum):
 class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"
+    DEVICE_IDS_2_GROUP = "(0,1)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
     DEVICE_IDS_16 = (
@@ -374,7 +375,7 @@ ModelConfigs = {
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
@@ -398,7 +399,7 @@ ModelConfigs = {
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
