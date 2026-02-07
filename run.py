@@ -204,6 +204,11 @@ def parse_arguments():
         action="store_true",
         help="Disable vLLM API key authorization in the server (skips JWT_SECRET requirement)",
     )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
+    )
 
     args = parser.parse_args()
 
