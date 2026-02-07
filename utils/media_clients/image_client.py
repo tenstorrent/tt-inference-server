@@ -43,6 +43,7 @@ NEGATIVE_PROMPT = (
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
+FLUX_MOTIF_INFERENCE_STEPS = 40  # FLUX.1-dev, FLUX.1-schnell, Motif
 
 # IMG2IMG specific constants
 SDXL_IMG2IMG_INFERENCE_STEPS = 30
@@ -328,9 +329,12 @@ class ImageClientStrategy(BaseMediaStrategy):
         return status_list, total_time
 
     async def _generate_image_eval_async(
-        self, session: aiohttp.ClientSession, prompt: str
+        self,
+        session: aiohttp.ClientSession,
+        prompt: str,
+        num_inference_steps: int = NUM_INFERENCE_STEPS,
     ) -> tuple[bool, float, Optional[str]]:
-        """Generate image using SDXL model with shared session. This is specific for evals workflow."""
+        """Generate image with shared session. This is specific for evals workflow."""
         logger.info(f"🌅 Generating image for prompt: {prompt}")
         headers = {
             "accept": "application/json",
@@ -340,7 +344,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         payload = {
             "prompt": prompt,
             "negative_prompt": NEGATIVE_PROMPT,
-            "num_inference_steps": NUM_INFERENCE_STEPS,
+            "num_inference_steps": num_inference_steps,
             "seed": 0,
             "guidance_scale": GUIDANCE_SCALE,
             "image_return_format": IMAGE_FORMAT_FOR_EVALS,
@@ -634,7 +638,10 @@ class ImageClientStrategy(BaseMediaStrategy):
         async with aiohttp.ClientSession() as session:
             total_start_time = time.time()
             tasks = [
-                self._generate_image_eval_async(session, prompt) for prompt in prompts
+                self._generate_image_eval_async(
+                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
+                )
+                for prompt in prompts
             ]
             results = await asyncio.gather(*tasks)
             total_time = time.time() - total_start_time
@@ -657,7 +664,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 continue
 
             inference_steps_per_second = (
-                NUM_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
             )
             logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
@@ -665,7 +672,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 ImageGenerationTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    num_inference_steps=NUM_INFERENCE_STEPS,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
                     inference_steps_per_second=inference_steps_per_second,
                     base64image=base64image,
                     prompt=prompt,
@@ -699,7 +706,10 @@ class ImageClientStrategy(BaseMediaStrategy):
         async with aiohttp.ClientSession() as session:
             total_start_time = time.time()
             tasks = [
-                self._generate_image_eval_async(session, prompt) for prompt in prompts
+                self._generate_image_eval_async(
+                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
+                )
+                for prompt in prompts
             ]
             results = await asyncio.gather(*tasks)
             total_time = time.time() - total_start_time
@@ -722,7 +732,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 continue
 
             inference_steps_per_second = (
-                NUM_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
             )
             logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
@@ -730,7 +740,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 ImageGenerationTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    num_inference_steps=NUM_INFERENCE_STEPS,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
                     inference_steps_per_second=inference_steps_per_second,
                     base64image=base64image,
                     prompt=prompt,
@@ -990,19 +1000,24 @@ class ImageClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
             success, elapsed = self._generate_image_flux_1_dev_schnell()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
             status_list.append(
                 ImageGenerationTestStatus(
                     status=success,
                     elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
                 )
             )
 
         return status_list
 
     def _generate_image_flux_1_dev_schnell(
-        self, num_inference_steps: int = 20
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
     ) -> tuple[bool, float]:
-        """Generate image using Flux 1 Dev schnell model."""
+        """Generate image using Flux 1 Dev or Schnell model."""
         logger.info("🌅 Generating image with Flux 1 Dev schnell")
         return self._generate_image(num_inference_steps)
 
@@ -1015,17 +1030,22 @@ class ImageClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"🌅 Motif benchmark iteration {i + 1}/{num_calls}")
             success, elapsed = self._generate_image_motif_image_6b_preview()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
             status_list.append(
                 ImageGenerationTestStatus(
                     status=success,
                     elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
                 )
             )
 
         return status_list
 
     def _generate_image_motif_image_6b_preview(
-        self, num_inference_steps: int = 20
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
     ) -> tuple[bool, float]:
         """Generate image using Motif Image 6B Preview model."""
         logger.info("🌅 Generating image with Motif Image 6B Preview")
