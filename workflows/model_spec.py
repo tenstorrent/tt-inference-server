@@ -386,6 +386,7 @@ class ModelSpec:
             "VLLM_CONFIGURE_LOGGING": "1",
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
+            "TORCHDYNAMO_DISABLE": "1",
         }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
