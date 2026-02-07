@@ -200,6 +200,7 @@ class DeviceIds(Enum):
     DEVICE_IDS_2 = "(0),(1)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
+    DEVICE_IDS_8_GROUP = "(0,1,2,3,4,5,6,7)"
     DEVICE_IDS_16 = (
         "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
     )
@@ -456,21 +457,21 @@ ModelConfigs = {
     (ModelRunners.TT_MOCHI_1, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 4),
+        "device_mesh_shape": (2, 2),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
@@ -497,14 +498,14 @@ ModelConfigs = {
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 4),
+        "device_mesh_shape": (2, 2),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
