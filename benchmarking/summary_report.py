@@ -1068,10 +1068,19 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, vlm, image, audio, embedding, cnn and video benchmarks
+    # Separate text, image/VLM, audio, embedding, cnn and video benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
-    vlm_results = [r for r in results if r.get("task_type") == "vlm"]
-    image_results = [r for r in results if r.get("task_type") == "image"]
+    image_task_results = [
+        r for r in results if r.get("task_type") in ("vlm", "image")
+    ]
+    # VLM-style (e.g. Qwen-VL): image task with non-image backend
+    vlm_results = [
+        r for r in image_task_results if r.get("backend") == "vlm"
+    ]
+    # Image-generation (e.g. SDXL): image task with backend "image"
+    image_results = [
+        r for r in image_task_results if r.get("backend") == "image"
+    ]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
     tts_results = [r for r in results if r.get("task_type") == "tts"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]

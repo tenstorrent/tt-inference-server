@@ -1611,9 +1611,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, vlm, audio, tts, embedding and cnn for vLLM
+        # Separate text, image/VLM, audio, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
-        vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
+        vllm_vlm = [
+            r
+            for r in vllm_release_raw
+            if r.get("task_type") in ("vlm", "image")
+        ]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
         vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
@@ -1686,9 +1690,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(aiperf_release_raw)
 
-        # Separate text and vlm for AIPerf
+        # Separate text and image for AIPerf
         aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
-        aiperf_vlm = [r for r in aiperf_release_raw if r.get("task_type") == "vlm"]
+        aiperf_vlm = [
+            r
+            for r in aiperf_release_raw
+            if r.get("task_type") in ("vlm", "image")
+        ]
 
         if aiperf_text:
             aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
@@ -1711,9 +1719,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(genai_release_raw)
 
-        # Separate text and vlm for GenAI-Perf
+        # Separate text and image for GenAI-Perf
         genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
-        genai_vlm = [r for r in genai_release_raw if r.get("task_type") == "vlm"]
+        genai_vlm = [
+            r
+            for r in genai_release_raw
+            if r.get("task_type") in ("vlm", "image")
+        ]
 
         if genai_text:
             genai_text_display = [create_display_dict(r) for r in genai_text]
@@ -1782,20 +1794,24 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
     ]
 
-    # Separate text and vlm benchmarks from vLLM results (for targets)
+    # Separate text and image benchmarks from vLLM results (for targets)
     text_release_raw = [
         r for r in vllm_release_raw if r.get("task_type", "text") == "text"
     ]
     vlm_release_raw = [
-        r for r in vllm_release_raw if r.get("task_type", "text") == "vlm"
+        r
+        for r in vllm_release_raw
+        if r.get("task_type", "text") in ("vlm", "image")
     ]
 
-    # Separate text and vlm performance references
+    # Separate text and image performance references
     text_perf_refs = [
         p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "text"
     ]
     vlm_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "vlm"
+        p_ref
+        for p_ref in perf_refs
+        if getattr(p_ref, "task_type", "text") in ("vlm", "image")
     ]
 
     release_sections = []
