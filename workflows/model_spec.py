@@ -972,6 +972,8 @@ llm_templates = [
         tt_metal_commit="60ffb199",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
+        min_ram_gb=(120 * 2.5)  # weights come in bfloat16 container type from HF, add 0.5x overhead buffer
+                                # also see memory profiling report <INSERT LINK>
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
