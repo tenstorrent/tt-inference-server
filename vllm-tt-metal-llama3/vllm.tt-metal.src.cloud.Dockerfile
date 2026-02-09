@@ -80,6 +80,11 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
+    # --- START OF UPDATED FIX ---
+    # Apply --no-build-isolation to everything EXCEPT the line containing '-e .'
+    # This fixes mmcv (which is in requirements.txt) but lets ttnn build normally.
+    && sed -i '/-e \./! s/uv pip install/uv pip install --no-build-isolation/g' create_venv.sh \
+    # --- END OF UPDATED FIX ---
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
