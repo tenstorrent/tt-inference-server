@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 """Eval test for image generation models (Flux, Motif, SD3.5, etc.)."""
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional, Union
 
+import aiohttp
 import requests
 
 from tests.server_tests.base_test import BaseTest
@@ -104,7 +106,7 @@ class ImageGenerationEvalsTest(BaseTest):
         if isinstance(prompts, dict):
             return prompts
 
-        status_list = self._generate_all_images(request, prompts)
+        status_list = await self._generate_all_images_async(request, prompts)
         if len(status_list) < request.num_prompts:
             return self._error(
                 f"ImageGenerationEvalTest only {len(status_list)}/{request.num_prompts} images generated"
@@ -181,13 +183,13 @@ class ImageGenerationEvalsTest(BaseTest):
 
         return prompts
 
-    def _generate_all_images(
+    async def _generate_all_images_async(
         self,
         request: ImageGenerationEvalsTestRequest,
         prompts: list[str],
     ) -> list[ImageGenerationTestStatus]:
-        """Generate images for all prompts."""
-        logger.info("Step 2: Generating %s images", len(prompts))
+        """Generate images for all prompts concurrently."""
+        logger.info("Step 2: Generating %s images concurrently", len(prompts))
 
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed")
@@ -198,57 +200,64 @@ class ImageGenerationEvalsTest(BaseTest):
             num_inference_steps=request.num_inference_steps,
         )
 
-        status_list = [
-            status
-            for idx, prompt in enumerate(prompts, start=1)
-            if (status := self._generate_single_image(ctx, prompt, idx, len(prompts)))
-        ]
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                self._generate_single_image_async(
+                    session, ctx, prompt, idx, len(prompts)
+                )
+                for idx, prompt in enumerate(prompts, start=1)
+            ]
+            results = await asyncio.gather(*tasks)
 
+        status_list = [status for status in results if status is not None]
         logger.info("Generated %s/%s images", len(status_list), len(prompts))
         return status_list
 
-    def _generate_single_image(
+    async def _generate_single_image_async(
         self,
+        session: aiohttp.ClientSession,
         ctx: ImageGenContext,
         prompt: str,
         idx: int,
         total: int,
     ) -> Optional[ImageGenerationTestStatus]:
-        """Generate a single image."""
+        """Generate a single image asynchronously."""
         logger.info("Generating image %s/%s: %.50s...", idx, total, prompt)
 
         try:
             start = time.perf_counter()
-            response = requests.post(
+            async with session.post(
                 f"{ctx.base_url}/{CONFIG.ENDPOINT}",
                 json=self._build_payload(prompt, ctx.num_inference_steps),
                 headers=ctx.headers,
-                timeout=CONFIG.REQUEST_TIMEOUT,
-            )
-            elapsed = time.perf_counter() - start
+                timeout=aiohttp.ClientTimeout(total=CONFIG.REQUEST_TIMEOUT),
+            ) as response:
+                elapsed = time.perf_counter() - start
+                return await self._parse_image_response_async(
+                    response, elapsed, prompt, idx
+                )
 
-            return self._parse_image_response(response, elapsed, prompt, idx)
-
-        except requests.Timeout:
+        except asyncio.TimeoutError:
             logger.error("Timeout generating image %s", idx)
-        except requests.RequestException as e:
+        except aiohttp.ClientError as e:
             logger.error("Request error for prompt %s: %s", idx, e)
 
         return None
 
-    def _parse_image_response(
+    async def _parse_image_response_async(
         self,
-        response: requests.Response,
+        response: aiohttp.ClientResponse,
         elapsed: float,
         prompt: str,
         idx: int,
     ) -> Optional[ImageGenerationTestStatus]:
         """Parse image response."""
-        if response.status_code != 200:
-            logger.error("Failed: status %s", response.status_code)
+        if response.status != 200:
+            logger.error("Failed: status %s", response.status)
             return None
 
-        images = response.json().get("images", [])
+        data = await response.json()
+        images = data.get("images", [])
         if not images:
             logger.warning("No image in response for prompt %s", idx)
             return None
