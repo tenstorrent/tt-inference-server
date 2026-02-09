@@ -133,16 +133,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
-# Install tt-vllm-plugin
-COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
-
-# Reinstall torch (CPU), huggingface_hub and diffusers after tt-vllm-plugin
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch huggingface_hub diffusers"
-
 # Install Drogon from GitHub
 RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
     && cd /tmp/drogon \
@@ -212,7 +202,6 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
-    VLLM_USE_V1=1 \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Install runtime dependencies
