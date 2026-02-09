@@ -1075,8 +1075,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="fc51b6f",
+        vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1084,18 +1084,27 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -1108,6 +1117,7 @@ llm_templates = [
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
             DeviceModelSpec(
@@ -1117,6 +1127,7 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,

@@ -852,6 +852,7 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                    "seed": 42,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -891,6 +892,7 @@ _eval_config_list = [
                     "temperature": 0.6,
                     "top_k": 20,
                     "top_p": 0.95,
+                    "seed": 42,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,

@@ -482,6 +482,7 @@ class TTModelRunner:
         temperature = input_batch.sampling.temperature_cpu[:num_reqs]
         top_p = input_batch.sampling.top_p_cpu[:num_reqs]
         top_k = input_batch.sampling.top_k_cpu[:num_reqs]
+        seed = input_batch.sampling.seed_cpu[:num_reqs]
         if not np.all(temperature == temperature[0]):
             logger.warning(
                 "Currently only supporting same temperature for all "
@@ -507,6 +508,7 @@ class TTModelRunner:
             temperature=temperature[0],
             top_k=top_k[0],
             top_p=top_p[0],
+            seed=int(seed[0]) if seed[0] != -1 else None,
         )
 
         compat_sampling_used = False
@@ -620,6 +622,9 @@ class TTModelRunner:
             temperature = torch.tensor([float(sp.temperature)], dtype=torch.float32)
             top_k = torch.tensor([int(sp.top_k)], dtype=torch.int32)
             top_p = torch.tensor([float(sp.top_p)], dtype=torch.float32)
+            seed = torch.tensor(
+                [int(sp.seed) if sp.seed is not None else -1], dtype=torch.int32
+            )
 
         # Pack into flattened tensors to reduce number of collectives.
         # B = max batch size, W = max_num_blocks_per_req.
@@ -630,6 +635,7 @@ class TTModelRunner:
                 block_tables.contiguous().view(-1),  # B*W
                 unpadded_batch_size.contiguous().view(-1),  # 1
                 top_k.contiguous().view(-1),  # 1
+                seed.contiguous().view(-1),  # 1
             ],
             dim=0,
         ).contiguous()
@@ -683,7 +689,7 @@ class TTModelRunner:
 
         if is_decode:
             # For decode, given gathered flattened tensors from all DP ranks.
-            # Ints: [toks(B), positions(B), block_tables(B*W), bs(1), top_k(1)]
+            # Ints: [toks(B), positions(B), block_tables(B*W), bs(1), top_k(1), seed(1)]
             # Floats: [temperature(1), top_p(1)]
             assert max_blocks_decode_batch is not None, (
                 "max_blocks_decode_batch must be provided for decode"
@@ -708,6 +714,8 @@ class TTModelRunner:
                 off += 1
                 top_k = int(int_inputs[off].item())
                 off += 1
+                seed_val = int(int_inputs[off].item())
+                off += 1
                 temperature = float(float_inputs[0].item())
                 top_p = float(float_inputs[1].item())
 
@@ -718,7 +726,10 @@ class TTModelRunner:
                 if batch_size > 0:
                     sampling_params_per_dp.append(
                         TTSamplingParams(
-                            temperature=temperature, top_k=top_k, top_p=top_p
+                            temperature=temperature,
+                            top_k=top_k,
+                            top_p=top_p,
+                            seed=seed_val if seed_val != -1 else None,
                         )
                     )
                 else:
@@ -1213,6 +1224,11 @@ class TTModelRunner:
 
         if self.model_config.runner_type == "generate":
             tasks.extend(self.get_supported_generation_tasks())
+        if self.model_config.runner_type == "pooling":
+            tasks.extend(self.get_supported_pooling_tasks())
+
+        return tuple(tasks)
+           tasks.extend(self.get_supported_generation_tasks())
         if self.model_config.runner_type == "pooling":
             tasks.extend(self.get_supported_pooling_tasks())
 

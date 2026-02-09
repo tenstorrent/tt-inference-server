@@ -214,7 +214,6 @@ class TTPlatform(Platform):
     @staticmethod
     def compat_sampling_required(sampling_params) -> bool:
         # anything beyond top-k top-p sampling requires compat sampling
-        # seed pending https://github.com/tenstorrent/tt-metal/issues/32209
         return (
             sampling_params.presence_penalty != 0.0
             or sampling_params.frequency_penalty != 0.0
@@ -230,6 +229,5 @@ class TTPlatform(Platform):
             or sampling_params.guided_decoding is not None
             or sampling_params.logit_bias is not None
             or sampling_params.allowed_token_ids is not None
-            or sampling_params.seed is not None
             or sampling_params.min_tokens != 0
         )
