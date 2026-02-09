@@ -50,16 +50,18 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   while (!running_.empty() && num_seqs < max_num_seqs_) {
     Sequence* seq = running_.front();
     running_.pop_front();
+    auto self_preempt = false;
     while (!block_manager_.can_append(*seq)) {
       if (!running_.empty()) {
         preempt(*running_.back());
         running_.pop_back();
       } else {
         preempt(*seq);
+        self_preempt = true;
         break;
       }
     }
-    if (block_manager_.can_append(*seq)) {
+    if (block_manager_.can_append(*seq) && !self_preempt) {
       num_seqs += 1;
       block_manager_.may_append(*seq);
       scheduled_seqs.push_back(seq);

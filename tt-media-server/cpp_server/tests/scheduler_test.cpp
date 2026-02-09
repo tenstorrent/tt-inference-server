@@ -166,5 +166,58 @@ TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   EXPECT_TRUE(sched.is_finished());
 }
 
+TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
+  Config config = make_config(1, 8, 256, 4, 0);
+  Scheduler sched{config};
+  Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
+  sched.add(seq);
+
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(prefill_batch.size(), 1u);
+  sched.postprocess(prefill_batch, {1});
+
+  for (int i = 0; i < 4; ++i) {
+    auto [decode_batch, is_prefill] = sched.schedule();
+    ASSERT_FALSE(is_prefill);
+    ASSERT_EQ(decode_batch.size(), 1u);
+    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+  }
+  ASSERT_EQ(seq.size(), 9u);
+
+  {
+    auto [batch, is_prefill] = sched.schedule();
+    EXPECT_TRUE(batch.empty())
+        << "Preempted sequence must not be in the batch (it needed a block, had none, was preempted)";
+  }
+}
+
+TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
+  Config config = make_config(2, 8, 256, 4, 0);
+  Scheduler sched{config};
+  Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
+  sched.add(seq);
+
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(prefill_batch.size(), 1u);
+  sched.postprocess(prefill_batch, {1});
+
+  for (int i = 0; i < 4; ++i) {
+    auto [decode_batch, is_prefill] = sched.schedule();
+    ASSERT_FALSE(is_prefill);
+    ASSERT_EQ(decode_batch.size(), 1u);
+    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+  }
+  ASSERT_EQ(seq.size(), 9u);
+
+  {
+    auto [batch, is_prefill] = sched.schedule();
+    ASSERT_FALSE(is_prefill);
+    EXPECT_FALSE(batch.empty())
+        << "Batch must not be empty as it should take the last block and continue decode";
+  }
+}
+
 }  // namespace
 }  // namespace llm_engine
