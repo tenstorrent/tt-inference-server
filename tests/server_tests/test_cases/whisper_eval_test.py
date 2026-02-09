@@ -394,13 +394,9 @@ class WhisperEvalTest(BaseTest):
                             results[json_file.name] = data
                             logger.info(f"Successfully parsed {json_file.name}")
                     except json.JSONDecodeError as e:
-                        logger.error(
-                            f"Corrupted JSON in {json_file.name}: {e}"
-                        )
+                        logger.error(f"Corrupted JSON in {json_file.name}: {e}")
                     except OSError as e:
-                        logger.error(
-                            f"Could not read {json_file.name}: {e}"
-                        )
+                        logger.error(f"Could not read {json_file.name}: {e}")
             else:
                 logger.warning(f"Results directory not found: {results_dir}")
                 if output_path.exists():
@@ -654,9 +650,7 @@ class WhisperEvalTest(BaseTest):
         return result
 
     @staticmethod
-    def _stream_and_capture(
-        pipe: IO[str], level: int, capture_list: list[str]
-    ) -> None:
+    def _stream_and_capture(pipe: IO[str], level: int, capture_list: list[str]) -> None:
         """Stream subprocess output to logger while capturing lines."""
         with pipe:
             for line in iter(pipe.readline, ""):
