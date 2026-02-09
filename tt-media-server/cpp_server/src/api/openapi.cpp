@@ -219,6 +219,13 @@ private:
                                   "responses use object \"chat.completion\" and choices[].message with role and content.";
         endpoint["operationId"] = "createChatCompletion";
 
+        // Security requirement - Bearer token
+        Json::Value security(Json::arrayValue);
+        Json::Value bearerAuth;
+        bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+        security.append(bearerAuth);
+        endpoint["security"] = security;
+
         Json::Value requestBody;
         requestBody["required"] = true;
         requestBody["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/ChatCompletionRequest";
@@ -238,6 +245,11 @@ private:
         resp400["description"] = "Invalid request (e.g. missing or empty messages)";
         resp400["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
         responses["400"] = resp400;
+
+        Json::Value resp401;
+        resp401["description"] = "Missing or invalid authentication token";
+        resp401["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["401"] = resp401;
 
         Json::Value resp503;
         resp503["description"] = "Model not ready";
