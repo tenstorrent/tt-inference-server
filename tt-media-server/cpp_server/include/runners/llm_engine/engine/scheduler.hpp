@@ -42,7 +42,7 @@ class Scheduler {
    * @param seqs  The batch that was just run (same order as token_ids).
    * @param token_ids  One token per sequence from the model.
    */
-  void postprocess(std::vector<Sequence*>& seqs,
+  void postprocess(const std::vector<Sequence*>& seqs,
                    const std::vector<int64_t>& token_ids);
 
  private:

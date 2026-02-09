@@ -4,8 +4,10 @@
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/llm_engine.hpp"
 #include "llm_engine/sampling_params.hpp"
-#include <sstream>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
+#include <sstream>
 
 namespace {
 struct LogStream {
@@ -29,13 +31,26 @@ int main() {
     llm_engine::LLMEngine engine{config};
     engine.add_request({1, 2, 3}, llm_engine::SamplingParams{.max_tokens = 32});
     engine.add_request({100, 101, 102}, llm_engine::SamplingParams{.max_tokens = 32});
-    while (!engine.is_finished()) {
+    std::mutex m;
+    std::condition_variable cv;
+    bool done = false;
+    llm_engine::StepResultCallback on_step;
+    on_step = [&](llm_engine::StepResult result) {
       LLM_ENGINE_DEMO_LOG_INFO << "step";
-      auto result = engine.step();
       for (const auto& [seq_id, tokens] : result.outputs) {
         LLM_ENGINE_DEMO_LOG_INFO << "seq " << seq_id << " completed with " << tokens.size() << " tokens";
       }
-    }
+      if (engine.is_finished()) {
+        std::lock_guard lock{m};
+        done = true;
+        cv.notify_one();
+      } else {
+        engine.step(on_step);
+      }
+    };
+    engine.step(on_step);
+    std::unique_lock lock{m};
+    cv.wait(lock, [&] { return done; });
     LLM_ENGINE_DEMO_LOG_INFO << "Demo done.";
   }
   return 0;

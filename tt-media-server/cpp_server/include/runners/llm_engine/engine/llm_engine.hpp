@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -17,6 +18,8 @@ struct StepResult {
   int num_tokens;
 };
 
+using StepResultCallback = std::function<void(StepResult)>;
+
 class LLMEngine {
  public:
   explicit LLMEngine(const Config& config);
@@ -24,7 +27,8 @@ class LLMEngine {
 
   void add_request(std::vector<int64_t> prompt,
                    const SamplingParams& sampling_params = SamplingParams());
-  StepResult step();
+  /** Submits next batch; on_step_done(result) is invoked when the step completes. */
+  void step(StepResultCallback on_step_done);
   bool is_finished() const;
   /// Each prompt uses the corresponding SamplingParams (same size as prompts).
   /// Empty or mismatched params: default SamplingParams for all.

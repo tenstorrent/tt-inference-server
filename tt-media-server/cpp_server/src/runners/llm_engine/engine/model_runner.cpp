@@ -40,8 +40,9 @@ class ModelRunnerSocketSim : public IModelRunner {
   explicit ModelRunnerSocketSim(const Config& config);
   ~ModelRunnerSocketSim() override { exit(); }
 
-  std::vector<int64_t> run(const std::vector<Sequence*>& seqs,
-                           bool is_prefill) override;
+  void run(const std::vector<Sequence*>& seqs,
+           bool is_prefill,
+           OnTokensCallback on_tokens) override;
   void exit() override;
 
  private:
@@ -95,16 +96,19 @@ void ModelRunnerSocketSim::sender_loop() {
   }
 }
 
-std::vector<int64_t> ModelRunnerSocketSim::run(const std::vector<Sequence*>& seqs,
-                                               bool is_prefill) {
+void ModelRunnerSocketSim::run(const std::vector<Sequence*>& seqs,
+                               bool is_prefill,
+                               OnTokensCallback on_tokens) {
   if (is_prefill) {
     LLM_ENGINE_LOG("model_runner") << "prefill batch_size=" << seqs.size()
                                    << std::endl;
-    return std::vector<int64_t>(seqs.size(), seqs[0]->last_token+1);
+    std::vector<int64_t> token_ids(seqs.size(), seqs[0]->last_token + 1);
+    on_tokens(seqs, std::move(token_ids));
+    return;
   }
 
   if (seqs.empty()) {
-    return {};
+    return;
   }
 
   Sequence* s = seqs[0];
@@ -124,26 +128,25 @@ std::vector<int64_t> ModelRunnerSocketSim::run(const std::vector<Sequence*>& seq
     sender_cv_done_.wait(lock, [this] { return sender_done_; });
   }
 
-  uint32_t recv_buf[kPageSizeWords] = {};
-  int64_t result_token = 0;
   auto* d2h = static_cast<tt::tt_metal::distributed::D2HSocket*>(config_.d2h_socket);
-  std::thread receiver([d2h, &recv_buf, &result_token]() {
+  std::thread receiver([this, d2h, seqs, on_tokens = std::move(on_tokens)]() {
+    uint32_t recv_buf[kPageSizeWords] = {};
     d2h->read(recv_buf, 1);
     d2h->barrier();
-    result_token = static_cast<int64_t>(recv_buf[0]) + 1;
+    int64_t result_token = static_cast<int64_t>(recv_buf[0]) + 1;
+    LLM_ENGINE_LOG("model_runner") << "decode seq_id=" << seqs[0]->seq_id
+                                  << " last_token=" << seqs[0]->last_token
+                                  << " -> token=" << result_token << std::endl;
+    std::vector<int64_t> token_ids;
+    if (seqs.size() == 1) {
+      token_ids = {result_token};
+    } else {
+      token_ids.assign(seqs.size(), static_cast<int64_t>(eos_));
+      token_ids[0] = result_token;
+    }
+    on_tokens(seqs, std::move(token_ids));
   });
-  receiver.join();
-
-  LLM_ENGINE_LOG("model_runner") << "decode seq_id=" << s->seq_id
-                                << " last_token=" << s->last_token
-                                << " -> token=" << result_token << std::endl;
-
-  if (seqs.size() == 1) {
-    return {result_token};
-  }
-  std::vector<int64_t> out(seqs.size(), static_cast<int64_t>(eos_));
-  out[0] = result_token;
-  return out;
+  receiver.detach();
 }
 
 void ModelRunnerSocketSim::exit() {
@@ -162,5 +165,18 @@ void ModelRunnerSocketSim::exit() {
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config) {
   return std::make_unique<ModelRunnerSocketSim>(config);
 }
+
+ModelRunnerStub::ModelRunnerStub(const Config& config)
+    : config_(config), eos_(config.eos) {}
+
+void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
+                          bool is_prefill,
+                          OnTokensCallback on_tokens) {
+  if (seqs.empty()) return;
+  std::vector<int64_t> token_ids(seqs.size(), seqs[0]->last_token + 1);
+  on_tokens(seqs, std::move(token_ids));
+}
+
+void ModelRunnerStub::exit() {}
 
 }  // namespace llm_engine

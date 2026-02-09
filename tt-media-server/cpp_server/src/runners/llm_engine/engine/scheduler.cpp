@@ -79,7 +79,7 @@ void Scheduler::preempt(Sequence& seq) {
   waiting_.push_front(&seq);
 }
 
-void Scheduler::postprocess(std::vector<Sequence*>& seqs,
+void Scheduler::postprocess(const std::vector<Sequence*>& seqs,
                             const std::vector<int64_t>& token_ids) {
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
