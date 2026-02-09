@@ -35,11 +35,6 @@ jobs:
         run: |
           INCREMENT="${{ inputs.release-increment }}"
 
-          if [ -z "$INCREMENT" ]; then
-            echo "❌ Error: Release increment must be specified"
-            exit 1
-          fi
-
           if [[ "$INCREMENT" != "patch" && "$INCREMENT" != "minor" && "$INCREMENT" != "major" ]]; then
             echo "❌ Error: Invalid release increment: $INCREMENT"
             echo "Valid options are: patch, minor, major"
@@ -53,11 +48,6 @@ jobs:
           set +e
 
           RUN_ID="${{ inputs.release-candidate-run-id }}"
-
-          if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
-            echo "❌ Error: Invalid run ID format. Run ID must be a number."
-            exit 1
-          fi
 
           RUN_INFO=$(gh api repos/tenstorrent/tt-shield/actions/runs/$RUN_ID 2>&1)
           EXIT_CODE=$?
@@ -111,7 +101,6 @@ jobs:
           echo "$ARTIFACTS" | jq -r '.[] | "\(.id)|\(.name)"' | while IFS='|' read -r ARTIFACT_ID ARTIFACT_NAME; do
             [ -z "$ARTIFACT_ID" ] && continue
 
-            echo "📦 Downloading: $ARTIFACT_NAME"
             ARTIFACT_DIR="$OUTPUT_DIR/$ARTIFACT_NAME"
             mkdir -p "$ARTIFACT_DIR"
 
@@ -258,87 +247,6 @@ jobs:
           echo "✓ Committed all changes"
           git push -u origin "${{ steps.read-version.outputs.branch_name }}"
 
-      # - name: Checkout tt-shield repo
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: tenstorrent/tt-shield
-      #     ref: replica_dev
-      #     path: tt-shield-repo
-      #     token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-
-      # - name: Create PR in tt-shield repo
-      #   env:
-      #     GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-      #   working-directory: tt-shield-repo
-      #   run: |
-      #     set -e
-
-      #     BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
-      #     VERSION="${{ steps.read-version.outputs.version }}"
-      #     BASE_BRANCH="replica_dev"
-
-      #     # Configure git
-      #     git config user.name "vmaksimovicTT"
-      #     git config user.email "vmaksimovic@tenstorrent.com"
-
-      #     # Create new branch
-      #     echo "🌿 Creating branch: $BRANCH_NAME"
-      #     git checkout -b "$BRANCH_NAME"
-
-      #     # Create dummy empty file and commit
-      #     DUMMY_FILE="release_${VERSION}.placeholder"
-      #     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-      #     RANDOM_NUM=$((RANDOM + RANDOM + RANDOM))
-      #     RUN_ID="${{ github.run_id }}"
-      #     echo "Release candidate v${VERSION}" > "$DUMMY_FILE"
-      #     echo "Created: ${TIMESTAMP}" >> "$DUMMY_FILE"
-      #     echo "Workflow Run ID: ${RUN_ID}" >> "$DUMMY_FILE"
-      #     echo "Random: ${RANDOM_NUM}" >> "$DUMMY_FILE"
-      #     git add "$DUMMY_FILE"
-      #     git commit -m "Release candidate v${VERSION}: Placeholder commit"
-      #     echo "✓ Committed placeholder file with unique content"
-
-      #     # Push branch
-      #     echo "📤 Pushing branch to remote..."
-      #     git push -u origin "$BRANCH_NAME"
-
-      #     # Build PR body from markdown files (if they exist in the original repo)
-      #     PR_BODY_FILE=$(mktemp)
-
-      #     # Add metadata as HTML comment for tracking
-      #     echo "<!--" > "$PR_BODY_FILE"
-      #     echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
-      #     echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
-      #     echo "-->" >> "$PR_BODY_FILE"
-
-      #     echo "" >> "$PR_BODY_FILE"
-      #     echo "# Summary of Changes" >> "$PR_BODY_FILE"
-      #     echo "" >> "$PR_BODY_FILE"
-
-      #     # Check if markdown files exist in the original workspace (tt-inference-server)
-      #     ORIGINAL_WORKSPACE="${{ github.workspace }}"
-      #     if [ -f "$ORIGINAL_WORKSPACE/release_logs/release_models_diff.md" ]; then
-      #       cat "$ORIGINAL_WORKSPACE/release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
-      #       echo "" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     if [ -f "$ORIGINAL_WORKSPACE/release_logs/dev_artifacts_summary.md" ]; then
-      #       cat "$ORIGINAL_WORKSPACE/release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
-      #     fi
-
-      #     # Create PR
-      #     PR_TITLE="Release Candidate v${VERSION}"
-      #     echo "📝 Creating draft PR: $PR_TITLE"
-      #     gh pr create \
-      #       --title "$PR_TITLE" \
-      #       --body-file "$PR_BODY_FILE" \
-      #       --base "$BASE_BRANCH" \
-      #       --head "$BRANCH_NAME" \
-      #       --draft
-
-      #     rm -f "$PR_BODY_FILE"
-      #     echo "✅ Created draft PR for $BRANCH_NAME in tenstorrent/tt-shield"
-
       # - name: Create PR
       #   env:
       #     GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
@@ -347,11 +255,11 @@ jobs:
 
       #     # Build PR body from markdown files
       #     PR_BODY_FILE=$(mktemp)
-            # # Add metadata as HTML comment for tracking
-            # echo "<!--" > "$PR_BODY_FILE"
-            # echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
-            # echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
-            # echo "-->" >> "$PR_BODY_FILE"
+      #       # Add metadata as HTML comment for tracking
+      #       echo "<!--" > "$PR_BODY_FILE"
+      #       echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
+      #       echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
+      #       echo "-->" >> "$PR_BODY_FILE"
       #     echo "# Summary of Changes" > "$PR_BODY_FILE"
       #     echo "" >> "$PR_BODY_FILE"
 

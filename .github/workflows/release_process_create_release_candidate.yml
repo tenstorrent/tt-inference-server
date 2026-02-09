@@ -3,6 +3,7 @@ name: Create Release Candidate PR
 run-name: ${{ format('Creating release PR from pre-release PR {0}', inputs.prerelease-pr-number) }}
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       prerelease-pr-number:
