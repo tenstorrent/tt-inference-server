@@ -28,27 +28,36 @@ namespace tt::api {
 */
 Json::Value completion_to_chat_json(const domain::CompletionResponse& r) {
     Json::Value json;
-    json["id"] = r.id;
+
+    // Ensure chat completion IDs use "chatcmpl-" prefix (vLLM convention)
+    std::string chat_id = r.id;
+    if (chat_id.compare(0, 5, "cmpl-") == 0) {
+        chat_id = "chatcmpl-" + chat_id.substr(5);
+    }
+    json["id"] = chat_id;
     json["object"] = "chat.completion";
     json["created"] = static_cast<Json::Int64>(r.created);
     json["model"] = r.model;
-    Json::Value choicesArray(Json::arrayValue);
+
+    Json::Value choices_array(Json::arrayValue);
     for (const auto& choice : r.choices) {
         Json::Value c;
         c["index"] = choice.index;
-        c["message"]["role"] = "assistant";
-        c["message"]["content"] = choice.text;
-        if (choice.finish_reason.has_value())
-            c["finish_reason"] = choice.finish_reason.value();
-        else
-            c["finish_reason"] = Json::nullValue;
-        choicesArray.append(c);
+
+        Json::Value message;
+        message["role"] = "assistant";
+        message["content"] = choice.text;
+        c["message"] = message;
+
+        c["logprobs"] = Json::nullValue;
+        // vLLM defaults finish_reason to "stop" when not explicitly set
+        c["finish_reason"] = choice.finish_reason.value_or("stop");
+        choices_array.append(c);
     }
-    json["choices"] = choicesArray;
+    json["choices"] = choices_array;
     json["usage"] = r.usage.toJson();
     return json;
 }
-
 
 LLMController::LLMController() {
     // Only initialize if TT_MODEL_SERVICE=llm or not set
@@ -131,9 +140,13 @@ void LLMController::chat_completions(
     // Parse JSON body
     auto json = req->getJsonObject();
     if (!json) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            Json::Value("Invalid JSON body")
-        );
+        Json::Value error;
+        error["object"] = "error";
+        error["message"] = "Invalid JSON body";
+        error["type"] = "invalid_request_error";
+        error["param"] = Json::nullValue;
+        error["code"] = Json::nullValue;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
@@ -145,16 +158,26 @@ void LLMController::chat_completions(
         chat_req = domain::ChatCompletionRequest::fromJson(*json);
         chat_req.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
     } catch (const std::exception& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            Json::Value(std::string("Failed to parse request: ") + e.what())
-        );
+        Json::Value error;
+        error["object"] = "error";
+        error["message"] = std::string("Failed to parse request: ") + e.what();
+        error["type"] = "invalid_request_error";
+        error["param"] = Json::nullValue;
+        error["code"] = Json::nullValue;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
     }
 
     if (chat_req.messages.empty()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(Json::Value("messages is required and must be a non-empty array"));
+        Json::Value error;
+        error["object"] = "error";
+        error["message"] = "messages is required and must be a non-empty array";
+        error["type"] = "invalid_request_error";
+        error["param"] = "messages";
+        error["code"] = Json::nullValue;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
@@ -162,8 +185,11 @@ void LLMController::chat_completions(
 
     if (!service_->is_model_ready()) {
         Json::Value error;
-        error["error"]["message"] = "Model is not ready";
-        error["error"]["type"] = "service_unavailable";
+        error["object"] = "error";
+        error["message"] = "Model is not ready";
+        error["type"] = "service_unavailable";
+        error["param"] = Json::nullValue;
+        error["code"] = Json::nullValue;
         auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
         resp->setStatusCode(drogon::k503ServiceUnavailable);
         callback(resp);
@@ -243,15 +269,62 @@ void LLMController::handle_chat_streaming(
     const std::string completion_id = "chatcmpl-" + request.task_id;
     const std::string model = request.model.value_or("test-model");
 
+    // Extract stream options before moving request
+    const bool include_usage = request.stream_options.has_value()
+        && request.stream_options->include_usage;
+    const bool continuous_usage = request.stream_options.has_value()
+        && request.stream_options->continuous_usage_stats;
+
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created](
+        [this, req = std::move(request), completion_id, model, created,
+         include_usage, continuous_usage](
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-            auto first_chunk = std::make_shared<std::atomic<bool>>(true);
+            auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
+            // vLLM sends an initial role-only chunk before content generation starts:
+            //   delta: {role: "assistant", content: ""}, finish_reason: null
+            {
+                rapidjson::Document doc(rapidjson::kObjectType);
+                auto& a = doc.GetAllocator();
+                doc.AddMember("id", rapidjson::Value(completion_id.c_str(), a), a);
+                doc.AddMember("object", "chat.completion.chunk", a);
+                doc.AddMember("created", static_cast<int64_t>(created), a);
+                doc.AddMember("model", rapidjson::Value(model.c_str(), a), a);
+
+                rapidjson::Value choices(rapidjson::kArrayType);
+                rapidjson::Value choice(rapidjson::kObjectType);
+                rapidjson::Value delta(rapidjson::kObjectType);
+                delta.AddMember("role", "assistant", a);
+                delta.AddMember("content", "", a);
+                choice.AddMember("delta", delta.Move(), a);
+                choice.AddMember("index", 0, a);
+                choice.AddMember("logprobs", rapidjson::Value(rapidjson::kNullType), a);
+                choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
+                choices.PushBack(choice.Move(), a);
+                doc.AddMember("choices", choices.Move(), a);
+
+                if (continuous_usage) {
+                    rapidjson::Value usage(rapidjson::kObjectType);
+                    usage.AddMember("prompt_tokens", 0, a);
+                    usage.AddMember("completion_tokens", 0, a);
+                    usage.AddMember("total_tokens", 0, a);
+                    doc.AddMember("usage", usage.Move(), a);
+                }
+
+                rapidjson::StringBuffer buf;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                doc.Accept(writer);
+                std::string sse = "data: ";
+                sse.append(buf.GetString(), buf.GetSize());
+                sse.append("\n\n");
+                if (*stream_ptr) (*stream_ptr)->send(sse);
+            }
+
+            // Build reusable envelope for content chunks
             auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
             rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
             envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
@@ -263,22 +336,23 @@ void LLMController::handle_chat_streaming(
             rapidjson::Value delta(rapidjson::kObjectType);
             choice.AddMember("delta", delta.Move(), a);
             choice.AddMember("index", 0, a);
+            choice.AddMember("logprobs", rapidjson::Value(rapidjson::kNullType), a);
             choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
             choices.PushBack(choice.Move(), a);
             envelope->AddMember("choices", choices.Move(), a);
 
             service_->process_streaming_request(
                 std::move(req),
-                [loop, stream_ptr, done, envelope, first_chunk](
+                [loop, stream_ptr, done, envelope, completion_tokens, continuous_usage](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
-                        rapidjson::Value& choice = (*envelope)["choices"][0];
+                        completion_tokens->fetch_add(1);
+
+                        rapidjson::Value& ch = (*envelope)["choices"][0];
                         rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
+
+                        // Content-only delta (role was already sent in the initial chunk)
                         rapidjson::Value delta(rapidjson::kObjectType);
-                        if (first_chunk->load()) {
-                            first_chunk->store(false);
-                            delta.AddMember("role", rapidjson::Value("assistant", alloc).Move(), alloc);
-                        }
                         delta.AddMember(
                             "content",
                             rapidjson::Value(
@@ -286,15 +360,34 @@ void LLMController::handle_chat_streaming(
                                 static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
                                 alloc).Move(),
                             alloc);
-                        choice["delta"] = delta.Move();
-                        choice["index"].SetInt(chunk.choices[0].index);
+                        ch["delta"] = delta.Move();
+                        ch["index"].SetInt(chunk.choices[0].index);
+
+                        // vLLM defaults finish_reason to "stop" when generation ends
                         if (chunk.choices[0].finish_reason.has_value()) {
-                            choice["finish_reason"].SetString(
-                                chunk.choices[0].finish_reason->c_str(),
-                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
+                            const std::string& reason = chunk.choices[0].finish_reason.value();
+                            const std::string fr = reason.empty() ? "stop" : reason;
+                            ch["finish_reason"].SetString(
+                                fr.c_str(),
+                                static_cast<rapidjson::SizeType>(fr.size()),
                                 alloc);
                         } else {
-                            choice["finish_reason"].SetNull();
+                            ch["finish_reason"].SetNull();
+                        }
+
+                        // Include continuous usage stats on each chunk if requested
+                        if (continuous_usage) {
+                            int tokens = completion_tokens->load();
+                            if (envelope->HasMember("usage")) {
+                                (*envelope)["usage"]["completion_tokens"].SetInt(tokens);
+                                (*envelope)["usage"]["total_tokens"].SetInt(tokens);
+                            } else {
+                                rapidjson::Value usage(rapidjson::kObjectType);
+                                usage.AddMember("prompt_tokens", 0, alloc);
+                                usage.AddMember("completion_tokens", tokens, alloc);
+                                usage.AddMember("total_tokens", tokens, alloc);
+                                envelope->AddMember("usage", usage.Move(), alloc);
+                            }
                         }
 
                         static thread_local rapidjson::StringBuffer buf;
@@ -311,9 +404,43 @@ void LLMController::handle_chat_streaming(
                         });
                     }
                 },
-                [loop, stream_ptr, done]() {
-                    loop->queueInLoop([stream_ptr, done]() {
+                [loop, stream_ptr, done, include_usage,
+                 completion_id, model, created, completion_tokens]() {
+                    loop->queueInLoop(
+                        [stream_ptr, done, include_usage,
+                         completion_id, model, created, completion_tokens]() {
                         if (!done->exchange(true) && *stream_ptr) {
+                            // vLLM sends a final usage-only chunk when
+                            // stream_options.include_usage is true
+                            if (include_usage) {
+                                int tokens = completion_tokens->load();
+                                rapidjson::Document doc(rapidjson::kObjectType);
+                                auto& a = doc.GetAllocator();
+                                doc.AddMember("id",
+                                    rapidjson::Value(completion_id.c_str(), a), a);
+                                doc.AddMember("object", "chat.completion.chunk", a);
+                                doc.AddMember("created",
+                                    static_cast<int64_t>(created), a);
+                                doc.AddMember("model",
+                                    rapidjson::Value(model.c_str(), a), a);
+                                doc.AddMember("choices",
+                                    rapidjson::Value(rapidjson::kArrayType), a);
+
+                                rapidjson::Value usage(rapidjson::kObjectType);
+                                usage.AddMember("prompt_tokens", 0, a);
+                                usage.AddMember("completion_tokens", tokens, a);
+                                usage.AddMember("total_tokens", tokens, a);
+                                doc.AddMember("usage", usage.Move(), a);
+
+                                rapidjson::StringBuffer buf;
+                                rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                                doc.Accept(writer);
+                                std::string sse = "data: ";
+                                sse.append(buf.GetString(), buf.GetSize());
+                                sse.append("\n\n");
+                                (*stream_ptr)->send(sse);
+                            }
+
                             (*stream_ptr)->send("data: [DONE]\n\n");
                             (*stream_ptr)->close();
                         }

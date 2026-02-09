@@ -62,32 +62,59 @@ public:
 private:
     std::shared_ptr<services::LLMService> service_;
 
+    /**
+     * Handle non-streaming completion request.
+     */
     void handle_non_streaming(
         const domain::CompletionRequest& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    /**
+     * Handle streaming completion request (SSE). Takes request by value so caller can move.
+     */
     void handle_streaming(
         domain::CompletionRequest request,
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    /**
+     * Handle streaming with 32KB write buffering for high-throughput scenarios
+     * where ITL measurement is not needed (e.g. zero-delay runners).
+     */
     void handle_streaming_buffered(
         domain::CompletionRequest request,
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    /**
+     * Handle non-streaming chat completion request.
+     */
     void handle_chat_non_streaming(
         const domain::CompletionRequest& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    /**
+     * Handle streaming chat completion request (SSE). Takes request by value so caller can move.
+     */
     void handle_chat_streaming(
         domain::CompletionRequest request,
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
+    /**
+     * Generate a unique completion ID.
+     */
     static std::string generate_completion_id();
 
+    /**
+     * Response formatter function type.
+     * Takes a completion response and returns a JSON value.
+     */
     using ResponseFormatter = std::function<Json::Value(const domain::CompletionResponse&)>;
+
+    /**
+     * Run an asynchronous completion request.
+     */
     void run_async_completion(
         const domain::CompletionRequest& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
