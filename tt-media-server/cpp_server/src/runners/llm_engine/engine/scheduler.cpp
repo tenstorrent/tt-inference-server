@@ -65,8 +65,8 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
       scheduled_seqs.push_back(seq);
     }
   }
-  for (auto it = scheduled_seqs.rbegin(); it != scheduled_seqs.rend(); ++it) {
-    running_.push_front(*it);
+  for (Sequence* seq : scheduled_seqs) {
+    running_.push_back(seq);
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size() << std::endl;
   return {scheduled_seqs, false};
