@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+"""Eval test for video generation models (Mochi, Wan2.2, etc.)."""
 
 import json
 import logging
 import statistics
 import time
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
+from typing import Union
 
 import imageio.v3 as iio
 import requests
@@ -24,15 +27,44 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
 
 logger = logging.getLogger(__name__)
 
-# Constants
-VIDEO_JOB_STATUS_COMPLETED = "completed"
-VIDEO_JOB_STATUS_FAILED = "failed"
-VIDEO_JOB_STATUS_CANCELLED = "cancelled"
-DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
-DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
-VIDEO_GENERATION_ENDPOINT = "video/generations"
-DATASET_DIR = "tests/server_tests/datasets/videos"
+
+class AccuracyResult(IntEnum):
+    """Accuracy check result codes."""
+
+    UNDEFINED = 0
+    BASELINE = 1
+    PASS = 2
+    FAIL = 3
+
+
+@dataclass(frozen=True)
+class VideoGenConfig:
+    """Video generation eval configuration."""
+
+    JOB_STATUS_COMPLETED: str = "completed"
+    JOB_STATUS_FAILED: str = "failed"
+    JOB_STATUS_CANCELLED: str = "cancelled"
+    POLLING_INTERVAL_SECONDS: int = 5
+    JOB_TIMEOUT_SECONDS: int = 1200
+    ACCURACY_REFERENCE_PATH: str = "evals/eval_targets/model_accuracy_reference.json"
+    ENDPOINT: str = "video/generations"
+    DATASET_DIR: str = "tests/server_tests/datasets/videos"
+    REQUEST_TIMEOUT: int = 90
+    DOWNLOAD_TIMEOUT: int = 300
+    POLL_STATUS_TIMEOUT: int = 30
+
+
+@dataclass(frozen=True)
+class HealthCheckConfig:
+    """Health check configuration."""
+
+    MAX_ATTEMPTS: int = 230
+    RETRY_DELAY: int = 10
+    TIMEOUT: int = 10
+
+
+CONFIG = VideoGenConfig()
+HEALTH_CONFIG = HealthCheckConfig()
 
 
 @dataclass
@@ -46,50 +78,55 @@ class VideoGenerationEvalsTestRequest:
 
 
 class VideoGenerationEvalsTest(BaseTest):
+    """Eval test for video generation models."""
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
 
-    async def _run_specific_test_async(self):
-        request = self.targets.get("request")
-        logger.info("Running VideoGenerationEvalsTest with request: %s", request)
-        if not isinstance(request, VideoGenerationEvalsTestRequest):
-            return {
-                "success": False,
-                "error": "VideoGenerationEvalsTestRequest not provided in targets",
-            }
+    async def _run_specific_test_async(self) -> dict:
+        """Run the video generation evaluation test."""
+        request = self._parse_request()
+        if isinstance(request, dict):
+            return request
 
         logger.info(
-            f"Measuring video generation accuracy for model: {request.model_name}"
+            "Running eval: model=%s, prompts=%s",
+            request.model_name,
+            request.num_prompts,
         )
 
-        # Load accuracy reference once for the entire test
         self.reference_data = self._load_accuracy_reference()
-
-        # Override num_inference_steps from accuracy reference if available
-        num_inference_steps = self._get_num_inference_steps_from_reference(
+        effective_steps = self._get_num_inference_steps_from_reference(
             request.model_name, request.num_inference_steps
         )
-        if num_inference_steps != request.num_inference_steps:
+        if effective_steps != request.num_inference_steps:
             logger.info(
-                f"Overriding num_inference_steps from {request.num_inference_steps} "
-                f"to {num_inference_steps} (from accuracy reference)"
+                "Overriding num_inference_steps from %s to %s (from accuracy reference)",
+                request.num_inference_steps,
+                effective_steps,
             )
-            request.num_inference_steps = num_inference_steps
 
-        # Step 1: Get prompts from COCO dataset
-        logger.info(f"Step 1: Loading {request.num_prompts} prompts from COCO captions")
+        logger.info(
+            "Step 1: Loading %s prompts from COCO captions", request.num_prompts
+        )
         prompts = sdxl_get_prompts(request.start_from, request.num_prompts)
+        if len(prompts) < request.num_prompts:
+            return self._error(
+                f"VideoGenerationEvalTest only got {len(prompts)}/{request.num_prompts} prompts"
+            )
 
-        # Step 2: Generate videos
         logger.info("Step 2: Generating videos")
         videos_info = self._generate_videos(
             prompts=prompts,
             server_url=request.server_url,
-            num_inference_steps=request.num_inference_steps,
+            num_inference_steps=effective_steps,
         )
+        if len(videos_info) < request.num_prompts:
+            return self._error(
+                f"VideoGenerationEvalTest only {len(videos_info)}/{request.num_prompts} videos generated"
+            )
 
-        # Step 3: Calculate CLIP scores
         logger.info("Step 3: Calculating CLIP scores for video frames")
         clip_results = self._calculate_video_clip_scores(
             videos_info=videos_info,
@@ -97,7 +134,6 @@ class VideoGenerationEvalsTest(BaseTest):
             frame_sample_rate=request.frame_sample_rate,
         )
 
-        # Step 4: Calculate accuracy check
         logger.info("Step 4: Checking accuracy against reference")
         accuracy_check = self._check_accuracy(
             clip_results=clip_results,
@@ -108,67 +144,67 @@ class VideoGenerationEvalsTest(BaseTest):
         results = {
             "model": request.model_name,
             "num_prompts": request.num_prompts,
-            "num_inference_steps": request.num_inference_steps,
+            "num_inference_steps": effective_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
         }
-
         self.eval_results = results
 
         return {
-            "success": True,
+            "success": accuracy_check == AccuracyResult.PASS,
             "eval_results": results,
         }
 
-    def _wait_for_server_ready(
-        self,
-        service_port: int = 8000,
-        max_attempts: int = 230,
-        retry_delay: int = 10,
-    ) -> bool:
-        """Wait for server to be ready using simple HTTP health check.
-
-        Args:
-            service_port: Port where the server is running.
-            max_attempts: Maximum number of retry attempts.
-            retry_delay: Seconds to wait between retries.
-
-        Returns:
-            bool: True if server is ready, False otherwise.
-        """
-        logger.info("Waiting for server to be ready...")
-        health_url = f"http://localhost:{service_port}/tt-liveness"
-        logger.info("Health URL: %s", health_url)
-
-        for attempt in range(1, max_attempts + 1):
+    def _parse_request(self) -> Union[VideoGenerationEvalsTestRequest, dict]:
+        """Parse and validate request from targets."""
+        raw = self.targets.get("request")
+        if raw is None:
+            return self._error(
+                "VideoGenerationEvalTest request not provided in targets"
+            )
+        if isinstance(raw, VideoGenerationEvalsTestRequest):
+            return raw
+        if isinstance(raw, dict):
             try:
-                response = requests.get(health_url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("status") == "alive" and data.get("model_ready"):
-                        logger.info(
-                            "Server is ready after %s attempt(s)",
-                            attempt,
-                        )
-                        return True
-                logger.info(
-                    "Server not ready (attempt %s/%s), retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    retry_delay,
+                return VideoGenerationEvalsTestRequest(**raw)
+            except TypeError as e:
+                return self._error(
+                    f"VideoGenerationEvalTest invalid request parameters: {e}"
                 )
-            except requests.exceptions.RequestException as e:
-                logger.info(
-                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    e,
-                    retry_delay,
-                )
-            time.sleep(retry_delay)
+        return self._error(
+            "VideoGenerationEvalTest request must be dict or VideoGenerationEvalsTestRequest"
+        )
 
-        logger.error("Server health check failed after %s attempts", max_attempts)
+    @staticmethod
+    def _error(message: str) -> dict:
+        """Create error response."""
+        return {"success": False, "error": message}
+
+    def _wait_for_server_ready(self) -> bool:
+        """Wait for server to be ready."""
+        health_url = f"http://localhost:{self.service_port}/tt-liveness"
+        logger.info("Waiting for server: %s", health_url)
+        for attempt in range(1, HEALTH_CONFIG.MAX_ATTEMPTS + 1):
+            if self._check_health(health_url):
+                logger.info("Server ready after %s attempt(s)", attempt)
+                return True
+            logger.debug(
+                "Not ready (attempt %s/%s)", attempt, HEALTH_CONFIG.MAX_ATTEMPTS
+            )
+            time.sleep(HEALTH_CONFIG.RETRY_DELAY)
+        logger.error("Server not ready after %s attempts", HEALTH_CONFIG.MAX_ATTEMPTS)
         return False
+
+    def _check_health(self, url: str) -> bool:
+        """Single health check attempt."""
+        try:
+            response = requests.get(url, timeout=HEALTH_CONFIG.TIMEOUT)
+        except requests.RequestException:
+            return False
+        if response.status_code != 200:
+            return False
+        data = response.json()
+        return data.get("status") == "alive" and data.get("model_ready", False)
 
     def _generate_videos(
         self,
@@ -212,10 +248,10 @@ class VideoGenerationEvalsTest(BaseTest):
             try:
                 # Submit video generation job
                 response = requests.post(
-                    f"{base_url}/{VIDEO_GENERATION_ENDPOINT}",
+                    f"{base_url}/{CONFIG.ENDPOINT}",
                     json=payload,
                     headers=headers,
-                    timeout=90,
+                    timeout=CONFIG.REQUEST_TIMEOUT,
                 )
 
                 if response.status_code != 202:
@@ -257,8 +293,8 @@ class VideoGenerationEvalsTest(BaseTest):
         base_url: str,
         job_id: str,
         headers: dict,
-        polling_interval: int = DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS,
-        timeout: int = DEFAULT_VIDEO_TIMEOUT_SECONDS,
+        polling_interval: int = CONFIG.POLLING_INTERVAL_SECONDS,
+        timeout: int = CONFIG.JOB_TIMEOUT_SECONDS,
     ) -> str:
         """Poll video generation job until completion or timeout.
 
@@ -271,9 +307,9 @@ class VideoGenerationEvalsTest(BaseTest):
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(
-                    f"{base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}",
+                    f"{base_url}/{CONFIG.ENDPOINT}/{job_id}",
                     headers=headers,
-                    timeout=30,
+                    timeout=CONFIG.POLL_STATUS_TIMEOUT,
                 )
 
                 if response.status_code != 200:
@@ -285,9 +321,9 @@ class VideoGenerationEvalsTest(BaseTest):
                 status = job_data.get("status")
                 logger.info(f"Job {job_id} status: {status}")
 
-                if status == VIDEO_JOB_STATUS_COMPLETED:
+                if status == CONFIG.JOB_STATUS_COMPLETED:
                     return self._download_video(base_url, job_id, headers)
-                elif status in [VIDEO_JOB_STATUS_FAILED, VIDEO_JOB_STATUS_CANCELLED]:
+                elif status in [CONFIG.JOB_STATUS_FAILED, CONFIG.JOB_STATUS_CANCELLED]:
                     logger.error(f"Video generation {status}: {job_id}")
                     return ""
 
@@ -309,15 +345,15 @@ class VideoGenerationEvalsTest(BaseTest):
         logger.info(f"Downloading video for job: {job_id}")
 
         try:
-            output_dir = Path(DATASET_DIR)
+            output_dir = Path(CONFIG.DATASET_DIR)
             output_dir.mkdir(parents=True, exist_ok=True)
 
             video_path = output_dir / f"{job_id}.mp4"
 
             response = requests.get(
-                f"{base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}/download",
+                f"{base_url}/{CONFIG.ENDPOINT}/{job_id}/download",
                 headers=headers,
-                timeout=300,
+                timeout=CONFIG.DOWNLOAD_TIMEOUT,
                 stream=True,
             )
 
@@ -495,7 +531,7 @@ class VideoGenerationEvalsTest(BaseTest):
 
     def _check_accuracy(
         self, clip_results: dict, model_name: str, num_prompts: int
-    ) -> int:
+    ) -> AccuracyResult:
         """Check accuracy against reference data.
 
         Uses self.reference_data which is loaded once at the start of the test.
@@ -506,53 +542,63 @@ class VideoGenerationEvalsTest(BaseTest):
             num_prompts: Number of prompts used
 
         Returns:
-            int: Accuracy check status (0=unknown, 1=baseline, 2=pass, 3=fail)
+            AccuracyResult: BASELINE, PASS, or FAIL
         """
         logger.info(
-            f"Checking accuracy for model: {model_name}, num_prompts: {num_prompts}"
+            "Checking accuracy for model: %s, num_prompts: %s",
+            model_name,
+            num_prompts,
         )
-
         try:
             if model_name not in self.reference_data:
                 logger.warning(
-                    f"⚠️ Model '{model_name}' not found in accuracy reference data."
+                    "Model '%s' not found in accuracy reference data.",
+                    model_name,
                 )
-                return 1  # baseline
+                return AccuracyResult.BASELINE
 
             accuracy_data = self.reference_data[model_name].get("accuracy", {})
 
             if str(num_prompts) not in accuracy_data:
                 logger.warning(
-                    f"⚠️ No reference data for {num_prompts} prompts for model '{model_name}'."
+                    "No reference data for %s prompts for model '%s'.",
+                    num_prompts,
+                    model_name,
                 )
-                return 1  # baseline
+                return AccuracyResult.BASELINE
 
             reference = accuracy_data[str(num_prompts)]
             clip_range = reference.get("clip_valid_range")
 
             if not clip_range:
                 logger.warning(
-                    f"⚠️ No CLIP valid range found for model '{model_name}' with {num_prompts} prompts."
+                    "No CLIP valid range found for model '%s' with %s prompts.",
+                    model_name,
+                    num_prompts,
                 )
-                return 1  # baseline
+                return AccuracyResult.BASELINE
 
             average_clip = clip_results.get("average_clip", 0.0)
 
-            # Check if within valid range
             if clip_range[0] <= average_clip <= clip_range[1]:
                 logger.info(
-                    f"✅ CLIP score {average_clip:.2f} is within valid range [{clip_range[0]:.2f}, {clip_range[1]:.2f}]"
+                    "CLIP score %.2f is within valid range [%.2f, %.2f]",
+                    average_clip,
+                    clip_range[0],
+                    clip_range[1],
                 )
-                return 2  # pass
-            else:
-                logger.warning(
-                    f"⚠️ CLIP score {average_clip:.2f} is outside valid range [{clip_range[0]:.2f}, {clip_range[1]:.2f}]"
-                )
-                return 3  # fail
+                return AccuracyResult.PASS
+            logger.warning(
+                "CLIP score %.2f is outside valid range [%.2f, %.2f]",
+                average_clip,
+                clip_range[0],
+                clip_range[1],
+            )
+            return AccuracyResult.FAIL
 
         except Exception as e:
-            logger.error(f"Error checking accuracy: {e}")
-            return 1  # baseline
+            logger.error("Error checking accuracy: %s", e)
+            return AccuracyResult.BASELINE
 
     def _get_num_inference_steps_from_reference(
         self, model_name: str, default: int
@@ -581,13 +627,17 @@ class VideoGenerationEvalsTest(BaseTest):
 
     def _load_accuracy_reference(self) -> dict:
         """Load accuracy reference data from JSON file."""
-        logger.info(f"Loading accuracy reference from: {ACCURACY_REFERENCE_PATH}")
+        logger.info(
+            "Loading accuracy reference from: %s", CONFIG.ACCURACY_REFERENCE_PATH
+        )
         try:
-            with open(ACCURACY_REFERENCE_PATH, "r") as f:
+            with open(CONFIG.ACCURACY_REFERENCE_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Accuracy reference file not found: {ACCURACY_REFERENCE_PATH}"
+                f"VideoGenerationEvalTest accuracy reference not found: {CONFIG.ACCURACY_REFERENCE_PATH}"
             )
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in accuracy reference file: {e}")
+            raise ValueError(
+                f"VideoGenerationEvalTest invalid JSON in accuracy reference: {e}"
+            )
