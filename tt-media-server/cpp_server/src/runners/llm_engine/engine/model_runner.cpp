@@ -6,7 +6,11 @@
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -41,9 +45,20 @@ class ModelRunnerSocketSim : public IModelRunner {
   void exit() override;
 
  private:
+  void sender_loop();
+
   Config config_;
   int eos_;
   void* device_ctx_ = nullptr;
+
+  std::thread sender_thread_;
+  std::mutex sender_mutex_;
+  std::condition_variable sender_cv_request_;
+  std::condition_variable sender_cv_done_;
+  bool sender_work_ready_ = false;
+  std::atomic<bool> sender_shutdown_{false};
+  bool sender_done_ = false;
+  uint32_t sender_buf_[kPageSizeWords] = {};
 };
 
 ModelRunnerSocketSim::ModelRunnerSocketSim(const Config& config)
@@ -52,8 +67,32 @@ ModelRunnerSocketSim::ModelRunnerSocketSim(const Config& config)
   if (!device_ctx_ || !config_.h2d_socket || !config_.d2h_socket) {
     throw std::runtime_error("model_runner: tt-metal device and H2D/D2H sockets required");
   }
-  LLM_ENGINE_LOG("model_runner") << "H2D/D2H sockets ready (per-request sender/receiver threads)"
+  sender_thread_ = std::thread{&ModelRunnerSocketSim::sender_loop, this};
+  LLM_ENGINE_LOG("model_runner") << "H2D/D2H sockets ready (long-running sender thread)"
                                  << std::endl;
+}
+
+void ModelRunnerSocketSim::sender_loop() {
+  auto* h2d = static_cast<tt::tt_metal::distributed::H2DSocket*>(config_.h2d_socket);
+  while (true) {
+    uint32_t buf[kPageSizeWords];
+    {
+      std::unique_lock lock{sender_mutex_};
+      sender_cv_request_.wait(lock, [this] {
+        return sender_work_ready_ || sender_shutdown_.load();
+      });
+      if (sender_shutdown_.load()) break;
+      std::copy(std::begin(sender_buf_), std::end(sender_buf_), std::begin(buf));
+      sender_work_ready_ = false;
+    }
+    h2d->write(buf, 1);
+    // h2d->barrier();
+    {
+      std::lock_guard lock{sender_mutex_};
+      sender_done_ = true;
+      sender_cv_done_.notify_one();
+    }
+  }
 }
 
 std::vector<int64_t> ModelRunnerSocketSim::run(const std::vector<Sequence*>& seqs,
@@ -74,28 +113,25 @@ std::vector<int64_t> ModelRunnerSocketSim::run(const std::vector<Sequence*>& seq
   e.user_id = static_cast<uint32_t>(s->seq_id & 0xFFFFFFFFu);
   e.position_id = static_cast<uint32_t>(s->size() & 0xFFFFFFFFu);
 
-  uint32_t send_buf[kPageSizeWords] = {};
-  send_buf[0] = e.token_id;
-  send_buf[1] = e.user_id;
-  send_buf[2] = e.position_id;
+  {
+    std::unique_lock lock{sender_mutex_};
+    sender_buf_[0] = e.token_id;
+    sender_buf_[1] = e.user_id;
+    sender_buf_[2] = e.position_id;
+    sender_done_ = false;
+    sender_work_ready_ = true;
+    sender_cv_request_.notify_one();
+    sender_cv_done_.wait(lock, [this] { return sender_done_; });
+  }
 
   uint32_t recv_buf[kPageSizeWords] = {};
   int64_t result_token = 0;
-
-  auto* h2d = static_cast<tt::tt_metal::distributed::H2DSocket*>(config_.h2d_socket);
   auto* d2h = static_cast<tt::tt_metal::distributed::D2HSocket*>(config_.d2h_socket);
-
-  std::thread sender([h2d, &send_buf]() {
-    h2d->write(send_buf, 1);
-    h2d->barrier();
-  });
   std::thread receiver([d2h, &recv_buf, &result_token]() {
     d2h->read(recv_buf, 1);
     d2h->barrier();
-    result_token = static_cast<int64_t>(recv_buf[0])+1;
+    result_token = static_cast<int64_t>(recv_buf[0]) + 1;
   });
-
-  sender.join();
   receiver.join();
 
   LLM_ENGINE_LOG("model_runner") << "decode seq_id=" << s->seq_id
@@ -111,6 +147,11 @@ std::vector<int64_t> ModelRunnerSocketSim::run(const std::vector<Sequence*>& seq
 }
 
 void ModelRunnerSocketSim::exit() {
+  if (sender_thread_.joinable()) {
+    sender_shutdown_.store(true);
+    sender_cv_request_.notify_one();
+    sender_thread_.join();
+  }
   if (device_ctx_) {
     LLM_ENGINE_LOG("model_runner") << "exit (destroy device context)" << std::endl;
     destroy_ttmetal_decode_context(device_ctx_);

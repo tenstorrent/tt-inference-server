@@ -27,7 +27,8 @@ int main() {
 
   {
     llm_engine::LLMEngine engine{config};
-    engine.add_request({1, 2, 3}, llm_engine::SamplingParams{.max_tokens = 3});
+    engine.add_request({1, 2, 3}, llm_engine::SamplingParams{.max_tokens = 32});
+    engine.add_request({100, 101, 102}, llm_engine::SamplingParams{.max_tokens = 32});
     while (!engine.is_finished()) {
       LLM_ENGINE_DEMO_LOG_INFO << "step";
       auto result = engine.step();
