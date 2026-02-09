@@ -244,9 +244,10 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest`: OpenAI-compatible completion request
-- `CompletionResponse`: Full completion response
-- `StreamingChunkResponse`: SSE streaming chunk
+- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
+- `StreamingChunkResponse`: SSE streaming chunk (completions)
+- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler
 - `ThreadSafeQueue<T>`: Lock-free thread-safe queue for task management
