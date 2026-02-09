@@ -34,9 +34,12 @@ FetchContent_MakeAvailable(googletest)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
+set(TT_METAL_BUILD_DIR "/data/dmadic/tt-metal/build_Release" CACHE PATH "Path to tt-metal build directory (e.g. build_Release)")
+
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/device_context_ttmetal.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
@@ -49,6 +52,9 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_USE_EXTERNAL_LOG)
+list(APPEND CMAKE_PREFIX_PATH "${TT_METAL_BUILD_DIR}/lib/cmake")
+find_package(TT-Metalium REQUIRED)
+target_link_libraries(llm_engine PRIVATE TT::Metalium)
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
