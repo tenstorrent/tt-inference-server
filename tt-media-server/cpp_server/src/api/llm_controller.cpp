@@ -472,7 +472,6 @@ void LLMController::handle_streaming(
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created, task_id](
             drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
@@ -494,7 +493,8 @@ void LLMController::handle_streaming(
 
             service_->process_streaming_request(
                 std::move(req),
-                [loop, stream_ptr, done, envelope](
+                // Chunk callback - serialize with RapidJSON and send immediately
+                [stream_ptr, done, envelope](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
                         // Skip sending final empty chunk as SSE data (client counts content tokens only)
@@ -525,19 +525,15 @@ void LLMController::handle_streaming(
                         sse.append(buf.GetString(), buf.GetSize());
                         sse.append("\n\n");
 
-                        std::string sse_copy = sse;
-                        loop->queueInLoop([stream_ptr, sse_copy]() {
-                            if (*stream_ptr) (*stream_ptr)->send(sse_copy);
-                        });
+                        (*stream_ptr)->send(sse);
                     }
                 },
-                [loop, stream_ptr, done]() {
-                    loop->queueInLoop([stream_ptr, done]() {
-                        if (!done->exchange(true) && *stream_ptr) {
-                            (*stream_ptr)->send("data: [DONE]\n\n");
-                            (*stream_ptr)->close();
-                        }
-                    });
+                // Done callback - send termination and close
+                [stream_ptr, done]() {
+                    if (!done->exchange(true) && *stream_ptr) {
+                        (*stream_ptr)->send("data: [DONE]\n\n");
+                        (*stream_ptr)->close();
+                    }
                 });
         });
 
@@ -564,7 +560,6 @@ void LLMController::handle_streaming_buffered(
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created](
             drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
@@ -591,8 +586,7 @@ void LLMController::handle_streaming_buffered(
 
             service_->process_streaming_request(
                 std::move(req),
-                [loop, stream_ptr, done, envelope, buffer, buffer_mutex](
-                    const domain::StreamingChunkResponse& chunk) {
+                [stream_ptr, done, envelope, buffer, buffer_mutex](                    const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
                         // Skip sending final empty chunk as SSE data (client counts content tokens only)
                         if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
@@ -622,36 +616,25 @@ void LLMController::handle_streaming_buffered(
                         sse.append(buf.GetString(), buf.GetSize());
                         sse.append("\n\n");
 
-                        std::string to_send;
-                        {
-                            std::lock_guard<std::mutex> lock(*buffer_mutex);
-                            buffer->append(sse);
-                            if (buffer->size() >= FLUSH_THRESHOLD) {
-                                to_send = std::move(*buffer);
-                                buffer->clear();
-                            }
-                        }
-                        if (!to_send.empty()) {
-                            loop->queueInLoop([stream_ptr, to_send]() {
-                                if (*stream_ptr) (*stream_ptr)->send(to_send);
-                            });
+                        std::lock_guard<std::mutex> lock(*buffer_mutex);
+                        buffer->append(sse);
+
+                        if (buffer->size() >= FLUSH_THRESHOLD) {
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
                         }
                     }
                 },
-                [loop, stream_ptr, done, buffer, buffer_mutex]() {
-                    std::string tail;
-                    {
+                [stream_ptr, done, buffer, buffer_mutex]() {
+                    if (!done->exchange(true) && *stream_ptr) {
                         std::lock_guard<std::mutex> lock(*buffer_mutex);
-                        tail = std::move(*buffer);
-                        buffer->clear();
-                    }
-                    loop->queueInLoop([stream_ptr, done, tail]() {
-                        if (!done->exchange(true) && *stream_ptr) {
-                            if (!tail.empty()) (*stream_ptr)->send(tail);
-                            (*stream_ptr)->send("data: [DONE]\n\n");
-                            (*stream_ptr)->close();
+                        if (!buffer->empty()) {
+                            (*stream_ptr)->send(*buffer);
+                            buffer->clear();
                         }
-                    });
+                        (*stream_ptr)->send("data: [DONE]\n\n");
+                        (*stream_ptr)->close();
+                    }
                 });
         });
 
