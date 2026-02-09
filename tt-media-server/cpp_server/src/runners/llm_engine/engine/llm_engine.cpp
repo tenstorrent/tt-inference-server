@@ -1,6 +1,8 @@
 #include "llm_engine/engine/llm_engine.hpp"
 #include "llm_engine/engine/debug.hpp"
 
+#include <algorithm>
+
 namespace llm_engine {
 
 LLMEngine::LLMEngine(const Config& config) : config_(config) {
