@@ -136,7 +136,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             eval_results = eval_result.get("eval_results", {})
             benchmark_data["fid_score"] = eval_results.get("fid_score")
             benchmark_data["average_clip"] = eval_results.get("average_clip")
-            benchmark_data["deviation_clip_score"] = eval_results.get("deviation_clip_score")
+            benchmark_data["deviation_clip_score"] = eval_results.get(
+                "deviation_clip_score"
+            )
             benchmark_data["accuracy_check"] = eval_results.get("accuracy_check")
             benchmark_data["score"] = None  # no TTFT for ImageGenerationEvalsTest
         else:
@@ -167,7 +169,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             # Calculate tput_user for tt-sd models only
             device_spec = self.model_spec.device_model_spec
             if device_spec and hasattr(device_spec, "max_concurrency"):
-                tput_user = len(status_list) / (total_time * device_spec.max_concurrency)
+                tput_user = len(status_list) / (
+                    total_time * device_spec.max_concurrency
+                )
                 benchmark_data["tput_user"] = tput_user
                 logger.info(
                     f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {device_spec.max_concurrency})"
