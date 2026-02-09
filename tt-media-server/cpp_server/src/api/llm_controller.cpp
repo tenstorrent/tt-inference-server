@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "api/llm_controller.hpp"
+#include "config/settings.hpp"
 
 #include <random>
 #include <sstream>
@@ -20,17 +21,10 @@
 
 namespace tt::api {
 
-namespace {
-    bool is_llm_service_enabled() {
-        const char* env = std::getenv("TT_MODEL_SERVICE");
-        // LLM is the default, so enable if not set or if set to "llm"
-        return !env || std::string(env) == "llm";
-    }
-}
 
 LLMController::LLMController() {
     // Only initialize if TT_MODEL_SERVICE=llm or not set
-    if (!is_llm_service_enabled()) {
+    if (!tt::config::is_llm_service_enabled()) {
         std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
         return;
     }
@@ -193,23 +187,108 @@ void LLMController::handle_streaming(
             choices.PushBack(choice.Move(), a);
             envelope->AddMember("choices", choices.Move(), a);
 
-            // Buffer for batching tokens - reduces syscalls dramatically
-            auto buffer = std::make_shared<std::string>();
-            buffer->reserve(64 * 1024);  // 64KB buffer
-            auto buffer_mutex = std::make_shared<std::mutex>();
-            static constexpr size_t FLUSH_THRESHOLD = 32 * 1024;  // Flush at 32KB
+            service_->process_streaming_request(
+                std::move(req),
+                // Chunk callback - serialize with RapidJSON and send immediately
+                [stream_ptr, done, envelope](
+                    const domain::StreamingChunkResponse& chunk) {
+                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
+                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
+                            return;
+                        }
+                        rapidjson::Value& choice = (*envelope)["choices"][0];
+                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
+                        choice["text"].SetString(
+                            chunk.choices[0].text.c_str(),
+                            static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
+                            alloc);
+                        choice["index"].SetInt(chunk.choices[0].index);
+                        if (chunk.choices[0].finish_reason.has_value()) {
+                            choice["finish_reason"].SetString(
+                                chunk.choices[0].finish_reason->c_str(),
+                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
+                                alloc);
+                        } else {
+                            choice["finish_reason"].SetNull();
+                        }
 
-            // Timing stats
-            auto flush_count = std::make_shared<std::atomic<int>>(0);
-            auto total_flush_time_us = std::make_shared<std::atomic<long long>>(0);
-            auto total_bytes_sent = std::make_shared<std::atomic<long long>>(0);
+                        static thread_local rapidjson::StringBuffer buf;
+                        buf.Clear();
+                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                        envelope->Accept(writer);
+                        std::string sse = "data: ";
+                        sse.append(buf.GetString(), buf.GetSize());
+                        sse.append("\n\n");
+
+                        (*stream_ptr)->send(sse);
+                    }
+                },
+                // Done callback - send termination and close
+                [stream_ptr, done]() {
+                    if (!done->exchange(true) && *stream_ptr) {
+                        (*stream_ptr)->send("data: [DONE]\n\n");
+                        (*stream_ptr)->close();
+                    }
+                });
+        });
+
+    resp->setContentTypeString("text/event-stream");
+    resp->addHeader("Cache-Control", "no-cache");
+    resp->addHeader("Connection", "keep-alive");
+    resp->addHeader("X-Accel-Buffering", "no");
+
+    callback(resp);
+}
+
+void LLMController::handle_streaming_buffered(
+    domain::CompletionRequest request,
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    const int64_t created = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    const std::string completion_id = "cmpl-" + request.task_id;
+    const std::string model = request.model.value_or("test-model");
+
+    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+        [this, req = std::move(request), completion_id, model, created](
+            drogon::ResponseStreamPtr stream) mutable {
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto stream_ptr =
+                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
+
+            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
+            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
+            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
+            envelope->AddMember("object", "text_completion", a);
+            envelope->AddMember("created", static_cast<int64_t>(created), a);
+            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
+            rapidjson::Value choices(rapidjson::kArrayType);
+            rapidjson::Value choice(rapidjson::kObjectType);
+            choice.AddMember("text", rapidjson::Value("", a).Move(), a);
+            choice.AddMember("index", 0, a);
+            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
+            choices.PushBack(choice.Move(), a);
+            envelope->AddMember("choices", choices.Move(), a);
+
+            // 32KB write buffer to reduce syscalls for high-throughput scenarios
+            auto buffer = std::make_shared<std::string>();
+            buffer->reserve(64 * 1024);
+            auto buffer_mutex = std::make_shared<std::mutex>();
+            static constexpr size_t FLUSH_THRESHOLD = 32 * 1024;
 
             service_->process_streaming_request(
                 std::move(req),
-                // Chunk callback - serialize with RapidJSON, buffer and flush when large enough
-                [stream_ptr, done, envelope, buffer, buffer_mutex, flush_count, total_flush_time_us, total_bytes_sent](
+                [stream_ptr, done, envelope, buffer, buffer_mutex](
                     const domain::StreamingChunkResponse& chunk) {
                     if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
+                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
+                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
+                            return;
+                        }
                         rapidjson::Value& choice = (*envelope)["choices"][0];
                         rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
                         choice["text"].SetString(
@@ -238,51 +317,25 @@ void LLMController::handle_streaming(
                         buffer->append(sse);
 
                         if (buffer->size() >= FLUSH_THRESHOLD) {
-                            auto start = std::chrono::high_resolution_clock::now();
-                            size_t bytes = buffer->size();
                             (*stream_ptr)->send(*buffer);
                             buffer->clear();
-                            auto end = std::chrono::high_resolution_clock::now();
-                            auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-                            flush_count->fetch_add(1);
-                            total_flush_time_us->fetch_add(duration_us);
-                            total_bytes_sent->fetch_add(bytes);
                         }
                     }
                 },
-                // Done callback - flush remaining and close
-                [stream_ptr, done, buffer, buffer_mutex, flush_count, total_flush_time_us, total_bytes_sent, task_id]() {
+                [stream_ptr, done, buffer, buffer_mutex]() {
                     if (!done->exchange(true) && *stream_ptr) {
                         std::lock_guard<std::mutex> lock(*buffer_mutex);
                         if (!buffer->empty()) {
-                            auto start = std::chrono::high_resolution_clock::now();
-                            size_t bytes = buffer->size();
                             (*stream_ptr)->send(*buffer);
                             buffer->clear();
-                            auto end = std::chrono::high_resolution_clock::now();
-                            auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-                            flush_count->fetch_add(1);
-                            total_flush_time_us->fetch_add(duration_us);
-                            total_bytes_sent->fetch_add(bytes);
                         }
                         (*stream_ptr)->send("data: [DONE]\n\n");
                         (*stream_ptr)->close();
-
-                        int flushes = flush_count->load();
-                        long long total_us = total_flush_time_us->load();
-                        long long bytes = total_bytes_sent->load();
-                        std::cout << "[FLUSH] task=" << task_id
-                                  << " flushes=" << flushes
-                                  << " total_time=" << total_us << "µs"
-                                  << " bytes=" << bytes
-                                  << " avg_flush=" << (flushes > 0 ? total_us / flushes : 0) << "µs"
-                                  << std::endl;
                     }
                 });
         });
 
-    resp->setContentTypeCode(drogon::CT_TEXT_PLAIN);
-    resp->addHeader("Content-Type", "text/event-stream");
+    resp->setContentTypeString("text/event-stream");
     resp->addHeader("Cache-Control", "no-cache");
     resp->addHeader("Connection", "keep-alive");
     resp->addHeader("X-Accel-Buffering", "no");

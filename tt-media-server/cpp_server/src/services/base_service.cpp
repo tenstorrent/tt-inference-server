@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "services/base_service.hpp"
+#include "config/settings.hpp"
 #include "runners/runner_factory.hpp"
 
 #include <iostream>
@@ -9,10 +10,7 @@
 namespace tt::services {
 
 BaseService::BaseService() {
-    // Use multiprocess scheduler with 4 workers by default
-    // Can be overridden with TT_NUM_WORKERS environment variable
-    const char* num_workers_env = std::getenv("TT_NUM_WORKERS");
-    size_t num_workers = num_workers_env ? std::stoul(num_workers_env) : 4;
+    size_t num_workers = tt::config::num_workers();
 
     scheduler_ = std::make_shared<scheduler::MultiprocessScheduler>(num_workers);
 

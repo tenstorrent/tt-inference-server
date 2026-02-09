@@ -386,6 +386,7 @@ class ModelSpec:
             "VLLM_CONFIGURE_LOGGING": "1",
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
+            "TORCHDYNAMO_DISABLE": "1",
         }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
@@ -972,6 +973,10 @@ llm_templates = [
         tt_metal_commit="60ffb199",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
+        min_ram_gb=(
+            120 * 2.5
+        ),  # weights come in bfloat16 container type from HF, add 0.5x overhead buffer
+        # also see memory profiling report https://github.com/tenstorrent/tt-inference-server/pull/2040
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
