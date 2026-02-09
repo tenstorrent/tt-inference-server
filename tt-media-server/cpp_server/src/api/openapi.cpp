@@ -135,8 +135,11 @@ private:
 
         spec["paths"] = paths;
 
-        // Components (schemas)
+        // Components (schemas and security schemes)
         spec["components"] = buildComponents();
+
+        // Global security (can be overridden per-endpoint)
+        // Note: Health endpoints don't require security, handled by not adding security to those endpoints
 
         return spec;
     }
@@ -150,6 +153,13 @@ private:
                                   "**Note:** This C++ implementation uses a test runner generating ~120,000 tokens/second "
                                   "for benchmarking purposes.";
         endpoint["operationId"] = "createCompletion";
+
+        // Security requirement - Bearer token
+        Json::Value security(Json::arrayValue);
+        Json::Value bearerAuth;
+        bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+        security.append(bearerAuth);
+        endpoint["security"] = security;
 
         // Request body
         Json::Value requestBody;
@@ -179,6 +189,12 @@ private:
         resp400["description"] = "Invalid request";
         resp400["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
         responses["400"] = resp400;
+
+        // 401 Unauthorized
+        Json::Value resp401;
+        resp401["description"] = "Missing or invalid authentication token";
+        resp401["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["401"] = resp401;
 
         // 503 Service Unavailable
         Json::Value resp503;
@@ -263,6 +279,18 @@ private:
         schemas["Error"] = buildErrorSchema();
 
         components["schemas"] = schemas;
+
+        // Security schemes
+        Json::Value securitySchemes;
+        Json::Value bearerAuth;
+        bearerAuth["type"] = "http";
+        bearerAuth["scheme"] = "bearer";
+        bearerAuth["bearerFormat"] = "API Key";
+        bearerAuth["description"] = "Bearer token authentication using OPENAI_API_KEY environment variable. "
+                                    "If not set, defaults to 'your-secret-key'.";
+        securitySchemes["BearerAuth"] = bearerAuth;
+        components["securitySchemes"] = securitySchemes;
+
         return components;
     }
 

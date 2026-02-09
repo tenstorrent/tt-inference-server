@@ -12,6 +12,7 @@
 #endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
+#include "filters/security_filter.hpp"
 #include "runners/runner_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
@@ -83,6 +84,53 @@ int main(int argc, char* argv[]) {
 
     // Ensure log directory exists (Drogon requires it)
     mkdir("./logs", 0755);
+
+    // Initialize the security token (lazy init happens on first check)
+    SecurityFilter::initToken();
+
+    // Register pre-handling advice for bearer token authentication
+    drogon::app().registerPreHandlingAdvice(
+        [](const drogon::HttpRequestPtr& req,
+           drogon::AdviceCallback&& callback,
+           drogon::AdviceChainCallback&& chainCallback) {
+
+            const std::string& path = req->path();
+
+            // Skip authentication for health, ready, docs, and openapi endpoints
+            if (path == "/health" || path == "/ready" ||
+                path == "/docs" || path == "/swagger" || path == "/openapi.json") {
+                chainCallback();
+                return;
+            }
+
+            // Check for Bearer token on protected endpoints
+            const std::string& authHeader = req->getHeader("Authorization");
+            constexpr std::string_view bearerPrefix = "Bearer ";
+
+            if (authHeader.size() <= bearerPrefix.size() ||
+                authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                    Json::Value("Missing or invalid Authorization header. Expected: Bearer <token>"));
+                resp->setStatusCode(drogon::k401Unauthorized);
+                resp->addHeader("WWW-Authenticate", "Bearer");
+                callback(resp);
+                return;
+            }
+
+            std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                           authHeader.size() - bearerPrefix.size());
+
+            if (providedToken != SecurityFilter::getExpectedToken()) {
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                    Json::Value("Invalid API key"));
+                resp->setStatusCode(drogon::k401Unauthorized);
+                resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+                callback(resp);
+                return;
+            }
+
+            chainCallback();
+        });
 
     // Configure Drogon
     drogon::app()
