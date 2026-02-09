@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import traceback
 from abc import abstractmethod
 
 import ttnn
@@ -24,6 +25,15 @@ from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+
+
+def _log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:
+    """Log exception with full stack trace and cause chain (stdlib only)."""
+    full = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__, chain=True)
+    )
+    logger.error("Device %s: %s\n%s", device_id, context, full)
+
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -214,10 +224,19 @@ class TTMochi1Runner(TTDiTRunner):
         os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
-        return MochiPipeline.create_pipeline(
-            mesh_device=self.ttnn_device,
-            checkpoint_name=SupportedModels.MOCHI_1.value,
-        )
+        try:
+            return MochiPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.MOCHI_1.value,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Mochi pipeline creation failed",
+                e,
+            )
+            raise
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
@@ -246,7 +265,16 @@ class TTWan22Runner(TTDiTRunner):
         super().__init__(device_id, num_torch_threads)
 
     def create_pipeline(self):
-        return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+        try:
+            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Wan pipeline creation failed",
+                e,
+            )
+            raise
 
     def load_weights(self):
         return False
