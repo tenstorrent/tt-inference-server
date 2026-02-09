@@ -107,6 +107,12 @@ private:
     static std::string generate_completion_id();
 
     /**
+     * Build OpenAI-style error JSON for chat completions (flat object/message/type/param/code).
+     */
+    static Json::Value chat_error_json(const std::string& message, const std::string& type,
+        const Json::Value& param = Json::nullValue, const Json::Value& code = Json::nullValue);
+
+    /**
      * Response formatter function type.
      * Takes a completion response and returns a JSON value.
      */

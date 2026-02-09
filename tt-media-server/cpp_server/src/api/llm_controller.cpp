@@ -3,13 +3,12 @@
 
 #include "api/llm_controller.hpp"
 #include "config/settings.hpp"
-#include "domain/chat_completions_request.hpp"
+#include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 
 
 #include <random>
 #include <sstream>
-#include <iomanip>
 #include <chrono>
 #include <iostream>
 #include <mutex>
@@ -98,64 +97,53 @@ void LLMController::completions(
     }
 }
 
+Json::Value LLMController::chat_error_json(const std::string& message, const std::string& type,
+    const Json::Value& param, const Json::Value& code) {
+    Json::Value error;
+    error["object"] = "error";
+    error["message"] = message;
+    error["type"] = type;
+    error["param"] = param;
+    error["code"] = code;
+    return error;
+}
+
 void LLMController::chat_completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
-    // Parse JSON body
     auto json = req->getJsonObject();
     if (!json) {
-        Json::Value error;
-        error["object"] = "error";
-        error["message"] = "Invalid JSON body";
-        error["type"] = "invalid_request_error";
-        error["param"] = Json::nullValue;
-        error["code"] = Json::nullValue;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json("Invalid JSON body", "invalid_request_error"));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
     }
 
-    // Parse request
     domain::ChatCompletionRequest chat_req;
     try {
         chat_req = domain::ChatCompletionRequest::fromJson(*json);
         chat_req.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
     } catch (const std::exception& e) {
-        Json::Value error;
-        error["object"] = "error";
-        error["message"] = std::string("Failed to parse request: ") + e.what();
-        error["type"] = "invalid_request_error";
-        error["param"] = Json::nullValue;
-        error["code"] = Json::nullValue;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
     }
 
     if (chat_req.messages.empty()) {
-        Json::Value error;
-        error["object"] = "error";
-        error["message"] = "messages is required and must be a non-empty array";
-        error["type"] = "invalid_request_error";
-        error["param"] = "messages";
-        error["code"] = Json::nullValue;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json("messages is required and must be a non-empty array", "invalid_request_error", Json::Value("messages")));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
     }
 
     if (!service_->is_model_ready()) {
-        Json::Value error;
-        error["object"] = "error";
-        error["message"] = "Model is not ready";
-        error["type"] = "service_unavailable";
-        error["param"] = Json::nullValue;
-        error["code"] = Json::nullValue;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json("Model is not ready", "service_unavailable"));
         resp->setStatusCode(drogon::k503ServiceUnavailable);
         callback(resp);
         return;
