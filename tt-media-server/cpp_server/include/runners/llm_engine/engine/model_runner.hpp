@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "llm_engine/config.hpp"
@@ -10,31 +11,32 @@
 
 namespace llm_engine {
 
-/** Called when token IDs for the batch are ready (sync for prefill, async for decode). */
-using OnTokensCallback =
-    std::function<void(const std::vector<Sequence*>& seqs, std::vector<int64_t> token_ids)>;
+/** One (token_id, user_id) from the pipeline; position_id is not used on receive. */
+using TokenEntry = std::pair<int64_t, int>;
+/** Called with one entry per response (sync for prefill batch, async for decode). Loopback returns what we pushed. */
+using OnTokensCallback = std::function<void(std::vector<TokenEntry>)>;
 
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  /** Submits batch; on_tokens(seqs, token_ids) is invoked when results are ready. */
-  virtual void run(const std::vector<Sequence*>& seqs,
-                   bool is_prefill,
-                   OnTokensCallback on_tokens) = 0;
+  /** Set once; invoked when token IDs for a batch are ready (sync for prefill, async for decode). */
+  virtual void set_on_tokens_callback(OnTokensCallback on_tokens) = 0;
+  /** Submits batch; runner invokes the callback set via set_on_tokens_callback when results are ready. */
+  virtual void run(const std::vector<Sequence*>& seqs, bool is_prefill) = 0;
   virtual void exit() = 0;
 };
 
 class ModelRunnerStub : public IModelRunner {
  public:
   explicit ModelRunnerStub(const Config& config);
-  void run(const std::vector<Sequence*>& seqs,
-           bool is_prefill,
-           OnTokensCallback on_tokens) override;
+  void set_on_tokens_callback(OnTokensCallback on_tokens) override;
+  void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
 
  private:
   Config config_;
   int eos_;
+  OnTokensCallback on_tokens_callback_;
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config);

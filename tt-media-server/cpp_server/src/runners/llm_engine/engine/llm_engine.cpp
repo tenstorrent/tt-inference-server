@@ -9,6 +9,10 @@ namespace llm_engine {
 LLMEngine::LLMEngine(const Config& config) : config_(config) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   model_runner_ = make_model_runner(config_);
+  model_runner_->set_on_tokens_callback(
+      [this](std::vector<TokenEntry> entries) {
+        on_tokens_from_runner(std::move(entries));
+      });
   scheduler_ = std::make_unique<Scheduler>(config_);
   if (config_.eos < 0) {
     config_.eos = 0;
@@ -37,6 +41,50 @@ void LLMEngine::add_request(std::vector<int64_t> prompt,
                              << " max_tokens=" << ptr->max_tokens << std::endl;
 }
 
+void LLMEngine::on_tokens_from_runner(std::vector<TokenEntry> entries) {
+  std::vector<Sequence*> seqs;
+  std::vector<int64_t> token_ids;
+  seqs.reserve(entries.size());
+  token_ids.reserve(entries.size());
+  for (const auto& [token_id, user_id] : entries) {
+    Sequence* seq = nullptr;
+    for (auto& s : sequences_) {
+      if (s->seq_id == user_id) {
+        seq = s.get();
+        break;
+      }
+    }
+    if (seq) {
+      seqs.push_back(seq);
+      token_ids.push_back(token_id);
+    }
+  }
+  if (seqs.empty()) return;
+
+  scheduler_->postprocess(seqs, token_ids);
+
+  StepResult result;
+  if (current_is_prefill_) {
+    int total = 0;
+    for (Sequence* s : seqs) {
+      total += static_cast<int>(s->size());
+    }
+    result.num_tokens = total;
+  } else {
+    result.num_tokens = -static_cast<int>(seqs.size());
+  }
+  LLM_ENGINE_LOG("llm_engine") << "step " << (current_is_prefill_ ? "prefill" : "decode")
+                               << " n=" << seqs.size() << " num_tokens=" << result.num_tokens << std::endl;
+  for (Sequence* seq : seqs) {
+    if (seq->is_finished()) {
+      result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
+      LLM_ENGINE_LOG("llm_engine") << "step seq_id=" << seq->seq_id << " finished"
+                                  << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
+    }
+  }
+  current_step_done_(std::move(result));
+}
+
 void LLMEngine::step(StepResultCallback on_step_done) {
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) {
@@ -45,31 +93,9 @@ void LLMEngine::step(StepResultCallback on_step_done) {
     return;
   }
 
-  model_runner_->run(seqs, is_prefill, [this, seqs, is_prefill, on_step_done](
-      const std::vector<Sequence*>&, std::vector<int64_t> token_ids) {
-    scheduler_->postprocess(seqs, token_ids);
-
-    StepResult result;
-    if (is_prefill) {
-      int total = 0;
-      for (Sequence* s : seqs) {
-        total += static_cast<int>(s->size());
-      }
-      result.num_tokens = total;
-    } else {
-      result.num_tokens = -static_cast<int>(seqs.size());
-    }
-    LLM_ENGINE_LOG("llm_engine") << "step " << (is_prefill ? "prefill" : "decode")
-                               << " n=" << seqs.size() << " num_tokens=" << result.num_tokens << std::endl;
-    for (Sequence* seq : seqs) {
-      if (seq->is_finished()) {
-        result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
-        LLM_ENGINE_LOG("llm_engine") << "step seq_id=" << seq->seq_id << " finished"
-                                   << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
-      }
-    }
-    on_step_done(std::move(result));
-  });
+  current_step_done_ = std::move(on_step_done);
+  current_is_prefill_ = is_prefill;
+  model_runner_->run(seqs, is_prefill);
 }
 
 bool LLMEngine::is_finished() const {

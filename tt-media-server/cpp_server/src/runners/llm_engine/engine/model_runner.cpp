@@ -6,6 +6,7 @@
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <stdexcept>
 #include <thread>
@@ -36,15 +37,20 @@ class ModelRunnerSocketSim : public IModelRunner {
   explicit ModelRunnerSocketSim(const Config& config);
   ~ModelRunnerSocketSim() override { exit(); }
 
-  void run(const std::vector<Sequence*>& seqs,
-           bool is_prefill,
-           OnTokensCallback on_tokens) override;
+  void set_on_tokens_callback(OnTokensCallback on_tokens) override;
+  void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
 
  private:
+  void receiver_loop();
+
   Config config_;
   int eos_;
   void* device_ctx_ = nullptr;
+  OnTokensCallback on_tokens_callback_;
+
+  std::thread receiver_thread_;
+  std::atomic<bool> receiver_shutdown_{false};
 };
 
 ModelRunnerSocketSim::ModelRunnerSocketSim(const Config& config)
@@ -53,59 +59,60 @@ ModelRunnerSocketSim::ModelRunnerSocketSim(const Config& config)
   if (!device_ctx_ || !config_.h2d_socket || !config_.d2h_socket) {
     throw std::runtime_error("model_runner: tt-metal device and H2D/D2H sockets required");
   }
-  LLM_ENGINE_LOG("model_runner") << "H2D/D2H sockets ready" << std::endl;
+  receiver_thread_ = std::thread{&ModelRunnerSocketSim::receiver_loop, this};
+  LLM_ENGINE_LOG("model_runner") << "H2D/D2H sockets ready (long-running receiver thread)"
+                                << std::endl;
 }
 
-void ModelRunnerSocketSim::run(const std::vector<Sequence*>& seqs,
-                               bool is_prefill,
-                               OnTokensCallback on_tokens) {
-  if (is_prefill) {
-    LLM_ENGINE_LOG("model_runner") << "prefill batch_size=" << seqs.size()
-                                   << std::endl;
-    std::vector<int64_t> token_ids(seqs.size(), seqs[0]->last_token + 1);
-    on_tokens(seqs, std::move(token_ids));
-    return;
-  }
-
-  if (seqs.empty()) {
-    return;
-  }
-
-  Sequence* s = seqs[0];
-  DecodeEntry e;
-  e.token_id = static_cast<uint32_t>(s->last_token & 0xFFFFFFFFu);
-  e.user_id = static_cast<uint32_t>(s->seq_id & 0xFFFFFFFFu);
-  e.position_id = static_cast<uint32_t>(s->size() & 0xFFFFFFFFu);
-
-  uint32_t h2d_buf[kPageSizeWords] = {};
-  h2d_buf[0] = e.token_id;
-  h2d_buf[1] = e.user_id;
-  h2d_buf[2] = e.position_id;
-  auto* h2d = static_cast<tt::tt_metal::distributed::H2DSocket*>(config_.h2d_socket);
-  h2d->write(h2d_buf, 1);
-
+void ModelRunnerSocketSim::receiver_loop() {
   auto* d2h = static_cast<tt::tt_metal::distributed::D2HSocket*>(config_.d2h_socket);
-  std::thread receiver([this, d2h, seqs, on_tokens = std::move(on_tokens)]() {
+  while (!receiver_shutdown_.load()) {
     uint32_t recv_buf[kPageSizeWords] = {};
     d2h->read(recv_buf, 1);
     d2h->barrier();
-    int64_t result_token = static_cast<int64_t>(recv_buf[0]) + 1;
-    LLM_ENGINE_LOG("model_runner") << "decode seq_id=" << seqs[0]->seq_id
-                                  << " last_token=" << seqs[0]->last_token
-                                  << " -> token=" << result_token << std::endl;
-    std::vector<int64_t> token_ids;
-    if (seqs.size() == 1) {
-      token_ids = {result_token};
-    } else {
-      token_ids.assign(seqs.size(), static_cast<int64_t>(eos_));
-      token_ids[0] = result_token;
+
+    int64_t token_id = static_cast<int64_t>(recv_buf[0]) + 1;
+    int user_id = static_cast<int>(recv_buf[1]);
+    LLM_ENGINE_LOG("model_runner") << "decode user_id=" << user_id
+                                  << " -> token=" << token_id << std::endl;
+    if (on_tokens_callback_) on_tokens_callback_({{token_id, user_id}});
+  }
+}
+
+void ModelRunnerSocketSim::set_on_tokens_callback(OnTokensCallback on_tokens) {
+  on_tokens_callback_ = std::move(on_tokens);
+}
+
+void ModelRunnerSocketSim::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
+  if (is_prefill) {
+    LLM_ENGINE_LOG("model_runner") << "prefill batch_size=" << seqs.size()
+                                   << std::endl;
+    std::vector<TokenEntry> entries;
+    entries.reserve(seqs.size());
+    int64_t token = seqs[0]->last_token + 1;
+    for (Sequence* s : seqs) {
+      entries.emplace_back(token, s->seq_id);
     }
-    on_tokens(seqs, std::move(token_ids));
-  });
-  receiver.detach();
+    if (on_tokens_callback_) on_tokens_callback_(std::move(entries));
+    return;
+  }
+
+  if (seqs.empty()) return;
+
+  Sequence* s = seqs[0];
+  uint32_t h2d_buf[kPageSizeWords] = {};
+  h2d_buf[0] = static_cast<uint32_t>(s->last_token & 0xFFFFFFFFu);
+  h2d_buf[1] = static_cast<uint32_t>(s->seq_id & 0xFFFFFFFFu);
+  h2d_buf[2] = static_cast<uint32_t>(s->size() & 0xFFFFFFFFu);
+  auto* h2d = static_cast<tt::tt_metal::distributed::H2DSocket*>(config_.h2d_socket);
+  h2d->write(h2d_buf, 1);
 }
 
 void ModelRunnerSocketSim::exit() {
+  if (receiver_thread_.joinable()) {
+    receiver_shutdown_.store(true);
+    receiver_thread_.join();
+  }
   if (device_ctx_) {
     LLM_ENGINE_LOG("model_runner") << "exit (destroy device context)" << std::endl;
     destroy_ttmetal_decode_context(device_ctx_);
@@ -120,12 +127,19 @@ std::unique_ptr<IModelRunner> make_model_runner(const Config& config) {
 ModelRunnerStub::ModelRunnerStub(const Config& config)
     : config_(config), eos_(config.eos) {}
 
-void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
-                          bool is_prefill,
-                          OnTokensCallback on_tokens) {
+void ModelRunnerStub::set_on_tokens_callback(OnTokensCallback on_tokens) {
+  on_tokens_callback_ = std::move(on_tokens);
+}
+
+void ModelRunnerStub::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
   if (seqs.empty()) return;
-  std::vector<int64_t> token_ids(seqs.size(), seqs[0]->last_token + 1);
-  on_tokens(seqs, std::move(token_ids));
+  std::vector<TokenEntry> entries;
+  entries.reserve(seqs.size());
+  int64_t token = seqs[0]->last_token + 1;
+  for (Sequence* s : seqs) {
+    entries.emplace_back(token, s->seq_id);
+  }
+  if (on_tokens_callback_) on_tokens_callback_(std::move(entries));
 }
 
 void ModelRunnerStub::exit() {}

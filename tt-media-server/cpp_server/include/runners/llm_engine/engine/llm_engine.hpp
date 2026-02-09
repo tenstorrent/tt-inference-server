@@ -42,11 +42,14 @@ class LLMEngine {
 
  private:
   void exit();
+  void on_tokens_from_runner(std::vector<TokenEntry> entries);
 
   Config config_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   std::vector<std::unique_ptr<Sequence>> sequences_;
+  StepResultCallback current_step_done_;
+  bool current_is_prefill_ = false;
 };
 
 }  // namespace llm_engine
