@@ -1,0 +1,256 @@
+name: Package GH Release
+
+run-name: ${{ format('Packaging GH release from release candidate PR {0}', inputs.release-candidate-pr-number) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-candidate-pr-number:
+        description: 'PR number of the release candidate pull request'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  BASE_BRANCH: replica_main
+
+jobs:
+  validate-input-and-extract-data:
+    runs-on: ubuntu-latest
+    outputs:
+      original-run-id: ${{ steps.get-pr-info.outputs.original-run-id }}
+      version: ${{ steps.get-pr-info.outputs.version }}
+      main-sha: ${{ steps.get-main-commit.outputs.main-sha }}
+      pr-body: ${{ steps.get-pr-info.outputs.pr-body }}
+    steps:
+      - name: Get PR information
+        id: get-pr-info
+        env:
+          PR_NUMBER: ${{ inputs.release-candidate-pr-number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          echo "🔍 Fetching PR #$PR_NUMBER from repository $REPO..."
+          if [ -n "$GH_TOKEN" ]; then
+            echo "🔍 Token is set (length: ${#GH_TOKEN} chars)"
+          else
+            echo "⚠️  Warning: GH_TOKEN is not set!"
+          fi
+
+          # Try to fetch PR - this will fail if PR doesn't exist in this repo
+          PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName,headRefOid,title,body,state 2>&1)
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Error: Failed to fetch PR #$PR_NUMBER from repository $REPO"
+            echo "Exit code: $EXIT_CODE"
+            echo "Error output:"
+            echo "$PR_INFO"
+            exit 1
+          fi
+
+          HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName')
+          HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
+          PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
+          PR_BODY=$(echo "$PR_INFO" | jq -r '.body // ""')
+          STATE=$(echo "$PR_INFO" | jq -r '.state')
+
+          # Validate PR is merged
+          if [ "$STATE" != "MERGED" ]; then
+            echo "❌ Error: PR #$PR_NUMBER is not merged. Current state: $STATE"
+            exit 1
+          fi
+
+          echo "✓ PR #$PR_NUMBER belongs to repository $REPO and is merged"
+
+          # Validate branch name
+          if [[ ! "$HEAD_REF" =~ ^rc- ]]; then
+            echo "❌ Error: PR #$PR_NUMBER head branch '$HEAD_REF' does not start with 'rc-'"
+            exit 1
+          fi
+
+          # Validate PR body exists
+          if [ -z "$PR_BODY" ] || [ "$PR_BODY" = "null" ]; then
+            echo "❌ Error: PR #$PR_NUMBER has no description/body"
+            exit 1
+          fi
+
+          # Extract the original workflow run_id from the PR body (stored in HTML comment)
+          ORIGINAL_RUN_ID=$(echo "$PR_BODY" | grep -oP 'metadata:run_id=\K[0-9]+' || echo "")
+
+          if [ -z "$ORIGINAL_RUN_ID" ]; then
+            echo "❌ Error: Could not extract original workflow run_id from PR #$PR_NUMBER description"
+            exit 1
+          fi
+
+          # Extract version from PR body metadata
+          VERSION=$(echo "$PR_BODY" | grep -oP 'metadata:version=\K[^[:space:]]+' || echo "")
+
+          if [ -z "$VERSION" ]; then
+            echo "❌ Error: Could not extract version from PR #$PR_NUMBER description"
+            exit 1
+          fi
+
+          echo "✓ PR #$PR_NUMBER validated:"
+          echo "  Head branch: $HEAD_REF"
+          echo "  Head SHA: $HEAD_SHA"
+          echo "  Original run ID: $ORIGINAL_RUN_ID"
+          echo "  Version: $VERSION"
+
+          echo "head-ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "pr-title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+          echo "original-run-id=$ORIGINAL_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "pr-body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$PR_BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        id: download
+
+        run: |
+          set -e
+
+          RUN_ID="${{ steps.get-pr-info.outputs.original-run-id }}"
+          REPO="tenstorrent/tt-shield"
+          OUTPUT_DIR="${{ github.workspace }}/artifacts"
+
+          mkdir -p "$OUTPUT_DIR"
+
+          echo "📥 Downloading all artifacts from run $RUN_ID..."
+
+          ARTIFACTS_JSON=$(gh api repos/$REPO/actions/runs/$RUN_ID/artifacts)
+          ARTIFACTS=$(echo "$ARTIFACTS_JSON" | jq -r '.artifacts')
+
+          ARTIFACT_COUNT=$(echo "$ARTIFACTS" | jq -r 'length')
+          echo "✓ Found $ARTIFACT_COUNT artifact(s)"
+
+          echo "$ARTIFACTS" | jq -r '.[] | "\(.id)|\(.name)"' | while IFS='|' read -r ARTIFACT_ID ARTIFACT_NAME; do
+            [ -z "$ARTIFACT_ID" ] && continue
+
+            echo "📦 Downloading: $ARTIFACT_NAME"
+            ARTIFACT_DIR="$OUTPUT_DIR/$ARTIFACT_NAME"
+            mkdir -p "$ARTIFACT_DIR"
+
+            ARTIFACT_ZIP="$ARTIFACT_DIR/$ARTIFACT_NAME.zip"
+
+            if gh api repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip > "$ARTIFACT_ZIP" 2>/dev/null; then
+              if [ -s "$ARTIFACT_ZIP" ]; then
+                unzip -q -o "$ARTIFACT_ZIP" -d "$ARTIFACT_DIR"
+                rm -f "$ARTIFACT_ZIP"
+                echo "✓ Extracted: $ARTIFACT_NAME"
+              fi
+            fi
+          done
+
+          echo "artifacts_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Package workflow logs artifacts
+        id: package-logs
+        env:
+          ARTIFACTS_DIR: ${{ steps.download.outputs.artifacts_dir }}
+          VERSION: ${{ steps.get-pr-info.outputs.version }}
+        run: |
+          set -e
+
+          echo "📦 Packaging workflow logs artifacts..."
+
+          # Create zip filename
+          ZIP_NAME="${VERSION}-release_artifacts.zip"
+          ZIP_PATH="${{ github.workspace }}/$ZIP_NAME"
+
+          # Find all workflow_logs_release_* artifacts
+          cd "$ARTIFACTS_DIR"
+          LOGS_DIRS=$(find . -maxdepth 1 -type d -name "workflow_logs_release_*" | sed 's|^\./||')
+
+          if [ -z "$LOGS_DIRS" ]; then
+            echo "❌ Error: No workflow_logs_release_* artifacts found"
+            exit 1
+          fi
+
+          echo "✓ Found workflow logs artifacts:"
+          echo "$LOGS_DIRS" | while read -r dir; do
+            echo "  - $dir"
+          done
+
+          # Create combined zip
+          echo "📦 Creating $ZIP_NAME..."
+          zip -r "$ZIP_PATH" workflow_logs_release_*
+
+          echo "✅ Created $ZIP_NAME ($(du -h "$ZIP_PATH" | cut -f1))"
+          echo "zip-path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest commit from base branch and tag it
+        id: get-main-commit
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.get-pr-info.outputs.version }}
+          BASE_BRANCH: ${{ env.BASE_BRANCH }}
+        run: |
+          set -e
+
+          echo "🔍 Fetching latest commit from $BASE_BRANCH branch..."
+
+          MAIN_SHA=$(gh api repos/$REPO/git/ref/heads/$BASE_BRANCH --jq '.object.sha' 2>&1)
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Error: Could not fetch $BASE_BRANCH branch"
+            exit 1
+          fi
+
+          echo "✓ Latest commit from $BASE_BRANCH: $MAIN_SHA"
+          echo "main-sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+
+          # Tag the commit with the version
+          echo "🏷️  Creating tag $VERSION on commit $MAIN_SHA..."
+
+          # Check if tag already exists
+          if gh api repos/$REPO/git/ref/tags/$VERSION >/dev/null 2>&1; then
+            echo "❌ Error: Tag $VERSION already exists"
+            exit 1
+          fi
+
+          # Create lightweight tag by creating a ref directly
+          echo "🏷️  Creating tag $VERSION pointing to commit $MAIN_SHA..."
+          gh api repos/$REPO/git/refs \
+            -f ref="refs/tags/$VERSION" \
+            -f sha="$MAIN_SHA"
+
+          echo "✅ Created tag $VERSION pointing to commit $MAIN_SHA"
+
+      - name: Create GitHub release
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.get-pr-info.outputs.version }}
+          PR_BODY: ${{ steps.get-pr-info.outputs.pr-body }}
+          ZIP_PATH: ${{ steps.package-logs.outputs.zip-path }}
+        run: |
+          set -e
+
+          echo "📦 Creating GitHub release $VERSION..."
+
+          # Store PR body in temp file for release notes
+          RELEASE_NOTES_FILE=$(mktemp)
+          echo "$PR_BODY" > "$RELEASE_NOTES_FILE"
+
+          # Create draft release with workflow logs
+          echo "📎 Attaching workflow logs: $(basename "$ZIP_PATH")"
+          gh release create "$VERSION" \
+            --repo "$REPO" \
+            --title "$VERSION" \
+            --notes-file "$RELEASE_NOTES_FILE" \
+            --draft \
+            "$ZIP_PATH"
+
+          rm -f "$RELEASE_NOTES_FILE"
+          echo "✅ Created draft release $VERSION"

@@ -1,0 +1,267 @@
+name: Create Release Candidate PR
+
+run-name: ${{ format('Creating release PR from pre-release PR {0}', inputs.prerelease-pr-number) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease-pr-number:
+        description: 'PR number of the pre-release pull request'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+jobs:
+  validate-input-and-extract-data:
+    runs-on: ubuntu-latest
+    outputs:
+      head-ref: ${{ steps.get-pr-info.outputs.head-ref }}
+      head-sha: ${{ steps.get-pr-info.outputs.head-sha }}
+      pr-title: ${{ steps.get-pr-info.outputs.pr-title }}
+      pr-body: ${{ steps.get-pr-info.outputs.pr-body }}
+      original-run-id: ${{ steps.get-pr-info.outputs.original-run-id }}
+    steps:
+      - name: Get PR information
+        id: get-pr-info
+        env:
+          PR_NUMBER: ${{ inputs.prerelease-pr-number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          # Try to fetch PR - this will fail if PR doesn't exist in this repo
+          PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName,headRefOid,title,body,state 2>&1)
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Error: Failed to fetch PR #$PR_NUMBER from repository $REPO"
+            echo "Exit code: $EXIT_CODE"
+            echo "Error output:"
+            echo "$PR_INFO"
+            exit 1
+          fi
+
+          HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName')
+          HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
+          PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
+          PR_BODY=$(echo "$PR_INFO" | jq -r '.body // ""')
+          STATE=$(echo "$PR_INFO" | jq -r '.state')
+
+          # Validate PR is merged
+          if [ "$STATE" != "MERGED" ]; then
+            echo "❌ Error: PR #$PR_NUMBER is not merged. Current state: $STATE"
+            exit 1
+          fi
+
+          if [[ ! "$HEAD_REF" =~ ^rc- ]]; then
+            echo "❌ Error: PR #$PR_NUMBER head branch '$HEAD_REF' does not start with 'rc-'"
+            exit 1
+          fi
+
+          if [ -z "$PR_BODY" ] || [ "$PR_BODY" = "null" ]; then
+            echo "❌ Error: PR #$PR_NUMBER has no description/body"
+            exit 1
+          fi
+
+          # Extract the original workflow run_id from the PR body (stored in HTML comment)
+          ORIGINAL_RUN_ID=$(echo "$PR_BODY" | grep -oP 'metadata:run_id=\K[0-9]+' || echo "")
+
+          if [ -z "$ORIGINAL_RUN_ID" ]; then
+            echo "❌ Error: Could not extract original workflow run_id from PR #$PR_NUMBER description"
+            exit 1
+          fi
+
+          echo "✓ PR #$PR_NUMBER validated:"
+          echo "  Head branch: $HEAD_REF"
+          echo "  Head SHA: $HEAD_SHA"
+          echo "  Original run ID: $ORIGINAL_RUN_ID"
+
+          echo "head-ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "pr-title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+          echo "original-run-id=$ORIGINAL_RUN_ID" >> "$GITHUB_OUTPUT"
+
+          echo "pr-body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$PR_BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+  restore-rc-branch:
+    needs: validate-input-and-extract-data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check and restore branch if needed
+        env:
+          HEAD_REF: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
+          HEAD_SHA: ${{ needs.validate-input-and-extract-data.outputs.head-sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          echo "🔍 Checking if branch '$HEAD_REF' exists..."
+
+          # Check if branch exists using GitHub API
+          if gh api "repos/$REPO/branches/$HEAD_REF" >/dev/null 2>&1; then
+            echo "✓ Branch '$HEAD_REF' exists on remote"
+          else
+            echo "⚠️  Branch '$HEAD_REF' does not exist, attempting to restore from commit $HEAD_SHA"
+
+            gh api -X POST "repos/$REPO/git/refs" \
+              -f ref="refs/heads/$HEAD_REF" \
+              -f sha="$HEAD_SHA"
+
+            echo "✅ Successfully restored branch '$HEAD_REF'"
+          fi
+
+  push-release-images:
+    needs: [restore-rc-branch, validate-input-and-extract-data]
+    runs-on: ubuntu-latest
+    outputs:
+      commits-for-additional-docker-images: ${{ steps.get-commits.outputs.commits }}
+    steps:
+      - name: Checkout tt-inference branch
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-inference-server
+          # Use this once we switch to tt-inference-repo
+          # ref: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
+          ref: c0f62c62e7480884c21eac5af47b93f6019f8a75
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      - name: Install crane
+        run: |
+          CRANE_VERSION="v0.20.7"
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" -o crane.tar.gz
+          tar -xzf crane.tar.gz crane
+          sudo mv crane /usr/local/bin/crane
+          chmod +x /usr/local/bin/crane
+          rm crane.tar.gz
+          crane version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Run models CI reader
+        env:
+          GH_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+        run: |
+          python3 scripts/release/models_ci_reader.py --run-id ${{ needs.validate-input-and-extract-data.outputs.original-run-id }}
+
+      - name: Check for generated file
+        id: check-file
+        run: |
+          # Find the generated file matching the pattern
+          GENERATED_FILE=$(find release_logs -name "models_ci_last_good_*_to_*.json" -type f | head -n 1)
+
+          if [ -z "$GENERATED_FILE" ]; then
+            echo "❌ Error: No file found matching pattern 'release_logs/models_ci_last_good_*_to_*.json'"
+            exit 1
+          fi
+
+          echo "✓ Found generated file: $GENERATED_FILE"
+          echo "last_good_ci_json_path=$GENERATED_FILE" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "=== Contents of $GENERATED_FILE ==="
+          cat "$GENERATED_FILE"
+          echo "=== End of file contents ==="
+
+      - name: Make release image artifacts
+        run: |
+          python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --release --dry-run
+
+      - name: Get tt-metal commits
+        id: get-commits
+        run: |
+          python -c "
+          import sys, json
+          from pathlib import Path
+          sys.path.insert(0, str(Path('scripts/build_docker_images.py').resolve().parent.parent))
+          from scripts.build_docker_images import list_image_combinations
+          from workflows.model_spec import MODEL_SPECS
+
+          combinations = list_image_combinations(MODEL_SPECS)
+          commits = sorted(set(tt_metal for tt_metal, _ in combinations))
+          print(json.dumps(commits))
+          " > commits.json
+
+          echo "commits=$(cat commits.json)" >> $GITHUB_OUTPUT
+          echo "Found commits: $(cat commits.json)"
+
+  build-and-push-additional-images:
+    needs: [push-release-images, validate-input-and-extract-data]
+    runs-on: tt-ubuntu-2204-large-stable
+    strategy:
+      fail-fast: false
+      matrix:
+        tt_metal_commit: ${{ fromJson(needs.push-release-images.outputs.commits-for-additional-docker-images) }}
+    steps:
+      - name: Echo tt-metal-commit
+        run: |
+          echo "tt-metal-commit: ${{ matrix.tt_metal_commit }}"
+
+      # - name: Checkout tt-inference branch
+      #   uses: actions/checkout@v4
+      #   with:
+      #     # TODO change
+      #     repository: tenstorrent/tt-inference-server
+      #     ref: ${{ needs.validate-input-and-extract-data.outputs.head-sha }}
+      #     token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      # - name: Docker login
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: https://ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Build for ${{ matrix.tt_metal_commit }}
+      #   run: |
+      #     echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
+      #     mkdir -p workflow_logs/docker_build_logs
+      #     python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --release --force-build
+      #  #   --push (Also, remove --force_build)
+
+  open-release-pr-to-main:
+    needs: [validate-input-and-extract-data, build-and-push-additional-images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR description and create PR against main
+        id: extract-run-id
+        env:
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
+          PR_TITLE: ${{ needs.validate-input-and-extract-data.outputs.pr-title }}
+          PR_BODY: ${{ needs.validate-input-and-extract-data.outputs.pr-body }}
+        run: |
+          set -e
+
+          # Remove "Candidate " from the title
+          NEW_PR_TITLE=$(echo "$PR_TITLE" | sed 's/Release Candidate /Release /')
+
+          # Store PR body in a temp file for PR creation (keeping the run_id comment)
+          PR_BODY_FILE=$(mktemp)
+          echo "$PR_BODY" > "$PR_BODY_FILE"
+
+          echo "📝 Creating new draft PR from '$HEAD_REF' to 'replica_main'..."
+
+          # Create draft PR against replica_main
+          gh pr create \
+            --repo "$REPO" \
+            --title "$NEW_PR_TITLE" \
+            --body-file "$PR_BODY_FILE" \
+            --base replica_main \
+            --head "$HEAD_REF" \
+            --draft
+
+          rm -f "$PR_BODY_FILE"
+          echo "✅ Successfully created draft PR from '$HEAD_REF' to 'replica_main'"
