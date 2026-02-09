@@ -386,6 +386,7 @@ class ModelSpec:
             "VLLM_CONFIGURE_LOGGING": "1",
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
+            "TORCHDYNAMO_DISABLE": "1",
         }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
@@ -2375,30 +2376,7 @@ image_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
-            DeviceModelSpec(
-                device=DeviceTypes.P150X4,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P150X8,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P300,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.QBGE,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
+            # TODO: Add P300 and QBGE
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
@@ -2420,18 +2398,6 @@ image_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P150X4,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P150X8,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
