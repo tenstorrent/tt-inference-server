@@ -10,6 +10,7 @@ BUILD_TYPE="Release"
 ENABLE_TTNN="OFF"
 
 # Parse arguments
+TEST="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -20,12 +21,17 @@ while [[ $# -gt 0 ]]; do
             ENABLE_TTNN="ON"
             shift
             ;;
+        --test)
+            TEST="ON"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
             echo "  --debug    Build in Debug mode (default: Release)"
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
+            echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -41,6 +47,7 @@ echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
+echo "  Test build: ${TEST}"
 echo "=============================================="
 
 # If TTNN is enabled, ensure we have the right Python
@@ -104,6 +111,7 @@ echo "Configuring CMake..."
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
+      -DTEST="${TEST}" \
       ..
 
 # Build

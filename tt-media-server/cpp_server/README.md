@@ -90,9 +90,16 @@ pkill -f tt_media_server_cpp
 
 ### Environment Variables
 
+Configuration is read via `config/settings.hpp` (defaults with env overrides, similar to `tt-media-server/config/settings.py`). No direct `getenv` elsewhere.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TT_RUNNER_TYPE` | Runner type: `llm_test` or `ttnn_test` | `llm_test` |
+| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0),(1),(2),(3)` |
+| `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
+| `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
+| `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
+| `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 
 ### Running in Background
 
@@ -272,9 +279,10 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest`: OpenAI-compatible completion request
-- `CompletionResponse`: Full completion response
-- `StreamingChunkResponse`: SSE streaming chunk
+- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
+- `StreamingChunkResponse`: SSE streaming chunk (completions)
+- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler
 - `ThreadSafeQueue<T>`: Lock-free thread-safe queue for task management

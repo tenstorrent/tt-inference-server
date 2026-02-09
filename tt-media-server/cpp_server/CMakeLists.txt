@@ -10,8 +10,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find Drogon
 find_package(Drogon REQUIRED)
 
-# Python required for embedding runner (Python C API)
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
+option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
+if(NOT TEST)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
@@ -20,7 +23,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
     GIT_TAG        v1.1.0
 )
-cmake_policy(SET CMP0169 OLD)  # allow FetchContent_Populate (RapidJSON's CMake is too old for MakeAvailable)
+# Conditionally set CMP0169 policy if supported
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
 FetchContent_Populate(rapidjson)
 
 # Google Test for unit tests
@@ -77,14 +83,24 @@ gtest_discover_tests(scheduler_test)
 # Source files
 set(SOURCES
     src/main.cpp
-    src/api/embedding_controller.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
-    src/runners/embedding_runner.cpp
+    src/config/settings.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
-    src/services/embedding_service.cpp
 )
+if(NOT TEST)
+    list(APPEND SOURCES
+        src/api/embedding_controller.cpp
+        src/runners/embedding_runner.cpp
+        src/services/embedding_service.cpp
+    )
+endif()
+
+# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
+if(ENABLE_TTNN)
+    list(APPEND SOURCES src/runners/embedding_runner.cpp)
+endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -95,8 +111,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon and Python (embedding runner uses Python C API)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon Python3::Python)
+# Link Drogon (Python only when embedding is built, i.e. NOT TEST)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+if(TEST)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
+endif()
+if(NOT TEST)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+endif()
 
 # TTNN support (optional)
 if(ENABLE_TTNN)
