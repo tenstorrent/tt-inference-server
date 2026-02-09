@@ -54,20 +54,11 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_USE_EXTERNAL_LOG)
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
 target_link_libraries(engine_demo PRIVATE llm_engine)
 target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
-
-add_executable(llm_engine_demo src/llm_engine_demo.cpp)
-target_link_libraries(llm_engine_demo PRIVATE llm_engine)
-target_include_directories(llm_engine_demo PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-target_compile_options(llm_engine_demo PRIVATE -Wall -Wextra -Wpedantic)
 
 # Unit tests (LLM engine scheduler)
 enable_testing()

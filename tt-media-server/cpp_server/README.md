@@ -15,15 +15,7 @@ The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
-### Run the demos
-
-Engine demo (server-style logging):
-
-```bash
-./build/llm_engine_demo
-```
-
-Original demo (stdout only):
+### Run the demo
 
 ```bash
 ./build/engine_demo
