@@ -1,7 +1,6 @@
 aiohttp
 asyncio
 colorama
-diffusers==0.35.1
 fastapi
 faster_fifo
 httpx
@@ -16,9 +15,7 @@ pytest
 pytest-asyncio
 python-multipart
 silero_vad
-torch==2.7.1+cpu
 tqdm
-transformers==4.55.0
 uvicorn
 whisperx
 faster_fifo
