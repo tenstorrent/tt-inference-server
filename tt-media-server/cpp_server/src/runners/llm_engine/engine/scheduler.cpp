@@ -105,7 +105,7 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
     int64_t token_id = token_ids[i];
-    bool was_in_flight = (seq->status_ == SequenceStatus::IN_FLIGHT);
+    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     seq->append_token(token_id);
 
@@ -119,13 +119,8 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
                                << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
-      if (was_in_flight) {
-        --in_flight_count_;
-      } else {
-        running_.erase(
-            std::find(running_.begin(), running_.end(), seq));
-      }
-    } else if (was_in_flight) {
+      --in_flight_count_;
+    } else {
       seq->status_ = SequenceStatus::RUNNING;
       running_.push_back(seq);
       --in_flight_count_;
