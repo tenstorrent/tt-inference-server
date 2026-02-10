@@ -1953,6 +1953,7 @@ vlm_templates = [
                 default_impl=True,
                 env_vars={
                     "VLLM_USE_V1": "1",
+                    "MAX_PREFILL_CHUNK_SIZE": "128",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
@@ -1975,6 +1976,7 @@ vlm_templates = [
                     "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                    "MAX_PREFILL_CHUNK_SIZE": "128",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
@@ -1996,6 +1998,7 @@ vlm_templates = [
                 env_vars={
                     "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
+                    "MAX_PREFILL_CHUNK_SIZE": "128",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
@@ -2014,7 +2017,8 @@ vlm_templates = [
         ],
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
-        supported_modalities=["text", "image"],
+        # supported_modalities=["text", "image"],
+        supported_modalities=["text"],  # Use text only for medgemma-27b-it when necessary
     ),
     ModelSpecTemplate(
         weights=[
