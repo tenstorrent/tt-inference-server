@@ -108,7 +108,8 @@ int main(int argc, char* argv[]) {
                   << std::endl;
     } else {
         std::cout << "[Main] Endpoints:\n"
-                  << "  POST /v1/completions  - OpenAI-compatible completions\n"
+                  << "  POST /v1/completions       - OpenAI-compatible completions\n"
+                  << "  POST /v1/chat/completions - OpenAI-compatible chat completions\n"
                   << "  GET  /health          - Health check\n"
                   << "  GET  /ready           - Readiness check\n"
                   << "  GET  /docs            - Swagger UI\n"
