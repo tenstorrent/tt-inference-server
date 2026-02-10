@@ -28,7 +28,6 @@
 │   ├── run_benchmarks.py
 │   ├── run_genai_benchmarks.py
 │   └── summary_report.py
-├── docker-entrypoint.sh
 ├── docs
 │   ├── add_support_for_new_model.md
 │   ├── benchmarking_tools.md
@@ -356,7 +355,6 @@
 │   │   ├── example_requests_client_vision.py
 │   │   ├── example_requests_client.py
 │   │   └── run_vllm_api_server.py
-│   ├── vllm.tt-metal.src.cloud.Dockerfile
 │   └── vllm.tt-metal.src.dev.Dockerfile
 └── workflows
     ├── __init__.py

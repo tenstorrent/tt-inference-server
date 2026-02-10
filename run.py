@@ -209,6 +209,27 @@ def parse_arguments():
         action="store_true",
         help="Print simplified Docker run command and exit (does not start server)",
     )
+    parser.add_argument(
+        "--host-volume",
+        type=str,
+        default=None,
+        help="Host directory for persistent cache volume (bind mount). "
+        "If not provided, a Docker named volume is used instead (recommended).",
+    )
+    parser.add_argument(
+        "--host-hf-cache",
+        type=str,
+        default=None,
+        help="Host HuggingFace cache directory to mount readonly for model weights. "
+        "Uses existing HF cache instead of downloading weights into the Docker volume.",
+    )
+    parser.add_argument(
+        "--image-user",
+        type=str,
+        default="1000",
+        help="UID to pass to docker run --user (default: 1000). "
+        "Set to match your host user UID for correct bind mount permissions.",
+    )
 
     args = parser.parse_args()
 
@@ -344,6 +365,11 @@ def format_cli_args_summary(args, model_spec):
         f"  limit-samples-mode:         {args.limit_samples_mode}",
         f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
         f"  tools:                      {args.tools}",
+        "",
+        "Docker Volume Options:",
+        f"  host_volume:                {args.host_volume}",
+        f"  host_hf_cache:              {args.host_hf_cache}",
+        f"  image_user:                 {args.image_user}",
         "",
         "=" * 60,
     ]
@@ -507,6 +533,8 @@ def main():
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+            host_volume=args.host_volume,
+            host_hf_cache=args.host_hf_cache,
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:

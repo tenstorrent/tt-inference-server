@@ -242,7 +242,7 @@ def process_sha_combination(args_tuple):
 
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
-        for image_type in ["tt_metal_base", "cloud", "dev", "release"]:
+        for image_type in ["tt_metal_base", "dev", "release"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
@@ -257,30 +257,16 @@ def process_sha_combination(args_tuple):
 
         # Determine what images need to be built
         build_tt_metal_base_flag = True
-        build_cloud_image_flag = True
         build_dev_image_flag = True
         build_release_image_flag = True
 
         if not force_build:
-            if (
-                image_status["cloud"]["local_exists"]
-                or image_status["cloud"]["remote_exists"]
-            ):
-                build_cloud_image_flag = False
-                process_logger.info("Cloud image already exists, skipping build")
-
             if (
                 image_status["dev"]["local_exists"]
                 or image_status["dev"]["remote_exists"]
             ):
                 build_dev_image_flag = False
                 process_logger.info("Dev image already exists, skipping build")
-                # Dev image is built FROM cloud image, so cloud must exist too
-                if build_cloud_image_flag:
-                    build_cloud_image_flag = False
-                    process_logger.info(
-                        "Dev image exists, cloud image must exist too, skipping cloud build"
-                    )
 
             if (
                 image_status["release"]["local_exists"]
@@ -288,12 +274,6 @@ def process_sha_combination(args_tuple):
             ):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
-                # Release image is built FROM cloud image, so cloud must exist too
-                if build_cloud_image_flag:
-                    build_cloud_image_flag = False
-                    process_logger.info(
-                        "Release image exists, cloud image must exist too, skipping cloud build"
-                    )
 
             if (
                 image_status["tt_metal_base"]["local_exists"]
@@ -304,22 +284,16 @@ def process_sha_combination(args_tuple):
             if (
                 release
                 and build_release_image_flag
-                and not image_status["cloud"]["local_exists"]
+                and not image_status["dev"]["local_exists"]
             ):
-                # NOTE: copying a dev image into a release image is not guaranteed
-                # to have correct code in it, so it is required to build the cloud image
-                # as part of release process.
+                # Release image is tagged from dev, so dev must be built
                 process_logger.info(
-                    "Cloud image does not exist locally, building cloud image to safely build release image"
+                    "Dev image does not exist locally, building dev image to safely build release image"
                 )
-                build_cloud_image_flag = True
-                # might as well build the dev image too, just a different tag
                 build_dev_image_flag = True
 
         # Build tt-metal base image only if needed
-        if (
-            build_cloud_image_flag or build_dev_image_flag
-        ) and build_tt_metal_base_flag:
+        if build_dev_image_flag and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
                 process_logger.info("[DRY-RUN] Would build tt-metal base image...")
@@ -342,31 +316,6 @@ def process_sha_combination(args_tuple):
                 "All final images exist, skipping tt-metal base image build"
             )
 
-        # Build cloud image
-        if build_cloud_image_flag:
-            image_status["cloud"]["build_attempted"] = True
-            if dry_run:
-                process_logger.info(
-                    f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}"
-                )
-            else:
-                process_logger.info("Building cloud image...")
-                try:
-                    build_cloud_image(
-                        image_tags,
-                        resolved_tt_metal_commit,
-                        vllm_commit,
-                        container_app_uid,
-                        process_logger,
-                    )
-                    image_status["cloud"]["build_succeeded"] = True
-                except Exception as e:
-                    process_logger.error(f"Failed to build cloud image: {e}")
-                    image_status["cloud"]["build_succeeded"] = False
-                    raise
-        else:
-            process_logger.info(f"Skipping cloud image build: {image_tags['cloud']}")
-
         # Build dev image
         if build_dev_image_flag:
             image_status["dev"]["build_attempted"] = True
@@ -377,7 +326,13 @@ def process_sha_combination(args_tuple):
             else:
                 process_logger.info("Building dev image...")
                 try:
-                    build_dev_image(image_tags, process_logger)
+                    build_dev_image(
+                        image_tags,
+                        resolved_tt_metal_commit,
+                        vllm_commit,
+                        container_app_uid,
+                        process_logger,
+                    )
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
                     process_logger.error(f"Failed to build dev image: {e}")
@@ -414,7 +369,7 @@ def process_sha_combination(args_tuple):
             else:
                 process_logger.info("Pushing images to registry...")
 
-            for image_type in ["cloud", "dev", "release"]:
+            for image_type in ["dev", "release"]:
                 image_tag = image_tags[image_type]
 
                 # Skip release image unless explicitly marked as a release
@@ -641,13 +596,11 @@ def get_image_tags(
 
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
-        "cloud": cloud_image_tag,
         "dev": dev_image_tag,
         "release": release_image_tag,
         "tt_metal_base": tt_metal_base_tag,
@@ -873,11 +826,11 @@ def should_push_image(image_tag, force_push=False):
     return local_exists and (not remote_exists or force_push)
 
 
-def build_cloud_image(
+def build_dev_image(
     image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
 ):
     """
-    Build the cloud Docker image.
+    Build the dev Docker image from the Dockerfile.
 
     Args:
         image_tags: Dictionary of image tags
@@ -887,16 +840,20 @@ def build_cloud_image(
         logger: Logger instance
     """
     repo_root = get_repo_root_path()
-    cloud_image_tag = image_tags["cloud"]
+    dev_image_tag = image_tags["dev"]
     tt_metal_base_tag = image_tags["tt_metal_base"]
 
-    logger.info(f"Building cloud image: {cloud_image_tag}")
+    # Generate model_specs_defaults.json before building (COPY'd into image)
+    model_specs_json_path = generate_model_specs_json()
+    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
+
+    logger.info(f"Building dev image: {dev_image_tag}")
 
     build_command = [
         "docker",
         "build",
         "-t",
-        cloud_image_tag,
+        dev_image_tag,
         "--build-arg",
         f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
         "--build-arg",
@@ -905,39 +862,6 @@ def build_cloud_image(
         f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
-        "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
-        ".",
-    ]
-
-    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
-    logger.info(f"Successfully built cloud image: {cloud_image_tag}")
-
-
-def build_dev_image(image_tags, logger):
-    """
-    Build the dev Docker image.
-
-    This function generates model_specs_defaults.json before building the dev image.
-    The JSON file is copied into the image and used at runtime for model lookups.
-    """
-    repo_root = get_repo_root_path()
-    dev_image_tag = image_tags["dev"]
-    cloud_image_tag = image_tags["cloud"]
-
-    logger.info(f"Building dev image: {dev_image_tag}")
-
-    # Generate model_specs_defaults.json before building
-    model_specs_json_path = generate_model_specs_json()
-    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
-
-    build_command = [
-        "docker",
-        "build",
-        "-t",
-        dev_image_tag,
-        "--build-arg",
-        f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
         "-f",
         "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
         ".",
@@ -949,35 +873,18 @@ def build_dev_image(image_tags, logger):
 
 def build_release_image(image_tags, logger):
     """
-    Build the release Docker image.
+    Tag the dev image as the release image.
 
-    This function generates model_specs_defaults.json before building the release image.
-    The JSON file is copied into the image and used at runtime for model lookups.
+    Release image is identical to the dev image — just a different tag.
     """
-    repo_root = get_repo_root_path()
     release_image_tag = image_tags["release"]
-    cloud_image_tag = image_tags["cloud"]
+    dev_image_tag = image_tags["dev"]
 
-    logger.info(f"Building release image: {release_image_tag}")
+    logger.info(f"Tagging dev image as release: {dev_image_tag} -> {release_image_tag}")
 
-    # Generate model_specs_defaults.json before building
-    model_specs_json_path = generate_model_specs_json()
-    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
-
-    build_command = [
-        "docker",
-        "build",
-        "-t",
-        release_image_tag,
-        "--build-arg",
-        f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
-        "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
-        ".",
-    ]
-
-    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
-    logger.info(f"Successfully built release image: {release_image_tag}")
+    tag_command = ["docker", "tag", dev_image_tag, release_image_tag]
+    run_command_with_logging(tag_command, logger=logger, check=True)
+    logger.info(f"Successfully tagged release image: {release_image_tag}")
 
 
 def push_image(image_tag, logger):
@@ -1171,13 +1078,13 @@ def build_docker_images(
             logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
-    build_attempted = {"cloud": [], "dev": [], "release": []}
-    build_succeeded = {"cloud": [], "dev": [], "release": []}
-    remote_exists = {"cloud": [], "dev": [], "release": []}
+    build_attempted = {"dev": [], "release": []}
+    build_succeeded = {"dev": [], "release": []}
+    remote_exists = {"dev": [], "release": []}
 
     for result in results:
         images = result.get("images", {})
-        for image_type in ["cloud", "dev", "release"]:
+        for image_type in ["dev", "release"]:
             if image_type in images:
                 image_info = images[image_type]
                 if image_info.get("build_attempted", False):

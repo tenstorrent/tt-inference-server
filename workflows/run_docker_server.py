@@ -19,7 +19,7 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
-from workflows.workflow_types import DeviceTypes, ModelSource, ModelType, WorkflowType
+from workflows.workflow_types import DeviceTypes, ModelType, WorkflowType
 
 logger = logging.getLogger("run_log")
 
@@ -224,18 +224,27 @@ def generate_docker_run_command(
         "run",
         "--rm",
         "--name", container_name,
+        *( ["--user", str(args.image_user)] if getattr(args, "image_user", None) else []),
         "--env-file", str(default_dotenv_path),
         "--cap-add", "SYS_NICE",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
 
-    # setup_config-dependent mounts (host volume root, json file, model weights)
+    # setup_config-dependent mounts (cache_root volume, json file)
     if setup_config and json_fpath:
         docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
+        # Mount cache_root: Docker named volume or host bind mount
+        if setup_config.host_model_volume_root:
+            docker_command.extend([
+                "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+            ])
+        else:
+            volume_name = generate_docker_volume_name(model_spec)
+            docker_command.extend([
+                "--mount", f"type=volume,src={volume_name},dst={setup_config.cache_root}",
+            ])
         docker_command.extend([
-            "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
             "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         ])
 
@@ -244,8 +253,8 @@ def generate_docker_run_command(
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
     ])
 
-    # mount model weights only if model source requires it
-    if setup_config and setup_config.model_source != ModelSource.NOACTION.value:
+    # Mount host weights readonly when --host-hf-cache is used or LOCAL source
+    if setup_config and setup_config.host_model_weights_mount_dir:
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
@@ -261,19 +270,22 @@ def generate_docker_run_command(
     # environment variables that depend on setup_config
     if setup_config and json_fpath:
         docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-        # CACHE_ROOT needed for the docker container entrypoint
-        # TT_CACHE_PATH has host path
-        # TT_MODEL_SPEC_JSON_PATH has dynamic path
-        # MODEL_WEIGHTS_PATH has dynamic path
-        docker_env_vars.update(
-            {
-                "CACHE_ROOT": setup_config.cache_root,
-                "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir
-                / device_cache_dir,
-                "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-                "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
-            }
-        )
+        docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = docker_json_fpath
+        # Only set MODEL_WEIGHTS_PATH when using host-mounted weights
+        # (--host-hf-cache or LOCAL source). For Docker volume mode,
+        # ensure_weights_available() sets it inside the container.
+        if (
+            setup_config.container_model_weights_path
+            and setup_config.host_model_weights_mount_dir
+        ):
+            docker_env_vars["MODEL_WEIGHTS_PATH"] = (
+                setup_config.container_model_weights_path
+            )
+        # Only set TT_CACHE_PATH when using host volume
+        if setup_config.host_model_volume_root:
+            docker_env_vars["TT_CACHE_PATH"] = (
+                setup_config.container_tt_metal_cache_dir / device_cache_dir
+            )
 
     # Add environment variables for tt-media-server containers
     if model_spec.model_type == ModelType.AUDIO:
