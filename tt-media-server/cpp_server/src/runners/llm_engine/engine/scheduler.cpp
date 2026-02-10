@@ -1,20 +1,17 @@
 #include "llm_engine/engine/scheduler.hpp"
-#include "llm_engine/engine/boost_ipc_task_queue.hpp"
 #include "llm_engine/engine/debug.hpp"
 
-#include "llm_engine/engine/debug.hpp"
 #include <algorithm>
 #include <cassert>
 
 namespace llm_engine {
 
-Scheduler::Scheduler(const Config& config)
+Scheduler::Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue)
     : max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       eos_(config.eos),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      waiting_(std::make_unique<BoostIpcTaskQueue>(
-          config.task_queue_name)) {}
+      waiting_(std::move(task_queue)) {}
 
 bool Scheduler::is_finished() const {
   return waiting_->empty() && running_.empty();

@@ -22,7 +22,6 @@ void BoostIpcTaskQueue::push(const Sequence& seq) {
 }
 
 Sequence* BoostIpcTaskQueue::try_pop() {
-  auto max_msg_size = queue_->get_max_msg_size();
   ipc::message_queue::size_type recv_size = 0;
   unsigned int priority = 0;
 

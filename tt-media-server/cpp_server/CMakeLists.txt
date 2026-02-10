@@ -67,9 +67,10 @@ add_executable(engine_demo src/runners/llm_engine/demo.cpp)
 target_link_libraries(engine_demo PRIVATE llm_engine)
 target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
 
-add_executable(llm_engine_demo src/llm_engine_demo.cpp)
-target_link_libraries(llm_engine_demo PRIVATE llm_engine)
-target_include_directories(llm_engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
+# TODO: add llm_engine_demo once src/llm_engine_demo.cpp exists.
+# add_executable(llm_engine_demo src/llm_engine_demo.cpp)
+# target_link_libraries(llm_engine_demo PRIVATE llm_engine)
+# target_include_directories(llm_engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
 
 # Unit tests (LLM engine scheduler)
 enable_testing()
@@ -81,6 +82,14 @@ target_include_directories(scheduler_test PRIVATE
 )
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
+
+# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
+add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_engine)
+target_include_directories(ipc_scheduler_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 # Source files
 set(SOURCES

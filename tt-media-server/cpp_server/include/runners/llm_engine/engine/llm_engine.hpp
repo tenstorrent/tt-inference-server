@@ -19,7 +19,7 @@ struct StepResult {
 
 class LLMEngine {
  public:
-  explicit LLMEngine(const Config& config);
+  explicit LLMEngine(const Config& config, std::unique_ptr<Scheduler> scheduler);
   ~LLMEngine();
 
   void add_request(std::vector<int64_t> prompt,

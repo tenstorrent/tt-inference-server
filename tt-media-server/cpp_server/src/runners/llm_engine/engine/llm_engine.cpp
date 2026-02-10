@@ -1,12 +1,12 @@
 #include "llm_engine/engine/llm_engine.hpp"
 #include "llm_engine/engine/debug.hpp"
+#include <algorithm>
 
 namespace llm_engine {
 
-LLMEngine::LLMEngine(const Config& config) : config_(config) {
+LLMEngine::LLMEngine(const Config& config, std::unique_ptr<Scheduler> scheduler) : config_(config), scheduler_(std::move(scheduler)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   model_runner_ = make_model_runner(config_);
-  scheduler_ = std::make_unique<Scheduler>(config_);
   if (config_.eos < 0) {
     config_.eos = 0;
   }

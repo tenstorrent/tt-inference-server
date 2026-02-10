@@ -16,7 +16,7 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const Config& config);
+  explicit Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue);
 
   /** @return true if there are no waiting or running sequences. */
   bool is_finished() const;

@@ -46,67 +46,46 @@ void Sequence::append_token(int64_t token_id) {
   last_token = token_id;
 }
 
+// Note: status_ is intentionally not serialized. Sequences in the queue are
+// always in WAITING status (the Sequence constructor default).
+void Sequence::serialize(std::ostream& os) const {
+  size_t token_ids_size = token_ids_.size();
+  size_t block_table_size = block_table_.size();
+  os.write(reinterpret_cast<const char*>(&seq_id), sizeof(seq_id));
+  os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
+  os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
+  os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
+  os.write(reinterpret_cast<const char*>(&max_tokens), sizeof(max_tokens));
+  os.write(reinterpret_cast<const char*>(&ignore_eos), sizeof(ignore_eos));
+  os.write(reinterpret_cast<const char*>(&token_ids_size), sizeof(token_ids_size));
+  os.write(reinterpret_cast<const char*>(token_ids_.data()), token_ids_size * sizeof(int64_t));
+  os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
+  os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
+  os.write(reinterpret_cast<const char*>(&temperature), sizeof(temperature));
+}
 
-  void Sequence::serialize(std::ostream& os) const {
-    size_t token_ids_size = token_ids_.size();
-    size_t block_table_size = block_table_.size();
-    os.write(reinterpret_cast<const char*>(&seq_id), sizeof(seq_id));
-    os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
-    os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
-    os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
-    os.write(reinterpret_cast<const char*>(&max_tokens), sizeof(max_tokens));
-    os.write(reinterpret_cast<const char*>(&ignore_eos), sizeof(ignore_eos));
-    os.write(reinterpret_cast<const char*>(&token_ids_size), sizeof(token_ids_size));
-    os.write(reinterpret_cast<const char*>(token_ids_.data()), token_ids_size * sizeof(int64_t));
-    os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
-    os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
-    os.write(reinterpret_cast<const char*>(&temperature), sizeof(temperature));
-  }
+Sequence* Sequence::deserialize(std::istream& is) {
+  Sequence* seq = new Sequence(std::vector<int64_t>{});
 
-  Sequence* Sequence::deserialize(std::istream& is) {
-    Sequence* seq = new Sequence(std::vector<int64_t>{});
-    //seq ud
-    is.read(reinterpret_cast<char*>(&seq->seq_id), sizeof(seq->seq_id));
+  is.read(reinterpret_cast<char*>(&seq->seq_id), sizeof(seq->seq_id));
+  is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
+  is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
+  is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));
+  is.read(reinterpret_cast<char*>(&seq->max_tokens), sizeof(seq->max_tokens));
+  is.read(reinterpret_cast<char*>(&seq->ignore_eos), sizeof(seq->ignore_eos));
 
-    // last_token
-    is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
-    
-    // num_prompt_tokens
-    size_t num_prompt_tokens;
-    is.read(reinterpret_cast<char*>(&num_prompt_tokens), sizeof(num_prompt_tokens));
-    
-    // num_cached_tokens
-    size_t num_cached_tokens;
-    is.read(reinterpret_cast<char*>(&num_cached_tokens), sizeof(num_cached_tokens));
-    
-    // max_tokens
-    is.read(reinterpret_cast<char*>(&seq->max_tokens), sizeof(max_tokens));
-    
-    // ignore_eos
-    is.read(reinterpret_cast<char*>(&seq->ignore_eos), sizeof(seq->ignore_eos));
-    
-    // token_ids_size
-    size_t token_ids_size;
-    is.read(reinterpret_cast<char*>(&token_ids_size), sizeof(token_ids_size));
+  size_t token_ids_size;
+  is.read(reinterpret_cast<char*>(&token_ids_size), sizeof(token_ids_size));
+  seq->token_ids_.resize(token_ids_size);
+  is.read(reinterpret_cast<char*>(seq->token_ids_.data()), token_ids_size * sizeof(int64_t));
 
-    // token_ids
-    seq->token_ids_.resize(token_ids_size);
-    is.read(reinterpret_cast<char*>(seq->token_ids_.data()), token_ids_size * sizeof(int64_t));
-    
-    // block_table_size
-    size_t block_table_size;
-    is.read(reinterpret_cast<char*>(&block_table_size), sizeof(block_table_size));
-    
+  size_t block_table_size;
+  is.read(reinterpret_cast<char*>(&block_table_size), sizeof(block_table_size));
+  seq->block_table_.resize(block_table_size);
+  is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
 
-    seq->block_table_.resize(block_table_size);
-    is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
-    
-    // temperature
-    is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
-    
-    return seq;
-    
-
-  }
+  is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
+  return seq;
+}
 
 }  // namespace llm_engine
