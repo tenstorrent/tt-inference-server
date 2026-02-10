@@ -40,8 +40,6 @@ class IModelRunner {
 
 class ModelRunnerStub : public IModelRunner {
  public:
-  static constexpr int NUM_DECODE_CHANNELS = 3;
-
   ModelRunnerStub(const Config& config, DecodeCallback callback);
   ~ModelRunnerStub() override;
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
@@ -53,6 +51,8 @@ class ModelRunnerStub : public IModelRunner {
   Config config_;
   int64_t dummy_token_;
   DecodeCallback decode_callback_;
+  std::mutex work_mutex_;
+  std::vector<DecodeResult> work_queue_;
   std::atomic<bool> stop_{false};
   std::thread reader_thread_;  // must be last: uses all members above
 };

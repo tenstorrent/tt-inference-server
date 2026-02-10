@@ -28,12 +28,18 @@ ModelRunnerStub::~ModelRunnerStub() {
 }
 
 void ModelRunnerStub::reader_loop() {
-  int channel = 0;
-  int dummy_token = 100;
   while (!stop_.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
-    decode_callback_({channel, ++dummy_token});
-    channel = (channel + 1) % NUM_DECODE_CHANNELS;
+    std::vector<DecodeResult> work;
+    {
+      std::lock_guard<std::mutex> lock(work_mutex_);
+      work.swap(work_queue_);
+    }
+    for (const auto& item : work) {
+      decode_callback_({item.seq_id, item.token_id});
+    }
+    if (work.empty()) {
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
   }
 }
 
@@ -44,7 +50,12 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->seq_id, ++dummy_token_});
+      decode_callback_({seq->seq_id, seq->last_token + 1});
+    }
+  } else {
+    std::lock_guard<std::mutex> lock(work_mutex_);
+    for (Sequence* seq : seqs) {
+      work_queue_.push_back({seq->seq_id, seq->last_token + 1});
     }
   }
 }
