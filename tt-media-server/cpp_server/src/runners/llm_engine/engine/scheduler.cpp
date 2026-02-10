@@ -21,7 +21,7 @@ Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(prompt), params);
   Sequence& ref = *seq;
-  sequences_.push_back(std::move(seq));
+  sequences_[seq->seq_id] = std::move(seq);
   add(ref);
   return ref;
 }
@@ -32,9 +32,8 @@ void Scheduler::add(Sequence& seq) {
 }
 
 Sequence* Scheduler::find_sequence(int seq_id) {
-  auto it = std::find_if(sequences_.begin(), sequences_.end(),
-                         [&](const auto& seq) { return seq->seq_id == seq_id; });
-  return it != sequences_.end() ? it->get() : nullptr;
+  auto it = sequences_.find(seq_id);
+  return it != sequences_.end() ? it->second.get() : nullptr;
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
@@ -64,7 +63,8 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
         static_cast<int>(seq->size() - seq->num_cached_tokens_);
     seq->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
-    scheduled_seqs.push_back(seq);
+    sequences_[seq->seq_id] = std::make_unique<Sequence>(std::move(*seq));
+    scheduled_seqs.push_back(sequences_[seq->seq_id].get());
   }
 
   if (!scheduled_seqs.empty()) {

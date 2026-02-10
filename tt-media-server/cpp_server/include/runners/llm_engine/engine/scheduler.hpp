@@ -3,6 +3,7 @@
 #include <deque>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/block_manager.hpp"
@@ -61,7 +62,7 @@ class Scheduler {
   int eos_;
   BlockManager block_manager_;
   std::unique_ptr<ITaskQueue> waiting_;
-  std::vector<std::unique_ptr<Sequence>> sequences_;
+  std::unordered_map<int, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> running_;
   int in_flight_count_ = 0;
 };
