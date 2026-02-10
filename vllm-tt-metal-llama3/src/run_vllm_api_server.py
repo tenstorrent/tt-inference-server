@@ -29,7 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
-    """Parse CLI arguments before any model loading."""
+    """Parse CLI arguments before any model loading.
+
+    Also removes --model and --device from sys.argv so they don't get passed
+    to vLLM's argument parser (which doesn't recognize --device).
+    """
     parser = argparse.ArgumentParser(description="TT vLLM API Server")
     parser.add_argument(
         "--model",
@@ -42,7 +46,12 @@ def parse_args():
         help="Device type (e.g., n300, t3k, galaxy)",
     )
     # Parse known args to allow vLLM args to pass through
-    args, _ = parser.parse_known_args()
+    args, remaining = parser.parse_known_args()
+
+    # Remove --model and --device from sys.argv so vLLM doesn't see them
+    # Keep sys.argv[0] (script name) and add remaining args
+    sys.argv = [sys.argv[0]] + remaining
+
     return args
 
 
