@@ -4,6 +4,7 @@
 #pragma once
 
 #include <drogon/drogon.h>
+#include <json/json.h>
 #include <memory>
 
 #include "services/llm_service.hpp"
@@ -18,6 +19,7 @@ class LLMController : public drogon::HttpController<LLMController> {
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
+    ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions", drogon::Post);
     ADD_METHOD_TO(LLMController::health, "/health", drogon::Get);
     ADD_METHOD_TO(LLMController::ready, "/ready", drogon::Get);
     METHOD_LIST_END
@@ -29,6 +31,15 @@ public:
      * OpenAI-compatible text completion endpoint.
      */
     void completions(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+
+    /**
+     * POST /v1/chat/completions
+     * OpenAI-compatible chat completions endpoint.
+     */
+    void chat_completions(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
@@ -76,9 +87,44 @@ private:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
+     * Handle non-streaming chat completion request.
+     */
+    void handle_chat_non_streaming(
+        const domain::CompletionRequest& request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    /**
+     * Handle streaming chat completion request (SSE). Takes request by value so caller can move.
+     */
+    void handle_chat_streaming(
+        domain::CompletionRequest request,
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+    /**
      * Generate a unique completion ID.
      */
     static std::string generate_completion_id();
+
+    /**
+     * Build OpenAI-style error JSON for chat completions (flat object/message/type/param/code).
+     */
+    static Json::Value chat_error_json(const std::string& message, const std::string& type,
+        const Json::Value& param = Json::nullValue, const Json::Value& code = Json::nullValue);
+
+    /**
+     * Response formatter function type.
+     * Takes a completion response and returns a JSON value.
+     */
+    using ResponseFormatter = std::function<Json::Value(const domain::CompletionResponse&)>;
+
+    /**
+     * Run an asynchronous completion request.
+     */
+    void run_async_completion(
+        const domain::CompletionRequest& request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        ResponseFormatter formatter);
 };
 
 } // namespace tt::api
