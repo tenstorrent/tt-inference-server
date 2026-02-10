@@ -38,6 +38,8 @@ dit_runner_log_map = {
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
+    MIN_INFERENCE_STEPS = 12
+
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
         self.pipeline = None
@@ -114,7 +116,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
+                _skip_validation=True,
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
             self.run(
@@ -124,7 +127,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
+                _skip_validation=True,
             )
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
@@ -136,9 +140,11 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest], _skip_validation: bool = False):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        if not _skip_validation:
+            self._validate_inference_steps(request)
         image = self.pipeline.run_single_prompt(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -147,6 +153,14 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
+
+    def _validate_inference_steps(self, request: ImageGenerateRequest) -> None:
+        """Validate request parameters for this specific model."""
+        if request.num_inference_steps < self.MIN_INFERENCE_STEPS:
+            raise ValueError(
+                f"num_inference_steps must be >= {self.MIN_INFERENCE_STEPS}, "
+                f"got {request.num_inference_steps}"
+            )
 
 
 class TTSD35Runner(TTDiTRunner):
@@ -165,6 +179,8 @@ class TTSD35Runner(TTDiTRunner):
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
+    MIN_INFERENCE_STEPS = 4
+
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads)
 
