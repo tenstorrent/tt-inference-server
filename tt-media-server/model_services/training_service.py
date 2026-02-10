@@ -5,11 +5,13 @@ import os
 
 from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
+from config.settings import get_settings
 from domain.training_request import TrainingRequest
 
 
 class TrainingService(BaseJobService):
     def __init__(self):
+        self.settings = get_settings()
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:

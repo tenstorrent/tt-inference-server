@@ -11,7 +11,7 @@ from pydantic import PrivateAttr
 class TrainingRequest(BaseRequest):
     dataset_loader: str = DatasetLoaders.SST2.value
     dataset_max_sequence_length: int = 32
-    
+
     batch_size: int = 4
     learning_rate: float = 6e-5
     num_epochs: int = 1

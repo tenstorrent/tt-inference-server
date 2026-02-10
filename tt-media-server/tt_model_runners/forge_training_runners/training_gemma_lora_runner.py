@@ -60,10 +60,18 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         request = training_requests[0]
 
         self.train_dataset = get_dataset_loader(
-            dataset_loader=request.dataset_loader, model_name=self.model_name, max_sequence_length=request.dataset_max_sequence_length, split="train", collate_fn=collate_fn_for_causal_lm
+            dataset_loader=request.dataset_loader,
+            model_name=self.model_name,
+            max_sequence_length=request.dataset_max_sequence_length,
+            split="train",
+            collate_fn=collate_fn_for_causal_lm,
         )
         self.eval_dataset = get_dataset_loader(
-            dataset_loader=request.dataset_loader, model_name=self.model_name, max_sequence_length=request.dataset_max_sequence_length, split="validation", collate_fn=collate_fn_for_causal_lm
+            dataset_loader=request.dataset_loader,
+            model_name=self.model_name,
+            max_sequence_length=request.dataset_max_sequence_length,
+            split="validation",
+            collate_fn=collate_fn_for_causal_lm,
         )
         self.logger.info(
             f"Loaded train and eval datasets. Train dataset size: {len(self.train_dataset)}. \
@@ -144,10 +152,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Backward pass finished"
                     )
 
-                    self.logger.debug(f"Device {self.device_id}: Optimizer step started")
+                    self.logger.debug(
+                        f"Device {self.device_id}: Optimizer step started"
+                    )
                     self.optimizer.step()
                     torch_xla.sync(wait=True)
-                    self.logger.debug(f"Device {self.device_id}: Optimizer step finished")
+                    self.logger.debug(
+                        f"Device {self.device_id}: Optimizer step finished"
+                    )
 
                     do_validation = global_step % request.val_steps_freq == 0
 

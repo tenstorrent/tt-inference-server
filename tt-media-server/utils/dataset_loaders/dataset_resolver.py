@@ -7,14 +7,22 @@ from utils.dataset_loaders.base_dataset import BaseDataset
 
 # The factory dictionary using the same lazy-loading lambda pattern
 AVAILABLE_DATASET_LOADERS = {
-    DatasetLoaders.SST2: lambda model_name, max_sequence_length, split, collate_fn: __import__(
-        "utils.dataset_loaders.sst2.sst2_dataset",
-        fromlist=["SSTDataset"],
-    ).SSTDataset(model_name, max_sequence_length, split, collate_fn),
+    DatasetLoaders.SST2: lambda model_name, max_sequence_length, split, collate_fn: (
+        __import__(
+            "utils.dataset_loaders.sst2.sst2_dataset",
+            fromlist=["SSTDataset"],
+        ).SSTDataset(model_name, max_sequence_length, split, collate_fn)
+    ),
 }
 
 
-def get_dataset_loader(dataset_loader: str, model_name: str, max_sequence_length: int, split: str, collate_fn=None) -> BaseDataset:
+def get_dataset_loader(
+    dataset_loader: str,
+    model_name: str,
+    max_sequence_length: int,
+    split: str,
+    collate_fn=None,
+) -> BaseDataset:
     try:
         dataset_enum = DatasetLoaders(dataset_loader)
     except ValueError:
@@ -30,7 +38,7 @@ def get_dataset_loader(dataset_loader: str, model_name: str, max_sequence_length
         )
 
     try:
-        return loader_factory(model_name, max_sequence_length,split, collate_fn)
+        return loader_factory(model_name, max_sequence_length, split, collate_fn)
     except ImportError as e:
         raise ImportError(f"Dependency error in {dataset_loader}: {e}")
     except Exception as e:

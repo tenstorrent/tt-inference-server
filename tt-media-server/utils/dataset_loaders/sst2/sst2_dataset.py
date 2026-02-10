@@ -16,7 +16,13 @@ from utils.dataset_loaders.base_dataset import BaseDataset
 
 
 class SSTDataset(BaseDataset):
-    def __init__(self, model_name: str, max_sequence_length: int, split: str = "train", collate_fn=None):
+    def __init__(
+        self,
+        model_name: str,
+        max_sequence_length: int,
+        split: str = "train",
+        collate_fn=None,
+    ):
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name, padding_side="right", use_fast=True

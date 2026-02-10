@@ -29,7 +29,9 @@ class TestTrainingServiceCreateJob:
         self, mock_settings, mock_request
     ):
         """Test TrainingService.create_job sets correct dataset and model path"""
-        with patch("model_services.base_service.get_scheduler"), patch(
+        with patch(
+            "model_services.training_service.get_settings", return_value=mock_settings
+        ), patch("model_services.base_service.get_scheduler"), patch(
             "model_services.base_service.settings", mock_settings
         ), patch("model_services.base_job_service.settings", mock_settings), patch(
             "model_services.base_job_service.get_job_manager"
