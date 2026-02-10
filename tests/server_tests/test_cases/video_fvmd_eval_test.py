@@ -274,7 +274,7 @@ class VideoFVMDTest(BaseTest):
         iio,
     ) -> np.ndarray:
         """Load a single video and sample frames uniformly."""
-        all_frames = iio.imread(video_path, plugin="pyav")
+        all_frames = iio.imread(video_path, plugin="ffmpeg")
         total_frames = len(all_frames)
 
         if total_frames == 0:
