@@ -80,7 +80,7 @@ The main performance test that:
 # Run performance tests
 pytest performance_tests/test_llm_streaming.py -vs -m performance
 
-# With custom threshold (default: 3000us overhead per token, equivalent to 3ms)
+# With custom threshold of 5ms (5000us), higher than the default 3ms (3000us)
 TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_US=5000 pytest performance_tests/ -vs -m performance
 ```
 
