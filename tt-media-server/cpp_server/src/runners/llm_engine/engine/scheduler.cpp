@@ -12,7 +12,7 @@ Scheduler::Scheduler(const Config& config)
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size) {}
 
 bool Scheduler::is_finished() const {
-  return waiting_.empty() && running_.empty();
+  return waiting_.empty() && running_.empty() && in_flight_count_ == 0;
 }
 
 void Scheduler::add(Sequence& seq) {
@@ -67,10 +67,12 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
       scheduled_seqs.push_back(seq);
     }
   }
-  for (auto it = scheduled_seqs.rbegin(); it != scheduled_seqs.rend(); ++it) {
-    running_.push_front(*it);
+  for (Sequence* seq : scheduled_seqs) {
+    seq->status_ = SequenceStatus::IN_FLIGHT;
+    ++in_flight_count_;
   }
-  LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size() << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
+                             << " in_flight=" << in_flight_count_ << std::endl;
   return {scheduled_seqs, false};
 }
 
@@ -86,16 +88,30 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
     int64_t token_id = token_ids[i];
+    bool was_in_flight = (seq->status_ == SequenceStatus::IN_FLIGHT);
+
     seq->append_token(token_id);
-    if ((!seq->ignore_eos && token_id == eos_) ||
-        seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) {
+
+    bool finished =
+        (!seq->ignore_eos && token_id == eos_) ||
+        seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens);
+
+    if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
                                << " (eos=" << (token_id == eos_) << " max_tokens="
                                << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
-      running_.erase(
-          std::find(running_.begin(), running_.end(), seq));
+      if (was_in_flight) {
+        --in_flight_count_;
+      } else {
+        running_.erase(
+            std::find(running_.begin(), running_.end(), seq));
+      }
+    } else if (was_in_flight) {
+      seq->status_ = SequenceStatus::RUNNING;
+      running_.push_back(seq);
+      --in_flight_count_;
     }
   }
 }

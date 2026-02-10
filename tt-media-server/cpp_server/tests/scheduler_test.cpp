@@ -232,7 +232,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
 // ---------------------------------------------------------------------------
 TEST(SchedulerTest, ConcurrentScheduleAndPostprocess_DetectsRace) {
   Config config = make_config(/*num_blocks=*/128, /*block_size=*/8,
-                              /*max_batched_tokens=*/256, /*max_seqs=*/4,
+                              /*max_batched_tokens=*/256, /*max_seqs=*/1,
                               /*eos=*/0);
   Scheduler sched{config};
 

@@ -17,7 +17,7 @@ class Scheduler {
  public:
   explicit Scheduler(const Config& config);
 
-  /** @return true if there are no waiting or running sequences. */
+  /** @return true if there are no waiting, running, or in-flight sequences. */
   bool is_finished() const;
 
   /** Enqueues a sequence for prefill (waiting queue). */
@@ -52,6 +52,7 @@ class Scheduler {
   BlockManager block_manager_;
   std::deque<Sequence*> waiting_;
   std::deque<Sequence*> running_;
+  int in_flight_count_ = 0;
 };
 
 }  // namespace llm_engine

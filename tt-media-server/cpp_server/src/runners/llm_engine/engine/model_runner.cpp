@@ -18,8 +18,10 @@ std::vector<int64_t> ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
   const int64_t dummy = (eos_ == 0) ? 1 : 0;
 
   if (is_prefill) {
-    return std::vector<int64_t>(seqs.size(), dummy);
+    return std::vector<int64_t>(seqs.size(), seqs[0]->last_token+1);
   }
+
+  LLM_ENGINE_LOG("model_runner") << "run decode last_token=" << seqs[0]->last_token << std::endl;
 
   // Blitz decode: send (token_id, position_id, seq_id) to device,
   // then tokens arrive asynchronously via the device-to-host reader thread.
@@ -27,12 +29,14 @@ std::vector<int64_t> ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
   std::vector<DecodeResult> results;
   results.reserve(seqs.size());
   for (const auto* seq : seqs) {
-    results.push_back({seq->seq_id, dummy});
+    results.push_back({seq->seq_id, seq->last_token+1});
   }
 
   std::thread reader{[results = std::move(results),
                       cb = this->decode_callback_]() {
     for (const auto& r : results) {
+      // simulate it takes 6 ms
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
       cb(r);
     }
   }};
