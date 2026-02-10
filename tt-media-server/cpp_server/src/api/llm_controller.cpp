@@ -31,13 +31,8 @@ LLMController::LLMController() {
     }
 
     service_ = std::make_shared<services::LLMService>();
-    // Start service in background so Drogon can bind and listen immediately.
-    // /ready returns 503 until the service is ready; completion endpoints return 503 until then.
-    std::thread([svc = service_]() {
-        svc->start();
-        std::cout << "[LLMController] Service started (background)" << std::endl;
-    }).detach();
-    std::cout << "[LLMController] Initialized (service starting in background)" << std::endl;
+    service_->start();
+    std::cout << "[LLMController] Initialized and service started" << std::endl;
 }
 
 std::string LLMController::generate_completion_id() {
