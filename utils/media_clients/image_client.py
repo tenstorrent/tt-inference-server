@@ -661,7 +661,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             server_url=self.base_url,
         )
 
-        test_config = ServerTestConfig.create_default(timeout=600)
+        test_config = ServerTestConfig.create_default(timeout=25000)
 
         eval_test = ImageGenerationEvalsTest(test_config, {"request": request})
         eval_test.service_port = self.service_port

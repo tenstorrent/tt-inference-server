@@ -366,7 +366,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.QBGE): {
         "device_mesh_shape": (2, 2),
@@ -394,7 +394,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.QBGE): {
         "device_mesh_shape": (2, 2),
