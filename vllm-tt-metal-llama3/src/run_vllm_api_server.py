@@ -171,7 +171,10 @@ def lookup_model_spec(all_specs: dict, model_arg: str, device_type: str) -> dict
 
 
 def ensure_weights_available(model_spec: dict) -> Path:
-    """Download weights if not present. Returns weights path.
+    """Ensure model weights are available, downloading if necessary.
+
+    If MODEL_WEIGHTS_DIR is already set (e.g. from --host-weights-dir bind mount),
+    uses that directory directly and skips downloading.
 
     Args:
         model_spec: The model specification dictionary
@@ -179,10 +182,26 @@ def ensure_weights_available(model_spec: dict) -> Path:
     Returns:
         Path: Path to the model weights directory
     """
+    # If MODEL_WEIGHTS_DIR is already set, use it directly and skip downloading
+    model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
+    if model_weights_dir:
+        weights_path = Path(model_weights_dir)
+        if not weights_path.exists():
+            raise RuntimeError(
+                f"MODEL_WEIGHTS_DIR={model_weights_dir} does not exist. "
+                "Ensure the host directory is correctly bind-mounted."
+            )
+        if not any(weights_path.iterdir()):
+            raise RuntimeError(
+                f"MODEL_WEIGHTS_DIR={model_weights_dir} is empty. "
+                "Ensure the host directory contains model weight files."
+            )
+        logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
+        return weights_path
+
+    # Default: download weights into cache_root
     cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
     model_name = model_spec["model_name"]
-
-    # Use model-specific weights directory
     weights_path = cache_root / "weights" / model_name
 
     if not weights_path.exists() or not any(weights_path.iterdir()):
@@ -193,7 +212,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
     else:
         logger.info(f"Weights already exist at {weights_path}")
 
-    os.environ["MODEL_WEIGHTS_PATH"] = str(weights_path)
+    os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
     return weights_path
 
 
@@ -255,10 +274,10 @@ def model_setup(model_spec_json):
     symlinks_dir = cache_root / "model_file_symlinks_map"
     symlinks_dir.mkdir(parents=True, exist_ok=True)
 
-    logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
-    assert os.getenv("MODEL_WEIGHTS_PATH") is not None, "MODEL_WEIGHTS_PATH must be set"
-    weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-    assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
+    logging.info(f"MODEL_WEIGHTS_DIR: {os.getenv('MODEL_WEIGHTS_DIR')}")
+    assert os.getenv("MODEL_WEIGHTS_DIR") is not None, "MODEL_WEIGHTS_DIR must be set"
+    weights_dir = Path(os.getenv("MODEL_WEIGHTS_DIR"))
+    assert weights_dir.exists(), f"MODEL_WEIGHTS_DIR: {weights_dir} does not exist"
 
     logging.info(f"TT_CACHE_PATH: {os.getenv('TT_CACHE_PATH')}")
     assert os.getenv("TT_CACHE_PATH") is not None, "TT_CACHE_PATH must be set"
@@ -457,10 +476,10 @@ def main():
 
         # Validate required env vars are set in legacy mode
         tt_cache_path = os.getenv("TT_CACHE_PATH")
-        model_weights_path = os.getenv("MODEL_WEIGHTS_PATH")
-        if not tt_cache_path or not model_weights_path:
+        model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
+        if not tt_cache_path or not model_weights_dir:
             raise RuntimeError(
-                "TT_MODEL_SPEC_JSON_PATH mode requires TT_CACHE_PATH and MODEL_WEIGHTS_PATH "
+                "TT_MODEL_SPEC_JSON_PATH mode requires TT_CACHE_PATH and MODEL_WEIGHTS_DIR "
                 "to be set. Use 'python run.py --docker-server' workflow or switch to simplified "
                 "mode with --model and --device arguments."
             )
