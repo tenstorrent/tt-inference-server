@@ -90,6 +90,9 @@ def mock_model_spec():
     mock_cli_args.device = "n150"
     mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
     mock_cli_args.no_auth = False
+    mock_cli_args.host_volume = None
+    mock_cli_args.host_hf_cache = None
+    mock_cli_args.host_weights_dir = None
     mock_spec.cli_args = mock_cli_args
 
     return mock_spec

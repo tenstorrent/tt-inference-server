@@ -229,6 +229,13 @@ def parse_arguments():
         "Uses existing HF cache instead of downloading weights into the Docker volume.",
     )
     parser.add_argument(
+        "--host-weights-dir",
+        type=str,
+        default=None,
+        help="Host directory containing pre-downloaded model weights to mount into container. "
+        "Uses existing weights instead of downloading into the Docker volume.",
+    )
+    parser.add_argument(
         "--image-user",
         type=str,
         default="1000",
@@ -374,6 +381,7 @@ def format_cli_args_summary(args, model_spec):
         "Docker Volume Options:",
         f"  host_volume:                {args.host_volume}",
         f"  host_hf_cache:              {args.host_hf_cache}",
+        f"  host_weights_dir:           {args.host_weights_dir}",
         f"  image_user:                 {args.image_user}",
         "",
         "=" * 60,
@@ -454,6 +462,17 @@ def validate_runtime_args(model_spec):
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
     )
+
+    # Validate mutual exclusivity of weight source options
+    weight_source_args = [
+        args.host_volume,
+        args.host_hf_cache,
+        getattr(args, "host_weights_dir", None),
+    ]
+    if sum(1 for a in weight_source_args if a) > 1:
+        raise ValueError(
+            "Only one of --host-volume, --host-hf-cache, --host-weights-dir can be specified."
+        )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
         raise AssertionError(
@@ -540,6 +559,7 @@ def main():
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
+            host_weights_dir=args.host_weights_dir,
         )
         run_docker_server(model_spec, setup_config, json_fpath)
     elif model_spec.cli_args.local_server:
