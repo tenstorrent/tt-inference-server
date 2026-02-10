@@ -23,6 +23,22 @@ Sequence::Sequence(std::vector<int64_t> token_ids,
   }
 }
 
+Sequence::Sequence(int seq_id, std::vector<int64_t> token_ids,
+                   size_t num_prompt_tokens, size_t num_cached_tokens,
+                   float temperature, int max_tokens, bool ignore_eos)
+    : seq_id(seq_id),
+      status_(SequenceStatus::WAITING),
+      token_ids_(std::move(token_ids)),
+      num_prompt_tokens_(num_prompt_tokens),
+      num_cached_tokens_(num_cached_tokens),
+      temperature(temperature),
+      max_tokens(max_tokens),
+      ignore_eos(ignore_eos) {
+  if (!token_ids_.empty()) {
+    last_token = token_ids_.back();
+  }
+}
+
 std::vector<int64_t> Sequence::block(size_t i) const {
   size_t n = num_blocks();
   if (i >= n) {

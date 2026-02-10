@@ -31,12 +31,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Boost (header-only Boost.Interprocess for IPC message queue)
+find_package(Boost REQUIRED)
+
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
@@ -48,6 +52,7 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_link_libraries(llm_engine PUBLIC Boost::boost rt)
 target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_USE_EXTERNAL_LOG)
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 

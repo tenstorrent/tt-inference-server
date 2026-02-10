@@ -25,13 +25,11 @@ void LLMEngine::exit() {
 
 void LLMEngine::add_request(std::vector<int64_t> prompt,
                              const SamplingParams& sampling_params) {
-  auto seq = std::make_unique<Sequence>(std::move(prompt), sampling_params);
-  Sequence* ptr = seq.get();
-  sequences_.push_back(std::move(seq));
-  scheduler_->add(*ptr);
-  LLM_ENGINE_LOG("llm_engine") << "add_request seq_id=" << ptr->seq_id
-                             << " prompt_len=" << ptr->size()
-                             << " max_tokens=" << ptr->max_tokens << std::endl;
+  Sequence seq(std::move(prompt), sampling_params);
+  LLM_ENGINE_LOG("llm_engine") << "add_request seq_id=" << seq.seq_id
+                             << " prompt_len=" << seq.size()
+                             << " max_tokens=" << seq.max_tokens << std::endl;
+  scheduler_->add(seq);  // Pushes to task queue
 }
 
 StepResult LLMEngine::step() {
@@ -42,6 +40,14 @@ StepResult LLMEngine::step() {
     result.num_tokens = 0;
     return result;
   }
+
+  // Take ownership of newly created prefill sequences.
+  if (is_prefill) {
+    for (Sequence* seq : seqs) {
+      sequences_.emplace_back(seq);
+    }
+  }
+
   std::vector<int64_t> token_ids = model_runner_->run(seqs, is_prefill);
   scheduler_->postprocess(seqs, token_ids);
 
