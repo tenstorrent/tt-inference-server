@@ -92,6 +92,20 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
+| `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+
+## Authentication
+
+The server uses Bearer token authentication for protected API endpoints. The token is read from the `OPENAI_API_KEY` environment variable at startup. If not set, it defaults to `your-secret-key`.
+
+### Unprotected Endpoints
+
+The following endpoints do not require authentication:
+- `GET /health`
+- `GET /ready`
+- `GET /docs`
+- `GET /swagger`
+- `GET /openapi.json`
 
 ### Running in Background
 
@@ -127,13 +141,14 @@ pkill -9 -f tt_media_server_cpp
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/completions` | POST | OpenAI-compatible text completion |
-| `/health` | GET | Health check |
-| `/ready` | GET | Readiness check with system status |
-| `/docs` | GET | Swagger UI documentation |
-| `/openapi.json` | GET | OpenAPI specification |
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|---------------|-------------|
+| `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
+| `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
+| `/health` | GET | ❌ No | Health check |
+| `/ready` | GET | ❌ No | Readiness check with system status |
+| `/docs` | GET | ❌ No | Swagger UI documentation |
+| `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
 ## Usage Examples
 
@@ -141,6 +156,7 @@ pkill -9 -f tt_media_server_cpp
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
@@ -175,6 +191,7 @@ curl -X POST http://localhost:8001/v1/completions \
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
