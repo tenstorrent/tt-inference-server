@@ -40,10 +40,9 @@ void LLMEngine::add_request(std::vector<int64_t> prompt,
 }
 
 StepResult LLMEngine::step() {
-  drain_decode_results();
-
   StepResult result;
-  collect_finished(result);
+
+  drain_decode_results(result);
 
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) {
@@ -55,7 +54,13 @@ StepResult LLMEngine::step() {
 
   if (is_prefill) {
     scheduler_->postprocess(seqs, token_ids);
-    collect_finished(result);
+    for (Sequence* seq : seqs) {
+      if (seq->is_finished()) {
+        result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
+        LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq->seq_id
+                                   << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
+      }
+    }
   }
   // For decode, run() returns immediately. Results arrive via the reader
   // thread into decode_queue_ and will be drained at the top of a future
@@ -76,7 +81,7 @@ StepResult LLMEngine::step() {
   return result;
 }
 
-void LLMEngine::drain_decode_results() {
+void LLMEngine::drain_decode_results(StepResult& result) {
   for (const auto& dr : decode_queue_.drain()) {
     auto it = std::find_if(sequences_.begin(), sequences_.end(),
                            [&](const auto& seq) { return seq->seq_id == dr.seq_id; });
@@ -91,15 +96,11 @@ void LLMEngine::drain_decode_results() {
 
     LLM_ENGINE_LOG("llm_engine") << "drain seq_id=" << dr.seq_id
                                << " token_id=" << dr.token_id << std::endl;
-  }
-}
 
-void LLMEngine::collect_finished(StepResult& result) {
-  for (const auto& seq_ptr : sequences_) {
-    if (seq_ptr->is_finished() && reported_seq_ids_.insert(seq_ptr->seq_id).second) {
-      result.outputs.emplace_back(seq_ptr->seq_id, seq_ptr->completion_token_ids());
-      LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq_ptr->seq_id
-                                 << " completion_tokens=" << seq_ptr->num_completion_tokens() << std::endl;
+    if (seq->is_finished()) {
+      result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
+      LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq->seq_id
+                                 << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
     }
   }
 }

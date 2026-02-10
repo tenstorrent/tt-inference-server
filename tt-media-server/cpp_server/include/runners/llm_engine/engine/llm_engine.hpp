@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -39,15 +38,13 @@ class LLMEngine {
 
  private:
   void exit();
-  void drain_decode_results();
-  void collect_finished(StepResult& result);
+  void drain_decode_results(StepResult& result);
 
   Config config_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   std::vector<std::unique_ptr<Sequence>> sequences_;
   DecodeQueue decode_queue_;
-  std::unordered_set<int> reported_seq_ids_;
 };
 
 }  // namespace llm_engine
