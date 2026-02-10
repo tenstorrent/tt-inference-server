@@ -36,16 +36,16 @@ void ModelRunnerStub::reader_loop() {
   }
 }
 
-std::vector<int64_t> ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
-                                          bool is_prefill) {
+void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
+                          bool is_prefill) {
   LLM_ENGINE_LOG("model_runner") << (is_prefill ? "prefill" : "decode")
                                << " batch_size=" << seqs.size() << std::endl;
 
   if (is_prefill) {
-    return std::vector<int64_t>(seqs.size(), dummy_token_);
+    for (Sequence* seq : seqs) {
+      decode_callback_({seq->seq_id, dummy_token_});
+    }
   }
-
-  return {};
 }
 
 void ModelRunnerStub::exit() {

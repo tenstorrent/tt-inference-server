@@ -53,7 +53,7 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
   EXPECT_EQ(batch[0], &seq);
-  EXPECT_EQ(batch[0]->status_, SequenceStatus::RUNNING);
+  EXPECT_EQ(batch[0]->status_, SequenceStatus::IN_FLIGHT);
 }
 
 TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {

@@ -34,8 +34,7 @@ class DecodeQueue {
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual std::vector<int64_t> run(const std::vector<Sequence*>& seqs,
-                                   bool is_prefill) = 0;
+  virtual void run(const std::vector<Sequence*>& seqs, bool is_prefill) = 0;
   virtual void exit() = 0;
 };
 
@@ -45,8 +44,7 @@ class ModelRunnerStub : public IModelRunner {
 
   ModelRunnerStub(const Config& config, DecodeCallback callback);
   ~ModelRunnerStub() override;
-  std::vector<int64_t> run(const std::vector<Sequence*>& seqs,
-                           bool is_prefill) override;
+  void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
 
  private:

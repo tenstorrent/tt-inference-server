@@ -36,9 +36,9 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     block_manager_.allocate(*seq);
     num_batched_tokens +=
         static_cast<int>(seq->size() - seq->num_cached_tokens_);
-    seq->status_ = SequenceStatus::RUNNING;
+    seq->status_ = SequenceStatus::IN_FLIGHT;
+    ++in_flight_count_;
     waiting_.pop_front();
-    running_.push_back(seq);
     scheduled_seqs.push_back(seq);
   }
   if (!scheduled_seqs.empty()) {
@@ -80,6 +80,9 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
 void Scheduler::preempt(Sequence& seq) {
   LLM_ENGINE_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
+  if (seq.status_ == SequenceStatus::IN_FLIGHT) {
+    --in_flight_count_;
+  }
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   waiting_.push_front(&seq);

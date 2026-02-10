@@ -50,21 +50,11 @@ StepResult LLMEngine::step() {
     return result;
   }
 
-  std::vector<int64_t> token_ids = model_runner_->run(seqs, is_prefill);
-
-  if (is_prefill) {
-    scheduler_->postprocess(seqs, token_ids);
-    for (Sequence* seq : seqs) {
-      if (seq->is_finished()) {
-        result.outputs.emplace_back(seq->seq_id, seq->completion_token_ids());
-        LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq->seq_id
-                                   << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
-      }
-    }
-  }
-  // For decode, run() returns immediately. Results arrive via the reader
-  // thread into decode_queue_ and will be drained at the top of a future
-  // step() call.
+  model_runner_->run(seqs, is_prefill);
+  // For prefill, run() synchronously invokes the callback so results are
+  // already in decode_queue_. For decode, run() is a no-op and results
+  // arrive asynchronously from the reader thread.
+  drain_decode_results(result);
 
   if (is_prefill) {
     int total = 0;
