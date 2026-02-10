@@ -624,6 +624,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 | `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
+
 ## Queue and Batch Configuration
 
 | Environment Variable | Default Value | Description |
