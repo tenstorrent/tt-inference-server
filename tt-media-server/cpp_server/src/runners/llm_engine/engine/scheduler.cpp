@@ -72,7 +72,9 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
+                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? -1 : scheduled_seqs[0]->seq_id)
                              << " in_flight=" << in_flight_count_ << std::endl;
+
   return {scheduled_seqs, false};
 }
 

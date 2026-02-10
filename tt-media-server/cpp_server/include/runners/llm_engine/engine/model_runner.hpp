@@ -41,7 +41,7 @@ class IModelRunner {
 
 class ModelRunnerStub : public IModelRunner {
  public:
-  static constexpr int NUM_DECODE_CHANNELS = 64;
+  static constexpr int NUM_DECODE_CHANNELS = 3;
 
   ModelRunnerStub(const Config& config, DecodeCallback callback);
   ~ModelRunnerStub() override;

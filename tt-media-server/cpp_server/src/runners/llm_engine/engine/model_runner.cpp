@@ -30,7 +30,7 @@ ModelRunnerStub::~ModelRunnerStub() {
 void ModelRunnerStub::reader_loop() {
   int channel = 0;
   while (!stop_.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
     decode_callback_({channel, dummy_token_});
     channel = (channel + 1) % NUM_DECODE_CHANNELS;
   }
