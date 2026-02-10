@@ -445,8 +445,8 @@ jobs:
           TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
           MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
           THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_us=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_us=' ci_report.txt | cut -d= -f2 || echo "N/A")
 
           # Determine status
           if [ $TEST_EXIT_CODE -eq 0 ]; then
@@ -466,7 +466,7 @@ jobs:
             echo "| **Total Time** | ${TOTAL_TIME}ms |"
             echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
             echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
-            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+            echo "| **Overhead/Token** | ${OVERHEAD}us (threshold: ${THRESHOLD}us) |"
           } >> $GITHUB_STEP_SUMMARY
 
           # Store exit code for later
@@ -613,8 +613,8 @@ jobs:
           TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
           MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
           THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_us=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_us=' ci_report.txt | cut -d= -f2 || echo "N/A")
           if [ $TEST_EXIT_CODE -eq 0 ]; then STATUS="✅ PASSED"; else STATUS="❌ FAILED"; fi
           {
             echo "## 🚀 C++ Server LLM Streaming Test"
@@ -626,7 +626,7 @@ jobs:
             echo "| **Total Time** | ${TOTAL_TIME}ms |"
             echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
             echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
-            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+            echo "| **Overhead/Token** | ${OVERHEAD}us (threshold: ${THRESHOLD}us) |"
           } >> $GITHUB_STEP_SUMMARY
 
           echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV

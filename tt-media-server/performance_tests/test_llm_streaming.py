@@ -21,13 +21,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class PerformanceThresholds:
     """Performance thresholds loaded from environment variables."""
 
-    max_per_token_overhead_ms: int = 3  # Allow 3ms overhead per token by default
+    max_per_token_overhead_us: int = 3000  # Allow 3000us (3ms) overhead per token by default
 
     @classmethod
     def from_env(cls) -> "PerformanceThresholds":
         return cls(
-            max_per_token_overhead_ms=int(
-                os.getenv("TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_MS", "3")
+            max_per_token_overhead_us=int(
+                os.getenv("TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_US", "3000")
             ),
         )
 
@@ -52,12 +52,12 @@ async def test_streaming_performance_full(server_process):
             f"Received tokens: {metrics.received_token_count} != {token_count}"
         )
 
-    token_overhead_ms = metrics.calculate_overhead_ms(
+    token_overhead_us = metrics.calculate_overhead_us(
         test_runner_frequency_ms=TEST_RUNNER_FREQUENCY_MS
     )
-    if token_overhead_ms > thresholds.max_per_token_overhead_ms:
+    if token_overhead_us > thresholds.max_per_token_overhead_us:
         failures.append(
-            f"Overhead per token: {token_overhead_ms:.2f}ms > {thresholds.max_per_token_overhead_ms:.2f}ms"
+            f"Overhead per token: {token_overhead_us:.2f}us > {thresholds.max_per_token_overhead_us:.2f}us"
         )
 
     # CI-friendly report format (key=value for easy parsing)
@@ -66,8 +66,8 @@ async def test_streaming_performance_full(server_process):
     print(f"total_time_ms={metrics.total_streaming_time_ms:.2f}")
     print(f"mean_interval_ms={metrics.mean_receive_interval_ms:.2f}")
     print(f"throughput_tps={metrics.throughput_tokens_per_second:.2f}")
-    print(f"overhead_ms={token_overhead_ms:.2f}")
-    print(f"threshold_ms={thresholds.max_per_token_overhead_ms}")
+    print(f"overhead_us={token_overhead_us:.2f}")
+    print(f"threshold_us={thresholds.max_per_token_overhead_us}")
     print("::CI_REPORT_END::")
 
     assert not failures, f"Performance test failed: {', '.join(failures)}"
