@@ -5,13 +5,11 @@ import os
 
 from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
-from config.settings import get_settings
 from domain.training_request import TrainingRequest
 
 
 class TrainingService(BaseJobService):
     def __init__(self):
-        self.settings = get_settings()
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
@@ -19,12 +17,6 @@ class TrainingService(BaseJobService):
             raise ValueError(
                 "The job type must be TRAINING, since the chosen model service is TrainingService"
             )
-        # check that dataset loader is set
-        if not self.settings.dataset_loader:
-            raise ValueError("The dataset loader must be set")
-
-        request._dataset_loader = self.settings.dataset_loader
-        request._dataset_max_length = self.settings.dataset_max_length
 
         os.makedirs("models_save", exist_ok=True)
         request._output_model_path = f"models_save/{request._task_id}.pt"

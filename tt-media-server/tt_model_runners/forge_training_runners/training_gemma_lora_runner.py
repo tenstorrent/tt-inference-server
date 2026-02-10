@@ -47,17 +47,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
 
-        self.train_dataset = get_dataset_loader(
-            self.model_name, split="train", collate_fn=collate_fn_for_causal_lm
-        )
-        self.eval_dataset = get_dataset_loader(
-            self.model_name, split="validation", collate_fn=collate_fn_for_causal_lm
-        )
-        self.logger.info(
-            f"Loaded train and eval datasets. Train dataset size: {len(self.train_dataset)}. \
-            Eval dataset size: {len(self.eval_dataset)}"
-        )
-
         return True
 
     @log_execution_time("Gemma Lora training")
@@ -70,6 +59,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         # Get the first request
         request = training_requests[0]
 
+        self.train_dataset = get_dataset_loader(
+            dataset_loader=request.dataset_loader, model_name=self.model_name, max_sequence_length=request.dataset_max_sequence_length, split="train", collate_fn=collate_fn_for_causal_lm
+        )
+        self.eval_dataset = get_dataset_loader(
+            dataset_loader=request.dataset_loader, model_name=self.model_name, max_sequence_length=request.dataset_max_sequence_length, split="validation", collate_fn=collate_fn_for_causal_lm
+        )
+        self.logger.info(
+            f"Loaded train and eval datasets. Train dataset size: {len(self.train_dataset)}. \
+            Eval dataset size: {len(self.eval_dataset)}"
+        )
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 

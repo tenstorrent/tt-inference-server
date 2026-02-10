@@ -4,10 +4,14 @@
 
 
 from domain.base_request import BaseRequest
+from config.constants import DatasetLoaders
 from pydantic import PrivateAttr
 
 
 class TrainingRequest(BaseRequest):
+    dataset_loader: str = DatasetLoaders.SST2.value
+    dataset_max_sequence_length: int = 32
+    
     batch_size: int = 4
     learning_rate: float = 6e-5
     num_epochs: int = 1
@@ -24,5 +28,3 @@ class TrainingRequest(BaseRequest):
     ignored_index: int = -100
 
     _output_model_path: str = PrivateAttr(default=None)
-    _dataset_loader: str = PrivateAttr(default=None)
-    _dataset_max_length: int = PrivateAttr(default=None)
