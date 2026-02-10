@@ -46,10 +46,6 @@ void LLMEngine::step() {
   if (seqs.empty()) return;
 
   model_runner_->run(seqs, is_prefill);
-  // For prefill, run() synchronously invokes the callback so results are
-  // already in decode_queue_. For decode, run() is a no-op and results
-  // arrive asynchronously from the reader thread.
-  drain_decode_results();
 
   LLM_ENGINE_LOG("llm_engine") << "step " << (is_prefill ? "prefill" : "decode")
                                << " n=" << seqs.size() << std::endl;
