@@ -23,7 +23,9 @@ from run import (
     validate_local_setup,
 )
 from workflows.model_spec import get_runtime_model_spec
-from workflows.run_docker_server import run_docker_server
+from workflows.run_docker_server import (
+    generate_docker_run_command,
+)
 
 
 @pytest.fixture
@@ -440,8 +442,10 @@ class TestOverrideArgsIntegration:
             mock_model_spec.apply_runtime_args.assert_called_once_with(mock_args)
             assert result == mock_model_spec
 
-    def test_docker_server_mounts_model_spec_json(self, mock_setup_config):
-        """Test that run_docker_server mounts the model_spec JSON file into the container."""
+    def test_generate_docker_run_command_mounts_model_spec_json(
+        self, mock_setup_config
+    ):
+        """Test that generate_docker_run_command mounts the model_spec JSON file into the container."""
         from pathlib import Path
 
         # Create mock model_spec
@@ -466,31 +470,17 @@ class TestOverrideArgsIntegration:
         mock_cli_args.override_docker_image = None
         mock_model_spec.cli_args = mock_cli_args
 
-        # Mock dependencies
         with patch(
-            "workflows.run_docker_server.ensure_docker_image", return_value=True
-        ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
-            "workflows.run_docker_server.open"
-        ), patch(
-            "workflows.run_docker_server.subprocess.check_output",
-            return_value="container123",
-        ), patch("workflows.run_docker_server.atexit.register"), patch(
-            "workflows.run_docker_server.shlex.join", return_value="mocked command"
-        ), patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
-        ), patch(
-            "workflows.run_docker_server.get_default_workflow_root_log_dir",
-            return_value=Path("/tmp/logs"),
-        ), patch("workflows.run_docker_server.ensure_readwriteable_dir"), patch(
-            "workflows.run_docker_server.DeviceTypes"
-        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
-            # Call the function with model_spec, setup_config, and json_fpath
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
             json_fpath = Path("/tmp/test-model-spec.json")
-            run_docker_server(mock_model_spec, mock_setup_config, json_fpath)
+            docker_command, container_name = generate_docker_run_command(
+                mock_model_spec, mock_setup_config, json_fpath
+            )
 
-            # Verify subprocess.Popen was called
-            mock_popen.assert_called_once()
-            docker_command = mock_popen.call_args[0][0]
+            assert container_name == "tt-inference-server-test123"
 
             # Check that the JSON file is mounted and TT_MODEL_SPEC_JSON_PATH is set
             json_mount_found = False
@@ -519,6 +509,55 @@ class TestOverrideArgsIntegration:
             assert env_var_found, (
                 f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
             )
+
+    def test_generate_docker_run_command_without_setup_config(self):
+        """Test that generate_docker_run_command works without setup_config for --print-docker-cmd."""
+        from pathlib import Path
+
+        # Create mock model_spec
+        mock_model_spec = MagicMock()
+        mock_model_spec.model_id = "test-model-id"
+        mock_model_spec.device_type = "n150"
+        mock_model_spec.docker_image = "test:image"
+        mock_model_spec.impl.impl_name = "tt-transformers"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
+        mock_model_spec.subdevice_type = None
+
+        # Create cli_args
+        mock_cli_args = MagicMock()
+        mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
+        mock_cli_args.device = "n150"
+        mock_cli_args.workflow = "server"
+        mock_cli_args.service_port = "8000"
+        mock_cli_args.interactive = False
+        mock_cli_args.dev_mode = False
+        mock_cli_args.device_id = None
+        mock_cli_args.impl = "tt-transformers"
+        mock_cli_args.override_docker_image = None
+        mock_model_spec.cli_args = mock_cli_args
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            docker_command, container_name = generate_docker_run_command(
+                mock_model_spec
+            )
+
+            assert container_name == "tt-inference-server-test123"
+            # Command should contain base elements
+            assert "docker" in docker_command
+            assert "run" in docker_command
+            assert "--rm" in docker_command
+            assert "test:image" in docker_command
+            assert "--shm-size" in docker_command
+            # Should NOT contain setup_config-dependent mounts or env vars
+            for i, arg in enumerate(docker_command):
+                if arg == "-e" and i + 1 < len(docker_command):
+                    env_setting = docker_command[i + 1]
+                    assert not env_setting.startswith("CACHE_ROOT=")
+                    assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
 
 
 class TestSecretsHandling:

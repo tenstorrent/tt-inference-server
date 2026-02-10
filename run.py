@@ -19,7 +19,7 @@ from tests.test_config import TEST_CONFIGS
 from workflows.bootstrap_uv import bootstrap_uv
 from workflows.log_setup import setup_run_logger
 from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from workflows.run_docker_server import run_docker_server
+from workflows.run_docker_server import run_docker_server, generate_docker_run_command
 from workflows.run_workflows import run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -460,15 +460,11 @@ def main():
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 
-    # Handle --print-docker-cmd: print simplified Docker commands and exit
-    if args.print_docker_cmd:
-        from workflows.run_docker_server import print_simplified_docker_commands
-
-        mesh_device = DeviceTypes.from_string(args.device).to_mesh_device_str()
-        print_simplified_docker_commands(model_spec, mesh_device)
-        return 0
-
     # step 2: validate runtime
+    if args.print_docker_cmd:
+        docker_command, _ = generate_docker_run_command(model_spec, str_cmd=True)
+        print(f"Docker run command:\n\n{docker_command}\n")
+        return
     validate_runtime_args(model_spec)
     handle_secrets(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
