@@ -579,25 +579,25 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(10)  # Long running
-            return "videos/test.mp4"
+            return "my_model_final_path.pt"
 
         await job_manager.create_job(
             job_id="job-with-result-path",
-            job_type=JobTypes.VIDEO,
+            job_type=JobTypes.TRAINING,
             model="test-model",
             request=mock_request,
             task_function=task_func,
-            result_path="direct_result_path.mp4",
+            result_path="my_model_initial_path.pt",
         )
 
         assert (
             job_manager.get_job_result_path("job-with-result-path")
-            == "direct_result_path.mp4"
+            == "my_model_initial_path.pt"
         )
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("job-with-result-path")
             assert db_job is not None
-            assert db_job.get("result_path") == "direct_result_path.mp4"
+            assert db_job.get("result_path") == "my_model_initial_path.pt"
 
     @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):

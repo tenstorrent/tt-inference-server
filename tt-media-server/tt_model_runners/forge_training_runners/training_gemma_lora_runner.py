@@ -29,8 +29,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora training...")
 
-        # TODO: add repro manager setup
-
         self.hf_model = AutoModelForCausalLM.from_pretrained(
             self.model_name, use_cache=False
         )
@@ -114,11 +112,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 for batch in tqdm(self.train_dataloader):
                     self.optimizer.zero_grad()
 
-                    # batch = device_manager.prepare_batch(batch)
                     batch = {k: v.to(self.device) for k, v in batch.items()}
 
                     self.logger.debug(f"Device {self.device_id}: Forward pass started")
-                    # Forward pass
                     try:
                         outputs = self.model(
                             input_ids=batch["input_ids"],
@@ -143,16 +139,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     running_loss += loss.item()
 
                     self.logger.debug(f"Device {self.device_id}: Backward pass started")
-                    # Backward pass
                     loss.backward()
                     torch_xla.sync(wait=True)
                     self.logger.debug(
                         f"Device {self.device_id}: Backward pass finished"
                     )
 
-                    # Update parameters
+                    self.logger.debug(f"Device {self.device_id}: Optimizer step started")
                     self.optimizer.step()
                     torch_xla.sync(wait=True)
+                    self.logger.debug(f"Device {self.device_id}: Optimizer step finished")
 
                     do_validation = global_step % request.val_steps_freq == 0
 
@@ -170,7 +166,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info("Model checkpoint saved.")
 
-                    # Validation phase
                     if do_validation:
                         avg_val_loss = self.run_validation()
                         self.logger.info(
@@ -218,8 +213,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 torch_xla.sync(wait=True)
 
                 num_val_batches += 1
-
-                # TODO: add option to print examples from predictions
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss
