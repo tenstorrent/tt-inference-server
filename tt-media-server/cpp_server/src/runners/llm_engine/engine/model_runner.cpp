@@ -1,52 +1,56 @@
 #include "llm_engine/engine/model_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
 
-#include <thread>
+#include <chrono>
 
 namespace llm_engine {
 
+void DecodeQueue::push(const DecodeResult& result) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  pending_.push_back(result);
+}
+
+std::vector<DecodeResult> DecodeQueue::drain() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<DecodeResult> out;
+  out.swap(pending_);
+  return out;
+}
+
 ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
     : config_(config),
-      eos_(config.eos),
-      decode_callback_(std::move(callback)) {}
+      dummy_token_((config.eos == 0) ? 1 : 0),
+      decode_callback_(std::move(callback)),
+      reader_thread_([this] { reader_loop(); }) {}
+
+ModelRunnerStub::~ModelRunnerStub() {
+  exit();
+}
+
+void ModelRunnerStub::reader_loop() {
+  int channel = 0;
+  while (!stop_.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    decode_callback_({channel, dummy_token_});
+    channel = (channel + 1) % NUM_DECODE_CHANNELS;
+  }
+}
 
 std::vector<int64_t> ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
                                           bool is_prefill) {
   LLM_ENGINE_LOG("model_runner") << (is_prefill ? "prefill" : "decode")
                                << " batch_size=" << seqs.size() << std::endl;
 
-  const int64_t dummy = (eos_ == 0) ? 1 : 0;
-
   if (is_prefill) {
-    return std::vector<int64_t>(seqs.size(), seqs[0]->last_token+1);
+    return std::vector<int64_t>(seqs.size(), dummy_token_);
   }
-
-  LLM_ENGINE_LOG("model_runner") << "run decode last_token=" << seqs[0]->last_token << std::endl;
-
-  // Blitz decode: send (token_id, position_id, seq_id) to device,
-  // then tokens arrive asynchronously via the device-to-host reader thread.
-  // Simulate by firing the callback from a short-lived reader thread.
-  std::vector<DecodeResult> results;
-  results.reserve(seqs.size());
-  for (const auto* seq : seqs) {
-    results.push_back({seq->seq_id, seq->last_token+1});
-  }
-
-  std::thread reader{[results = std::move(results),
-                      cb = this->decode_callback_]() {
-    for (const auto& r : results) {
-      // simulate it takes 6 ms
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
-      cb(r);
-    }
-  }};
-  // In production the reader thread is long-running; here we join for simulation.
-  reader.join();
 
   return {};
 }
 
 void ModelRunnerStub::exit() {
+  if (stop_.exchange(true)) return;
+  if (reader_thread_.joinable()) reader_thread_.join();
   LLM_ENGINE_LOG("model_runner") << "exit" << std::endl;
 }
 
