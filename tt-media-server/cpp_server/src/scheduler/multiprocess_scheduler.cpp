@@ -9,8 +9,6 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
-#include <sys/eventfd.h>
-#include <poll.h>
 
 namespace tt::scheduler {
 

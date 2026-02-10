@@ -14,6 +14,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <memory>
+#include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <cstring>

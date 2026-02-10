@@ -7,7 +7,10 @@ namespace llm_engine {
 
 LLMEngine::LLMEngine(const Config& config) : config_(config) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
-  model_runner_ = make_model_runner(config_);
+  auto decode_cb = [this](const DecodeResult& result) {
+    on_decode_token(result);
+  };
+  model_runner_ = make_model_runner(config_, std::move(decode_cb));
   scheduler_ = std::make_unique<Scheduler>(config_);
   if (config_.eos < 0) {
     config_.eos = 0;
@@ -44,8 +47,14 @@ StepResult LLMEngine::step() {
     result.num_tokens = 0;
     return result;
   }
+
   std::vector<int64_t> token_ids = model_runner_->run(seqs, is_prefill);
-  scheduler_->postprocess(seqs, token_ids);
+
+  if (is_prefill) {
+    scheduler_->postprocess(seqs, token_ids);
+  }
+  // For decode, postprocessing is driven by the device-to-host reader thread
+  // via on_decode_token callback — token_ids is empty in that case.
 
   StepResult result;
   if (is_prefill) {
@@ -68,6 +77,25 @@ StepResult LLMEngine::step() {
     }
   }
   return result;
+}
+
+void LLMEngine::on_decode_token(const DecodeResult& result) {
+  std::lock_guard<std::mutex> lock(decode_mutex_);
+
+  auto it = std::find_if(sequences_.begin(), sequences_.end(),
+                         [&](const auto& seq) { return seq->seq_id == result.seq_id; });
+  if (it == sequences_.end()) {
+    LLM_ENGINE_LOG("llm_engine") << "on_decode_token unknown seq_id=" << result.seq_id << std::endl;
+    return;
+  }
+
+  Sequence* seq = it->get();
+  std::vector<Sequence*> seqs = {seq};
+  std::vector<int64_t> token_ids = {result.token_id};
+  scheduler_->postprocess(seqs, token_ids);
+
+  LLM_ENGINE_LOG("llm_engine") << "on_decode_token seq_id=" << result.seq_id
+                             << " token_id=" << result.token_id << std::endl;
 }
 
 bool LLMEngine::is_finished() const {

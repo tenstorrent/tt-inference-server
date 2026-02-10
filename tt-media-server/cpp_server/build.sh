@@ -111,6 +111,7 @@ echo "Configuring CMake..."
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
+      -DLLM_ENGINE_DEBUG_BUILD=ON \
       -DTEST="${TEST}" \
       ..
 

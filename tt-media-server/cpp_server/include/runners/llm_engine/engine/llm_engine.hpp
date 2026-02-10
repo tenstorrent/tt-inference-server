@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -38,11 +39,13 @@ class LLMEngine {
 
  private:
   void exit();
+  void on_decode_token(const DecodeResult& result);
 
   Config config_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   std::vector<std::unique_ptr<Sequence>> sequences_;
+  std::mutex decode_mutex_;
 };
 
 }  // namespace llm_engine

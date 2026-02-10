@@ -56,6 +56,11 @@ target_include_directories(llm_engine PUBLIC
 )
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
+option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
+if(LLM_ENGINE_DEBUG_BUILD)
+    target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_DEBUG)
+endif()
+
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
 target_link_libraries(engine_demo PRIVATE llm_engine)
 target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
