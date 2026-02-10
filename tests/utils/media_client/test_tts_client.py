@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from utils.media_clients.tts_client import DEFAULT_TTS_TEXT, TtsClientStrategy
+from utils.media_clients.tts_client import TtsClientStrategy
 from utils.media_clients.test_status import TtsTestStatus
 
 
@@ -126,73 +126,6 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
         assert result == 10  # Respects configured value
 
 
-class TestTtsClientStrategyComputeWer(unittest.TestCase):
-    """Tests for _compute_wer method."""
-
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    # All times tested on MAX_STEPS = 10
-    def test_compute_wer_identical_strings(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello world", "hello world")
-        assert result == 0.0
-
-    def test_compute_wer_one_deletion(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello world", "hello")
-        assert abs(result - 0.5) < 0.001  # 1 error / 2 words
-
-    def test_compute_wer_one_insertion(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello", "hello world")
-        assert result == 1.0  # 1 insertion / 1 word
-
-    def test_compute_wer_one_substitution(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello world", "hello there")
-        assert abs(result - 0.5) < 0.001  # 1 substitution / 2 words
-
-    def test_compute_wer_multiple_errors(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello this is a test", "hello this is test")
-        assert abs(result - 0.2) < 0.001  # 1 deletion / 5 words
-
-    def test_compute_wer_empty_reference(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("", "hello")
-        assert result == 1.0
-
-    def test_compute_wer_empty_both(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("", "")
-        assert result == 0.0
-
-    def test_compute_wer_empty_hypothesis(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("hello world", "")
-        assert result == 1.0  # All words deleted
-
-    def test_compute_wer_case_insensitive(self):
-        strategy = self._create_strategy()
-        result = strategy._compute_wer("Hello World", "hello world")
-        assert result == 0.0  # Case insensitive match
-
-    def test_compute_wer_space_optimized(self):
-        """Test that space-optimized DP works correctly."""
-        strategy = self._create_strategy()
-        # Test with longer hypothesis (should swap for memory efficiency)
-        result = strategy._compute_wer("a test", "this is a longer test")
-        assert result > 0  # Should have errors
-
-        assert result >= 0  # Should be non-negative
-
-
 class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
     """Tests for _calculate_ttft_value method."""
 
@@ -280,52 +213,6 @@ class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
         assert result == 0
 
 
-class TestTtsClientStrategyCalculateWerValue(unittest.TestCase):
-    """Tests for _calculate_wer_value method."""
-
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    def test_calculate_wer_value_with_valid_values(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, wer=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, wer=0.2),
-            TtsTestStatus(status=True, elapsed=1.0, wer=0.3),
-        ]
-        result = strategy._calculate_wer_value(status_list)
-        assert abs(result - 0.2) < 0.001  # Average: (0.1 + 0.2 + 0.3) / 3
-
-    def test_calculate_wer_value_empty_list(self):
-        strategy = self._create_strategy()
-        result = strategy._calculate_wer_value([])
-        assert result is None
-
-    def test_calculate_wer_value_with_none_values(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, wer=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, wer=None),
-            TtsTestStatus(status=True, elapsed=1.0, wer=0.3),
-        ]
-        result = strategy._calculate_wer_value(status_list)
-        assert abs(result - 0.2) < 0.001  # Average of valid values
-
-    def test_calculate_wer_value_all_none_values(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, wer=None),
-            TtsTestStatus(status=True, elapsed=1.0, wer=None),
-        ]
-        result = strategy._calculate_wer_value(status_list)
-        assert result is None
-
-
 class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
     """Tests for _calculate_tail_latency method."""
 
@@ -385,8 +272,8 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
         assert p95 == 100.0
 
 
-class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
-    """Tests for _calculate_accuracy_check method."""
+class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
+    """Tests for _calculate_performance_check method (TTFT, RTR)."""
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -400,135 +287,70 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_all_pass(self, mock_targets):
+    def test_performance_check_all_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=2.5, wer_value=None
-        )  # ttft_value in seconds
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=2.5)
 
         assert result == 2  # PASS
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_ttft_fail(self, mock_targets):
+    def test_performance_check_ttft_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.2, rtr_value=None, wer_value=None
-        )  # 200ms > 105ms threshold
+        result = strategy._calculate_performance_check(ttft_value=200.0, rtr_value=None)
 
         assert result == 3  # FAIL
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_rtr_fail(self, mock_targets):
+    def test_performance_check_rtr_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=5.0, tolerance=0.05)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=1.0, wer_value=None
-        )  # 1.0 < 4.75 threshold
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=1.0)
 
         assert result == 3  # FAIL
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_no_targets(self, mock_targets):
+    def test_performance_check_no_targets(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=None, rtr=None, tolerance=None)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.1, rtr_value=2.0, wer_value=None
-        )
+        result = strategy._calculate_performance_check(ttft_value=100.0, rtr_value=2.0)
 
         assert result == 0  # UNDEFINED
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_accuracy_check_default_tolerance(self, mock_targets):
+    def test_performance_check_default_tolerance(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=None)
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=0.09, rtr_value=None, wer_value=None
-        )
+        result = strategy._calculate_performance_check(ttft_value=90.0, rtr_value=None)
 
         assert result == 2  # PASS with default 5% tolerance
 
 
-class TestTtsClientStrategyTranscribeAudioForWer(unittest.TestCase):
-    """Tests for _transcribe_audio_for_wer method."""
+class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
+    """Tests for _calculate_accuracy_check method."""
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
+        model_spec.model_name = "speecht5_tts"
+        model_spec.hf_model_repo = "microsoft/speecht5_tts"
+        model_spec.model_type.name = "TEXT_TO_SPEECH"
+        model_spec.cli_args = {"device": "n150"}
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    def test_transcribe_audio_for_wer_success(self):
-        import asyncio
-
+    def test_accuracy_check_returns_undefined(self):
+        """Test that accuracy_check returns 0 (undefined)."""
         strategy = self._create_strategy()
-        mock_response = MockAsyncResponse(status=200, json_data={"text": "hello world"})
-        mock_session = MockAsyncSession(mock_response)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(
-                strategy._transcribe_audio_for_wer("base64audio", "hello world")
-            )
-
-        assert result is not None
-        assert result == 0.0  # Perfect match
-
-    def test_transcribe_audio_for_wer_failure_status(self):
-        import asyncio
-
-        strategy = self._create_strategy()
-        mock_response = MockAsyncResponse(status=500)
-        mock_session = MockAsyncSession(mock_response)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(
-                strategy._transcribe_audio_for_wer("base64audio", "hello world")
-            )
-
-        assert result is None
-
-    def test_transcribe_audio_for_wer_empty_transcription(self):
-        import asyncio
-
-        strategy = self._create_strategy()
-        mock_response = MockAsyncResponse(status=200, json_data={"text": ""})
-        mock_session = MockAsyncSession(mock_response)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(
-                strategy._transcribe_audio_for_wer("base64audio", "hello world")
-            )
-
-        assert result is None
-
-    def test_transcribe_audio_for_wer_exception(self):
-        import asyncio
-
-        strategy = self._create_strategy()
-
-        class FailingSession:
-            def post(self, *args, **kwargs):
-                raise Exception("Connection error")
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-        result = asyncio.run(
-            strategy._transcribe_audio_for_wer("base64audio", "hello world")
-        )
-
-        assert result is None
+        result = strategy._calculate_accuracy_check()
+        assert result == 0
 
 
 class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
@@ -554,34 +376,13 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            with patch.object(strategy, "_transcribe_audio_for_wer", return_value=None):
-                result = asyncio.run(strategy._generate_speech(calculate_wer=False))
+            result = asyncio.run(strategy._generate_speech())
 
         assert result[0] is True  # success
         assert result[1] > 0  # elapsed time
         assert result[2] is not None  # ttft_ms
         assert result[3] is not None  # rtr
-        assert result[4] == DEFAULT_TTS_TEXT  # reference_text
-        assert result[5] == 0.32  # audio_duration
-        assert result[6] is None  # wer (not calculated)
-
-    def test_generate_speech_with_wer(self):
-        import asyncio
-
-        strategy = self._create_strategy()
-        mock_response = MockAsyncResponse(
-            status=200,
-            json_data={"audio": "base64audio", "duration": 0.32},
-            headers={"Content-Type": "application/json"},
-        )
-        mock_session = MockAsyncSession(mock_response)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with patch.object(strategy, "_transcribe_audio_for_wer", return_value=0.1):
-                result = asyncio.run(strategy._generate_speech(calculate_wer=True))
-
-        assert result[0] is True
-        assert result[6] == 0.1  # wer calculated
+        assert result[4] == 0.32  # audio_duration
 
     def test_generate_speech_failure_status(self):
         import asyncio
@@ -591,7 +392,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(strategy._generate_speech(calculate_wer=False))
+            result = asyncio.run(strategy._generate_speech())
 
         assert result[0] is False
 
@@ -607,7 +408,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
         mock_session = MockAsyncSession(mock_response)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = asyncio.run(strategy._generate_speech(calculate_wer=False))
+            result = asyncio.run(strategy._generate_speech())
 
         assert result[0] is True
         assert result[3] is None  # rtr should be None without duration
@@ -627,10 +428,9 @@ class TestTtsClientStrategyRunTtsBenchmark(unittest.TestCase):
     def test_run_tts_benchmark(self):
         strategy = self._create_strategy()
 
-        with patch(
-            "asyncio.run", return_value=(True, 1.5, 100.0, 2.0, "text", 0.32, None)
-        ):
-            result = strategy._run_tts_benchmark(3, calculate_wer=False)
+        # Return tuple: (success, elapsed, ttft_ms, rtr, audio_duration)
+        with patch("asyncio.run", return_value=(True, 1.5, 100.0, 2.0, 0.32)):
+            result = strategy._run_tts_benchmark(3)
 
         assert len(result) == 3
         assert all(isinstance(s, TtsTestStatus) for s in result)
@@ -669,8 +469,8 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0, wer=0.1),
-            TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0, wer=0.2),
+            TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0),
+            TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
         ]
 
         with patch.object(
@@ -697,31 +497,17 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_data = report_data[0]
 
-        # Verify dict format structure
-        assert "results" in eval_data
-        assert "configs" in eval_data
-
-        # Verify task_name exists in both results and configs
-        task_name = "test_task"
-        assert task_name in eval_data["results"]
-        assert task_name in eval_data["configs"]
-
-        eval_result = eval_data["results"][task_name]
-
-        # Verify required keys in results
-        required_keys = [
-            "score",
-            "rtr",
-            "p90_ttft",
-            "p95_ttft",
-        ]
-        for key in required_keys:
-            assert key in eval_result, f"Missing required key: {key}"
+        # Verify required fields
+        assert "score" in eval_data
+        assert "rtr" in eval_data
+        assert "p90_ttft" in eval_data
+        assert "p95_ttft" in eval_data
+        assert "performance_check" in eval_data  # TTFT/RTR check
+        assert "accuracy_check" in eval_data
 
         # Verify calculated averages
-        assert eval_result["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
-        assert abs(eval_result["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
-        # WER is not calculated in run_eval (calculate_wer=False)
+        assert eval_data["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
+        assert abs(eval_data["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
 
     @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -757,14 +543,10 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.tts_client.get_num_calls", return_value=2)
-    @patch("utils.media_clients.tts_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
-    def test_run_benchmark_success(
-        self, mock_mkdir, mock_file, mock_targets, mock_num_calls
-    ):
+    def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
         status_list = [
             TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0),
             TtsTestStatus(status=True, elapsed=1.5, ttft_ms=200.0, rtr=3.0),
@@ -841,11 +623,9 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp/output", 8000)
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
-    def test_generate_report(self, mock_mkdir, mock_file, mock_targets):
-        mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
+    def test_generate_report(self, mock_mkdir, mock_file):
         strategy = self._create_strategy()
 
         status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft_ms=100.0, rtr=2.0)]

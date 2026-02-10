@@ -1846,6 +1846,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=31.89,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1858,6 +1860,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=51.66,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1870,6 +1874,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=18.58,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1882,6 +1888,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=18.75,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1894,6 +1902,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=22.65,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1906,6 +1916,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=7.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1995,6 +2007,90 @@ _eval_config_list = [
                         "result_keys": [
                             "exact_match,strict-match",
                         ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_code_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=48.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=63.34,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=20.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=22.22,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=14.86,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
                         "unit": "percent",
                     },
                 ),

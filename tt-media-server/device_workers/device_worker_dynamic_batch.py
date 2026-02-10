@@ -10,8 +10,8 @@ from device_workers.worker_utils import (
     initialize_device_worker,
     setup_worker_environment,
 )
-from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.tt_queue import TTQueue
+from model_services.queues.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 
