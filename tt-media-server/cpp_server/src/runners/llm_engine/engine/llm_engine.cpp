@@ -1,5 +1,6 @@
 #include "llm_engine/engine/llm_engine.hpp"
 #include "llm_engine/engine/debug.hpp"
+#include <cassert>
 
 namespace llm_engine {
 
@@ -54,7 +55,8 @@ void LLMEngine::step() {
 void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
-    if (!seq || seq->status_ != SequenceStatus::IN_FLIGHT) continue;
+    assert(seq);
+    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> token_ids = {dr.token_id};
