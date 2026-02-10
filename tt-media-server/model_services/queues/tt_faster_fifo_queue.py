@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import List, Optional
+from queue import Empty
+from typing import Any, List, Optional
 
 from faster_fifo import Queue as FasterFifoQueue
+from model_services.queues.tt_queue_interface import TTQueueInterface
 
 
-class TTFasterFifoQueue:
+class TTFasterFifoQueue(TTQueueInterface):
     """
     Uses faster-fifo for high-performance queuing.
     """
@@ -45,10 +47,13 @@ class TTFasterFifoQueue:
 
     def get(self, block: bool = True, timeout: Optional[float] = None):
         """Get a single item from the queue."""
-        if timeout is not None:
-            return self._queue.get(block=block, timeout=timeout)
-        else:
-            return self._queue.get(block=block)
+        try:
+            if timeout is not None:
+                return self._queue.get(block=block, timeout=timeout)
+            else:
+                return self._queue.get(block=block)
+        except Empty:
+            return None
 
     def get_nowait(self):
         """Non-blocking get."""
@@ -84,7 +89,7 @@ class TTFasterFifoQueue:
                 return self._queue.get_many(
                     max_messages_to_get=max_messages_to_get, block=block
                 )
-        except Exception:
+        except Empty:
             return []
 
     def qsize(self) -> int:
@@ -100,3 +105,15 @@ class TTFasterFifoQueue:
         if self._max_size <= 0:
             return False
         return self.qsize() >= self._max_size
+
+    def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
+        """Peek at next item for conditional processing."""
+        raise NotImplementedError(
+            "peek_next is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking"
+        )
+
+    def peek(self, n: int, timeout: Optional[float] = None) -> List[Any]:
+        """Peek at next n items for conditional processing."""
+        raise NotImplementedError(
+            "peek is not implemented for TTFasterFifoQueue - faster_fifo does not support true peeking"
+        )
