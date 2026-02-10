@@ -61,6 +61,12 @@ if(LLM_ENGINE_DEBUG_BUILD)
     target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_DEBUG)
 endif()
 
+option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
+if(SANITIZE_THREAD)
+    target_compile_options(llm_engine PUBLIC -fsanitize=thread -g)
+    target_link_options(llm_engine PUBLIC -fsanitize=thread)
+endif()
+
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
 target_link_libraries(engine_demo PRIVATE llm_engine)
 target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)

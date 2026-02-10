@@ -6,6 +6,8 @@
 #include "llm_engine/engine/sequence.hpp"
 #include "llm_engine/sampling_params.hpp"
 #include <gtest/gtest.h>
+#include <atomic>
+#include <thread>
 #include <vector>
 
 namespace llm_engine {
@@ -217,6 +219,63 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
     EXPECT_FALSE(batch.empty())
         << "Batch must not be empty as it should take the last block and continue decode";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Race-detection test: exercises the exact interleaving that occurs when the
+// device-to-host reader thread calls postprocess (via on_decode_token) while
+// the main engine thread calls schedule (via step).
+//
+// Under ThreadSanitizer (build with --tsan) this test flags data races on
+// Scheduler's running_/waiting_ deques and BlockManager state.
+// Without TSan the test may still crash or corrupt data on real races.
+// ---------------------------------------------------------------------------
+TEST(SchedulerTest, ConcurrentScheduleAndPostprocess_DetectsRace) {
+  Config config = make_config(/*num_blocks=*/128, /*block_size=*/8,
+                              /*max_batched_tokens=*/256, /*max_seqs=*/4,
+                              /*eos=*/0);
+  Scheduler sched{config};
+
+  constexpr int NUM_SEQS = 4;
+  constexpr int MAX_TOKENS = 50;
+  std::vector<Sequence> seqs;
+  seqs.reserve(NUM_SEQS);
+  for (int i = 0; i < NUM_SEQS; ++i) {
+    seqs.emplace_back(prompt(4), SamplingParams{.max_tokens = MAX_TOKENS});
+    sched.add(seqs.back());
+  }
+
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  std::vector<int64_t> prefill_tokens(prefill_batch.size(), 1);
+  sched.postprocess(prefill_batch, prefill_tokens);
+
+  // Now all sequences are in RUNNING state — the race-prone region.
+  // Thread A: main engine thread calling schedule() (reads running_/waiting_)
+  // Thread B: reader thread calling postprocess() (mutates running_, deallocates blocks)
+  std::atomic<bool> stop{false};
+
+  std::thread reader_thread([&]() {
+    while (!stop.load(std::memory_order_relaxed)) {
+      for (auto& seq : seqs) {
+        if (seq.is_finished()) continue;
+        std::vector<Sequence*> batch = {&seq};
+        std::vector<int64_t> tokens = {1};
+        sched.postprocess(batch, tokens);
+      }
+      std::this_thread::yield();
+    }
+  });
+
+  for (int i = 0; i < 200; ++i) {
+    auto [batch, is_pf] = sched.schedule();
+    (void)is_pf;
+    (void)batch;
+    std::this_thread::yield();
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  reader_thread.join();
 }
 
 }  // namespace
