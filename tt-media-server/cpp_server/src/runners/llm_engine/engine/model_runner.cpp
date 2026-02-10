@@ -29,9 +29,10 @@ ModelRunnerStub::~ModelRunnerStub() {
 
 void ModelRunnerStub::reader_loop() {
   int channel = 0;
+  int dummy_token = 100;
   while (!stop_.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::microseconds(100));
-    decode_callback_({channel, dummy_token_});
+    decode_callback_({channel, ++dummy_token});
     channel = (channel + 1) % NUM_DECODE_CHANNELS;
   }
 }
@@ -43,7 +44,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->seq_id, dummy_token_});
+      decode_callback_({seq->seq_id, ++dummy_token_});
     }
   }
 }

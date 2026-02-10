@@ -15,9 +15,24 @@ bool Scheduler::is_finished() const {
   return waiting_.empty() && running_.empty() && in_flight_count_ == 0;
 }
 
+Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
+                                  const SamplingParams& params) {
+  auto seq = std::make_unique<Sequence>(std::move(prompt), params);
+  Sequence& ref = *seq;
+  sequences_.push_back(std::move(seq));
+  add(ref);
+  return ref;
+}
+
 void Scheduler::add(Sequence& seq) {
   LLM_ENGINE_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
   waiting_.push_back(&seq);
+}
+
+Sequence* Scheduler::find_sequence(int seq_id) {
+  auto it = std::find_if(sequences_.begin(), sequences_.end(),
+                         [&](const auto& seq) { return seq->seq_id == seq_id; });
+  return it != sequences_.end() ? it->get() : nullptr;
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
