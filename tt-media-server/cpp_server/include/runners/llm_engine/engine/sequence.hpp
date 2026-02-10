@@ -8,7 +8,7 @@
 
 namespace llm_engine {
 
-enum class SequenceStatus { WAITING, RUNNING, FINISHED };
+enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 class Sequence {
  public:
