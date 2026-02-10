@@ -10,6 +10,7 @@ from enum import Enum
 from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
+from multiprocessing import Event
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -38,6 +39,7 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
+    _cancel_event: Optional[Event] = None # multiprocessing.Event for cooperative cancellation
 
     def __post_init__(self):
         if self.created_at is None:
@@ -121,6 +123,7 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
+        cancel_event: Optional[Event] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -135,6 +138,8 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
+            if cancel_event:
+                job._cancel_event = cancel_event
 
             if self.db:
                 try:
@@ -358,20 +363,33 @@ class JobManager:
                     and job.completed_at
                     and job.completed_at < cutoff_time
                 ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
-                    jobs_to_remove.append(job_id)
-                    self._cleanup_job(job)
+                    jobs_to_remove.append(job)
 
-        if jobs_to_remove:
-            with self._jobs_lock:
-                for job_id in jobs_to_remove:
-                    self._jobs.pop(job_id, None)
-                    if self.db:
-                        try:
-                            self.db.delete_job(job_id)
-                        except Exception as e:
-                            self._logger.error(
-                                f"Database deletion failed for job {job_id} during cleanup: {e}"
-                            )
+        if not jobs_to_remove:
+            return
+
+        # Cleanup outside the lock
+        for job in jobs_to_remove:
+            self._cleanup_job(job)
+            if job.result_path and isinstance(job.result_path, str):
+                try:
+                    if os.path.exists(job.result_path):
+                        os.remove(job.result_path)
+                        self._logger.debug(f"Deleted file for job {job.id}: {job.result_path}")
+                except Exception as e:
+                    self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
+
+        # Remove from storage under lock
+        with self._jobs_lock:
+            for job in jobs_to_remove:
+                self._jobs.pop(job.id, None)
+                if self.db:
+                    try:
+                        self.db.delete_job(job.id)
+                    except Exception as e:
+                        self._logger.error(
+                            f"Database deletion failed for job {job.id} during cleanup: {e}"
+                        )
 
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
@@ -381,18 +399,10 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
+            if job._cancel_event:
+                job._cancel_event.set()
             job._task.cancel()
             running_task = job._task
-
-        if job.result_path and isinstance(job.result_path, str):
-            try:
-                if os.path.exists(job.result_path):
-                    os.remove(job.result_path)
-                    self._logger.debug(
-                        f"Deleted file for job {job.id}: {job.result_path}"
-                    )
-            except Exception as e:
-                self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
         return running_task
 

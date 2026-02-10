@@ -169,16 +169,28 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info("Model checkpoint saved.")
+                    
+                    # Check for cancellation at the end of each training step
+                    if request._cancel_event and request._cancel_event.is_set():
+                        self.logger.info(
+                            f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training"
+                            f"Model checkpoint saved: {model_path}"
+                        )
+                        break
 
                     # Validation phase
-                    if do_validation:
+                    if do_validation and global_step > 0:
                         avg_val_loss = self.run_validation()
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
                         self.model.train()
-
+                        
                     global_step += 1
+
+                # Break outer epoch loop if cancelled
+                if request._cancel_event and request._cancel_event.is_set():
+                    break
 
         except Exception as e:
             self.logger.error(f"Training failed with error: {str(e)}")

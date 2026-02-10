@@ -5,6 +5,7 @@
 
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr
+from multiprocessing import Event
 
 
 class TrainingRequest(BaseRequest):
@@ -26,3 +27,4 @@ class TrainingRequest(BaseRequest):
     _output_model_path: str = PrivateAttr(default=None)
     _dataset_loader: str = PrivateAttr(default=None)
     _dataset_max_length: int = PrivateAttr(default=None)
+    _cancel_event: Event = PrivateAttr(default=None)
