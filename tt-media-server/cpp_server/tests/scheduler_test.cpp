@@ -56,6 +56,19 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   EXPECT_EQ(batch[0]->status_, SequenceStatus::IN_FLIGHT);
 }
 
+TEST(SchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
+  Config config = make_config();
+  Scheduler sched{config};
+  sched.add_request(prompt(4), SamplingParams{.max_tokens = 10});
+
+  auto [batch1, is_prefill1] = sched.schedule();
+  ASSERT_TRUE(is_prefill1);
+  EXPECT_EQ(batch1.size(), 1u);
+
+  auto [batch2, is_prefill2] = sched.schedule();
+  EXPECT_TRUE(batch2.empty());
+}
+
 TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   Scheduler sched{config};
@@ -71,6 +84,50 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   ASSERT_FALSE(is_decode);
   ASSERT_EQ(decode_batch.size(), 1u);
   EXPECT_EQ(decode_batch[0], &seq);
+}
+
+TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
+  Config config = make_config(32, 8, 256, 4, 99);
+  Scheduler sched{config};
+  sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
+
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(prefill_batch.size(), 1u);
+  sched.postprocess(prefill_batch, {1});
+
+  {
+    auto [decode_batch, is_prefill] = sched.schedule();
+    ASSERT_FALSE(is_prefill);
+    ASSERT_EQ(decode_batch.size(), 1u);
+    sched.postprocess(decode_batch, {99});
+  }
+
+  auto [final_batch, _] = sched.schedule();
+  EXPECT_TRUE(final_batch.empty());
+  EXPECT_TRUE(sched.is_finished());
+}
+
+TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
+  Config config = make_config();
+  Scheduler sched{config};
+  sched.add_request(prompt(4), {.max_tokens = 2});
+
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(prefill_batch.size(), 1u);
+  sched.postprocess(prefill_batch, {1});
+
+  {
+    auto [decode_batch, is_prefill] = sched.schedule();
+    ASSERT_FALSE(is_prefill);
+    ASSERT_EQ(decode_batch.size(), 1u);
+    sched.postprocess(decode_batch, {2});
+  }
+
+  auto [final_batch, __] = sched.schedule();
+  EXPECT_TRUE(final_batch.empty());
+  EXPECT_TRUE(sched.is_finished());
 }
 
 TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
