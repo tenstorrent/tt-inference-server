@@ -206,7 +206,7 @@ void EmbeddingController::create_embedding(
 }
 
 void EmbeddingController::health(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     Json::Value response;
@@ -222,7 +222,7 @@ void EmbeddingController::health(
 }
 
 void EmbeddingController::ready(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     auto status = service_->get_system_status();

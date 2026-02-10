@@ -31,8 +31,13 @@ LLMController::LLMController() {
     }
 
     service_ = std::make_shared<services::LLMService>();
-    service_->start();
-    std::cout << "[LLMController] Initialized and service started" << std::endl;
+    // Start service in background so Drogon can bind and listen immediately.
+    // /ready returns 503 until the service is ready; completion endpoints return 503 until then.
+    std::thread([svc = service_]() {
+        svc->start();
+        std::cout << "[LLMController] Service started (background)" << std::endl;
+    }).detach();
+    std::cout << "[LLMController] Initialized (service starting in background)" << std::endl;
 }
 
 std::string LLMController::generate_completion_id() {
@@ -305,7 +310,7 @@ void LLMController::handle_chat_streaming(
 
 void LLMController::handle_streaming(
     domain::CompletionRequest request,
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     const int64_t created = static_cast<int64_t>(
@@ -394,7 +399,7 @@ void LLMController::handle_streaming(
 
 void LLMController::handle_streaming_buffered(
     domain::CompletionRequest request,
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     const int64_t created = static_cast<int64_t>(
@@ -494,7 +499,7 @@ void LLMController::handle_streaming_buffered(
 }
 
 void LLMController::health(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     Json::Value response;
@@ -510,7 +515,7 @@ void LLMController::health(
 }
 
 void LLMController::ready(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
     auto status = service_->get_system_status();

@@ -148,10 +148,11 @@ RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/
     && make install \
     && cd / && rm -rf /tmp/drogon
 
-# Build C++ server
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+# Build C++ server (remove any copied build dir so CMake config is clean)
+RUN rm -rf ${TT_METAL_HOME}/server/cpp_server/build \
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh --ttnn"
+    && ./build.sh"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
