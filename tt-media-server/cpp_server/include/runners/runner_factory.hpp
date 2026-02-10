@@ -5,9 +5,10 @@
 
 #include <memory>
 #include <string>
-#include <cstdlib>
 #include <iostream>
 
+#include "config/constants.hpp"
+#include "config/settings.hpp"
 #include "runners/base_device_runner.hpp"
 #include "runners/llm_test_runner.hpp"
 
@@ -18,41 +19,29 @@
 namespace tt::runners {
 
 /**
- * Runner factory that creates the appropriate runner based on environment variable.
- *
- * Environment variable: TT_RUNNER_TYPE
- *   - "llm_test" (default): Use LLMTestRunner (pure CPU, 120k tokens/sec)
- *   - "ttnn_test": Use TTNNTestRunner (TTNN device I/O) - requires ENABLE_TTNN build flag
+ * Runner factory: creates runner based on config (TT_RUNNER_TYPE env).
+ * Uses tt::config::RunnerType from constants.hpp.
  */
 class RunnerFactory {
 public:
-    enum class RunnerType {
-        LLM_TEST,
-        TTNN_TEST
-    };
+    using RunnerType = tt::config::RunnerType;
 
     /**
-     * Get the runner type from environment variable TT_RUNNER_TYPE.
+     * Get the runner type from config (TT_RUNNER_TYPE env).
      */
     static RunnerType get_runner_type() {
-        const char* runner_env = std::getenv("TT_RUNNER_TYPE");
-        if (runner_env == nullptr) {
-            return RunnerType::LLM_TEST;  // Default
-        }
-
-        std::string runner_type(runner_env);
-        if (runner_type == "ttnn_test" || runner_type == "TTNN_TEST") {
+        RunnerType type = tt::config::runner_type();
 #ifdef ENABLE_TTNN
-            return RunnerType::TTNN_TEST;
+        return type;
 #else
+        if (type == RunnerType::TTNN_TEST) {
             std::cerr << "[RunnerFactory] WARNING: TTNN runner requested but not compiled with ENABLE_TTNN. "
                       << "Rebuild with -DENABLE_TTNN=ON to enable TTNN support. "
                       << "Falling back to LLM test runner." << std::endl;
             return RunnerType::LLM_TEST;
-#endif
         }
-
-        return RunnerType::LLM_TEST;
+        return type;
+#endif
     }
 
     /**
@@ -64,12 +53,12 @@ public:
                 return "TTNNTestRunner (Device I/O)";
             case RunnerType::LLM_TEST:
             default:
-                return "LLMTestRunner (120k tokens/sec)";
+                return "LLMTestRunner";
         }
     }
 
     /**
-     * Create a runner instance based on the environment variable.
+     * Create a runner instance based on config.
      */
     static std::unique_ptr<BaseDeviceRunner> create(const std::string& device_id) {
         RunnerType type = get_runner_type();

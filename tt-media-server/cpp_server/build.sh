@@ -10,6 +10,8 @@ BUILD_TYPE="Release"
 ENABLE_TTNN="OFF"
 
 # Parse arguments
+TEST="OFF"
+SANITIZE_THREAD="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -20,12 +22,23 @@ while [[ $# -gt 0 ]]; do
             ENABLE_TTNN="ON"
             shift
             ;;
+        --test)
+            TEST="ON"
+            shift
+            ;;
+        --tsan)
+            SANITIZE_THREAD="ON"
+            BUILD_TYPE="Debug"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
             echo "  --debug    Build in Debug mode (default: Release)"
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
+            echo "  --test     Build for PR gate: LLM only (no Python required)"
+            echo "  --tsan     Build with ThreadSanitizer for data-race detection"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -41,6 +54,8 @@ echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
+echo "  Test build: ${TEST}"
+echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "=============================================="
 
 # If TTNN is enabled, ensure we have the right Python
@@ -104,12 +119,16 @@ echo "Configuring CMake..."
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
+      -DLLM_ENGINE_DEBUG_BUILD=ON \
+      -DTEST="${TEST}" \
+      -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
       ..
 
 # Build
 echo ""
 echo "Building..."
-make -j$(nproc)
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+make -j"${NPROC}"
 
 echo ""
 echo "=============================================="
@@ -117,6 +136,10 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
+if [ -f "${BUILD_DIR}/engine_demo" ] 2>/dev/null; then
+    echo "LLM engine demo: ./build/engine_demo"
+    echo ""
+fi
 echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"

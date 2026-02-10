@@ -4,9 +4,11 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <thread>
 
 #include "runners/base_device_runner.hpp"
 #include "domain/completion_request.hpp"
@@ -29,27 +31,18 @@ struct LogStream {
 
 /**
  * Test runner for LLM streaming performance tests.
- * Generates fake tokens at 120,000 tokens per second to test the streaming
- * infrastructure without requiring actual model inference.
- *
- * At 120,000 tokens/second:
- *   - Token interval: ~8.33 microseconds
- *   - This is significantly faster than real LLM inference
- *   - Used for benchmarking server overhead
+ * Generates fake tokens at an interval (ms) from TEST_RUNNER_FREQUENCY_MS env,
+ * default 24ms, to match Python llm_test_runner.py and the performance test.
  */
 class LLMTestRunner : public BaseDeviceRunner {
 public:
-    // Target: 120,000 tokens per second
-    static constexpr double TOKENS_PER_SECOND = 120000.0;
-    static constexpr double MICROSECONDS_PER_SECOND = 1000000.0;
-    static constexpr double TOKEN_INTERVAL_MICROSECONDS = MICROSECONDS_PER_SECOND / TOKENS_PER_SECOND;
+    static constexpr int DEFAULT_TOKEN_INTERVAL_MS = 24;
 
     explicit LLMTestRunner(const std::string& device_id)
-        : BaseDeviceRunner(device_id)
-        , token_interval_us_(TOKEN_INTERVAL_MICROSECONDS) {
+        : BaseDeviceRunner(device_id),
+          token_interval_ms_(read_interval_from_env()) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
-                 << ": target " << TOKENS_PER_SECOND << " tokens/sec"
-                 << " (interval: " << token_interval_us_ << " µs)";
+                 << ": token interval " << token_interval_ms_ << " ms";
     }
 
     bool warmup() override {
@@ -96,15 +89,18 @@ public:
         std::function<void(const domain::StreamingChunkOutput&)> chunk_callback,
         std::function<void(const domain::FinalResultOutput&)> final_callback) override {
 
-        auto start_time = std::chrono::high_resolution_clock::now();
+        // Convert milliseconds to microseconds for sub-ms precision
+        auto interval_us = std::chrono::microseconds(static_cast<long long>(token_interval_ms_ * 1000.0));
+        auto next_token_time = std::chrono::steady_clock::now() + interval_us;
 
-        // Generate tokens as fast as possible - no artificial delay
-        // This simulates a very fast model to measure server overhead
         for (int i = 0; i < request.max_tokens; ++i) {
-            // Create and emit chunk immediately
+            // Sleep until the next token time
+            std::this_thread::sleep_until(next_token_time);
+            next_token_time += interval_us;
+
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
-            chunk.chunk.text = "tok";
+            chunk.chunk.text = "token_" + std::to_string(i);
             chunk.chunk.index = i;
 
             chunk_callback(chunk);
@@ -113,28 +109,27 @@ public:
         // Send final result
         domain::FinalResultOutput final_result;
         final_result.task_id = request.task_id;
-        final_result.result.text = "[DONE]";
+        final_result.result.text = "";
         final_result.result.index = 0;
         final_result.result.finish_reason = "stop";
         final_result.return_result = true;
 
         final_callback(final_result);
-
-        // Log actual performance with worker ID to show parallel execution
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            end_time - start_time
-        ).count();
-
-        double actual_tokens_per_sec = (request.max_tokens * MICROSECONDS_PER_SECOND) / duration_us;
-        TT_LOG_DEBUG << "[" << device_id_ << "] generated " << request.max_tokens
-                  << " tokens in " << duration_us << " µs"
-                  << " (" << actual_tokens_per_sec << " tokens/sec)"
-                  << " task=" << request.task_id;
     }
 
 private:
-    double token_interval_us_;
+    double token_interval_ms_;
+
+    static double read_interval_from_env() {
+        const char* env = std::getenv("TEST_RUNNER_FREQUENCY_MS");
+        if (env == nullptr) return DEFAULT_TOKEN_INTERVAL_MS;
+        try {
+            double val = std::stod(env);
+            return (val > 0.0 && val <= 10000.0) ? val : DEFAULT_TOKEN_INTERVAL_MS;
+        } catch (...) {
+            return DEFAULT_TOKEN_INTERVAL_MS;
+        }
+    }
 };
 
 #undef TT_LOG_INFO
