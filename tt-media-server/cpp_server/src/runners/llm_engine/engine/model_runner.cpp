@@ -53,6 +53,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->seq_id, seq->last_token + 1});
     }
   } else {
+    // h2d
     std::lock_guard<std::mutex> lock(work_mutex_);
     for (Sequence* seq : seqs) {
       work_queue_.push_back({seq->seq_id, seq->last_token + 1});

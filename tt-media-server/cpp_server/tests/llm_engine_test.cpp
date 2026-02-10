@@ -55,20 +55,21 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
 
   ASSERT_EQ(finished_count, total_requests);
 
-  for (size_t i = 0; i < requests.size(); ++i) {
-    int sid = seq_ids[i];
-    int64_t last_prompt_token = requests[i].prompt.back();
-    int max_tok = requests[i].max_tokens;
+  const std::vector<int64_t> expected_seq0 = {
+      4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18,
+      19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+  };
+  const std::vector<int64_t> expected_seq1 = {
+      8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+  };
+  const std::vector<int64_t> expected_seq2 = {
+      13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+      23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+  };
 
-    ASSERT_EQ(static_cast<int>(received_tokens[sid].size()), max_tok)
-        << "seq " << sid << " expected " << max_tok << " tokens";
-
-    for (int t = 0; t < max_tok; ++t) {
-      int64_t expected = last_prompt_token + 1 + t;
-      EXPECT_EQ(received_tokens[sid][t], expected)
-          << "seq " << sid << " token[" << t << "]";
-    }
-  }
+  EXPECT_EQ(received_tokens[seq_ids[0]], expected_seq0);
+  EXPECT_EQ(received_tokens[seq_ids[1]], expected_seq1);
+  EXPECT_EQ(received_tokens[seq_ids[2]], expected_seq2);
 }
 
 }  // namespace
