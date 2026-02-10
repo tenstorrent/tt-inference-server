@@ -13,8 +13,14 @@ if [ -z "$RUFF" ]; then
 fi
 
 if [ -z "$RUFF" ]; then
-    echo "⚠️  ruff not found, skipping pre-commit checks"
-    exit 0
+    echo "⚠️  ruff not found, installing..."
+    pip install --quiet ruff 2>/dev/null
+    RUFF=$(command -v ruff 2>/dev/null)
+    if [ -z "$RUFF" ]; then
+        echo "❌ Failed to install ruff, skipping pre-commit checks"
+        exit 0
+    fi
+    echo "✅ ruff installed successfully"
 fi
 
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
