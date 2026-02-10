@@ -222,5 +222,4 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 # TODO: add option to print examples from predictions
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
-        self.logger.info(f"Average validation loss: {avg_val_loss}")
         return avg_val_loss
