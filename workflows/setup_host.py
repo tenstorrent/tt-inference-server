@@ -39,6 +39,9 @@ class SetupConfig:
     model_spec: ModelSpec
     host_volume: str = None  # --host-volume: host bind mount dir for cache_root
     host_hf_cache: str = None  # --host-hf-cache: host HF cache dir for readonly weights
+    host_weights_dir: str = (
+        None  # --host-weights-dir: host dir with pre-downloaded weights
+    )
     model_source: str = os.getenv(
         "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
     )  # Either 'huggingface', 'local' or 'noaction'
@@ -105,6 +108,18 @@ class SetupConfig:
             snapshot_dir = get_weights_hf_cache_dir(self.model_spec.hf_weights_repo)
             if snapshot_dir:
                 self.update_host_model_weights_snapshot_dir(snapshot_dir)
+
+        # --host-weights-dir: direct bind mount of pre-downloaded weights
+        elif self.host_weights_dir:
+            host_weights_path = Path(self.host_weights_dir)
+            self.container_readonly_model_weights_dir = (
+                self.containter_user_home / "readonly_weights_mount"
+            )
+            self.container_model_weights_mount_dir = (
+                self.container_readonly_model_weights_dir / host_weights_path.name
+            )
+            self.host_model_weights_mount_dir = host_weights_path
+            self.container_model_weights_path = self.container_model_weights_mount_dir
 
         # LOCAL source: separate readonly bind mount (unchanged)
         elif self.model_source == ModelSource.LOCAL.value:
@@ -196,6 +211,7 @@ class HostSetupManager:
         hf_token: str = None,
         host_volume: str = None,
         host_hf_cache: str = None,
+        host_weights_dir: str = None,
     ):
         self.model_spec = model_spec
         self.automatic = automatic
@@ -203,6 +219,7 @@ class HostSetupManager:
             model_spec=model_spec,
             host_volume=host_volume,
             host_hf_cache=host_hf_cache,
+            host_weights_dir=host_weights_dir,
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
@@ -255,16 +272,22 @@ class HostSetupManager:
 
     def check_setup(self) -> bool:
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
-            # Default (Docker volume, no --host-hf-cache): container handles download
+            # Default (Docker volume, no host mount options): container handles download
             if (
                 not self.setup_config.host_hf_cache
                 and not self.setup_config.host_volume
+                and not self.setup_config.host_weights_dir
             ):
                 return True
             # --host-hf-cache: check for existing HF cache snapshot
             if self.setup_config.host_hf_cache:
                 return self.check_model_weights_dir(
                     self.setup_config.host_model_weights_snapshot_dir
+                )
+            # --host-weights-dir: check host-provided weights directory
+            if self.setup_config.host_weights_dir:
+                return self.check_model_weights_dir(
+                    Path(self.setup_config.host_weights_dir)
                 )
             # --host-volume (without --host-hf-cache): check host volume dir
             if self.setup_config.host_volume:
@@ -286,6 +309,9 @@ class HostSetupManager:
 
     def check_disk_space(self) -> bool:
         if self.setup_config.model_source != ModelSource.HUGGINGFACE.value:
+            return True
+        # --host-weights-dir: weights already exist, skip disk check
+        if self.setup_config.host_weights_dir:
             return True
         # Determine which path to check disk space for
         if self.setup_config.host_hf_cache:
@@ -480,6 +506,13 @@ class HostSetupManager:
         logger.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
+        # --host-weights-dir: weights already provided, skip download
+        if self.setup_config.host_weights_dir:
+            logger.info(
+                f"Using pre-downloaded weights from --host-weights-dir: {self.setup_config.host_weights_dir}"
+            )
+            return
+
         if not self.setup_config.host_hf_cache and not self.setup_config.host_volume:
             # Docker volume mode: container downloads on startup via ensure_weights_available()
             logger.info(
@@ -595,6 +628,7 @@ def setup_host(
     automatic_setup=False,
     host_volume=None,
     host_hf_cache=None,
+    host_weights_dir=None,
 ):
     automatic = bool(automatic_setup)
 
@@ -605,6 +639,7 @@ def setup_host(
         automatic=automatic,
         host_volume=host_volume,
         host_hf_cache=host_hf_cache,
+        host_weights_dir=host_weights_dir,
     )
     manager.run_setup()
     return manager.setup_config

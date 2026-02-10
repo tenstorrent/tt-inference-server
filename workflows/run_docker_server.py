@@ -253,7 +253,7 @@ def generate_docker_run_command(
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
     ])
 
-    # Mount host weights readonly when --host-hf-cache is used or LOCAL source
+    # Mount host weights readonly when --host-hf-cache, --host-weights-dir, or LOCAL source
     if setup_config and setup_config.host_model_weights_mount_dir:
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
@@ -271,14 +271,14 @@ def generate_docker_run_command(
     if setup_config and json_fpath:
         docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
         docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = docker_json_fpath
-        # Only set MODEL_WEIGHTS_PATH when using host-mounted weights
-        # (--host-hf-cache or LOCAL source). For Docker volume mode,
-        # ensure_weights_available() sets it inside the container.
+        # Only set MODEL_WEIGHTS_DIR when using host-mounted weights
+        # (--host-hf-cache, --host-weights-dir, or LOCAL source).
+        # For Docker volume mode, ensure_weights_available() sets it inside the container.
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars["MODEL_WEIGHTS_PATH"] = (
+            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
                 setup_config.container_model_weights_path
             )
         # Only set TT_CACHE_PATH when using host volume
