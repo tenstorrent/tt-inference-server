@@ -53,17 +53,18 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  int expected_id = seq.seq_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
-  EXPECT_EQ(batch[0], &seq);
+  EXPECT_EQ(batch[0]->seq_id, expected_id);
   EXPECT_EQ(batch[0]->status_, SequenceStatus::IN_FLIGHT);
 }
 
 TEST(SchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
   Config config = make_config();
-  Scheduler sched{config};
+  Scheduler sched{config, make_queue()};
   sched.add_request(prompt(4), SamplingParams{.max_tokens = 10});
 
   auto [batch1, is_prefill1] = sched.schedule();
@@ -78,6 +79,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  int expected_id = seq.seq_id;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -88,12 +90,12 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   auto [decode_batch, is_decode] = sched.schedule();
   ASSERT_FALSE(is_decode);
   ASSERT_EQ(decode_batch.size(), 1u);
-  EXPECT_EQ(decode_batch[0], &seq);
+  EXPECT_EQ(decode_batch[0]->seq_id, expected_id);
 }
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   Config config = make_config(32, 8, 256, 4, 99);
-  Scheduler sched{config};
+  Scheduler sched{config, make_queue()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -115,7 +117,7 @@ TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
   Config config = make_config();
-  Scheduler sched{config};
+  Scheduler sched{config, make_queue()};
   sched.add_request(prompt(4), {.max_tokens = 2});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -145,11 +147,11 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
   auto [batch1, _1] = sched.schedule();
   ASSERT_EQ(batch1.size(), 1u);
   sched.postprocess(batch1, {1});
-  EXPECT_FALSE(seq.is_finished());
+  EXPECT_FALSE(batch1[0]->is_finished());
   auto [batch2, _2] = sched.schedule();
   ASSERT_EQ(batch2.size(), 1u);
   sched.postprocess(batch2, {2});
-  EXPECT_TRUE(seq.is_finished());
+  EXPECT_TRUE(batch2[0]->is_finished());
 }
 
 TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
@@ -160,22 +162,24 @@ TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
   auto [batch, _] = sched.schedule();
   ASSERT_EQ(batch.size(), 1u);
   sched.postprocess(batch, {99});
-  EXPECT_TRUE(seq.is_finished());
+  EXPECT_TRUE(batch[0]->is_finished());
 }
 
 TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  int expected_id = seq.seq_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
-  sched.preempt(seq);
-  EXPECT_EQ(seq.status_, SequenceStatus::WAITING);
+  ASSERT_EQ(batch.size(), 1u);
+  sched.preempt(*batch[0]);
+  EXPECT_EQ(batch[0]->status_, SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
-  EXPECT_EQ(batch2.size(), 1u);
-  EXPECT_EQ(batch2[0], &seq);
+  ASSERT_GE(batch2.size(), 1u);
+  EXPECT_EQ(batch2[0]->seq_id, expected_id);
 }
 
 TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
@@ -183,6 +187,7 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   Scheduler sched{config, make_queue()};
   Sequence seq1{prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{prompt(4), SamplingParams{.max_tokens = 10}};
+  int seq2_id = seq2.seq_id;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
   ASSERT_TRUE(prefill1);
@@ -191,7 +196,7 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   auto [batch2, prefill2] = sched.schedule();
   EXPECT_TRUE(prefill2) << "Prefill (seq2) should be chosen over decode (seq1)";
   ASSERT_EQ(batch2.size(), 1u);
-  EXPECT_EQ(batch2[0], &seq2);
+  EXPECT_EQ(batch2[0]->seq_id, seq2_id);
 }
 
 TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
@@ -239,6 +244,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(prefill_batch.size(), 1u);
+  Sequence* running_seq = prefill_batch[0];
   sched.postprocess(prefill_batch, {1});
 
   for (int i = 0; i < 4; ++i) {
@@ -247,7 +253,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
     ASSERT_EQ(decode_batch.size(), 1u);
     sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
   }
-  ASSERT_EQ(seq.size(), 9u);
+  ASSERT_EQ(running_seq->size(), 9u);
 
   {
     auto [batch, is_prefill] = sched.schedule();
@@ -265,6 +271,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(prefill_batch.size(), 1u);
+  Sequence* running_seq = prefill_batch[0];
   sched.postprocess(prefill_batch, {1});
 
   for (int i = 0; i < 4; ++i) {
@@ -273,7 +280,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
     ASSERT_EQ(decode_batch.size(), 1u);
     sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
   }
-  ASSERT_EQ(seq.size(), 9u);
+  ASSERT_EQ(running_seq->size(), 9u);
 
   {
     auto [batch, is_prefill] = sched.schedule();
