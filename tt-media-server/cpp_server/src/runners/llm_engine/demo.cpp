@@ -10,7 +10,6 @@ int main() {
   config.kvcache_block_size = 8;
   config.eos = 0;
 
-  config.task_queue_name = "/tt_engine_demo";
   llm_engine::LLMEngine engine{config};
   engine.add_request({1, 2, 3}, llm_engine::SamplingParams{.max_tokens = 30});
   engine.add_request({4, 5, 6, 7}, llm_engine::SamplingParams{.max_tokens = 10});

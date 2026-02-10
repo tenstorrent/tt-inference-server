@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #pragma once
 
-#include <memory>
 #include <string>
 
 #include <boost/interprocess/ipc/message_queue.hpp>
@@ -14,13 +13,10 @@ namespace llm_engine {
 
 /**
  * ITaskQueue implementation backed by a Boost.Interprocess message queue.
- *
- * Multiple schedulers (across worker processes) can share the same named
- * queue for work-stealing style scheduling.
  */
 class BoostIpcTaskQueue : public ITaskQueue {
  public:
-  BoostIpcTaskQueue(const std::string& name, int capacity);
+  BoostIpcTaskQueue(const std::string& name);
 
   void push(const Sequence& seq) override;
   Sequence* try_pop() override;
@@ -31,6 +27,8 @@ class BoostIpcTaskQueue : public ITaskQueue {
 
  private:
   std::unique_ptr<boost::interprocess::message_queue> queue_;
+  std::vector<char> send_buffer_;
+  std::vector<char> recv_buffer_;
 };
 
 }  // namespace llm_engine

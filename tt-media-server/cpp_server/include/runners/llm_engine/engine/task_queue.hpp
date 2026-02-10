@@ -4,16 +4,17 @@
 #pragma once
 
 #include "llm_engine/engine/sequence.hpp"
+#include <memory>
 
 namespace llm_engine {
 
 /**
  * Abstract interface for the scheduler's task queue.
  *
- * - push   -- serializes and enqueues a sequence (may block if queue is full).
+ * - push   --  enqueues a sequence (may block if queue is full).
  * - try_pop -- non-blocking pop; returns nullptr when empty, otherwise a
  *              heap-allocated Sequence* (caller owns the pointer).
- * - empty  -- approximate emptiness check (sufficient for is_finished()).
+ * - empty  -- emptiness check.
  */
 class ITaskQueue {
  public:

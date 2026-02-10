@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-
+#include <iostream>
 #include "llm_engine/sampling_params.hpp"
 
 namespace llm_engine {
@@ -18,10 +18,9 @@ class Sequence {
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
-  /// Construct from explicit fields (used when deserializing from IPC).
-  Sequence(int seq_id, std::vector<int64_t> token_ids,
-           size_t num_prompt_tokens, size_t num_cached_tokens,
-           float temperature, int max_tokens, bool ignore_eos);
+  void serialize(std::ostream& os) const;
+  
+  static Sequence* deserialize(std::istream& is);
 
   size_t size() const { return token_ids_.size(); }
   int64_t operator[](size_t i) const { return token_ids_[i]; }

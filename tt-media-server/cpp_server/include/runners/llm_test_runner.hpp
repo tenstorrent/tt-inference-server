@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -30,17 +31,18 @@ struct LogStream {
 
 /**
  * Test runner for LLM streaming performance tests.
- * Generates fake tokens with a 24ms interval to simulate real model inference
- * timing and allow meaningful ITL benchmarking.
+ * Generates fake tokens at an interval (ms) from TEST_RUNNER_FREQUENCY_MS env,
+ * default 24ms, to match Python llm_test_runner.py and the performance test.
  */
 class LLMTestRunner : public BaseDeviceRunner {
 public:
-    static constexpr int TOKEN_INTERVAL_MS = 24;
+    static constexpr int DEFAULT_TOKEN_INTERVAL_MS = 24;
 
     explicit LLMTestRunner(const std::string& device_id)
-        : BaseDeviceRunner(device_id) {
+        : BaseDeviceRunner(device_id),
+          token_interval_ms_(read_interval_from_env()) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
-                 << ": token interval " << TOKEN_INTERVAL_MS << " ms";
+                 << ": token interval " << token_interval_ms_ << " ms";
     }
 
     bool warmup() override {
@@ -88,11 +90,11 @@ public:
         std::function<void(const domain::FinalResultOutput&)> final_callback) override {
 
         for (int i = 0; i < request.max_tokens; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(TOKEN_INTERVAL_MS));
+            std::this_thread::sleep_for(std::chrono::milliseconds(token_interval_ms_));
 
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
-            chunk.chunk.text = "tok";
+            chunk.chunk.text = "token_" + std::to_string(i);
             chunk.chunk.index = i;
 
             chunk_callback(chunk);
@@ -101,7 +103,7 @@ public:
         // Send final result
         domain::FinalResultOutput final_result;
         final_result.task_id = request.task_id;
-        final_result.result.text = "[DONE]";
+        final_result.result.text = "";
         final_result.result.index = 0;
         final_result.result.finish_reason = "stop";
         final_result.return_result = true;
@@ -110,6 +112,14 @@ public:
     }
 
 private:
+    int token_interval_ms_;
+
+    static int read_interval_from_env() {
+        const char* env = std::getenv("TEST_RUNNER_FREQUENCY_MS");
+        if (env == nullptr) return DEFAULT_TOKEN_INTERVAL_MS;
+        int val = std::atoi(env);
+        return (val > 0 && val <= 10000) ? val : DEFAULT_TOKEN_INTERVAL_MS;
+    }
 };
 
 #undef TT_LOG_INFO

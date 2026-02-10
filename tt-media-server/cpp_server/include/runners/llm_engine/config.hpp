@@ -13,8 +13,6 @@ struct Config {
 
   /// IPC task queue name (e.g. "/tt_task_queue"). Required.
   std::string task_queue_name;
-  /// Maximum number of messages the IPC task queue can hold.
-  int task_queue_capacity = 1024;
 };
 
 }  // namespace llm_engine

@@ -2,6 +2,7 @@
 #include "llm_engine/engine/boost_ipc_task_queue.hpp"
 #include "llm_engine/engine/debug.hpp"
 
+#include "llm_engine/engine/debug.hpp"
 #include <algorithm>
 #include <cassert>
 
@@ -12,17 +13,16 @@ Scheduler::Scheduler(const Config& config)
       max_num_batched_tokens_(config.max_num_batched_tokens),
       eos_(config.eos),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      task_queue_(std::make_unique<BoostIpcTaskQueue>(
-          config.task_queue_name, config.task_queue_capacity)) {}
+      waiting_(std::make_unique<BoostIpcTaskQueue>(
+          config.task_queue_name)) {}
 
 bool Scheduler::is_finished() const {
-  return task_queue_->empty() && running_.empty();
+  return waiting_->empty() && running_.empty();
 }
 
 void Scheduler::add(Sequence& seq) {
-  LLM_ENGINE_LOG("scheduler")
-      << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
-  task_queue_->push(seq);
+  LLM_ENGINE_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
+  waiting_->push(seq);
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
@@ -32,7 +32,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
   // --- Prefill: pop from task queue ---
   while (num_seqs < max_num_seqs_) {
-    Sequence* seq = task_queue_->try_pop();
+    auto seq = waiting_->try_pop();
     if (!seq) {
       break;  // Queue empty
     }
@@ -41,7 +41,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
             max_num_batched_tokens_ ||
         !block_manager_.can_allocate(*seq)) {
       // Can't handle this sequence -- push it back and stop prefilling.
-      task_queue_->push(*seq);
+      waiting_->push(*seq);
       delete seq;
       break;
     }
@@ -56,9 +56,8 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   if (!scheduled_seqs.empty()) {
-    LLM_ENGINE_LOG("scheduler")
-        << "schedule prefill n=" << scheduled_seqs.size()
-        << " batched_tokens=" << num_batched_tokens << std::endl;
+    LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
+                             << " batched_tokens=" << num_batched_tokens << std::endl;
     return {scheduled_seqs, true};
   }
 
@@ -66,16 +65,18 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   while (!running_.empty() && num_seqs < max_num_seqs_) {
     Sequence* seq = running_.front();
     running_.pop_front();
+    auto self_preempt = false;
     while (!block_manager_.can_append(*seq)) {
       if (!running_.empty()) {
         preempt(*running_.back());
         running_.pop_back();
       } else {
         preempt(*seq);
+        self_preempt = true;
         break;
       }
     }
-    if (block_manager_.can_append(*seq)) {
+    if (block_manager_.can_append(*seq) && !self_preempt) {
       num_seqs += 1;
       block_manager_.may_append(*seq);
       scheduled_seqs.push_back(seq);
@@ -84,19 +85,15 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   for (auto it = scheduled_seqs.rbegin(); it != scheduled_seqs.rend(); ++it) {
     running_.push_front(*it);
   }
-  LLM_ENGINE_LOG("scheduler")
-      << "schedule decode n=" << scheduled_seqs.size() << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size() << std::endl;
   return {scheduled_seqs, false};
 }
 
 void Scheduler::preempt(Sequence& seq) {
-  LLM_ENGINE_LOG("scheduler")
-      << "preempt seq_id=" << seq.seq_id << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
-  task_queue_->push(seq);
-  // Note: the caller is responsible for erasing from running_ if needed.
-  // In the decode path of schedule(), the caller already manages the deque.
+  waiting_->push(seq);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
@@ -106,18 +103,14 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     int64_t token_id = token_ids[i];
     seq->append_token(token_id);
     if ((!seq->ignore_eos && token_id == eos_) ||
-        seq->num_completion_tokens() ==
-            static_cast<size_t>(seq->max_tokens)) {
-      LLM_ENGINE_LOG("scheduler")
-          << "postprocess seq_id=" << seq->seq_id << " finished"
-          << " (eos=" << (token_id == eos_)
-          << " max_tokens="
-          << (seq->num_completion_tokens() ==
-              static_cast<size_t>(seq->max_tokens))
-          << ")" << std::endl;
+        seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) {
+      LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
+          << " (eos=" << (token_id == eos_) << " max_tokens="
+          << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
-      running_.erase(std::find(running_.begin(), running_.end(), seq));
+      running_.erase(
+          std::find(running_.begin(), running_.end(), seq));
     }
   }
 }
