@@ -16,7 +16,7 @@ void SecurityFilter::initializeToken() {
         cachedToken_ = envToken;
         std::cout << "[SecurityFilter] Using OPENAI_API_KEY from environment" << std::endl;
     } else {
-        cachedToken_ = "your-security-key";
+        cachedToken_ = "your-secret-key";
         std::cout << "[SecurityFilter] OPENAI_API_KEY not set, using default key" << std::endl;
     }
 }
