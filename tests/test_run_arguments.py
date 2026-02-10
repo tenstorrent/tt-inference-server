@@ -65,6 +65,9 @@ def mock_args():
         tt_metal_python_venv_dir=None,
         no_auth=False,
         concurrency_sweeps=False,
+        host_volume=None,
+        host_hf_cache=None,
+        image_user="1000",
     )
 
 
@@ -94,16 +97,21 @@ def mock_model_spec():
 
 @pytest.fixture
 def mock_setup_config():
-    """Mock setup configuration for docker server."""
+    """Mock setup configuration for docker server (default Docker volume mode)."""
     mock_config = MagicMock()
     mock_config.cache_root = Path("/tmp/cache")
     mock_config.container_model_spec_dir = Path("/home/container_app_user/model_spec")
     mock_config.container_tt_metal_cache_dir = Path("/container/cache")
-    mock_config.container_model_weights_path = "/container/weights"
-    mock_config.container_model_weights_mount_dir = "/container/mounts"
-    mock_config.host_model_volume_root = "/host/volumes"
-    mock_config.host_model_weights_mount_dir = "/host/weights"
-    mock_config.model_source = "hf"
+    mock_config.container_model_weights_path = Path(
+        "/tmp/cache/weights/Mistral-7B-Instruct-v0.3"
+    )
+    mock_config.container_model_weights_mount_dir = None
+    mock_config.docker_volume_name = (
+        "volume_id_tt-transformers-Mistral-7B-Instruct-v0.3"
+    )
+    mock_config.host_model_volume_root = None
+    mock_config.host_model_weights_mount_dir = None
+    mock_config.model_source = "huggingface"
     return mock_config
 
 
@@ -291,6 +299,26 @@ class TestArgumentParsing:
         assert args.vllm_override_args is None
         assert args.no_auth is False
         assert args.concurrency_sweeps is False
+        assert args.host_volume is None
+        assert args.host_hf_cache is None
+        assert args.image_user == "1000"
+
+    def test_docker_volume_args(self, base_args):
+        """Test --host-volume, --host-hf-cache, --image-user parsing."""
+        full_args = base_args + [
+            "--host-volume",
+            "/some/path",
+            "--host-hf-cache",
+            "/home/user/.cache/huggingface",
+            "--image-user",
+            "15863",
+        ]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+
+        assert args.host_volume == "/some/path"
+        assert args.host_hf_cache == "/home/user/.cache/huggingface"
+        assert args.image_user == "15863"
 
 
 class TestArgsInference:
@@ -446,22 +474,18 @@ class TestOverrideArgsIntegration:
             mock_model_spec.apply_runtime_args.assert_called_once_with(mock_args)
             assert result == mock_model_spec
 
-    def test_generate_docker_run_command_mounts_model_spec_json(
-        self, mock_setup_config
-    ):
-        """Test that generate_docker_run_command mounts the model_spec JSON file into the container."""
-        from pathlib import Path
-
-        # Create mock model_spec
+    def _make_mock_model_spec(self):
+        """Helper to create a mock model_spec for docker command tests."""
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "test-model-id"
+        mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
         mock_model_spec.device_type = "n150"
         mock_model_spec.docker_image = "test:image"
         mock_model_spec.impl.impl_name = "tt-transformers"
+        mock_model_spec.impl.impl_id = "tt-transformers"
         mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.subdevice_type = None
 
-        # Create cli_args
         mock_cli_args = MagicMock()
         mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
         mock_cli_args.device = "n150"
@@ -472,7 +496,15 @@ class TestOverrideArgsIntegration:
         mock_cli_args.device_id = None
         mock_cli_args.impl = "tt-transformers"
         mock_cli_args.override_docker_image = None
+        mock_cli_args.image_user = "1000"
         mock_model_spec.cli_args = mock_cli_args
+        return mock_model_spec
+
+    def test_generate_docker_run_command_mounts_model_spec_json(
+        self, mock_setup_config
+    ):
+        """Test that generate_docker_run_command mounts the model_spec JSON file into the container."""
+        mock_model_spec = self._make_mock_model_spec()
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -491,7 +523,6 @@ class TestOverrideArgsIntegration:
             env_var_found = False
 
             for i, arg in enumerate(docker_command):
-                # Check for JSON file mount
                 if arg == "--mount" and i + 1 < len(docker_command):
                     mount_spec = docker_command[i + 1]
                     if (
@@ -500,7 +531,6 @@ class TestOverrideArgsIntegration:
                     ):
                         json_mount_found = True
 
-                # Check for TT_MODEL_SPEC_JSON_PATH environment variable
                 if arg == "-e" and i + 1 < len(docker_command):
                     env_setting = docker_command[i + 1]
                     if env_setting.startswith("TT_MODEL_SPEC_JSON_PATH="):
@@ -514,31 +544,129 @@ class TestOverrideArgsIntegration:
                 f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
             )
 
+    def test_default_mode_uses_docker_volume_and_user(self, mock_setup_config):
+        """Test default mode emits type=volume mount and --user 1000."""
+        mock_model_spec = self._make_mock_model_spec()
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            json_fpath = Path("/tmp/test-model-spec.json")
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_setup_config, json_fpath
+            )
+
+            cmd_str = " ".join(str(c) for c in docker_command)
+            assert "type=volume" in cmd_str, (
+                "Default mode should use Docker named volume"
+            )
+            assert "--user 1000" in cmd_str, "Default mode should pass --user 1000"
+            # Should NOT have CACHE_ROOT env var (baked into Dockerfile)
+            for i, arg in enumerate(docker_command):
+                if arg == "-e" and i + 1 < len(docker_command):
+                    assert not docker_command[i + 1].startswith("CACHE_ROOT="), (
+                        "CACHE_ROOT should not be set as runtime env var"
+                    )
+
+    def test_host_volume_mode_uses_bind_mount(self):
+        """Test --host-volume mode emits type=bind mount."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_config = MagicMock()
+        mock_config.cache_root = Path("/tmp/cache")
+        mock_config.container_model_spec_dir = Path(
+            "/home/container_app_user/model_spec"
+        )
+        mock_config.container_tt_metal_cache_dir = Path("/container/cache")
+        mock_config.container_model_weights_path = Path("/tmp/cache/weights/model")
+        mock_config.container_model_weights_mount_dir = None
+        mock_config.host_model_volume_root = Path("/host/volumes/cache")
+        mock_config.host_model_weights_mount_dir = None
+        mock_config.model_source = "huggingface"
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            json_fpath = Path("/tmp/test-model-spec.json")
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_config, json_fpath
+            )
+
+            cmd_str = " ".join(str(c) for c in docker_command)
+            assert "type=bind,src=/host/volumes/cache" in cmd_str, (
+                "Host volume mode should use bind mount"
+            )
+
+    def test_host_hf_cache_mode_mounts_weights_readonly(self):
+        """Test --host-hf-cache mode emits separate readonly weights mount."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_config = MagicMock()
+        mock_config.cache_root = Path("/tmp/cache")
+        mock_config.container_model_spec_dir = Path(
+            "/home/container_app_user/model_spec"
+        )
+        mock_config.container_tt_metal_cache_dir = Path("/container/cache")
+        mock_config.container_model_weights_path = Path(
+            "/container/readonly_weights_mount/model/snapshots/abc"
+        )
+        mock_config.container_model_weights_mount_dir = Path(
+            "/container/readonly_weights_mount/model"
+        )
+        mock_config.host_model_volume_root = None
+        mock_config.host_model_weights_mount_dir = Path(
+            "/host/hf_cache/hub/models--meta-llama"
+        )
+        mock_config.model_source = "huggingface"
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            json_fpath = Path("/tmp/test-model-spec.json")
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_config, json_fpath
+            )
+
+            # Should have readonly weights mount
+            weights_mount_found = False
+            for i, arg in enumerate(docker_command):
+                if arg == "--mount" and i + 1 < len(docker_command):
+                    mount_spec = docker_command[i + 1]
+                    if "models--meta-llama" in mount_spec and "readonly" in mount_spec:
+                        weights_mount_found = True
+            assert weights_mount_found, (
+                "Host HF cache mode should mount weights readonly"
+            )
+
+    def test_default_mode_no_separate_weights_mount(self, mock_setup_config):
+        """Test default mode (no --host-hf-cache) does NOT emit separate weights mount."""
+        mock_model_spec = self._make_mock_model_spec()
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            json_fpath = Path("/tmp/test-model-spec.json")
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_setup_config, json_fpath
+            )
+
+            # Should NOT have readonly weights mount (host_model_weights_mount_dir is None)
+            for i, arg in enumerate(docker_command):
+                if arg == "--mount" and i + 1 < len(docker_command):
+                    mount_spec = docker_command[i + 1]
+                    assert "readonly_weights_mount" not in mount_spec, (
+                        "Default mode should not have separate readonly weights mount"
+                    )
+
     def test_generate_docker_run_command_without_setup_config(self):
         """Test that generate_docker_run_command works without setup_config for --print-docker-cmd."""
-        from pathlib import Path
-
-        # Create mock model_spec
-        mock_model_spec = MagicMock()
-        mock_model_spec.model_id = "test-model-id"
-        mock_model_spec.device_type = "n150"
-        mock_model_spec.docker_image = "test:image"
-        mock_model_spec.impl.impl_name = "tt-transformers"
-        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
-        mock_model_spec.subdevice_type = None
-
-        # Create cli_args
-        mock_cli_args = MagicMock()
-        mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
-        mock_cli_args.device = "n150"
-        mock_cli_args.workflow = "server"
-        mock_cli_args.service_port = "8000"
-        mock_cli_args.interactive = False
-        mock_cli_args.dev_mode = False
-        mock_cli_args.device_id = None
-        mock_cli_args.impl = "tt-transformers"
-        mock_cli_args.override_docker_image = None
-        mock_model_spec.cli_args = mock_cli_args
+        mock_model_spec = self._make_mock_model_spec()
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
