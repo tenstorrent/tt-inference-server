@@ -244,7 +244,7 @@ class VideoFVDTest(BaseTest):
         """
         Load videos from directory and convert to tensor format.
 
-        Uses imageio with the ffmpeg plugin (imageio-ffmpeg) for video reading.
+        Uses imageio for video reading (auto-selects backend, e.g. imageio-ffmpeg or pyav).
 
         Args:
             video_dir: Directory containing MP4 video files
@@ -309,8 +309,8 @@ class VideoFVDTest(BaseTest):
             Array of shape (num_frames, height, width, channels)
         """
         logger.info(f"Loading single video: {video_path}")
-        # Read all frames from video
-        all_frames = iio.imread(video_path, plugin="ffmpeg")
+        # Read all frames from video (no plugin= so imageio auto-selects available backend)
+        all_frames = iio.imread(video_path, index=...)
         total_frames = len(all_frames)
 
         if total_frames == 0:
