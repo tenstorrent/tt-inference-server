@@ -4,8 +4,14 @@
 
 from typing import List, Optional, Tuple, Union
 
+from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
+
+# Flux models support fewer inference steps than other image models
+_FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell"}
+_FLUX_MIN_INFERENCE_STEPS = 4
+_DEFAULT_MIN_INFERENCE_STEPS = 12
 
 
 class ImageGenerateRequest(BaseRequest):
@@ -28,6 +34,23 @@ class ImageGenerateRequest(BaseRequest):
 
     # Private fields for internal processing
     _segments: Optional[List[int]] = PrivateAttr(default=None)
+
+    @field_validator("num_inference_steps")
+    @classmethod
+    def validate_num_inference_steps(cls, v):
+        if v is None:
+            return v
+        model_runner = get_settings().model_runner
+        min_steps = (
+            _FLUX_MIN_INFERENCE_STEPS
+            if model_runner in _FLUX_RUNNERS
+            else _DEFAULT_MIN_INFERENCE_STEPS
+        )
+        if v < min_steps:
+            raise ValueError(
+                f"num_inference_steps must be >= {min_steps} for {model_runner}, got {v}"
+            )
+        return v
 
     @field_validator("image_return_format")
     @classmethod
