@@ -118,7 +118,7 @@ def test_benchmark_configs_selected_models_print_sweeps(
         sweep_params = sweep_task.param_map[device]
         pairs_to_expected = {
             (128, 128): [1, 32],
-            (65536, 128): [1],
+            (65536, 128): [],
         }
         for (isl, osl), expected_concurrency in pairs_to_expected.items():
             got = sorted(

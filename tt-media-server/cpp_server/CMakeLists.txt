@@ -10,8 +10,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find Drogon
 find_package(Drogon REQUIRED)
 
-# Test build(used by PR gate). Pass -DTEST=ON or use build.sh --test.
+# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
 option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
+if(NOT TEST)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
@@ -26,12 +29,47 @@ if(POLICY CMP0169)
 endif()
 FetchContent_Populate(rapidjson)
 
+# Google Test for unit tests
+FetchContent_Declare(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
-if(NOT TEST)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-endif()
+# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+set(LLM_ENGINE_SOURCES
+    src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/hash.cpp
+    src/runners/llm_engine/engine/llm_engine.cpp
+    src/runners/llm_engine/engine/model_runner.cpp
+    src/runners/llm_engine/engine/scheduler.cpp
+    src/runners/llm_engine/engine/sequence.cpp
+)
+add_library(llm_engine ${LLM_ENGINE_SOURCES})
+target_include_directories(llm_engine PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_features(llm_engine PUBLIC cxx_std_17)
+
+add_executable(engine_demo src/runners/llm_engine/demo.cpp)
+target_link_libraries(engine_demo PRIVATE llm_engine)
+target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
+
+# Unit tests (LLM engine scheduler)
+enable_testing()
+add_executable(scheduler_test tests/scheduler_test.cpp)
+target_link_libraries(scheduler_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(scheduler_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+include(GoogleTest)
+gtest_discover_tests(scheduler_test)
 
 # Source files
 set(SOURCES
@@ -64,7 +102,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon
+# Link Drogon (Python only when embedding is built, i.e. NOT TEST)
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)

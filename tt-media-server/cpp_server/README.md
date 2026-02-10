@@ -2,6 +2,33 @@
 
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
+## LLM engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+
+### Main features
+
+- **Paged attention** — KV cache is managed in fixed-size blocks; sequences hold a block table and blocks are allocated or freed as needed. Enables non-contiguous cache and reuse across sequences.
+- **Prefix caching** — Content-addressable blocks (hash over token content with optional prefix): when a new sequence shares a prefix with an existing block, the block is reused (reference-counted) so shared prefixes are not recomputed.
+- **Prefill-only or decode-only batches** — Each scheduling step returns either a **prefill-only** batch or a **decode-only** batch; there are no mixed prefill+decode batches. Prefill is prioritized over decode when both are possible.
+- **Preemption** — When decode cannot proceed (e.g. no free block to extend a sequence), a running sequence can be preempted: its KV cache is freed and it re-enters the waiting queue for later prefill.
+
+The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
+
+### Run the demo
+
+```bash
+./build/engine_demo
+```
+
+Run scheduler unit tests (Google Test):
+
+```bash
+cd build && ctest --output-on-failure
+# or run the test binary directly:
+./build/scheduler_test
+```
+
 ## Quick Start
 
 ```bash
@@ -244,9 +271,10 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest`: OpenAI-compatible completion request
-- `CompletionResponse`: Full completion response
-- `StreamingChunkResponse`: SSE streaming chunk
+- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
+- `StreamingChunkResponse`: SSE streaming chunk (completions)
+- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler
 - `ThreadSafeQueue<T>`: Lock-free thread-safe queue for task management
