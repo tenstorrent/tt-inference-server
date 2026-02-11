@@ -1706,7 +1706,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "t3k",
         "test_cases": [
@@ -1811,7 +1811,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "galaxy",
         "test_cases": [
@@ -1916,7 +1916,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "t3k",
         "test_cases": [
@@ -2021,7 +2021,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "galaxy",
         "test_cases": [
@@ -2126,7 +2126,7 @@
     },
     {
         "weights": [
-            "motif-image-6b-preview"
+            "Motif-Image-6B-Preview"
         ],
         "device": "t3k",
         "test_cases": [
@@ -2231,7 +2231,7 @@
     },
     {
         "weights": [
-            "motif-image-6b-preview"
+            "Motif-Image-6B-Preview"
         ],
         "device": "galaxy",
         "test_cases": [
@@ -2336,7 +2336,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "p150x4",
         "test_cases": [
@@ -2441,7 +2441,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "p150x8",
         "test_cases": [
@@ -2546,7 +2546,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "p300",
         "test_cases": [
@@ -2651,7 +2651,7 @@
     },
     {
         "weights": [
-            "flux.1-dev"
+            "FLUX.1-dev"
         ],
         "device": "qbge",
         "test_cases": [
@@ -2756,7 +2756,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "p150x4",
         "test_cases": [
@@ -2861,7 +2861,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "p150x8",
         "test_cases": [
@@ -2966,7 +2966,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "p300",
         "test_cases": [
@@ -3071,7 +3071,7 @@
     },
     {
         "weights": [
-            "flux.1-schnell"
+            "FLUX.1-schnell"
         ],
         "device": "qbge",
         "test_cases": [
@@ -3176,7 +3176,7 @@
     },
     {
         "weights": [
-            "motif-image-6b-preview"
+            "Motif-Image-6B-Preview"
         ],
         "device": "p150x4",
         "test_cases": [
@@ -3281,7 +3281,7 @@
     },
     {
         "weights": [
-            "motif-image-6b-preview"
+            "Motif-Image-6B-Preview"
         ],
         "device": "p150x8",
         "test_cases": [
