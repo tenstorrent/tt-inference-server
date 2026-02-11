@@ -144,7 +144,6 @@ def build_benchmark_command(
 
     # VLM models need multimodal dataset; text models use standard dataset
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
-    # backend = "vllm" if params.task_type == "text" else "openai-chat"
     backend = "openai-chat"
 
     # fmt: off
