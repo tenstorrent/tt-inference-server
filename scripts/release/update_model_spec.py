@@ -447,6 +447,8 @@ def export_model_specs_json(model_spec_path, output_json_path):
     """
     Dynamically import MODEL_SPECS from updated model_spec.py and export to JSON.
 
+    Output is nested: hf_model_repo > mesh_device_str > inference_engine > impl_id.
+
     Args:
         model_spec_path: Path to the model_spec.py file
         output_json_path: Path where JSON output should be written
@@ -464,16 +466,28 @@ def export_model_specs_json(model_spec_path, output_json_path):
     # Get MODEL_SPECS dictionary from the module
     model_specs = model_spec_module.MODEL_SPECS
 
-    # Serialize all ModelSpec instances
-    serialized_specs = {}
+    # Build nested structure: hf_repo > mesh_device > engine > impl_id
+    nested_specs = {}
+    num_specs = 0
     for model_id, model_spec in model_specs.items():
-        serialized_specs[model_id] = model_spec.get_serialized_dict()
+        hf_repo = model_spec.hf_model_repo
+        mesh_device = model_spec.device_type.to_string()
+        engine = model_spec.inference_engine
+        impl_id = model_spec.impl.impl_id
+
+        nested_specs.setdefault(hf_repo, {})
+        nested_specs[hf_repo].setdefault(mesh_device, {})
+        nested_specs[hf_repo][mesh_device].setdefault(engine, {})
+        nested_specs[hf_repo][mesh_device][engine][impl_id] = (
+            model_spec.get_serialized_dict()
+        )
+        num_specs += 1
 
     # Write to JSON file
     with open(output_json_path, "w") as f:
-        json.dump(serialized_specs, f, indent=2)
+        json.dump(nested_specs, f, indent=2)
 
-    print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
+    print(f"\nExported {num_specs} model specs to {output_json_path}")
 
 
 def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"):
