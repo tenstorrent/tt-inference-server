@@ -18,6 +18,7 @@ class TTSamplingParams:
     temperature: Union[float, list[float]]
     top_k: Union[int, list[int]]
     top_p: Union[float, list[float]]
+    seed: Union[int, None] = None
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,9 @@ class TTModelInput:
     cross_block_tables: torch.Tensor | None  # Not yet supported in V1
 
 
-def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=False):
+def top_pk_logits_efficient(
+    logits, p=0.9, k=10, temperature=1.0, return_probs=False, generator=None
+):
     # Do not keep the entire vocab size after top k.
     # Instead, keep the k size tensor and record the associated indices.
     if k < 1:  # no top-k sampling if set to -1 or 0
@@ -57,7 +60,9 @@ def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=F
     probs = torch.nan_to_num(
         probs
     )  # convert nan to num to prevent error in multinomial
-    top_k_id = torch.multinomial(probs, num_samples=1).squeeze(-1)
+    top_k_id = torch.multinomial(
+        probs, num_samples=1, generator=generator
+    ).squeeze(-1)
     token = top_k_indices.gather(-1, top_k_id.unsqueeze(-1)).squeeze(-1)
     if return_probs:
         return token, (probs, top_k_indices)
@@ -65,13 +70,36 @@ def top_pk_logits_efficient(logits, p=0.9, k=10, temperature=1.0, return_probs=F
         return token
 
 
+# Module-level generator for seeded host-side sampling.
+# Persists across decode steps so the RNG state advances deterministically
+# from the initial seed set on the first call.
+_host_sampling_generator: torch.Generator | None = None
+_host_sampling_seed: int | None = None
+
+
 def sample_tokens(logits, tt_sampling_params: TTSamplingParams):
+    global _host_sampling_generator, _host_sampling_seed
+
     if tt_sampling_params.temperature == 0:  # greedy decoding
         return torch.argmax(logits, dim=-1)
-    else:  # top-k top-p sampling
-        return top_pk_logits_efficient(
-            logits,
-            p=tt_sampling_params.top_p,
-            k=tt_sampling_params.top_k,
-            temperature=tt_sampling_params.temperature,
-        )
+
+    # top-k top-p sampling
+    generator = None
+    seed = tt_sampling_params.seed
+    if seed is not None:
+        # Create or re-seed the generator when a new seed value is provided.
+        # Once seeded, the generator persists so subsequent decode steps
+        # advance the RNG state deterministically.
+        if _host_sampling_generator is None or _host_sampling_seed != seed:
+            _host_sampling_generator = torch.Generator(device="cpu")
+            _host_sampling_generator.manual_seed(seed)
+            _host_sampling_seed = seed
+        generator = _host_sampling_generator
+
+    return top_pk_logits_efficient(
+        logits,
+        p=tt_sampling_params.top_p,
+        k=tt_sampling_params.top_k,
+        temperature=tt_sampling_params.temperature,
+        generator=generator,
+    )

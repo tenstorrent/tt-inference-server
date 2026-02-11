@@ -1084,18 +1084,12 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
-                override_tt_config={
-                    "sample_on_device_mode": "decode_only",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
-                override_tt_config={
-                    "sample_on_device_mode": "decode_only",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
