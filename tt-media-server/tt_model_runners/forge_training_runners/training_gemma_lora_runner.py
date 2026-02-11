@@ -191,7 +191,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
                         self.model.train()
-                        
+
                     global_step += 1
 
                 # Break outer epoch loop if cancelled
