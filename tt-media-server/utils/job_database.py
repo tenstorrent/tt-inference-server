@@ -111,6 +111,14 @@ class JobDatabase:
 
             cursor.execute(query, tuple(params))
 
+    def update_result_path(self, job_id: str, result_path: str) -> None:
+        """Update only the result_path for a job."""
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "UPDATE jobs SET result_path = ? WHERE id = ?", (result_path, job_id)
+            )
+            print(f"Rows affected: {cursor.rowcount}")
+
     def delete_job(self, job_id: str) -> None:
         """Delete a job from the database."""
         with self._get_cursor() as cursor:
