@@ -1792,20 +1792,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -1897,20 +1883,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2002,20 +1974,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2107,20 +2065,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2212,20 +2156,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2317,20 +2247,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2422,20 +2338,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2527,20 +2429,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2632,20 +2520,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2737,20 +2611,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2842,20 +2702,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -2947,20 +2793,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -3052,20 +2884,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -3157,20 +2975,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -3262,20 +3066,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     },
@@ -3367,20 +3157,6 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            },
-            {
-                "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
-                "enabled": true,
-                "description": "Eval test for image generation accuracy (FID/CLIP)",
-                "test_config": {
-                    "test_timeout": 25000,
-                    "retry_attempts": 1,
-                    "retry_delay": 60,
-                    "break_on_failure": false,
-                    "mock_mode": false
-                },
-                "targets": {}
             }
         ]
     }
