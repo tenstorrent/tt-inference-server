@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C++ Server  [CodeLLDB]",
+      "name": "C++ Server [CodeLLDB]",
       "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/cpp_server/build/tt_media_server_cpp",
