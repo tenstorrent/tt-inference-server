@@ -260,12 +260,12 @@ jobs:
 
           # Build PR body from markdown files
           PR_BODY_FILE=$(mktemp)
-            # Add metadata as HTML comment for tracking
-            echo "<!--" > "$PR_BODY_FILE"
-            echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
-            echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
-            echo "-->" >> "$PR_BODY_FILE"
-          echo "# Summary of Changes" > "$PR_BODY_FILE"
+          # Add metadata as HTML comment for tracking
+          echo "<!--" > "$PR_BODY_FILE"
+          echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
+          echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
+          echo "-->" >> "$PR_BODY_FILE"
+          echo "# Summary of Changes" >> "$PR_BODY_FILE"
           echo "" >> "$PR_BODY_FILE"
 
           # Add model spec updates if file exists
@@ -307,7 +307,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: tenstorrent/tt-inference-server
-          ref: ${{ needs.get-tt-inference-commit.outputs.tt-inference-commit }}
+          ref: "rc-v0.9.0"
+          # ref: ${{ needs.create-prerelease.outputs.branch_name }}
           token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
       - name: Set up Python
@@ -334,7 +335,7 @@ jobs:
           echo "Found commits: $(cat commits.json)"
 
   build-and-push-additional-images:
-    needs: [get-tt-inference-commit, get-tt-metal-commits-for-additional-image-builds]
+    needs: [get-tt-inference-commit, get-tt-metal-commits-for-additional-image-builds, create-prerelease]
     runs-on: tt-ubuntu-2204-large-stable
     strategy:
       fail-fast: false
@@ -344,17 +345,17 @@ jobs:
       - name: Checkout tt-inference branch
         uses: actions/checkout@v4
         with:
-          # TODO change
           repository: tenstorrent/tt-inference-server
-          ref: ${{ needs.get-tt-inference-commit.outputs.tt-inference-commit }}
+          ref: "rc-v0.9.0"
+          # ref: ${{ needs.create-prerelease.outputs.branch_name }}
           token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
       - name: Docker login
         uses: docker/login-action@v3
         with:
           registry: https://ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: vmaksimovicTT
+          password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
       - name: Build for ${{ matrix.tt_metal_commit }}
         run: |

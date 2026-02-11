@@ -35,26 +35,61 @@ jobs:
         env:
           PR_NUMBER: ${{ inputs.prerelease-pr-number }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "🔍 Debug Info:"
+          echo "  PR_NUMBER: $PR_NUMBER"
+          echo "  REPO: $REPO"
+          echo "  GH_TOKEN is set: $([[ -n "${GH_TOKEN:-}" ]] && echo "yes" || echo "no")"
+          echo "  GH_TOKEN length: ${#GH_TOKEN}"
+          echo ""
 
           # Try to fetch PR - this will fail if PR doesn't exist in this repo
-          PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName,headRefOid,title,body,state 2>&1)
-          EXIT_CODE=$?
-
-          if [ $EXIT_CODE -ne 0 ]; then
+          echo "📥 Fetching PR #$PR_NUMBER from $REPO..."
+          if ! PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName,headRefOid,title,body,state 2>&1); then
             echo "❌ Error: Failed to fetch PR #$PR_NUMBER from repository $REPO"
-            echo "Exit code: $EXIT_CODE"
             echo "Error output:"
             echo "$PR_INFO"
             exit 1
           fi
 
-          HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName')
-          HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid')
-          PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
-          PR_BODY=$(echo "$PR_INFO" | jq -r '.body // ""')
-          STATE=$(echo "$PR_INFO" | jq -r '.state')
+          echo "✓ Successfully fetched PR information"
+          echo ""
+
+          # Parse JSON with error handling
+          echo "📝 Parsing PR data..."
+          if ! HEAD_REF=$(echo "$PR_INFO" | jq -r '.headRefName'); then
+            echo "❌ Error: Failed to parse headRefName from PR JSON"
+            exit 1
+          fi
+
+          if ! HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid'); then
+            echo "❌ Error: Failed to parse headRefOid from PR JSON"
+            exit 1
+          fi
+
+          if ! PR_TITLE=$(echo "$PR_INFO" | jq -r '.title'); then
+            echo "❌ Error: Failed to parse title from PR JSON"
+            exit 1
+          fi
+
+          if ! PR_BODY=$(echo "$PR_INFO" | jq -r '.body // ""'); then
+            echo "❌ Error: Failed to parse body from PR JSON"
+            exit 1
+          fi
+
+          if ! STATE=$(echo "$PR_INFO" | jq -r '.state'); then
+            echo "❌ Error: Failed to parse state from PR JSON"
+            exit 1
+          fi
+
+          echo "✓ Successfully parsed PR data"
+          echo "  State: $STATE"
+          echo "  Head Ref: $HEAD_REF"
+          echo "  Head SHA: $HEAD_SHA"
+          echo ""
 
           # Validate PR is merged
           if [ "$STATE" != "MERGED" ]; then
@@ -72,18 +107,36 @@ jobs:
             exit 1
           fi
 
-          # Extract the original workflow run_id from the PR body (stored in HTML comment)
-          ORIGINAL_RUN_ID=$(echo "$PR_BODY" | grep -oP 'metadata:run_id=\K[0-9]+' || echo "")
+          echo "✓ Basic validations passed"
+          echo ""
 
-          if [ -z "$ORIGINAL_RUN_ID" ]; then
+          # Extract the original workflow run_id from the PR body (stored in HTML comment)
+          echo "🔍 Searching for workflow run_id in PR body..."
+
+          # Use grep with basic regex instead of Perl regex for better compatibility
+          # Look for pattern: metadata:run_id=<numbers>
+          if ORIGINAL_RUN_ID=$(echo "$PR_BODY" | grep -o 'metadata:run_id=[0-9]\+' | grep -o '[0-9]\+' | head -n1); then
+            echo "✓ Found run_id: $ORIGINAL_RUN_ID"
+          else
             echo "❌ Error: Could not extract original workflow run_id from PR #$PR_NUMBER description"
+            echo "PR body preview (first 500 chars):"
+            echo "$PR_BODY" | head -c 500
+            echo ""
+            echo "Searched for pattern: metadata:run_id=<numbers>"
             exit 1
           fi
 
-          echo "✓ PR #$PR_NUMBER validated:"
+          if [ -z "$ORIGINAL_RUN_ID" ]; then
+            echo "❌ Error: Extracted run_id is empty"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ PR #$PR_NUMBER validated successfully:"
           echo "  Head branch: $HEAD_REF"
           echo "  Head SHA: $HEAD_SHA"
           echo "  Original run ID: $ORIGINAL_RUN_ID"
+          echo ""
 
           echo "head-ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
           echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
@@ -103,6 +156,7 @@ jobs:
           HEAD_REF: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
           HEAD_SHA: ${{ needs.validate-input-and-extract-data.outputs.head-sha }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
           set -e
 
@@ -131,9 +185,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: tenstorrent/tt-inference-server
-          # Use this once we switch to tt-inference-repo
-          # ref: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
-          ref: c0f62c62e7480884c21eac5af47b93f6019f8a75
+          ref: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
           token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
       - name: Install crane
@@ -243,6 +295,7 @@ jobs:
           HEAD_REF: ${{ needs.validate-input-and-extract-data.outputs.head-ref }}
           PR_TITLE: ${{ needs.validate-input-and-extract-data.outputs.pr-title }}
           PR_BODY: ${{ needs.validate-input-and-extract-data.outputs.pr-body }}
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
           set -e
 
