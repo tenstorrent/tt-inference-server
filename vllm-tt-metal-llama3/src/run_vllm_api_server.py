@@ -111,7 +111,8 @@ def load_all_model_specs() -> dict:
     2. New multi-spec mode: MODEL_SPECS_JSON_PATH points to all specs (for simplified docker run)
 
     Returns:
-        dict: Dictionary of model specs keyed by model_id
+        dict: In legacy mode, a dict keyed by model_id. In multi-spec mode, a nested
+              dict: hf_model_repo > device_type > inference_engine > impl_id > spec_dict.
     """
     # Support legacy TT_MODEL_SPEC_JSON_PATH for single-spec mode
     legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
@@ -127,46 +128,77 @@ def load_all_model_specs() -> dict:
     # New multi-spec mode
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
-        "/home/container_app_user/model_specs/model_specs_defaults.json",
+        "/home/container_app_user/model_specs/model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
         return json.load(f)
 
 
-def lookup_model_spec(all_specs: dict, model_arg: str, device_type: str) -> dict:
-    """Look up the correct model spec by hf_model_repo and device_type.
+def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
+    """Resolve model_arg to an hf_model_repo key in all_specs.
+
+    Tries exact match first, then falls back to matching the short model name
+    (last path segment) against all hf_model_repo keys.
 
     Args:
-        all_specs: Dictionary of all model specs keyed by model_id
+        all_specs: Nested model specs dict keyed by hf_model_repo at top level
+        model_arg: The --model argument (HuggingFace repo or model name)
+
+    Returns:
+        The matching hf_model_repo key
+
+    Raises:
+        ValueError: If no matching hf_model_repo is found
+    """
+    if model_arg in all_specs:
+        return model_arg
+
+    short_name = model_arg.split("/")[-1]
+    for hf_repo in all_specs:
+        if hf_repo.split("/")[-1] == short_name:
+            return hf_repo
+
+    raise ValueError(
+        f"No model spec found for model={model_arg}. "
+        f"Available models: {list(all_specs.keys())[:10]}..."
+    )
+
+
+def find_default_impl(all_specs: dict, model_arg: str, device_type: str) -> dict:
+    """Find the default implementation spec for a given model and device.
+
+    Navigates the nested model spec structure to find the spec with
+    default_impl=True for the given hf_model_repo and device_type.
+
+    Args:
+        all_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
         model_arg: The --model argument (HuggingFace repo or model name)
         device_type: Canonical device type name (e.g., "N300", "GALAXY")
 
     Returns:
-        dict: The matching model spec
+        dict: The matching model spec with default_impl=True
 
     Raises:
         ValueError: If no matching spec is found
     """
-    for model_id, spec in all_specs.items():
-        # Match by full HF repo or just model name
-        hf_match = (
-            spec.get("hf_model_repo") == model_arg
-            or spec.get("model_name") == model_arg.split("/")[-1]
+    hf_repo = _resolve_hf_repo(all_specs, model_arg)
+    device_specs = all_specs[hf_repo].get(device_type)
+    if not device_specs:
+        available_devices = list(all_specs[hf_repo].keys())
+        raise ValueError(
+            f"No model spec found for model={model_arg}, device={device_type}. "
+            f"Available devices for {hf_repo}: {available_devices}"
         )
-        # device_type in JSON is serialized as enum name (e.g., "N300", "GALAXY")
-        device_match = spec.get("device_type") == device_type
 
-        if hf_match and device_match:
-            return spec
+    for engine_specs in device_specs.values():
+        for spec in engine_specs.values():
+            if spec.get("device_model_spec", {}).get("default_impl"):
+                return spec
 
-    available_models = [
-        f"{spec.get('hf_model_repo')} ({spec.get('device_type')})"
-        for spec in all_specs.values()
-    ]
     raise ValueError(
-        f"No model spec found for model={model_arg}, device={device_type}. "
-        f"Available models: {available_models[:10]}..."
+        f"No default_impl found for model={model_arg}, device={device_type}. "
+        f"Check that at least one impl has default_impl=True."
     )
 
 
@@ -486,7 +518,7 @@ def main():
     elif args.model and args.device:
         # New simplified mode: look up spec by --model and --device
         device_type = normalize_device_type(args.device)
-        model_spec = lookup_model_spec(all_specs, args.model, device_type)
+        model_spec = find_default_impl(all_specs, args.model, device_type)
         logger.info(
             f"Simplified mode: found model spec for --model={args.model}, --device={device_type}"
         )
