@@ -406,6 +406,11 @@ To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in ru
    ```
    or with CMake directly: `-DENABLE_TOKENIZER=ON`.
 4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable (no env var).
+   To fetch DeepSeek V3 tokenizer from Hugging Face into `tokenizers/`:
+   ```bash
+   mkdir -p cpp_server/tokenizers
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
+   ```
 
 When enabled, string prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 
