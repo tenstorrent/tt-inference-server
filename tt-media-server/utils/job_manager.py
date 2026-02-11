@@ -285,7 +285,6 @@ class JobManager:
             result_path = await task_function(request)
 
             # enforcing result_path to be a string
-            # enforcing result_path to be a string
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
             # for training job types, the path is set on job creation, so we log here in case the final path differs
