@@ -366,6 +366,7 @@ Token generation timing:
 1. **CMake** >= 3.16
 2. **Drogon Framework** >= 1.8
 3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
+4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue). On Ubuntu/Debian: `sudo apt-get install libboost-dev`
 
 ### Install Drogon (Ubuntu/Debian)
 
@@ -399,13 +400,16 @@ chmod +x build.sh
 To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in runner):
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
-2. Build with tokenizer support:
+2. tokenizers-cpp is included as a **submodule** at `third_party/tokenizers-cpp` (per [Getting Started](https://github.com/mlc-ai/tokenizers-cpp?tab=readme-ov-file#getting-started)). If you use `build.sh --tokenizer`, the script will run `git submodule update --init --recursive` for it. If you use CMake directly, run from the repo root first:
    ```bash
-   mkdir -p build && cd build
-   cmake .. -DENABLE_TOKENIZER=ON
-   make -j
+   git submodule update --init --recursive tt-media-server/cpp_server/third_party/tokenizers-cpp
    ```
-3. Set `TT_TOKENIZER_PATH` to a HuggingFace `tokenizer.json` or SentencePiece `tokenizer.model` file.
+3. Build with tokenizer support:
+   ```bash
+   ./build.sh --tokenizer
+   ```
+   or with CMake directly: `-DENABLE_TOKENIZER=ON`.
+4. Set `TT_TOKENIZER_PATH` to a HuggingFace `tokenizer.json` or SentencePiece `tokenizer.model` file.
 
 When enabled, string prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 

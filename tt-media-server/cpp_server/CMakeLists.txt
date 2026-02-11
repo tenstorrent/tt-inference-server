@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -45,17 +45,18 @@ find_package(Boost REQUIRED)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
-# Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust toolchain when ON.
+# Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust when ON.
+# Integrated via submodule + add_subdirectory per project README (Getting Started).
 option(ENABLE_TOKENIZER "Enable LLM tokenizer (encode/decode); requires Rust" OFF)
 if(ENABLE_TOKENIZER)
-    FetchContent_Declare(
-        tokenizers_cpp
-        GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
-        GIT_TAG        v0.1.1
-        GIT_SUBMODULES "msgpack" "sentencepiece"
-    )
+    set(TOKENIZERS_CPP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tokenizers-cpp)
+    if(NOT EXISTS "${TOKENIZERS_CPP_PATH}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "ENABLE_TOKENIZER=ON but tokenizers-cpp not found at ${TOKENIZERS_CPP_PATH}. "
+            "Run from repo root: git submodule update --init --recursive tt-media-server/cpp_server/third_party/tokenizers-cpp")
+    endif()
     set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(tokenizers_cpp)
+    add_subdirectory(${TOKENIZERS_CPP_PATH} tokenizers EXCLUDE_FROM_ALL)
 endif()
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)

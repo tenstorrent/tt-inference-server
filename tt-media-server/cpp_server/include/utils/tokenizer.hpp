@@ -7,11 +7,13 @@
 #include <string>
 #include <vector>
 
+#ifdef ENABLE_TOKENIZER
+#include "utils/tokenizer_impl.hpp"
+#endif
+
 namespace tt::utils {
 
-#ifdef ENABLE_TOKENIZER
-struct TokenizerUtilImpl;
-#else
+#ifndef ENABLE_TOKENIZER
 struct TokenizerUtilImpl {};
 #endif
 

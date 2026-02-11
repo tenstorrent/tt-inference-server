@@ -13,12 +13,7 @@
 
 namespace tt::utils {
 
-#ifdef ENABLE_TOKENIZER
-struct TokenizerUtilImpl {
-    std::unique_ptr<tokenizers::Tokenizer> tok;
-};
-#endif
-
+// Destructor and move ops; impl_ complete type is in tokenizer_impl.hpp when ENABLE_TOKENIZER.
 TokenizerUtil::~TokenizerUtil() = default;
 
 TokenizerUtil::TokenizerUtil(TokenizerUtil&&) noexcept = default;
