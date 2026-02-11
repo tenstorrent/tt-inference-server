@@ -40,8 +40,6 @@ unzipped_tti/
 db.sqlite3
 **/generated/inspector/
 
-# Generated model specs JSON (embedded in Docker images at build time)
-model_specs_defaults.json
 
 # secrets
 .env
@@ -56,7 +54,7 @@ scripts/examples/example_data
 !tests/server_tests/test_config.json
 !tests/server_tests/server_tests_config.json
 !benchmarking/benchmark_targets/*.json
-!model_specs_output.json
+!model_spec.json
 !tt-media-server/static/demos/images.json
 .github/workflows/*.json
 

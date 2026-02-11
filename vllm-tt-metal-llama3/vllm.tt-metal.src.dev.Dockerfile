@@ -194,7 +194,7 @@ USER ${CONTAINER_APP_USERNAME}
 # Environment variable defaults (can be overridden at runtime with -e)
 ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs \
     CACHE_ROOT=/home/container_app_user/cache_root \
-    MODEL_SPECS_JSON_PATH=/home/container_app_user/model_specs/model_specs_defaults.json \
+    MODEL_SPECS_JSON_PATH=/home/container_app_user/model_specs/model_spec.json \
     VLLM_TARGET_DEVICE=tt \
     WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
@@ -204,7 +204,7 @@ RUN mkdir -p ${CACHE_ROOT}
 # Copy pre-generated model specs JSON
 RUN mkdir -p /home/container_app_user/model_specs
 COPY --chown=container_app_user:container_app_user \
-    model_specs_defaults.json ${MODEL_SPECS_JSON_PATH}
+    model_spec.json ${MODEL_SPECS_JSON_PATH}
 
 # Set working directory and entrypoint
 WORKDIR "${APP_DIR}/src"

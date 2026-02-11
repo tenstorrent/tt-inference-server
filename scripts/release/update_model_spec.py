@@ -38,6 +38,7 @@ from pathlib import Path
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workflows.model_spec import (
+    export_model_specs_json,
     spec_templates,
     ModelSpecTemplate,
 )
@@ -443,11 +444,12 @@ def generate_release_diff_markdown(update_records, output_path):
     print(f"\nGenerated release diff markdown: {output_path}")
 
 
-def export_model_specs_json(model_spec_path, output_json_path):
+def reload_and_export_model_specs_json(model_spec_path, output_json_path):
     """
-    Dynamically import MODEL_SPECS from updated model_spec.py and export to JSON.
+    Dynamically reimport MODEL_SPECS from updated model_spec.py and export to JSON.
 
-    Output is nested: hf_model_repo > mesh_device_str > inference_engine > impl_id.
+    This reimports the module to pick up any in-place edits made by this script,
+    then delegates to the shared export_model_specs_json utility.
 
     Args:
         model_spec_path: Path to the model_spec.py file
@@ -463,30 +465,8 @@ def export_model_specs_json(model_spec_path, output_json_path):
     model_spec_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(model_spec_module)
 
-    # Get MODEL_SPECS dictionary from the module
     model_specs = model_spec_module.MODEL_SPECS
-
-    # Build nested structure: hf_repo > mesh_device > engine > impl_id
-    nested_specs = {}
-    num_specs = 0
-    for model_id, model_spec in model_specs.items():
-        hf_repo = model_spec.hf_model_repo
-        mesh_device = model_spec.device_type.to_string()
-        engine = model_spec.inference_engine
-        impl_id = model_spec.impl.impl_id
-
-        nested_specs.setdefault(hf_repo, {})
-        nested_specs[hf_repo].setdefault(mesh_device, {})
-        nested_specs[hf_repo][mesh_device].setdefault(engine, {})
-        nested_specs[hf_repo][mesh_device][engine][impl_id] = (
-            model_spec.get_serialized_dict()
-        )
-        num_specs += 1
-
-    # Write to JSON file
-    with open(output_json_path, "w") as f:
-        json.dump(nested_specs, f, indent=2)
-
+    num_specs = export_model_specs_json(model_specs, Path(output_json_path))
     print(f"\nExported {num_specs} model specs to {output_json_path}")
 
 
@@ -698,13 +678,13 @@ def main():
     )
     parser.add_argument(
         "--output-json",
-        default="model_specs_output.json",
-        help="Path to output JSON file with all model specs (default: model_specs_output.json)",
+        default="model_spec.json",
+        help="Path to output JSON file with all model specs (default: model_spec.json)",
     )
     parser.add_argument(
         "--output-only",
         action="store_true",
-        help="Read model_spec.py and generate outputs (README.md table and model_specs_output.json) without modifying model_spec.py",
+        help="Read model_spec.py and generate outputs (README.md table and model_spec.json) without modifying model_spec.py",
     )
     parser.add_argument(
         "--readme-path",
@@ -734,7 +714,7 @@ def main():
 
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
-        export_model_specs_json(model_spec_path, output_json_path)
+        reload_and_export_model_specs_json(model_spec_path, output_json_path)
 
         return
 
@@ -892,7 +872,7 @@ def main():
 
             # Export MODEL_SPECS to JSON
             output_json_path = Path(args.output_json)
-            export_model_specs_json(model_spec_path, output_json_path)
+            reload_and_export_model_specs_json(model_spec_path, output_json_path)
 
             # Generate release diff markdown
             if update_records:
@@ -907,7 +887,7 @@ def main():
         # Even if no updates were made, export the current MODEL_SPECS to JSON
         if not args.dry_run:
             output_json_path = Path(args.output_json)
-            export_model_specs_json(model_spec_path, output_json_path)
+            reload_and_export_model_specs_json(model_spec_path, output_json_path)
 
 
 if __name__ == "__main__":

@@ -3071,6 +3071,40 @@ def get_model_spec_map(
     return model_spec_map
 
 
+def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
+    """Export MODEL_SPECS to a nested JSON file.
+
+    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
+
+    Args:
+        model_specs: Dictionary mapping model_id to ModelSpec objects.
+        output_path: Path where the JSON file should be written.
+
+    Returns:
+        Number of model specs exported.
+    """
+    nested_specs = {}
+    num_specs = 0
+    for model_id, model_spec in model_specs.items():
+        hf_repo = model_spec.hf_model_repo
+        device = model_spec.device_type.to_string()
+        engine = model_spec.inference_engine
+        impl_id = model_spec.impl.impl_id
+
+        nested_specs.setdefault(hf_repo, {})
+        nested_specs[hf_repo].setdefault(device, {})
+        nested_specs[hf_repo][device].setdefault(engine, {})
+        nested_specs[hf_repo][device][engine][impl_id] = (
+            model_spec.get_serialized_dict()
+        )
+        num_specs += 1
+
+    with open(output_path, "w") as f:
+        json.dump(nested_specs, f, indent=2)
+
+    return num_specs
+
+
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
