@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
     use_queue_per_worker: bool = False
-    queue_for_multiprocessing: str = QueueType.TTQueue.value
+    queue_for_multiprocessing: str = QueueType.FasterFifo.value
 
     # Worker management settings
     new_device_delay_seconds: int = 0
