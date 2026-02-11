@@ -3,13 +3,29 @@
 
 #include "llm_engine/engine/boost_ipc_task_queue.hpp"
 #include <boost/interprocess/streams/bufferstream.hpp>
+#include <boost/interprocess/errors.hpp>
+#include <iostream>
 
 namespace llm_engine {
 
 namespace ipc = boost::interprocess;
 
+BoostIpcTaskQueue::~BoostIpcTaskQueue() {
+  try {
+    queue_.reset();
+  } catch (const ipc::interprocess_exception& e) {
+    std::cerr << "[BoostIpcTaskQueue] Destructor: " << e.what() << " (ignored)\n" << std::flush;
+  }
+}
+
 BoostIpcTaskQueue::BoostIpcTaskQueue(const std::string& name) {
   queue_ = std::make_unique<ipc::message_queue>(ipc::open_only, name.c_str());
+  send_buffer_.resize(queue_->get_max_msg_size());
+  recv_buffer_.resize(queue_->get_max_msg_size());
+}
+
+BoostIpcTaskQueue::BoostIpcTaskQueue(const std::string& name, int size) {
+  queue_ = std::make_unique<ipc::message_queue>(ipc::create_only, name.c_str(), size, MAX_MSG_SIZE);
   send_buffer_.resize(queue_->get_max_msg_size());
   recv_buffer_.resize(queue_->get_max_msg_size());
 }

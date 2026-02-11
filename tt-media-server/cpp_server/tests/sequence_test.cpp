@@ -14,7 +14,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   Sequence orig({1, 2, 3, 4, 5}, SamplingParams{.temperature = 0.7f, .max_tokens = 20, .ignore_eos = true});
   orig.num_cached_tokens_ = 256;
   orig.block_table_ = {0, 1};
-  orig.status_ = SequenceStatus::WAITING;
+  orig.status_ = SequenceStatus::IN_FLIGHT;
   orig.last_token = 5;
 
   std::ostringstream os;

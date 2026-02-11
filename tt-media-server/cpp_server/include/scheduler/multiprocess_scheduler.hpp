@@ -145,7 +145,7 @@ private:
         pid_t pid = -1;
         int worker_id = -1;
         std::unique_ptr<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>> token_buffer;  // For receiving tokens
-        std::unique_ptr<llm_engine::BoostIpcTaskQueue> task_buffer;  // For sending tasks (smaller)
+        std::shared_ptr<llm_engine::BoostIpcTaskQueue> task_buffer;  // For sending tasks (smaller)
         bool is_ready = false;
     };
 

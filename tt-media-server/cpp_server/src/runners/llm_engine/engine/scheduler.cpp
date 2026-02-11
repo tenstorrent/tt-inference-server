@@ -22,9 +22,10 @@ Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(prompt), params);
   Sequence& ref = *seq;
-  sequences_[seq->seq_id] = std::move(seq);
+  auto id = seq->seq_id;
   add(ref);
-  return ref;
+  sequences_[id] = std::move(seq);
+  return *sequences_[id].get();
 }
 
 void Scheduler::add(Sequence& seq) {
@@ -64,8 +65,9 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
         static_cast<int>(seq->size() - seq->num_cached_tokens_);
     seq->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
-    sequences_[seq->seq_id] = std::make_unique<Sequence>(std::move(*seq));
-    scheduled_seqs.push_back(sequences_[seq->seq_id].get());
+    auto id = seq->seq_id;
+    sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
+    scheduled_seqs.push_back(sequences_[id].get());
   }
 
   if (!scheduled_seqs.empty()) {
@@ -97,6 +99,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
   for (Sequence* seq : scheduled_seqs) {
     seq->status_ = SequenceStatus::IN_FLIGHT;
+    sequences_[seq->seq_id]->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()

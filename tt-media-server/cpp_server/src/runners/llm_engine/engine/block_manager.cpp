@@ -3,6 +3,7 @@
 #include "llm_engine/engine/hash.hpp"
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 
 namespace llm_engine {
 
@@ -21,6 +22,10 @@ void Block::reset() {
 
 BlockManager::BlockManager(int num_blocks, int block_size)
     : block_size_(block_size) {
+  if (num_blocks <= 0) {
+    throw std::invalid_argument(
+        "BlockManager: num_blocks must be positive, got " + std::to_string(num_blocks));
+  }
   blocks_.reserve(static_cast<size_t>(num_blocks));
   for (int i = 0; i < num_blocks; ++i) {
     blocks_.emplace_back(i);

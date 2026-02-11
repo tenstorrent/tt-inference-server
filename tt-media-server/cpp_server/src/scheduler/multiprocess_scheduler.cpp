@@ -21,6 +21,8 @@
 #include <poll.h>
 
 namespace tt::scheduler {
+    
+constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
 
 namespace {
     std::mutex task_id_gen_mutex;
@@ -47,6 +49,9 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
     std::cout << "[MultiprocessScheduler] Starting with " << num_workers_ << " worker processes\n" << std::flush;
 
     workers_.resize(num_workers_);
+    
+    llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+    auto task_buffer = std::make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
 
     // Create shared memory buffers and spawn workers
     for (size_t i = 0; i < num_workers_; i++) {
@@ -55,18 +60,14 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
 
         // Create shared memory ring buffers
         std::string token_shm_name = "/tt_tokens_" + std::to_string(i);
-        std::string task_shm_name = "/tt_tasks_" + std::to_string(i);
 
         // Clean up any existing shared memory from previous runs
         shm_unlink(token_shm_name.c_str());
-        shm_unlink(task_shm_name.c_str());
 
         worker.token_buffer = std::make_unique<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
             token_shm_name, true  // Create as owner
         );
-        worker.task_buffer = std::make_unique<llm_engine::BoostIpcTaskQueue>(
-            task_shm_name
-        );
+        worker.task_buffer = task_buffer;
 
         // Get environment config for this worker
         WorkerEnvConfig env_config;
@@ -82,9 +83,13 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         if (pid < 0) {
             throw std::runtime_error("Failed to fork worker process");
         } else if (pid == 0) {
-            // Child process
-            worker_process_main(static_cast<int>(i), env_config);
-            // Never returns
+            // Child process — must never fall through to parent's loop
+            try {
+                worker_process_main(static_cast<int>(i), env_config);
+            } catch (const std::exception& e) {
+                std::cerr << "[MultiprocessScheduler] Worker " << i << " failed: " << e.what() << "\n" << std::flush;
+            }
+            _exit(1);  // Ensure child exits even if worker_process_main throws
         } else {
             // Parent process
             worker.pid = pid;
@@ -176,19 +181,19 @@ void MultiprocessScheduler::stop() {
 
     // 2. Attach to shared memory (don't create, just attach)
     std::string token_shm_name = "/tt_tokens_" + std::to_string(worker_id);
-    std::string task_shm_name = "/tt_tasks_" + std::to_string(worker_id);
 
     ipc::TokenRingBuffer<RING_BUFFER_CAPACITY> token_buffer(token_shm_name, false);
-    
-    auto task_buffer = std::make_shared<llm_engine::BoostIpcTaskQueue>(task_shm_name);
+
+    auto task_buffer = std::make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME);
     llm_engine::Config config;
+    config.num_kvcache_blocks = 128;
 
     auto scheduler = std::make_unique<llm_engine::Scheduler>(config, task_buffer);
     
     auto engine = std::make_unique<llm_engine::LLMEngine>(config, [&token_buffer](llm_engine::SequenceID seq_id, uint64_t token_id, bool finished){
         auto token = ipc::SharedToken{
             .token_index = 0,
-            .flags= static_cast<uint32_t>(finished ? 0: 1),
+            .flags= static_cast<uint32_t>(finished ? 1: 0),
             .token_id = token_id,
         };
         std::strncpy(token.task_id, seq_id.id.c_str(), sizeof(token.task_id) - 1);

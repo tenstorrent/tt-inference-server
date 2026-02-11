@@ -14,9 +14,18 @@ namespace llm_engine {
 /**
  * ITaskQueue implementation backed by a Boost.Interprocess message queue.
  */
+  
+
 class BoostIpcTaskQueue : public ITaskQueue {
  public:
+  /** Max serialized message size (64 KiB).
+   *  Must exceed the largest serialized Sequence (header fields + token_ids
+   *  payload + block_table payload). */
+  static constexpr size_t MAX_MSG_SIZE = 65536;
+
   BoostIpcTaskQueue(const std::string& name);
+  BoostIpcTaskQueue(const std::string& name, int size);
+  ~BoostIpcTaskQueue();
 
   void push(const Sequence& seq) override;
   Sequence* try_pop() override;
