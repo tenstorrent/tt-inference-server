@@ -12,6 +12,7 @@ ENABLE_TTNN="OFF"
 # Parse arguments
 TEST="OFF"
 SANITIZE_THREAD="OFF"
+SANITIZE_ADDRESS="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -31,6 +32,11 @@ while [[ $# -gt 0 ]]; do
             BUILD_TYPE="Debug"
             shift
             ;;
+        --asan)
+            SANITIZE_ADDRESS="ON"
+            BUILD_TYPE="Debug"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -39,6 +45,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
             echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --tsan     Build with ThreadSanitizer for data-race detection"
+            echo "  --asan     Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -50,12 +57,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [ "${SANITIZE_THREAD}" = "ON" ] && [ "${SANITIZE_ADDRESS}" = "ON" ]; then
+    echo "Error: --tsan and --asan are mutually exclusive."
+    exit 1
+fi
+
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
+echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "=============================================="
 
 # If TTNN is enabled, ensure we have the right Python
@@ -127,6 +140,7 @@ cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DLLM_ENGINE_DEBUG_BUILD=ON \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
+      -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}" \
       ..
 
 # Build
