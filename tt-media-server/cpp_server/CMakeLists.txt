@@ -122,6 +122,7 @@ add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 set(SOURCES
     src/main.cpp
     src/api/llm_controller.cpp
+    src/util/mock_tokenizer.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp

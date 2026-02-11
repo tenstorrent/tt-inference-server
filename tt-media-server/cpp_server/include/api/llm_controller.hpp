@@ -102,6 +102,11 @@ private:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
+     * Tokenize prompt when it is a string (mock tokenization).
+     */
+    static void tokenize_prompt_if_needed(domain::CompletionRequest& request);
+
+    /**
      * Generate a unique completion ID.
      */
     static std::string generate_completion_id();

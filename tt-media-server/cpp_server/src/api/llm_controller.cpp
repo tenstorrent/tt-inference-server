@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
-
+#include "util/mock_tokenizer.hpp"
 
 #include <random>
 #include <sstream>
@@ -33,6 +33,13 @@ LLMController::LLMController() {
     service_ = std::make_shared<services::LLMService>();
     service_->start();
     std::cout << "[LLMController] Initialized and service started" << std::endl;
+}
+
+void LLMController::tokenize_prompt_if_needed(domain::CompletionRequest& request) {
+    if (std::holds_alternative<std::string>(request.prompt)) {
+        std::string text = std::get<std::string>(request.prompt);
+        request.prompt = util::MockTokenizer::tokenize(text);
+    }
 }
 
 std::string LLMController::generate_completion_id() {
@@ -88,6 +95,8 @@ void LLMController::completions(
         callback(resp);
         return;
     }
+
+    tokenize_prompt_if_needed(request);
 
     // Handle streaming or non-streaming (move request into streaming path to avoid copy)
     if (request.stream) {
@@ -149,8 +158,9 @@ void LLMController::chat_completions(
         return;
     }
 
-    // Convert chat request to completion request (messages -> prompt via chat template)
     domain::CompletionRequest request = chat_req.to_completion_request();
+    tokenize_prompt_if_needed(request);
+
     if (request.stream) {
         handle_chat_streaming(std::move(request), req, std::move(callback));
     } else {
