@@ -94,9 +94,17 @@ target_include_directories(llm_engine_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(sequence_test tests/sequence_test.cpp)
+target_link_libraries(sequence_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(sequence_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
+gtest_discover_tests(sequence_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -105,6 +113,7 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Source files
 set(SOURCES

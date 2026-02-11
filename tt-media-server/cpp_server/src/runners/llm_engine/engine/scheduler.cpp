@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 
+
 namespace llm_engine {
 
 Scheduler::Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue)
@@ -42,7 +43,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_batched_tokens = 0;
 
   // --- Prefill: pop from task queue ---
-  while (num_seqs < max_num_seqs_) {
+  while (num_seqs < Config::max_num_seqs) {
     auto seq = waiting_->try_pop();
     if (!seq) {
       break;  // Queue empty
@@ -74,7 +75,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   // --- Decode: process running sequences ---
-  while (!running_.empty() && num_seqs < max_num_seqs_) {
+  while (!running_.empty() && num_seqs < Config::max_num_seqs) {
     Sequence* seq = running_.front();
     running_.pop_front();
     auto self_preempt = false;

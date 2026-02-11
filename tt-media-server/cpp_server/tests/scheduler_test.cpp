@@ -19,12 +19,11 @@ namespace {
   }
 
 Config make_config(int num_blocks = 32, int block_size = 8,
-                   int max_batched_tokens = 256, int max_seqs = 4, int eos = 0) {
+                   int max_batched_tokens = 256, int eos = 0) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
-  c.max_num_seqs = max_seqs;
   c.eos = eos;
   return c;
 }
@@ -94,7 +93,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
 }
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
-  Config config = make_config(32, 8, 256, 4, 99);
+  Config config = make_config(32, 8, 256, 99);
   Scheduler sched{config, make_queue()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
 
@@ -155,7 +154,7 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
 }
 
 TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
-  Config config = make_config(32, 8, 256, 4, 99);
+  Config config = make_config(32, 8, 256, 99);
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
   sched.add(seq);
@@ -178,7 +177,7 @@ TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   EXPECT_EQ(batch[0]->status_, SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
-  ASSERT_GE(batch2.size(), 1u);
+  EXPECT_EQ(batch2.size(), 1u);
   EXPECT_EQ(batch2[0]->seq_id, expected_id);
 }
 
@@ -200,7 +199,7 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
 }
 
 TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
-  Config config = make_config(32, 8, 20, 4, 0);
+  Config config = make_config(32, 8, 20, 0);
   Scheduler sched{config, make_queue()};
   Sequence seq1{prompt(15), SamplingParams{.max_tokens = 5}};
   Sequence seq2{prompt(15), SamplingParams{.max_tokens = 5}};
@@ -211,8 +210,8 @@ TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   EXPECT_EQ(batch.size(), 1u) << "Only one sequence fits within max_num_batched_tokens";
 }
 
-TEST(SchedulerTest, Schedule_RespectsMaxNumSeqs) {
-  Config config = make_config(32, 8, 256, 2, 0);
+TEST(SchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
+  Config config = make_config(32, 8, 256, 0);
   Scheduler sched{config, make_queue()};
   Sequence seq1{prompt(4), SamplingParams{.max_tokens = 5}};
   Sequence seq2{prompt(4), SamplingParams{.max_tokens = 5}};
@@ -222,7 +221,7 @@ TEST(SchedulerTest, Schedule_RespectsMaxNumSeqs) {
   sched.add(seq3);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
-  EXPECT_EQ(batch.size(), 2u) << "At most max_num_seqs in one batch";
+  EXPECT_EQ(batch.size(), 1u) << "At most 1 sequence in one batch";
 }
 
 TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
@@ -236,7 +235,7 @@ TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
 }
 
 TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
-  Config config = make_config(1, 8, 256, 4, 0);
+  Config config = make_config(1, 8, 256, 0);
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
@@ -263,7 +262,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
 }
 
 TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
-  Config config = make_config(2, 8, 256, 4, 0);
+  Config config = make_config(2, 8, 256, 0);
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);

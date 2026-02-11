@@ -62,6 +62,7 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
   os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
   os.write(reinterpret_cast<const char*>(&temperature), sizeof(temperature));
+  os.write(reinterpret_cast<const char*>(&status_), sizeof(status_));
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
@@ -85,6 +86,8 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
 
   is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
+  
+  is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
   return seq;
 }
 
