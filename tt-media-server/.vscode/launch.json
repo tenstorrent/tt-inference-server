@@ -2,21 +2,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C++ Server [GDB]",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/cpp_server/build/tt_media_server_cpp",
-      "args": ["-p", "8001"],
-      "cwd": "${workspaceFolder}/cpp_server",
-      "stopAtEntry": false,
-      "MIMode": "gdb",
-      "environment": [{ "name": "DEVICE_IDS", "value": "(0)" }],
-      "setupCommands": [
-          { "text": "set follow-fork-mode child", "description": "Follow worker process after fork" }
-      ],
-      "preLaunchTask": "Build C++ Server (debug)"
-  },
-    {
       "name": "C++ Server  [CodeLLDB]",
       "type": "lldb",
       "request": "launch",
