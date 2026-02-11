@@ -17,6 +17,7 @@ from domain.audio_text_response import (
     AudioTextResponse,
     AudioTextSegment,
 )
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.audio.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
@@ -28,7 +29,6 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
-from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
     AutoFeatureExtractor,
@@ -89,7 +89,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
-                await self.pipeline(dummy_audio)
+                # Warmup with batch matching max_batch_size
+                if self.settings.max_batch_size > 1:
+                    # Create batch of dummy audio to match expected batch size
+                    warmup_batch = [dummy_audio] * self.settings.max_batch_size
+                    await self.pipeline(warmup_batch)
+                else:
+                    await self.pipeline(dummy_audio)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -124,6 +130,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 raise RuntimeError("Model pipeline not loaded. Call warmup() first.")
             if self.ttnn_device is None:
                 raise RuntimeError("TTNN device not initialized")
+
+            if requests.__len__() > 1 or self.settings.max_batch_size > 1:
+                return await self._execute_pipeline_batch(
+                    requests, self._create_generation_params(requests[0])
+                )
+
             request = self._validate_and_extract_request(requests)
 
             if request._segments and len(request._segments) > 0:
@@ -227,6 +239,77 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return await self._execute_pipeline_non_streaming(
                     audio_data, generation_params
                 )
+
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Pipeline execution failed: {e}"
+            )
+            raise RuntimeError(f"Audio processing failed: {str(e)}") from e
+
+    async def _execute_pipeline_batch(self, requests, generation_params):
+        """Main pipeline execution method for batch processing.
+
+        Args:
+            requests: List of AudioProcessingRequest objects
+            generation_params: Parameters for generation
+
+        Note: Pipeline expects batch size of 2. If only 1 request, duplicate it.
+              If 2 requests, pad audio arrays to the same size.
+        """
+        try:
+            # Extract audio arrays from requests
+            audio_arrays = [req._audio_array for req in requests]
+            durations = [req._duration for req in requests]
+
+            if len(audio_arrays) == 1:
+                # Pipeline expects batch size of 2, duplicate the single audio
+                audio_data = [audio_arrays[0], audio_arrays[0]]
+                durations = [durations[0], durations[0]]
+            elif len(audio_arrays) == 2:
+                # Pad audio arrays to the same length
+                max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
+                padded_arrays = []
+                for arr in audio_arrays:
+                    if len(arr) < max_len:
+                        # Pad with zeros to match the longer audio
+                        padded_arr = np.pad(
+                            arr,
+                            (0, max_len - len(arr)),
+                            mode="constant",
+                            constant_values=0,
+                        )
+                    else:
+                        padded_arr = arr
+                    padded_arrays.append(padded_arr)
+                audio_data = padded_arrays
+            else:
+                raise ValueError(f"Expected 1 or 2 requests, got {len(audio_arrays)}")
+
+            result = await self.pipeline(
+                audio_data,
+                stream=False,
+                generation_params=generation_params,
+            )
+
+            # Format results - result[0] is a list of transcription strings (one per batch item)
+            # Each request is a separate audio file, so return separate AudioTextResponse for each
+            responses = []
+            if result and result[0]:
+                for index, text in enumerate(result[0]):
+                    # Only return results for actual requests (not duplicated ones)
+                    if index < len(requests):
+                        cleaned_text, start, end = TextUtils.extract_text(text)
+
+                        response = AudioTextResponse(
+                            text=cleaned_text,
+                            duration=durations[index],
+                            start=start,
+                            end=end,
+                            segments=[],  # Empty list to avoid None iteration errors
+                        )
+                        responses.append(response)
+
+            return responses
 
         except Exception as e:
             self.logger.error(
@@ -653,20 +736,30 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             ):
                 try:
                     # Validate pipeline inputs
-                    if audio_data is None or len(audio_data) == 0:
+                    if audio_data is None:
                         raise ValueError("Audio data is empty or None")
-
-                    if not hasattr(audio_data, "shape"):
-                        raise ValueError(
-                            f"Pipeline expected array with shape, got {type(audio_data)}"
-                        )
 
                     if self.ttnn_device is None:
                         raise RuntimeError("TTNN device not initialized")
 
-                    # TODO: Support real batching here (currently only single-item batch)
-                    # Format as (sampling_rate, audio_array) tuples as expected by generate()
-                    current_batch = [(self.settings.default_sample_rate, audio_data)]
+                    # Handle both single audio array and batch (list of arrays)
+                    if isinstance(audio_data, list):
+                        # Batch mode: list of audio arrays
+                        current_batch = [
+                            (self.settings.default_sample_rate, arr)
+                            for arr in audio_data
+                        ]
+                    else:
+                        # Single audio mode
+                        if not hasattr(audio_data, "shape"):
+                            raise ValueError(
+                                f"Pipeline expected array with shape, got {type(audio_data)}"
+                            )
+                        if len(audio_data) == 0:
+                            raise ValueError("Audio data is empty")
+                        current_batch = [
+                            (self.settings.default_sample_rate, audio_data)
+                        ]
 
                     durations = [
                         audio_array.shape[0] / sampling_rate

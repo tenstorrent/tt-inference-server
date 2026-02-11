@@ -1,11 +1,15 @@
 #pragma once
 
 #include <deque>
+#include <memory>
 #include <vector>
+#include <unordered_map>
 
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/block_manager.hpp"
 #include "llm_engine/engine/sequence.hpp"
+#include "llm_engine/engine/task_queue.hpp"
+#include "llm_engine/sampling_params.hpp"
 
 namespace llm_engine {
 
@@ -15,13 +19,20 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const Config& config);
+  explicit Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue);
 
-  /** @return true if there are no waiting or running sequences. */
+  /** @return true if there are no waiting, running, or in-flight sequences. */
   bool is_finished() const;
 
-  /** Enqueues a sequence for prefill (waiting queue). */
+  /** Creates a sequence, takes ownership, and enqueues it for prefill. */
+  Sequence& add_request(std::vector<int64_t> prompt,
+                        const SamplingParams& params = SamplingParams());
+
+  /** Enqueues an externally-owned sequence for prefill (waiting queue). */
   void add(Sequence& seq);
+
+  /** Looks up a sequence by seq_id. Returns nullptr if not found. */
+  Sequence* find_sequence(int seq_id);
 
   /**
    * Produces the next batch to run.
@@ -50,8 +61,10 @@ class Scheduler {
   int max_num_batched_tokens_;
   int eos_;
   BlockManager block_manager_;
-  std::deque<Sequence*> waiting_;
+  std::unique_ptr<ITaskQueue> waiting_;
+  std::unordered_map<int, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> running_;
+  int in_flight_count_ = 0;
 };
 
 }  // namespace llm_engine

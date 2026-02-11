@@ -3,12 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-
+#include <iostream>
 #include "llm_engine/sampling_params.hpp"
 
 namespace llm_engine {
 
-enum class SequenceStatus { WAITING, RUNNING, FINISHED };
+enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 class Sequence {
  public:
@@ -17,6 +17,10 @@ class Sequence {
 
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
+
+  void serialize(std::ostream& os) const;
+  
+  static Sequence* deserialize(std::istream& is);
 
   size_t size() const { return token_ids_.size(); }
   int64_t operator[](size_t i) const { return token_ids_[i]; }

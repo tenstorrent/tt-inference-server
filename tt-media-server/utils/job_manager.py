@@ -120,6 +120,7 @@ class JobManager:
         model: str,
         request: BaseRequest,
         task_function: Callable,
+        result_path: Optional[str] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -132,6 +133,9 @@ class JobManager:
                 request_parameters=request.model_dump(mode="json"),
             )
 
+            if result_path:
+                job.result_path = result_path
+
             if self.db:
                 try:
                     self.db.insert_job(
@@ -142,6 +146,8 @@ class JobManager:
                         status=job.status.value,
                         created_at=job.created_at,
                     )
+                    if result_path:
+                        self.db.update_result_path(job_id, result_path)
                 except Exception as e:
                     self._logger.error(
                         f"Failed to insert job {job_id} into database: {e}"
@@ -177,8 +183,11 @@ class JobManager:
         """Get job result path if completed."""
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            if job and job.is_terminal():
-                return job.result_path if job.is_completed() else None
+            if job:
+                if job.job_type != JobTypes.TRAINING.value and job.is_terminal():
+                    return job.result_path if job.is_completed() else None
+                else:
+                    return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -263,8 +272,14 @@ class JobManager:
 
             result_path = await task_function(request)
 
+            # enforcing result_path to be a string
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
+            # for training job types, the path is set on job creation, so we log here in case the final path differs
+            if job.result_path and job.result_path != result_path:
+                self._logger.info(
+                    f"Job {job.id} result path updated on job completion: {job.result_path} -> {result_path}"
+                )
 
             job.mark_completed(result_path=result_path)
             if self.db:
