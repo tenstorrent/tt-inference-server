@@ -39,6 +39,9 @@ std::string python_path();
 /** Runner type from MODEL_RUNNER. Default: defaults::MODEL_RUNNER. */
 RunnerType runner_type();
 
+/** Tokenizer path from TT_TOKENIZER_PATH (tokenizer.json or tokenizer.model). Empty = no tokenizer. */
+std::string tokenizer_path();
+
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
  * DEVICE_IDS format: "(0,1,2,3),(4,5,6,7)" → worker 0 gets "0,1,2,3", worker 1 gets "4,5,6,7".

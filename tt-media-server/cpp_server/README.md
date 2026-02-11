@@ -92,6 +92,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
+| `TT_TOKENIZER_PATH` | Path to tokenizer file (e.g. `tokenizer.json` or `tokenizer.model`) for encode/decode. Empty = no tokenizer. Requires build with `-DENABLE_TOKENIZER=ON` (and Rust). | (empty) |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 
 ## Authentication
@@ -392,6 +393,21 @@ chmod +x build.sh
 ./build.sh --debug   # Debug build
 ./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
 ```
+
+### Optional: Tokenizer (mlc-ai/tokenizers-cpp)
+
+To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in runner):
+
+1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
+2. Build with tokenizer support:
+   ```bash
+   mkdir -p build && cd build
+   cmake .. -DENABLE_TOKENIZER=ON
+   make -j
+   ```
+3. Set `TT_TOKENIZER_PATH` to a HuggingFace `tokenizer.json` or SentencePiece `tokenizer.model` file.
+
+When enabled, string prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 
 ## Performance
 

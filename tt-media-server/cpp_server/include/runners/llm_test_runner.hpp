@@ -10,9 +10,11 @@
 #include <iostream>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "runners/base_device_runner.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
+#include "utils/tokenizer.hpp"
 
 namespace tt::runners {
 
@@ -31,8 +33,8 @@ struct LogStream {
 
 /**
  * Test runner for LLM streaming performance tests.
- * Generates fake tokens at an interval (ms) from TEST_RUNNER_FREQUENCY_MS env,
- * default 24ms, to match Python llm_test_runner.py and the performance test.
+ * Generates fake tokens at an interval (ms) from TEST_RUNNER_FREQUENCY_MS env.
+ * When a tokenizer is loaded (TT_TOKENIZER_PATH), decodes fake token IDs to text (vLLM-style).
  */
 class LLMTestRunner : public BaseDeviceRunner {
 public:
@@ -40,7 +42,8 @@ public:
 
     explicit LLMTestRunner(const std::string& device_id)
         : BaseDeviceRunner(device_id),
-          token_interval_ms_(read_interval_from_env()) {
+          token_interval_ms_(read_interval_from_env()),
+          tokenizer_(tt::utils::TokenizerUtil::load(tt::config::tokenizer_path())) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
                  << ": token interval " << token_interval_ms_ << " ms";
     }
@@ -64,10 +67,19 @@ public:
             ).count();
             response.model = request.model.value_or("test-model");
 
-            // Generate all tokens as a single response
+            // Generate all tokens as a single response (detokenize when tokenizer loaded)
             std::ostringstream text;
-            for (int i = 0; i < request.max_tokens; ++i) {
-                text << "token_" << i << " ";
+            if (tokenizer_.is_loaded()) {
+                std::vector<int> ids;
+                ids.reserve(static_cast<size_t>(request.max_tokens));
+                for (int i = 0; i < request.max_tokens; ++i) {
+                    ids.push_back(i);
+                }
+                text << tokenizer_.decode(ids);
+            } else {
+                for (int i = 0; i < request.max_tokens; ++i) {
+                    text << "token_" << i << " ";
+                }
             }
 
             domain::CompletionChoice choice;
@@ -100,7 +112,11 @@ public:
 
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
-            chunk.chunk.text = "token_" + std::to_string(i);
+            if (tokenizer_.is_loaded()) {
+                chunk.chunk.text = tokenizer_.decode({i});
+            } else {
+                chunk.chunk.text = "token_" + std::to_string(i);
+            }
             chunk.chunk.index = i;
 
             chunk_callback(chunk);
@@ -119,6 +135,7 @@ public:
 
 private:
     double token_interval_ms_;
+    tt::utils::TokenizerUtil tokenizer_;
 
     static double read_interval_from_env() {
         const char* env = std::getenv("TEST_RUNNER_FREQUENCY_MS");

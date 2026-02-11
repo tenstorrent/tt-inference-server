@@ -45,6 +45,19 @@ find_package(Boost REQUIRED)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
+# Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust toolchain when ON.
+option(ENABLE_TOKENIZER "Enable LLM tokenizer (encode/decode); requires Rust" OFF)
+if(ENABLE_TOKENIZER)
+    FetchContent_Declare(
+        tokenizers_cpp
+        GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+        GIT_TAG        v0.1.1
+        GIT_SUBMODULES "msgpack" "sentencepiece"
+    )
+    set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tokenizers_cpp)
+endif()
+
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
@@ -124,6 +137,8 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
+    src/services/llm_service.cpp
+    src/utils/tokenizer.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES
@@ -159,6 +174,12 @@ endif()
 # TTNN support (optional)
 if(ENABLE_TTNN)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
+endif()
+
+# Tokenizer (optional; requires Rust)
+if(ENABLE_TOKENIZER)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TOKENIZER)
+    target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp)
 endif()
 
 # Compiler warnings

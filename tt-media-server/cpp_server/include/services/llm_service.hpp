@@ -4,19 +4,23 @@
 #pragma once
 
 #include "services/base_service.hpp"
+#include "utils/tokenizer.hpp"
 
 namespace tt::services {
 
 /**
  * LLM Service for text completions.
- * Similar to Python's LLMService.
+ * Tokenizes string prompts in pre_process (vLLM-style); workers detokenize when returning results.
  */
 class LLMService : public BaseService {
 public:
-    LLMService() : BaseService() {}
+    LLMService();
 
-    // LLMService uses the default BaseService implementation
-    // Add any LLM-specific methods here if needed
+protected:
+    domain::CompletionRequest pre_process(domain::CompletionRequest request) override;
+
+private:
+    tt::utils::TokenizerUtil tokenizer_;
 };
 
-} // namespace tt::services
+}  // namespace tt::services

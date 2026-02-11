@@ -99,6 +99,10 @@ RunnerType runner_type() {
     return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
 
+std::string tokenizer_path() {
+    return env_string("TT_TOKENIZER_PATH", defaults::TT_TOKENIZER_PATH);
+}
+
 std::string visible_devices_for_worker(size_t worker_index) {
     const auto& ids = device_ids_parsed();
     if (worker_index < ids.size()) return ids[worker_index];
