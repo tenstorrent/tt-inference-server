@@ -27,6 +27,29 @@ check_image_not_exists_local() {
     fi
 }
 
+resolve_commit_to_full_sha() {
+    local commit_ref="$1"
+    local resolved
+
+    # Try git ls-remote (works for tags and branch tips)
+    resolved=$(git ls-remote https://github.com/tenstorrent/tt-metal.git 2>/dev/null | grep "${commit_ref}" | head -1 | awk '{print $1}')
+    if [ -n "$resolved" ]; then
+        echo "$resolved"
+        return 0
+    fi
+
+    # Fallback: GitHub API (resolves short SHAs to full SHAs)
+    resolved=$(curl -sf "https://api.github.com/repos/tenstorrent/tt-metal/commits/${commit_ref}" | python3 -c "import sys, json; print(json.load(sys.stdin)['sha'])" 2>/dev/null)
+    if [ -n "$resolved" ]; then
+        echo "$resolved"
+        return 0
+    fi
+
+    # Could not resolve, return original
+    echo "$commit_ref"
+    return 1
+}
+
 # ==============================================================================
 # Main script logic
 # ==============================================================================
@@ -188,23 +211,35 @@ if [ "$build" = true ]; then
 
     if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
+
+        # Resolve short SHA / tag to full commit SHA
+        echo "Resolving ${TT_METAL_COMMIT_SHA_OR_TAG} to full SHA ..."
+        RESOLVED_TT_METAL_COMMIT=$(resolve_commit_to_full_sha "${TT_METAL_COMMIT_SHA_OR_TAG}")
+        echo "Resolved commit: ${RESOLVED_TT_METAL_COMMIT}"
+
         # build tt-metal base-image
         tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
         mkdir -p "${tt_metal_build_dir}"
         cd "${tt_metal_build_dir}"
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
-        if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+        if git fetch --depth 1 origin tag "${RESOLVED_TT_METAL_COMMIT}" 2>/dev/null; then
             echo "Fetched as tag."
-        elif git fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+        elif git fetch --depth 1 origin "${RESOLVED_TT_METAL_COMMIT}" 2>/dev/null; then
             echo "Fetched as commit SHA."
+        elif git fetch --unshallow 2>/dev/null; then
+            echo "Fetched full history via --unshallow."
         else
-            echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
-            cd "$repo_root"
-            rm -rf "${tt_metal_build_dir}"
-            exit 1
+            echo "Trying full fetch ..."
+            if ! git fetch origin 2>/dev/null; then
+                echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} (resolved: ${RESOLVED_TT_METAL_COMMIT}) from tt-metal."
+                cd "$repo_root"
+                rm -rf "${tt_metal_build_dir}"
+                exit 1
+            fi
+            echo "Fetched full repository history."
         fi
-        git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
+        git checkout ${RESOLVED_TT_METAL_COMMIT}
         # note: this will break if commit is before the new tt-metal Dockerfile was introduced
         # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
         # then re run this script with the image built locally
