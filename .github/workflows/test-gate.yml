@@ -514,6 +514,7 @@ jobs:
       - name: Install C++ build dependencies
         run: |
           sudo apt-get update -qq
+          sudo apt-get install libboost-dev
           sudo apt-get install -y -qq cmake g++ pkg-config \
             libjsoncpp-dev uuid-dev zlib1g-dev
 
