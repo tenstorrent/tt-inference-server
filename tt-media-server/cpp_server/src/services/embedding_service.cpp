@@ -603,7 +603,6 @@ struct EmbeddingService::Impl {
         // Always log timing for every batch
         std::cout << "[TIMING] Worker " << worker.worker_id
                   << " batch=" << batch.size()
-                  << " check=" << check_ms << "ms"
                   << " build=" << build_json_ms << "ms"
                   << " write=" << write_pipe_ms << "ms"
                   << " wait=" << wait_worker_ms << "ms"
