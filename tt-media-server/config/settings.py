@@ -18,7 +18,6 @@ from config.constants import (
     ModelServices,
     QueueType,
     SupportedModels,
-    DatasetLoaders,
 )
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,10 +50,6 @@ class Settings(BaseSettings):
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
-
-    # Dataset settings
-    dataset_loader: str = DatasetLoaders.SST2.value
-    dataset_max_length: int = 32
 
     # Queue and batch settings
     max_queue_size: int = 5000

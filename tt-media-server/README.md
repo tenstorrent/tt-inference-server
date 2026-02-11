@@ -624,12 +624,6 @@ The TT Inference Server can be configured using environment variables or by modi
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 | `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
-## Dataset Configuration
-
-| Environment Variable | Default Value | Description |
-|---------------------|---------------|-------------|
-| `DATASET_LOADER` | [`DatasetLoaders.SST2.value`](config/constants.py ) | Specify which specific dataset to fetch from HuggingFace for model fine-tuning |
-| `DATASET_MAX_LENGTH` | 32 | Maximum sequence length in tokens. Examples exceeding this length are filtered out, shorter sequences are padded to this length during batching." |
 
 ## Queue and Batch Configuration
 
