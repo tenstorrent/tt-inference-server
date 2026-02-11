@@ -5334,7 +5334,7 @@
                 }
             }
         ],
-        "qbge": [
+        "p300x2": [
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
@@ -5414,7 +5414,7 @@
                 }
             }
         ],
-        "qbge": [
+        "p300x2": [
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 40,
