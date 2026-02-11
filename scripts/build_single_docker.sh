@@ -257,8 +257,8 @@ if [ "$build" = true ]; then
         echo "building: ${dev_image_tag}"
         cd "$repo_root"
 
-        # Generate model_specs_defaults.json before building (COPY'd into image)
-        echo "Generating model_specs_defaults.json ..."
+        # Generate model_spec.json before building (COPY'd into image)
+        echo "Generating model_spec.json ..."
         python3 -c "
 import sys
 from pathlib import Path
@@ -269,10 +269,10 @@ from scripts.build_docker_images import generate_model_specs_json
 generate_model_specs_json()
 "
         if [ $? -ne 0 ]; then
-            echo "⛔ Error: Failed to generate model_specs_defaults.json"
+            echo "⛔ Error: Failed to generate model_spec.json"
             exit 1
         fi
-        echo "✅ Generated model_specs_defaults.json"
+        echo "✅ Generated model_spec.json"
 
         docker build \
         -t ${dev_image_tag} \

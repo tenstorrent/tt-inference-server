@@ -45,7 +45,7 @@
 │   ├── README.md
 │   └── run_evals.py
 ├── LICENSE
-├── model_specs_output.json
+├── model_spec.json
 ├── pyproject.toml
 ├── README.md
 ├── requirements-dev.txt
