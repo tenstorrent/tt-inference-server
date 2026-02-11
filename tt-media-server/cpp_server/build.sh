@@ -12,6 +12,7 @@ ENABLE_TTNN="OFF"
 # Parse arguments
 TEST="OFF"
 SANITIZE_THREAD="OFF"
+ENABLE_TRACY="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
             BUILD_TYPE="Debug"
             shift
             ;;
+        --tracy)
+            ENABLE_TRACY="ON"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -39,6 +44,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
             echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --tsan     Build with ThreadSanitizer for data-race detection"
+            echo "  --tracy    Enable Tracy profiler (run Tracy GUI to capture)"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -56,6 +62,7 @@ echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
+echo "  Tracy profiler: ${ENABLE_TRACY}"
 echo "=============================================="
 
 # If TTNN is enabled, ensure we have the right Python
@@ -119,6 +126,7 @@ echo "Configuring CMake..."
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
+      -DENABLE_TRACY="${ENABLE_TRACY}" \
       -DLLM_ENGINE_DEBUG_BUILD=ON \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \

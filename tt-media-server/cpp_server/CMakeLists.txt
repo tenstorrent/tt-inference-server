@@ -40,6 +40,18 @@ FetchContent_MakeAvailable(googletest)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
+# Tracy profiler (optional; use -DENABLE_TRACY=ON and run Tracy GUI to capture)
+option(ENABLE_TRACY "Enable Tracy profiling (macOS/Linux/Windows)" OFF)
+if(ENABLE_TRACY)
+    FetchContent_Declare(tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG        v0.13.1
+    )
+    set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tracy)
+endif()
+
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
@@ -65,6 +77,11 @@ option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detectio
 if(SANITIZE_THREAD)
     target_compile_options(llm_engine PUBLIC -fsanitize=thread -g)
     target_link_options(llm_engine PUBLIC -fsanitize=thread)
+endif()
+
+if(ENABLE_TRACY)
+    target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_TRACY)
+    target_link_libraries(llm_engine PUBLIC Tracy::TracyClient)
 endif()
 
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
