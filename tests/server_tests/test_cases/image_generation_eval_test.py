@@ -72,6 +72,7 @@ class ImageGenerationEvalsTestRequest:
     start_from: int = 0
     num_inference_steps: int = CONFIG.DEFAULT_INFERENCE_STEPS
     server_url: Optional[str] = None
+    request_timeout: Optional[int] = None
 
 
 @dataclass
@@ -81,6 +82,7 @@ class ImageGenContext:
     base_url: str
     headers: dict
     num_inference_steps: int
+    request_timeout_sec: int
 
 
 class ImageGenerationEvalsTest(BaseTest):
@@ -97,9 +99,14 @@ class ImageGenerationEvalsTest(BaseTest):
             return request
 
         logger.info(
-            "Running eval: model=%s, prompts=%s",
+            "Running eval - request parameters: model_name=%s, num_prompts=%s, "
+            "start_from=%s, num_inference_steps=%s, server_url=%s, request_timeout=%s",
             request.model_name,
             request.num_prompts,
+            request.start_from,
+            request.num_inference_steps,
+            request.server_url,
+            request.request_timeout,
         )
 
         prompts = self._load_prompts(request)
@@ -194,12 +201,22 @@ class ImageGenerationEvalsTest(BaseTest):
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed")
 
+        config_timeout = self.timeout or self.config.get("test_timeout")
+        timeout_sec = (
+            request.request_timeout
+            if request.request_timeout is not None
+            else (
+                config_timeout if config_timeout is not None else CONFIG.REQUEST_TIMEOUT
+            )
+        )
         ctx = ImageGenContext(
             base_url=request.server_url or f"http://localhost:{self.service_port}",
             headers=self._build_headers(),
             num_inference_steps=request.num_inference_steps,
+            request_timeout_sec=timeout_sec,
         )
 
+        total_start = time.perf_counter()
         async with aiohttp.ClientSession() as session:
             tasks = [
                 self._generate_single_image_async(
@@ -208,9 +225,11 @@ class ImageGenerationEvalsTest(BaseTest):
                 for idx, prompt in enumerate(prompts, start=1)
             ]
             results = await asyncio.gather(*tasks)
+        total_elapsed = time.perf_counter() - total_start
 
         status_list = [status for status in results if status is not None]
         logger.info("Generated %s/%s images", len(status_list), len(prompts))
+        logger.info("✅ Image generation for eval succeeded in %.2fs", total_elapsed)
         return status_list
 
     async def _generate_single_image_async(
@@ -226,11 +245,19 @@ class ImageGenerationEvalsTest(BaseTest):
 
         try:
             start = time.perf_counter()
+            payload = self._build_payload(prompt, ctx.num_inference_steps)
+            logger.debug(
+                "Request for image %s/%s: url=%s, payload_keys=%s",
+                idx,
+                total,
+                f"{ctx.base_url}/{CONFIG.ENDPOINT}",
+                list(payload.keys()),
+            )
             async with session.post(
                 f"{ctx.base_url}/{CONFIG.ENDPOINT}",
-                json=self._build_payload(prompt, ctx.num_inference_steps),
+                json=payload,
                 headers=ctx.headers,
-                timeout=aiohttp.ClientTimeout(total=CONFIG.REQUEST_TIMEOUT),
+                timeout=aiohttp.ClientTimeout(total=ctx.request_timeout_sec),
             ) as response:
                 elapsed = time.perf_counter() - start
                 return await self._parse_image_response_async(
