@@ -10,7 +10,7 @@ import torch
 from tqdm import tqdm
 import torch_xla
 import torch_xla.runtime as xr
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, PeftModel
 
 
 from domain.training_request import TrainingRequest
@@ -80,6 +80,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 
+        model_path = request._output_model_path
+
         lora_config = LoraConfig(
             r=request.lora_r,
             lora_alpha=request.lora_alpha,
@@ -87,19 +89,17 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             task_type=request.lora_task_type,
         )
 
-        if hasattr(self.hf_model, 'peft_config'):
-            self.hf_model = self.hf_model.unload()
+        if hasattr(self, '_peft_model') and isinstance(self._peft_model, PeftModel):
+            self.hf_model = self._peft_model.unload()
 
-        self.model = get_peft_model(self.hf_model, lora_config)
+        self._peft_model = get_peft_model(self.hf_model, lora_config)
 
-        self.model.to(eval(request.dtype))
-        self.model.to(self.device)
-
-        model_path = request._output_model_path
+        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(self.device)
 
         # use torch compile
         self.model = torch.compile(
-            self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False}
+            self._peft_model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False}
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -183,7 +183,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
-                            f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training"
+                            f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
                             f"Model checkpoint saved: {model_path}"
                         )
                         break
@@ -207,7 +207,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             raise
         finally:
             self.logger.debug(f"Device {self.device_id}: Training completed")
-            return model_path
+        
+        return model_path
 
     def run_validation(self):
         self.logger.info("\n=== Starting Validation ===")
