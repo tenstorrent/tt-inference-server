@@ -7,10 +7,7 @@ from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
-from device_workers.worker_utils import (
-    initialize_device_worker,
-    setup_worker_environment,
-)
+from device_workers.worker_utils import initialize_device_worker
 from utils.logger import TTLogger
 
 
@@ -22,7 +19,6 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: None | str = None,
 ):
-    setup_worker_environment(worker_id, "2")
     logger = TTLogger()
 
     try:

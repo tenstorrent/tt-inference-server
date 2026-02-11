@@ -25,7 +25,11 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.benchmark_config import (
+    BENCHMARK_CONFIGS,
+    expand_concurrency_sweep_params,
+    powers_of_two_up_to,
+)
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
@@ -100,6 +104,11 @@ def parse_args():
         type=str,
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
+    )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
     ret_args = parser.parse_args()
     return ret_args
@@ -256,6 +265,26 @@ def main():
             f"No benchmark tasks defined for model: {model_spec.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
+
+    # CLI arg takes precedence, fallback to model spec cli_args
+    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
+        "concurrency_sweeps", False
+    )
+    if concurrency_sweeps:
+        max_context = model_spec.device_model_spec.max_context
+        model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
+        # TODO: get the number of perf targets from the model config instead of 1
+        for task in benchmark_config.tasks[1:]:
+            if device not in task.param_map:
+                continue
+            task.param_map[device] = expand_concurrency_sweep_params(
+                task.param_map[device],
+                max_context=max_context,
+                model_max_concurrency=model_max_concurrency,
+                model_name=model_spec.model_name,
+                candidate_concurrencies=candidate_concurrencies,
+            )
 
     # check for any benchmarks to run for model on given device
     all_params = [
