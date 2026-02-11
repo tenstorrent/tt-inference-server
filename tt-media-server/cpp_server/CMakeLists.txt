@@ -6,6 +6,8 @@ project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 
 # Find Drogon
 find_package(Drogon REQUIRED)
@@ -37,12 +39,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Boost (header-only Boost.Interprocess for IPC message queue)
+find_package(Boost REQUIRED)
+
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
@@ -54,6 +60,7 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_link_libraries(llm_engine PUBLIC Boost::boost rt)
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
@@ -87,9 +94,26 @@ target_include_directories(llm_engine_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(sequence_test tests/sequence_test.cpp)
+target_link_libraries(sequence_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(sequence_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
+gtest_discover_tests(sequence_test)
+
+# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
+add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_engine)
+target_include_directories(ipc_scheduler_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Source files
 set(SOURCES

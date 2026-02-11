@@ -1,38 +1,40 @@
 #include "llm_engine/engine/scheduler.hpp"
 #include "llm_engine/engine/debug.hpp"
+
 #include <algorithm>
 #include <cassert>
 
+
 namespace llm_engine {
 
-Scheduler::Scheduler(const Config& config)
+Scheduler::Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue)
     : max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       eos_(config.eos),
-      block_manager_(config.num_kvcache_blocks, config.kvcache_block_size) {}
+      block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
+      waiting_(std::move(task_queue)) {}
 
 bool Scheduler::is_finished() const {
-  return waiting_.empty() && running_.empty() && in_flight_count_ == 0;
+  return waiting_->empty() && running_.empty() && in_flight_count_ == 0;
 }
 
 Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(prompt), params);
   Sequence& ref = *seq;
-  sequences_.push_back(std::move(seq));
+  sequences_[seq->seq_id] = std::move(seq);
   add(ref);
   return ref;
 }
 
 void Scheduler::add(Sequence& seq) {
   LLM_ENGINE_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
-  waiting_.push_back(&seq);
+  waiting_->push(seq);
 }
 
 Sequence* Scheduler::find_sequence(int seq_id) {
-  auto it = std::find_if(sequences_.begin(), sequences_.end(),
-                         [&](const auto& seq) { return seq->seq_id == seq_id; });
-  return it != sequences_.end() ? it->get() : nullptr;
+  auto it = sequences_.find(seq_id);
+  return it != sequences_.end() ? it->second.get() : nullptr;
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
@@ -40,29 +42,40 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_seqs = 0;
   int num_batched_tokens = 0;
 
-  while (!waiting_.empty() && num_seqs < max_num_seqs_) {
-    Sequence* seq = waiting_.front();
+  // --- Prefill: pop from task queue ---
+  while (num_seqs < Config::max_num_seqs) {
+    auto seq = waiting_->try_pop();
+    if (!seq) {
+      break;  // Queue empty
+    }
+
     if (num_batched_tokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
         !block_manager_.can_allocate(*seq)) {
+      // Can't handle this sequence -- push it back and stop prefilling.
+      waiting_->push(*seq);
+      delete seq;
       break;
     }
+
     num_seqs += 1;
     block_manager_.allocate(*seq);
     num_batched_tokens +=
         static_cast<int>(seq->size() - seq->num_cached_tokens_);
     seq->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
-    waiting_.pop_front();
-    scheduled_seqs.push_back(seq);
+    sequences_[seq->seq_id] = std::make_unique<Sequence>(std::move(*seq));
+    scheduled_seqs.push_back(sequences_[seq->seq_id].get());
   }
+
   if (!scheduled_seqs.empty()) {
     LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
-                              << " batched_tokens=" << num_batched_tokens << std::endl;
+                             << " batched_tokens=" << num_batched_tokens << std::endl;
     return {scheduled_seqs, true};
   }
 
-  while (!running_.empty() && num_seqs < max_num_seqs_) {
+  // --- Decode: process running sequences ---
+  while (!running_.empty() && num_seqs < Config::max_num_seqs) {
     Sequence* seq = running_.front();
     running_.pop_front();
     auto self_preempt = false;
@@ -97,7 +110,7 @@ void Scheduler::preempt(Sequence& seq) {
   LLM_ENGINE_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
-  waiting_.push_front(&seq);
+  waiting_->push(seq);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
@@ -115,8 +128,8 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
-                               << " (eos=" << (token_id == eos_) << " max_tokens="
-                               << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
+          << " (eos=" << (token_id == eos_) << " max_tokens="
+          << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;

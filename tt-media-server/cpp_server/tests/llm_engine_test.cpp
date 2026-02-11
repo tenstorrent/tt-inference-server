@@ -6,9 +6,17 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <vector>
-
+#include "llm_engine/engine/in_memory_task_queue.hpp"
 namespace llm_engine {
 namespace {
+  
+std::unique_ptr<ITaskQueue> make_queue() {
+  return std::make_unique<InMemoryTaskQueue>();
+}
+  
+std::unique_ptr<Scheduler> make_scheduler(const Config& config) {
+  return std::make_unique<Scheduler>(config, make_queue());
+}
 
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
                           int eos = 0) {
@@ -35,14 +43,15 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   std::map<int, std::vector<int64_t>> received_tokens;
   int finished_count = 0;
   int total_requests = static_cast<int>(requests.size());
+  
+  auto scheduler = make_scheduler(config);
 
-  LLMEngine engine{config,
-    [&](int seq_id, int64_t token_id, bool finished) {
+  LLMEngine engine{config, [&](int seq_id, int64_t token_id, bool finished) {
       received_tokens[seq_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();
       }
-    }};
+    }, std::move(scheduler)};
 
   std::vector<int> seq_ids;
   for (const auto& req : requests) {
