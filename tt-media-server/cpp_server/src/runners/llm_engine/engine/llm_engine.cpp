@@ -1,6 +1,9 @@
 #include "llm_engine/engine/llm_engine.hpp"
 #include "llm_engine/engine/debug.hpp"
+
 #include <cassert>
+#include <chrono>
+#include <thread>
 
 namespace llm_engine {
 
@@ -45,7 +48,10 @@ void LLMEngine::step() {
   drain_decode_results();
 
   auto [seqs, is_prefill] = scheduler_->schedule();
-  if (seqs.empty()) return;
+  if (seqs.empty()) {
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    return;
+  }
 
   model_runner_->run(seqs, is_prefill);
 

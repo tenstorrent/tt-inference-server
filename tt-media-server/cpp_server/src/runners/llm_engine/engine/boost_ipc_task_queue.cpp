@@ -31,6 +31,7 @@ BoostIpcTaskQueue::BoostIpcTaskQueue(const std::string& name, int size) {
 }
 
 void BoostIpcTaskQueue::push(const Sequence& seq) {
+  std::lock_guard<std::mutex> lock(push_mutex_);
   ipc::obufferstream stream(send_buffer_.data(), send_buffer_.size());
   seq.serialize(stream);
   auto bytes_written = stream.tellp();

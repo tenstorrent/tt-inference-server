@@ -68,6 +68,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     auto id = seq->seq_id;
     sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
     scheduled_seqs.push_back(sequences_[id].get());
+    delete seq;
   }
 
   if (!scheduled_seqs.empty()) {

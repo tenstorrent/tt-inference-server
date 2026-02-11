@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <string>
 
 #include <boost/interprocess/ipc/message_queue.hpp>
@@ -36,6 +37,7 @@ class BoostIpcTaskQueue : public ITaskQueue {
 
  private:
   std::unique_ptr<boost::interprocess::message_queue> queue_;
+  std::mutex push_mutex_;
   std::vector<char> send_buffer_;
   std::vector<char> recv_buffer_;
 };
