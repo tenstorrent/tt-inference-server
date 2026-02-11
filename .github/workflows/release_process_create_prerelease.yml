@@ -203,7 +203,7 @@ jobs:
       - name: Update model spec & create release artifacts
         run: |
          python3 scripts/release/update_model_spec.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --ignore-perf-status
-         python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --increment ${{ inputs.release-increment }} --dev --dry-run
+         python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --increment ${{ inputs.release-increment }} --dev
          python3 scripts/release/update_model_spec.py --output-only
 
       - name: Read VERSION file
@@ -247,43 +247,43 @@ jobs:
           echo "✓ Committed all changes"
           git push -u origin "${{ steps.read-version.outputs.branch_name }}"
 
-      # - name: Create PR
-      #   env:
-      #     GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-      #   run: |
-      #     PR_TITLE="Release Candidate v${{ steps.read-version.outputs.versio }}"
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+        run: |
+          PR_TITLE="Release Candidate v${{ steps.read-version.outputs.versio }}"
 
-      #     # Build PR body from markdown files
-      #     PR_BODY_FILE=$(mktemp)
-      #       # Add metadata as HTML comment for tracking
-      #       echo "<!--" > "$PR_BODY_FILE"
-      #       echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
-      #       echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
-      #       echo "-->" >> "$PR_BODY_FILE"
-      #     echo "# Summary of Changes" > "$PR_BODY_FILE"
-      #     echo "" >> "$PR_BODY_FILE"
+          # Build PR body from markdown files
+          PR_BODY_FILE=$(mktemp)
+            # Add metadata as HTML comment for tracking
+            echo "<!--" > "$PR_BODY_FILE"
+            echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
+            echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
+            echo "-->" >> "$PR_BODY_FILE"
+          echo "# Summary of Changes" > "$PR_BODY_FILE"
+          echo "" >> "$PR_BODY_FILE"
 
-      #     # Add model spec updates if file exists
-      #     if [ -f "release_logs/release_models_diff.md" ]; then
-      #       cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
-      #       echo "" >> "$PR_BODY_FILE"
-      #     fi
+          # Add model spec updates if file exists
+          if [ -f "release_logs/release_models_diff.md" ]; then
+            cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
+            echo "" >> "$PR_BODY_FILE"
+          fi
 
-      #     # Add release artifacts summary if file exists
-      #     if [ -f "release_logs/dev_artifacts_summary.md" ]; then
-      #       cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
-      #     fi
+          # Add release artifacts summary if file exists
+          if [ -f "release_logs/dev_artifacts_summary.md" ]; then
+            cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
+          fi
 
-      #     echo "Creating draft PR: $PR_TITLE"
-      #     gh pr create \
-      #       --title "$PR_TITLE" \
-      #       --body-file "$PR_BODY_FILE" \
-      #       --base dev \
-      #       --head "${{ steps.read-version.outputs.branch_name  }}" \
-      #       --draft
+          echo "Creating draft PR: $PR_TITLE"
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body-file "$PR_BODY_FILE" \
+            --base dev \
+            --head "${{ steps.read-version.outputs.branch_name  }}" \
+            --draft
 
-      #     rm -f "$PR_BODY_FILE"
-      #     echo "✓ Created draft PR for ${{ steps.read-version.outputs.branch_name  }}"
+          rm -f "$PR_BODY_FILE"
+          echo "✓ Created draft PR for ${{ steps.read-version.outputs.branch_name  }}"
 
       - name: Cleanup on failure
         if: failure()
@@ -355,5 +355,4 @@ jobs:
         run: |
           echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
           mkdir -p workflow_logs/docker_build_logs
-          python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --force-build
-#          --push
+          python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --push
