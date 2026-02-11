@@ -83,7 +83,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
-    LORA_TRAINER = "lora_trainer"
+    TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
     LLM_TEST = "llm_test"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
@@ -138,7 +138,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2,
     },
     ModelServices.TRAINING: {
-        ModelRunners.LORA_TRAINER,
+        ModelRunners.TRAINING_GEMMA_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -242,6 +242,10 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
+
+
+class DatasetLoaders(Enum):
+    SST2 = "sst2"
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
