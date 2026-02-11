@@ -87,6 +87,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             task_type=request.lora_task_type,
         )
 
+        if hasattr(self.hf_model, 'peft_config'):
+            self.hf_model = self.hf_model.unload()
+
         self.model = get_peft_model(self.hf_model, lora_config)
 
         self.model.to(eval(request.dtype))
