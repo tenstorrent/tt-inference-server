@@ -7,7 +7,7 @@
 
 namespace llm_engine {
 
-Scheduler::Scheduler(const Config& config, std::unique_ptr<ITaskQueue> task_queue)
+Scheduler::Scheduler(const Config& config, std::shared_ptr<ITaskQueue> task_queue)
     : max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       eos_(config.eos),
@@ -32,7 +32,7 @@ void Scheduler::add(Sequence& seq) {
   waiting_->push(seq);
 }
 
-Sequence* Scheduler::find_sequence(int seq_id) {
+Sequence* Scheduler::find_sequence(SequenceID seq_id) {
   auto it = sequences_.find(seq_id);
   return it != sequences_.end() ? it->second.get() : nullptr;
 }
@@ -100,7 +100,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
-                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? -1 : scheduled_seqs[0]->seq_id)
+                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? "none" : scheduled_seqs[0]->seq_id.id)
                              << " in_flight=" << in_flight_count_ << std::endl;
 
   return {scheduled_seqs, false};

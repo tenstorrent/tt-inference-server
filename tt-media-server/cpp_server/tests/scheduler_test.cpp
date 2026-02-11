@@ -14,8 +14,8 @@
 namespace llm_engine {
 namespace {
 
-  std::unique_ptr<ITaskQueue> make_queue() {
-    return std::make_unique<InMemoryTaskQueue>();
+  std::shared_ptr<ITaskQueue> make_queue() {
+    return std::make_shared<InMemoryTaskQueue>();
   }
 
 Config make_config(int num_blocks = 32, int block_size = 8,
@@ -52,7 +52,7 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
-  int expected_id = seq.seq_id;
+  SequenceID expected_id = seq.seq_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -78,7 +78,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
-  int expected_id = seq.seq_id;
+  SequenceID expected_id = seq.seq_id;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -168,7 +168,7 @@ TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   Config config = make_config();
   Scheduler sched{config, make_queue()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
-  int expected_id = seq.seq_id;
+  SequenceID expected_id = seq.seq_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -186,7 +186,7 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   Scheduler sched{config, make_queue()};
   Sequence seq1{prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{prompt(4), SamplingParams{.max_tokens = 10}};
-  int seq2_id = seq2.seq_id;
+  SequenceID seq2_id = seq2.seq_id;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
   ASSERT_TRUE(prefill1);

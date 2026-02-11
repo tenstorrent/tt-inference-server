@@ -25,13 +25,10 @@ namespace tt::ipc {
 
 // Fixed-size token structure for zero-copy transfer
 struct alignas(64) SharedToken {
-    uint64_t sequence;          // Monotonic sequence number
-    uint32_t task_id_hash;      // Hash of task_id for fast lookup
     uint32_t token_index;       // Token index in sequence
-    uint32_t worker_id;         // Which worker produced this
     uint32_t flags;             // Bit flags: is_final, is_error, etc.
-    char text[40];              // Token text (fixed size for alignment)
-    char task_id[56];           // Full task ID
+    uint64_t token_id;          // Token ID
+    char task_id[56];       // Sequence ID
     char padding[8];            // Padding to reach 128 bytes
 
     static constexpr uint32_t FLAG_FINAL = 1;
@@ -178,7 +175,6 @@ public:
         // Write token
         size_t idx = write % CAPACITY;
         tokens_[idx] = token;
-        tokens_[idx].sequence = write;
 
         // Publish
         header_->write_pos.store(write + 1, std::memory_order_release);

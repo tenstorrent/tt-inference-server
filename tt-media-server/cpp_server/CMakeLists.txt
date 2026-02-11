@@ -144,11 +144,12 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon (Python only when embedding is built, i.e. NOT TEST)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+# Link Drogon and llm_engine (used by multiprocess_scheduler)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
 endif()

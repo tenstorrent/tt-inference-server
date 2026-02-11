@@ -3,23 +3,32 @@
 
 #include "scheduler/multiprocess_scheduler.hpp"
 #include "config/settings.hpp"
-#include "runners/llm_test_runner.hpp"
-#include "runners/runner_factory.hpp"
+#include "ipc/shared_memory.hpp"
+#include "runners/llm_engine/config.hpp"
+#include "runners/llm_engine/engine/llm_engine.hpp"
+#include "runners/llm_engine/engine/scheduler.hpp"
+#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
+
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <memory>
+#include <mutex>
 #include <sys/eventfd.h>
 #include <poll.h>
 
 namespace tt::scheduler {
 
 namespace {
-    // Helper to generate unique task IDs
-    std::atomic<uint64_t> task_id_counter{0};
+    std::mutex task_id_gen_mutex;
+    boost::uuids::random_generator task_id_generator;
 
     std::string generate_task_id() {
-        return "mp-task-" + std::to_string(task_id_counter.fetch_add(1));
+        std::lock_guard<std::mutex> lock(task_id_gen_mutex);
+        return boost::uuids::to_string(task_id_generator());
     }
 }
 
@@ -55,8 +64,8 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         worker.token_buffer = std::make_unique<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
             token_shm_name, true  // Create as owner
         );
-        worker.task_buffer = std::make_unique<ipc::TokenRingBuffer<1024>>(
-            task_shm_name, true
+        worker.task_buffer = std::make_unique<llm_engine::BoostIpcTaskQueue>(
+            task_shm_name
         );
 
         // Get environment config for this worker
@@ -114,9 +123,6 @@ void MultiprocessScheduler::stop() {
         if (worker.token_buffer) {
             worker.token_buffer->shutdown();
         }
-        if (worker.task_buffer) {
-            worker.task_buffer->shutdown();
-        }
     }
 
     // Wait for all consumer threads
@@ -173,101 +179,24 @@ void MultiprocessScheduler::stop() {
     std::string task_shm_name = "/tt_tasks_" + std::to_string(worker_id);
 
     ipc::TokenRingBuffer<RING_BUFFER_CAPACITY> token_buffer(token_shm_name, false);
-    ipc::TokenRingBuffer<1024> task_buffer(task_shm_name, false);
+    
+    auto task_buffer = std::make_shared<llm_engine::BoostIpcTaskQueue>(task_shm_name);
+    llm_engine::Config config;
 
-    // 3. Create the device runner using factory (reads TT_RUNNER_TYPE from environment)
-    auto runner = runners::RunnerFactory::create("device_" + std::to_string(worker_id));
-    runner->warmup();
-
-    std::cout << "[Worker " << worker_id << "] Ready\n" << std::flush;
-
-    // 4. Main work loop
-    while (!task_buffer.is_shutdown()) {
-        // Check for new task
-        ipc::SharedToken task_token;
-        if (!task_buffer.pop(task_token)) {
-            // No task available, yield to avoid busy-spinning but minimize latency
-            std::this_thread::yield();
-            continue;
-        }
-
-        // Parse task from token
-        // For simplicity, we encode: task_id in task_id field, max_tokens in token_index
-        std::string task_id(task_token.task_id);
-        int max_tokens = static_cast<int>(task_token.token_index);
-        bool is_streaming = !(task_token.flags & ipc::SharedToken::FLAG_DONE);
-
-        std::cout << "[Worker " << worker_id << "] Processing task " << task_id
-                  << " with " << max_tokens << " tokens\n"
-                  << std::flush;
-
-        // Build request
-        domain::CompletionRequest request;
-        request.task_id = task_id;
-        request.max_tokens = max_tokens;
-        request.stream = is_streaming;
-
-        if (is_streaming) {
-            // Run streaming inference, push tokens to shared memory
-            auto chunk_callback = [&](const domain::StreamingChunkOutput& chunk) {
-                ipc::SharedToken out_token;
-                out_token.worker_id = worker_id;
-                out_token.token_index = chunk.chunk.index.value_or(0);
-                out_token.flags = 0;
-
-                // Copy task_id
-                std::strncpy(out_token.task_id, chunk.task_id.c_str(), sizeof(out_token.task_id) - 1);
-                out_token.task_id[sizeof(out_token.task_id) - 1] = '\0';
-
-                // Copy text
-                std::strncpy(out_token.text, chunk.chunk.text.c_str(), sizeof(out_token.text) - 1);
-                out_token.text[sizeof(out_token.text) - 1] = '\0';
-
-                // Push to ring buffer (spin if full)
-                while (!token_buffer.push(out_token) && !token_buffer.is_shutdown()) {
-                    std::this_thread::yield();
-                }
-            };
-
-            auto final_callback = [&](const domain::FinalResultOutput& result) {
-                ipc::SharedToken out_token;
-                out_token.worker_id = worker_id;
-                out_token.token_index = result.result.index.value_or(0);
-                out_token.flags = ipc::SharedToken::FLAG_FINAL;
-                if (result.result.finish_reason == "error") {
-                    out_token.flags |= ipc::SharedToken::FLAG_ERROR;
-                }
-
-                std::strncpy(out_token.task_id, result.task_id.c_str(), sizeof(out_token.task_id) - 1);
-                out_token.task_id[sizeof(out_token.task_id) - 1] = '\0';
-                std::strncpy(out_token.text, result.result.text.c_str(), sizeof(out_token.text) - 1);
-                out_token.text[sizeof(out_token.text) - 1] = '\0';
-
-                while (!token_buffer.push(out_token) && !token_buffer.is_shutdown()) {
-                    std::this_thread::yield();
-                }
-            };
-
-            runner->run_streaming(request, chunk_callback, final_callback);
-        } else {
-            // Non-streaming: run and send single result
-            std::vector<domain::CompletionRequest> requests = {request};
-            auto responses = runner->run(requests);
-
-            // Send response as final token
-            ipc::SharedToken out_token;
-            out_token.worker_id = worker_id;
-            out_token.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_DONE;
-            std::strncpy(out_token.task_id, task_id.c_str(), sizeof(out_token.task_id) - 1);
-
-            while (!token_buffer.push(out_token) && !token_buffer.is_shutdown()) {
-                std::this_thread::yield();
-            }
-        }
-    }
-
-    std::cout << "[Worker " << worker_id << "] Shutting down\n" << std::flush;
-    _exit(0);
+    auto scheduler = std::make_unique<llm_engine::Scheduler>(config, task_buffer);
+    
+    auto engine = std::make_unique<llm_engine::LLMEngine>(config, [&token_buffer](llm_engine::SequenceID seq_id, uint64_t token_id, bool finished){
+        auto token = ipc::SharedToken{
+            .token_index = 0,
+            .flags= static_cast<uint32_t>(finished ? 0: 1),
+            .token_id = token_id,
+        };
+        std::strncpy(token.task_id, seq_id.id.c_str(), sizeof(token.task_id) - 1);
+        token.task_id[sizeof(token.task_id) - 1] = '\0';
+       token_buffer.push(token);
+    },
+    std::move(scheduler));
+    engine->run();
 }
 
 void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
@@ -309,7 +238,7 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
                 ).count();
 
                 domain::CompletionChoice choice;
-                choice.text = token.text;
+                choice.text = std::to_string(token.token_id);
                 choice.index = token.token_index;
                 if (token.is_final()) {
                     choice.finish_reason = "stop";
@@ -346,21 +275,16 @@ void MultiprocessScheduler::dispatch_task(ProcessTask task) {
     // Round-robin dispatch
     uint64_t worker_idx = next_worker_.fetch_add(1) % workers_.size();
     auto& worker = workers_[worker_idx];
-
-    // Encode task as SharedToken
-    ipc::SharedToken task_token;
-    task_token.worker_id = worker_idx;
-    task_token.token_index = task.request.max_tokens;  // Encode max_tokens
-    task_token.flags = task.is_streaming ? 0 : ipc::SharedToken::FLAG_DONE;
-
-    std::strncpy(task_token.task_id, task.task_id.c_str(), sizeof(task_token.task_id) - 1);
-    task_token.task_id[sizeof(task_token.task_id) - 1] = '\0';
-
-    // Push to worker's task buffer
-    while (!worker.task_buffer->push(task_token) && running_) {
-        std::this_thread::yield();
-    }
-
+    
+    auto prompt = std::get<std::vector<int>>(task.request.prompt);
+    std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
+    auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
+    sequence->seq_id.id = task.task_id;
+    sequence->num_prompt_tokens_ = prompt.size();
+    sequence->temperature = task.request.temperature.value_or(1.0f);
+    sequence->max_tokens = task.request.max_tokens;
+    sequence->ignore_eos = task.request.ignore_eos;
+    worker.task_buffer->push(*sequence);
     {
         std::lock_guard<std::mutex> lock(stats_mutex_);
         stats_.tasks_submitted++;

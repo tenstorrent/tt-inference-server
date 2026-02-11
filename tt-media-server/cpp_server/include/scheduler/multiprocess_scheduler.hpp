@@ -9,15 +9,14 @@
 #include <unordered_map>
 #include <functional>
 #include <future>
-#include <variant>
 #include <vector>
 #include <sys/wait.h>
-#include <signal.h>
 
 #include "ipc/shared_memory.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "runners/base_device_runner.hpp"
+#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
 
 namespace tt::scheduler {
 
@@ -146,7 +145,7 @@ private:
         pid_t pid = -1;
         int worker_id = -1;
         std::unique_ptr<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>> token_buffer;  // For receiving tokens
-        std::unique_ptr<ipc::TokenRingBuffer<1024>> task_buffer;  // For sending tasks (smaller)
+        std::unique_ptr<llm_engine::BoostIpcTaskQueue> task_buffer;  // For sending tasks (smaller)
         bool is_ready = false;
     };
 

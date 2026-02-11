@@ -5,14 +5,14 @@
 #include <functional>
 #include <memory>
 
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/model_runner.hpp"
-#include "llm_engine/engine/scheduler.hpp"
+#include "runners/llm_engine/config.hpp"
+#include "runners/llm_engine/engine/model_runner.hpp"
+#include "runners/llm_engine/engine/scheduler.hpp"
 
 namespace llm_engine {
 
 using TokenCallback =
-    std::function<void(int seq_id, int64_t token_id, bool finished)>;
+    std::function<void(SequenceID seq_id, int64_t token_id, bool finished)>;
 
 class LLMEngine {
  public:

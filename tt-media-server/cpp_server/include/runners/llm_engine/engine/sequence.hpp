@@ -2,11 +2,40 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <functional>
 #include <iostream>
+#include <string>
+#include <vector>
 #include "llm_engine/sampling_params.hpp"
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
+
+
+
+
 namespace llm_engine {
+  
+struct SequenceID {
+  SequenceID() {
+    auto uuid = boost::uuids::random_generator()();
+    id = boost::uuids::to_string(uuid);
+  }
+  std::string id;
+
+  bool operator==(const SequenceID& other) const {
+    return id == other.id;
+  }
+};
+
+inline std::ostream& operator<<(std::ostream& os, const SequenceID& sid) {
+  return os << sid.id;
+}
+
+
+  
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
@@ -43,7 +72,7 @@ class Sequence {
 
   void append_token(int64_t token_id);
 
-  int seq_id = 0;
+  SequenceID seq_id;
   SequenceStatus status_ = SequenceStatus::WAITING;
   std::vector<int64_t> token_ids_;
   int64_t last_token = 0;
@@ -60,3 +89,12 @@ class Sequence {
 };
 
 }  // namespace llm_engine
+
+namespace std {
+  template <>
+  struct hash<llm_engine::SequenceID> {
+    size_t operator()(const llm_engine::SequenceID& s) const {
+      return hash<string>{}(s.id);
+    }
+  };
+  }  // namespace std
