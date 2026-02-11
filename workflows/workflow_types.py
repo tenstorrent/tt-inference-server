@@ -71,7 +71,7 @@ class DeviceTypes(IntEnum):
     P150X4 = auto()  # 4x P150 cards (1,4 mesh)
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
-    P300X2 = auto()  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
+    P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -114,10 +114,10 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150: "n150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
-            DeviceTypes.P150X4: "4x P150",
+            DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
-            DeviceTypes.P300: "p300",
-            DeviceTypes.P300X2: "BH QuietBox GE",
+            DeviceTypes.P300: "BH P300",
+            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",

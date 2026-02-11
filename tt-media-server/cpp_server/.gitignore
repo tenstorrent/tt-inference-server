@@ -1,5 +1,6 @@
 # Build output and CMake / FetchContent
 build/
+.cache/
 
 # Object and dependency files (in-source or stray)
 *.o

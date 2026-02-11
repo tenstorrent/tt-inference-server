@@ -90,6 +90,9 @@ def _expand_text_sweep_params(
     max_context: int,
     model_max_concurrency: int,
 ) -> List[BenchmarkTaskParams]:
+    if isl + osl > max_context:
+        return []
+
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl, osl, max_context, model_max_concurrency
     )
@@ -124,6 +127,9 @@ def _expand_image_sweep_params(
         images_per_prompt=images_per_prompt,
         model_name=model_name,
     )
+    if isl + osl + vision_tokens > max_context:
+        return []
+
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl,
         osl,

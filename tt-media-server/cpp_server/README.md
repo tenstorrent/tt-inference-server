@@ -2,6 +2,33 @@
 
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
+## LLM engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+
+### Main features
+
+- **Paged attention** — KV cache is managed in fixed-size blocks; sequences hold a block table and blocks are allocated or freed as needed. Enables non-contiguous cache and reuse across sequences.
+- **Prefix caching** — Content-addressable blocks (hash over token content with optional prefix): when a new sequence shares a prefix with an existing block, the block is reused (reference-counted) so shared prefixes are not recomputed.
+- **Prefill-only or decode-only batches** — Each scheduling step returns either a **prefill-only** batch or a **decode-only** batch; there are no mixed prefill+decode batches. Prefill is prioritized over decode when both are possible.
+- **Preemption** — When decode cannot proceed (e.g. no free block to extend a sequence), a running sequence can be preempted: its KV cache is freed and it re-enters the waiting queue for later prefill.
+
+The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
+
+### Run the demo
+
+```bash
+./build/engine_demo
+```
+
+Run scheduler unit tests (Google Test):
+
+```bash
+cd build && ctest --output-on-failure
+# or run the test binary directly:
+./build/scheduler_test
+```
+
 ## Quick Start
 
 ```bash
@@ -65,6 +92,20 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
+| `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+
+## Authentication
+
+The server uses Bearer token authentication for protected API endpoints. The token is read from the `OPENAI_API_KEY` environment variable at startup. If not set, it defaults to `your-secret-key`.
+
+### Unprotected Endpoints
+
+The following endpoints do not require authentication:
+- `GET /health`
+- `GET /ready`
+- `GET /docs`
+- `GET /swagger`
+- `GET /openapi.json`
 
 ### Running in Background
 
@@ -100,13 +141,14 @@ pkill -9 -f tt_media_server_cpp
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/completions` | POST | OpenAI-compatible text completion |
-| `/health` | GET | Health check |
-| `/ready` | GET | Readiness check with system status |
-| `/docs` | GET | Swagger UI documentation |
-| `/openapi.json` | GET | OpenAPI specification |
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|---------------|-------------|
+| `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
+| `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
+| `/health` | GET | ❌ No | Health check |
+| `/ready` | GET | ❌ No | Readiness check with system status |
+| `/docs` | GET | ❌ No | Swagger UI documentation |
+| `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
 ## Usage Examples
 
@@ -114,6 +156,7 @@ pkill -9 -f tt_media_server_cpp
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
@@ -148,6 +191,7 @@ curl -X POST http://localhost:8001/v1/completions \
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
@@ -244,9 +288,10 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest`: OpenAI-compatible completion request
-- `CompletionResponse`: Full completion response
-- `StreamingChunkResponse`: SSE streaming chunk
+- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
+- `StreamingChunkResponse`: SSE streaming chunk (completions)
+- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler
 - `ThreadSafeQueue<T>`: Lock-free thread-safe queue for task management

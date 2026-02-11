@@ -29,8 +29,8 @@ def _model_location_generator(model_version: str) -> str:
 
 
 class EmbeddingRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def _process_result(
         self,
@@ -85,8 +85,8 @@ class EmbeddingRunner(BaseMetalDeviceRunner):
 
 
 class BGELargeENRunner(EmbeddingRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.max_model_len = 384
         self.max_num_seqs = 8 * self.settings.device_mesh_shape[0]
         self.model_name = SupportedModels.BGE_LARGE_EN_V1_5.value
@@ -113,8 +113,8 @@ class BGELargeENRunner(EmbeddingRunner):
 
 
 class Qwen3Embedding8BRunner(EmbeddingRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.max_model_len = self.settings.vllm.max_model_length
         self.max_num_seqs = self.settings.vllm.max_num_seqs
         self.model_name = SupportedModels.QWEN_3_EMBEDDING_8B.value
