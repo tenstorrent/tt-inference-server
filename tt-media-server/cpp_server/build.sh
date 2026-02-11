@@ -79,6 +79,8 @@ elif [ -f "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
 elif [ -f "/usr/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
+elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
+    DROGON_FOUND=1
 fi
 
 if [ "${DROGON_FOUND}" -eq 0 ]; then
@@ -97,9 +99,12 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
               -DBUILD_CTL=OFF \
               -DBUILD_YAML_CONFIG=OFF \
               ..
-        make -j$(nproc)
+        NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+        make -j"${NPROC}"
         sudo make install
-        sudo ldconfig
+        if [ "$(uname -s)" = "Linux" ]; then
+            sudo ldconfig
+        fi
         cd "${SCRIPT_DIR}"
     else
         echo "Please install Drogon framework first:"

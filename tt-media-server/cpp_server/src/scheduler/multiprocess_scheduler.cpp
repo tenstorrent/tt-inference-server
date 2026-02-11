@@ -17,8 +17,9 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <sys/eventfd.h>
-#include <poll.h>
+#include <unistd.h>
+#include <csignal>
+#include <sys/wait.h>
 
 namespace tt::scheduler {
     
@@ -202,6 +203,7 @@ void MultiprocessScheduler::stop() {
     },
     std::move(scheduler));
     engine->run();
+    _exit(0);
 }
 
 void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {

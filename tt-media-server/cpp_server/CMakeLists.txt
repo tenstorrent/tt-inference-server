@@ -60,7 +60,10 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(llm_engine PUBLIC Boost::boost rt)
+target_link_libraries(llm_engine PUBLIC Boost::boost)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(llm_engine PUBLIC rt)
+endif()
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
