@@ -116,17 +116,6 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     fi
 fi
 
-# When tokenizer is enabled, ensure tokenizers-cpp submodule is present (see README Getting Started).
-if [ "${ENABLE_TOKENIZER}" = "ON" ]; then
-    REPO_ROOT="$(cd "${SCRIPT_DIR}" && git rev-parse --show-toplevel 2>/dev/null)"
-    if [ -n "${REPO_ROOT}" ]; then
-        SUBMODULE_PATH="tt-media-server/cpp_server/third_party/tokenizers-cpp"
-        if [ -d "${REPO_ROOT}/${SUBMODULE_PATH}" ]; then
-            (cd "${REPO_ROOT}" && git submodule update --init --recursive "${SUBMODULE_PATH}")
-        fi
-    fi
-fi
-
 # Create build directory
 mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"

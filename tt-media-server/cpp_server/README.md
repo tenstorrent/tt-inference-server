@@ -400,10 +400,7 @@ chmod +x build.sh
 To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in runner):
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
-2. tokenizers-cpp is included as a **submodule** at `third_party/tokenizers-cpp` (per [Getting Started](https://github.com/mlc-ai/tokenizers-cpp?tab=readme-ov-file#getting-started)). If you use `build.sh --tokenizer`, the script will run `git submodule update --init --recursive` for it. If you use CMake directly, run from the repo root first:
-   ```bash
-   git submodule update --init --recursive tt-media-server/cpp_server/third_party/tokenizers-cpp
-   ```
+2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent (no git submodule). Configure with `-DENABLE_TOKENIZER=ON` and CMake will download it into `build/_deps/`.
 3. Build with tokenizer support:
    ```bash
    ./build.sh --tokenizer

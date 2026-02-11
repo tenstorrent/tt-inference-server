@@ -1,3 +1,0 @@
-[submodule "tt-media-server/cpp_server/third_party/tokenizers-cpp"]
-	path = tt-media-server/cpp_server/third_party/tokenizers-cpp
-	url = https://github.com/mlc-ai/tokenizers-cpp.git
