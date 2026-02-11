@@ -32,4 +32,5 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
+            cancel_event=cancel_event,
         )
