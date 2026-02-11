@@ -132,9 +132,9 @@ private:
     [[noreturn]] void worker_process_main(int worker_id, const WorkerEnvConfig& env_config);
 
     /**
-     * Consumer thread - reads tokens from shared memory and dispatches callbacks.
+     * Consumer thread for a specific worker - reads tokens and dispatches callbacks.
      */
-    void consumer_loop();
+    void consumer_loop_for_worker(size_t worker_idx);
 
     /**
      * Dispatch a task to a worker.
@@ -153,8 +153,8 @@ private:
     std::vector<WorkerProcess> workers_;
     size_t num_workers_;
 
-    // Consumer thread (reads from all worker buffers)
-    std::thread consumer_thread_;
+    // Consumer threads - one per worker for parallel token processing
+    std::vector<std::thread> consumer_threads_;
 
     // Callbacks for streaming tasks
     mutable std::mutex callbacks_mutex_;

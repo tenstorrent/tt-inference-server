@@ -12,8 +12,6 @@ class TestTrainingServiceCreateJob:
     def mock_settings(self):
         """Create mock settings with dataset configuration"""
         settings = MagicMock()
-        settings.dataset_loader = "sst2"
-        settings.dataset_max_length = 32
         settings.model_runner = "training_gemma_lora"
         settings.download_weights_from_service = False
         return settings
@@ -23,8 +21,6 @@ class TestTrainingServiceCreateJob:
         """Create mock training request"""
         request = MagicMock()
         request._task_id = "unique_task_123"
-        request._dataset_loader = None
-        request._dataset_max_length = None
         request._output_model_path = None
         return request
 
@@ -49,6 +45,4 @@ class TestTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._dataset_loader == "sst2"
-            assert mock_request._dataset_max_length == 32
             assert mock_request._output_model_path == "models_save/unique_task_123.pt"

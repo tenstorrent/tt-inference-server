@@ -13,11 +13,16 @@ from utils.dataset_loaders.sst2.sst2_utils import (
     DATASET_NAME,
 )
 from utils.dataset_loaders.base_dataset import BaseDataset
-from config.settings import get_settings
 
 
 class SSTDataset(BaseDataset):
-    def __init__(self, model_name: str, split: str = "train", collate_fn=None):
+    def __init__(
+        self,
+        model_name: str,
+        max_sequence_length: int,
+        split: str = "train",
+        collate_fn=None,
+    ):
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name, padding_side="right", use_fast=True
@@ -26,7 +31,7 @@ class SSTDataset(BaseDataset):
         self.required_columns = ["input_ids", "attention_mask", "labels"]
         self.split = split
         self.collate_fn = collate_fn
-        self.max_length = get_settings().dataset_max_length
+        self.max_length = max_sequence_length
 
         self._prepare_dataset()
 
