@@ -966,3 +966,63 @@ class ImageClientStrategy(BaseMediaStrategy):
         """Generate image using Motif Image 6B Preview model."""
         logger.info("🌅 Generating image with Motif Image 6B Preview")
         return self._generate_image(num_inference_steps)
+
+    def _run_flux_1_dev_schnell_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Flux 1 Dev or Schnell benchmark."""
+        logger.info("Running Flux 1 Dev or Schnell benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_flux_1_dev_schnell()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _generate_image_flux_1_dev_schnell(
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
+    ) -> tuple[bool, float]:
+        """Generate image using Flux 1 Dev or Schnell model."""
+        logger.info("🌅 Generating image with Flux 1 Dev schnell")
+        return self._generate_image(num_inference_steps)
+
+    def _run_motif_image_6b_preview_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Motif Image 6B Preview benchmark."""
+        logger.info("Running Motif Image 6B Preview benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Motif benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_motif_image_6b_preview()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _generate_image_motif_image_6b_preview(
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
+    ) -> tuple[bool, float]:
+        """Generate image using Motif Image 6B Preview model."""
+        logger.info("🌅 Generating image with Motif Image 6B Preview")
+        return self._generate_image(num_inference_steps)
