@@ -1,8 +1,0 @@
-# Local artifacts only. Fetched deps live in build/_deps/, not here.
-build/
-*.patch
-downloads/
-.cache/
-
-# Tokenizers-cpp: fetched by CMake FetchContent (no submodule). Ignore if present locally.
-tokenizers-cpp/

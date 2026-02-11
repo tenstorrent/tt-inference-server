@@ -67,8 +67,6 @@ namespace defaults {
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* MODEL_RUNNER = "llm_test";
     constexpr const char* TT_PYTHON_PATH = "..";
-    /** Path to tokenizer.json (HuggingFace) or tokenizer.model (SentencePiece). Empty = no tokenizer. */
-    constexpr const char* TT_TOKENIZER_PATH = "";
 }
 
 }  // namespace tt::config

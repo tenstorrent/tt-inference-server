@@ -34,7 +34,7 @@ struct LogStream {
 /**
  * Test runner for LLM streaming performance tests.
  * Generates fake tokens at an interval (ms) from TEST_RUNNER_FREQUENCY_MS env.
- * When a tokenizer is loaded (TT_TOKENIZER_PATH), decodes fake token IDs to text (vLLM-style).
+ * When a tokenizer is loaded (tokenizers/tokenizer.json next to exe), decodes fake token IDs to text (vLLM-style).
  */
 class LLMTestRunner : public BaseDeviceRunner {
 public:
@@ -46,6 +46,9 @@ public:
           tokenizer_(tt::utils::TokenizerUtil::load(tt::config::tokenizer_path())) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
                  << ": token interval " << token_interval_ms_ << " ms";
+        if (!tokenizer_.is_loaded()) {
+            TT_LOG_INFO << "Tokenizer not loaded (place tokenizer.json in tokenizers/ next to executable); returning literal token_0, token_1, ...";
+        }
     }
 
     bool warmup() override {

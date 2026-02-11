@@ -39,7 +39,7 @@ std::string python_path();
 /** Runner type from MODEL_RUNNER. Default: defaults::MODEL_RUNNER. */
 RunnerType runner_type();
 
-/** Tokenizer path from TT_TOKENIZER_PATH (tokenizer.json or tokenizer.model). Empty = no tokenizer. */
+/** Tokenizer path: tokenizers/tokenizer.json relative to executable. Empty if not found. */
 std::string tokenizer_path();
 
 /**

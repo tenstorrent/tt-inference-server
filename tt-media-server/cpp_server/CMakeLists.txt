@@ -46,9 +46,17 @@ find_package(Boost REQUIRED)
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
 # Tokenizer (mlc-ai/tokenizers-cpp, optional). Requires Rust when ON.
-# Optional third-party deps are fetched in third_party/CMakeLists.txt (FetchContent, no submodules).
 option(ENABLE_TOKENIZER "Enable LLM tokenizer (encode/decode); requires Rust" OFF)
-add_subdirectory(third_party third_party EXCLUDE_FROM_ALL)
+if(ENABLE_TOKENIZER)
+    set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tokenizers_cpp
+        GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+        GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
+        GIT_SUBMODULES "msgpack" "sentencepiece"
+    )
+    FetchContent_MakeAvailable(tokenizers_cpp)
+endif()
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES

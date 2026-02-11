@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <filesystem>
+
 namespace tt::config {
 
 namespace {
@@ -100,7 +102,12 @@ RunnerType runner_type() {
 }
 
 std::string tokenizer_path() {
-    return env_string("TT_TOKENIZER_PATH", defaults::TT_TOKENIZER_PATH);
+    std::filesystem::path p = std::filesystem::path("tokenizers") / "tokenizer.json";
+    std::error_code ec;
+    std::filesystem::path canonical = std::filesystem::canonical(p, ec);
+    if (!ec && std::filesystem::is_regular_file(canonical))
+        return canonical.string();
+    return "";
 }
 
 std::string visible_devices_for_worker(size_t worker_index) {

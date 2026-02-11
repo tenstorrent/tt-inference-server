@@ -92,7 +92,6 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `TT_TOKENIZER_PATH` | Path to tokenizer file (e.g. `tokenizer.json` or `tokenizer.model`) for encode/decode. Empty = no tokenizer. Requires build with `-DENABLE_TOKENIZER=ON` (and Rust). | (empty) |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 
 ## Authentication
@@ -406,7 +405,7 @@ To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in ru
    ./build.sh --tokenizer
    ```
    or with CMake directly: `-DENABLE_TOKENIZER=ON`.
-4. Set `TT_TOKENIZER_PATH` to a HuggingFace `tokenizer.json` or SentencePiece `tokenizer.model` file.
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable (no env var).
 
 When enabled, string prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 
