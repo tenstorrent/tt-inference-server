@@ -15,10 +15,6 @@ class TrainingService(BaseJobService):
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
-        if job_type != JobTypes.TRAINING:
-            raise ValueError(
-                "The job type must be TRAINING, since the chosen model service is TrainingService"
-            )
 
         os.makedirs("models_save", exist_ok=True)
         request._output_model_path = f"models_save/{request._task_id}.pt"
