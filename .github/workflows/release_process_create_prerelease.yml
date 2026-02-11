@@ -240,6 +240,11 @@ jobs:
           git checkout -b "$BRANCH_NAME"
           echo "✓ Created branch: $BRANCH_NAME"
 
+      - name: Configure git identity
+        run: |
+          git config user.email "vmaksimovic@tenstorrent.com"
+          git config user.name "Veljko Maksimovic"
+
       - name: Commit changes and push branch
         run: |
           git add -A
@@ -251,7 +256,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
-          PR_TITLE="Release Candidate v${{ steps.read-version.outputs.versio }}"
+          PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
 
           # Build PR body from markdown files
           PR_BODY_FILE=$(mktemp)
