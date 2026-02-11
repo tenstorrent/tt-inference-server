@@ -18,14 +18,14 @@ from domain.audio_text_response import (
     AudioTextSegment,
 )
 from models.demos.utils.common_demo_utils import get_mesh_mappers
-from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
+from models.demos.audio.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
 )
-from models.demos.whisper.tt.whisper_generator import (
+from models.demos.audio.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
