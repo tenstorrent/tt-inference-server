@@ -53,7 +53,7 @@ public:
                 return "TTNNTestRunner (Device I/O)";
             case RunnerType::LLM_TEST:
             default:
-                return "LLMTestRunner (120k tokens/sec)";
+                return "LLMTestRunner";
         }
     }
 

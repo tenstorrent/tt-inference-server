@@ -433,34 +433,28 @@ if "models" not in sys.modules:
     sys.modules[
         "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
     ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
-    sys.modules["models.experimental.tt_dit"] = tt_dit_mock
-    sys.modules["models.experimental.tt_dit.parallel"] = tt_dit_mock.parallel
-    sys.modules["models.experimental.tt_dit.parallel.config"] = (
-        tt_dit_mock.parallel.config
-    )
-    sys.modules["models.experimental.tt_dit.pipelines"] = pipelines_mock
-    sys.modules["models.experimental.tt_dit.pipelines.stable_diffusion_35_large"] = (
-        sd35_large_mock
-    )
+    sys.modules["models.tt_dit"] = tt_dit_mock
+    sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel
+    sys.modules["models.tt_dit.parallel.config"] = tt_dit_mock.parallel.config
+    sys.modules["models.tt_dit.pipelines"] = pipelines_mock
+    sys.modules["models.tt_dit.pipelines.stable_diffusion_35_large"] = sd35_large_mock
     sys.modules[
-        "models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large"
+        "models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large"
     ] = sd35_large_mock.pipeline_stable_diffusion_35_large
-    sys.modules["models.experimental.tt_dit.pipelines.flux1"] = flux1_mock
-    sys.modules["models.experimental.tt_dit.pipelines.flux1.pipeline_flux1"] = (
+    sys.modules["models.tt_dit.pipelines.flux1"] = flux1_mock
+    sys.modules["models.tt_dit.pipelines.flux1.pipeline_flux1"] = (
         flux1_mock.pipeline_flux1
     )
-    sys.modules["models.experimental.tt_dit.pipelines.mochi"] = mochi_mock
-    sys.modules["models.experimental.tt_dit.pipelines.mochi.pipeline_mochi"] = (
+    sys.modules["models.tt_dit.pipelines.mochi"] = mochi_mock
+    sys.modules["models.tt_dit.pipelines.mochi.pipeline_mochi"] = (
         mochi_mock.pipeline_mochi
     )
-    sys.modules["models.experimental.tt_dit.pipelines.motif"] = motif_mock
-    sys.modules["models.experimental.tt_dit.pipelines.motif.pipeline_motif"] = (
+    sys.modules["models.tt_dit.pipelines.motif"] = motif_mock
+    sys.modules["models.tt_dit.pipelines.motif.pipeline_motif"] = (
         motif_mock.pipeline_motif
     )
-    sys.modules["models.experimental.tt_dit.pipelines.wan"] = wan_mock
-    sys.modules["models.experimental.tt_dit.pipelines.wan.pipeline_wan"] = (
-        wan_mock.pipeline_wan
-    )
+    sys.modules["models.tt_dit.pipelines.wan"] = wan_mock
+    sys.modules["models.tt_dit.pipelines.wan.pipeline_wan"] = wan_mock.pipeline_wan
     sys.modules["models.demos.whisper"] = whisper_mock
     sys.modules["models.demos.whisper.tt"] = whisper_tt_mock
     sys.modules["models.demos.whisper.tt.ttnn_optimized_functional_whisper"] = (
@@ -552,8 +546,8 @@ runner_mocks = {
     "tt_model_runners.mock_runner": {
         "MockRunner": create_mock_runner_class("MockRunner")
     },
-    "tt_model_runners.lora_trainer_runner": {
-        "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    "tt_model_runners.forge_training_runners.training_gemma_lora_runner": {
+        "TrainingGemmaLoraRunner": create_mock_runner_class("TrainingGemmaLoraRunner")
     },
     "tt_model_runners.speecht5_runner": {
         "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")

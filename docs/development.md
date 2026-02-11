@@ -86,7 +86,7 @@ workflow for release:
 
 Follow the development and release git workflow, steps described below image:
 
-![ttis-git-workflows-2025-08-14-1106](ttis-git-workflows-2025-08-14-1106.png)
+![ttis-git-workflows-2026-02-10](ttis-git-workflows-2026-02-10.png)
 
 ### pre-commit
 

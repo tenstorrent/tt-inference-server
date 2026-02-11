@@ -83,9 +83,10 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_VIT: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
     ).ForgeVitRunner(wid),
-    ModelRunners.LORA_TRAINER: lambda wid: __import__(
-        "tt_model_runners.lora_trainer_runner", fromlist=["LoraTrainerRunner"]
-    ).LoraTrainerRunner(wid),
+    ModelRunners.TRAINING_GEMMA_LORA: lambda wid: __import__(
+        "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
+        fromlist=["TrainingGemmaLoraRunner"],
+    ).TrainingGemmaLoraRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),

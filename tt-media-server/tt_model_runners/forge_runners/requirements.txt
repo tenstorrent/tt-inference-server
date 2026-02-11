@@ -1,7 +1,10 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-tt-forge==0.7.0
+tt-forge==0.8.0
 torchvision
 
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
+
+datasets # model training
+peft # model training
