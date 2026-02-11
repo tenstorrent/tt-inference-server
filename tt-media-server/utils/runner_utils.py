@@ -17,8 +17,8 @@ def setup_runner_environment(
     setup_cpu_threading_limits(cpu_threads, num_torch_threads)
 
     # Set device visibility
-    os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
-    os.environ["TT_METAL_VISIBLE_DEVICES"] = str(device_id)
+    if device_id:
+        os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
 
     if settings.enable_telemetry:
         get_telemetry_client()
