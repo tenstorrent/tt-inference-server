@@ -34,7 +34,7 @@ The operational requirement for releasing is a passing Models CI run. Any models
 
 Follow the git workflow for release described below in the diagram and step by step instructions below:
 
-![../../docs/ttis-git-workflows-2025-08-14-1106](../../docs/ttis-git-workflows-2025-08-14-1106.png)
+![../../docs/ttis-git-workflows-2026-02-10](../../docs/ttis-git-workflows-2026-02-10.png)
 
 
 ## Pre-release to `dev`

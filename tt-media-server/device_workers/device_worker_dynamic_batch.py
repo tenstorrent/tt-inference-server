@@ -6,10 +6,7 @@ import asyncio
 from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL
-from device_workers.worker_utils import (
-    initialize_device_worker,
-    setup_worker_environment,
-)
+from device_workers.worker_utils import initialize_device_worker
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -24,7 +21,6 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: str = None,
 ):
-    setup_worker_environment(worker_id, "16", 16)
     logger = TTLogger()
 
     # attach to queue if it's provided
@@ -42,7 +38,7 @@ def device_worker(
 
     device_runner: BaseDeviceRunner = None
     try:
-        device_runner, loop = initialize_device_worker(worker_id, logger, 16)
+        device_runner, loop = initialize_device_worker(worker_id, logger)
         if not device_runner:
             return
     except Exception as e:

@@ -89,8 +89,14 @@ public:
         std::function<void(const domain::StreamingChunkOutput&)> chunk_callback,
         std::function<void(const domain::FinalResultOutput&)> final_callback) override {
 
+        // Convert milliseconds to microseconds for sub-ms precision
+        auto interval_us = std::chrono::microseconds(static_cast<long long>(token_interval_ms_ * 1000.0));
+        auto next_token_time = std::chrono::steady_clock::now() + interval_us;
+
         for (int i = 0; i < request.max_tokens; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(token_interval_ms_));
+            // Sleep until the next token time
+            std::this_thread::sleep_until(next_token_time);
+            next_token_time += interval_us;
 
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
@@ -112,13 +118,17 @@ public:
     }
 
 private:
-    int token_interval_ms_;
+    double token_interval_ms_;
 
-    static int read_interval_from_env() {
+    static double read_interval_from_env() {
         const char* env = std::getenv("TEST_RUNNER_FREQUENCY_MS");
         if (env == nullptr) return DEFAULT_TOKEN_INTERVAL_MS;
-        int val = std::atoi(env);
-        return (val > 0 && val <= 10000) ? val : DEFAULT_TOKEN_INTERVAL_MS;
+        try {
+            double val = std::stod(env);
+            return (val > 0.0 && val <= 10000.0) ? val : DEFAULT_TOKEN_INTERVAL_MS;
+        } catch (...) {
+            return DEFAULT_TOKEN_INTERVAL_MS;
+        }
     }
 };
 
