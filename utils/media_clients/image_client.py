@@ -23,7 +23,6 @@ if str(project_root) not in sys.path:
 
 from tests.server_tests.test_cases.image_generation_eval_test import (
     ImageGenerationEvalsTest,
-    ImageGenerationEvalsTestRequest,
 )
 from tests.server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
@@ -654,16 +653,14 @@ class ImageClientStrategy(BaseMediaStrategy):
             f"with {num_prompts} prompts, {FLUX_MOTIF_INFERENCE_STEPS} inference steps"
         )
 
-        request = ImageGenerationEvalsTestRequest(
-            model_name=self.model_spec.model_name,
-            num_prompts=num_prompts,
-            num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
-            server_url=self.base_url,
-        )
-
         test_config = ServerTestConfig.create_default(timeout=25000)
-
-        eval_test = ImageGenerationEvalsTest(test_config, {"request": request})
+        request_dict = {
+            "model_name": self.model_spec.model_name,
+            "num_prompts": num_prompts,
+            "num_inference_steps": FLUX_MOTIF_INFERENCE_STEPS,
+            "server_url": self.base_url,
+        }
+        eval_test = ImageGenerationEvalsTest(test_config, {"request": request_dict})
         eval_test.service_port = self.service_port
 
         result = await eval_test._run_specific_test_async()
