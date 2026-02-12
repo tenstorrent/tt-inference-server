@@ -172,6 +172,7 @@ void SpoofedBlitzDecode::receiver_loop() {
     d2h->barrier();
 
     int64_t token_id = static_cast<int64_t>(recv_buf[0]);
+    LLM_ENGINE_LOG("spoofed_blitz_decode") << "D2H recv token_id=" << token_id << std::endl;
     PendingCallback pending;
     {
       std::lock_guard<std::mutex> lock(pending_mutex_);
@@ -201,6 +202,9 @@ void SpoofedBlitzDecode::decode(const std::vector<Sequence*>& seqs, DecodeCallba
       std::lock_guard<std::mutex> lock(pending_mutex_);
       pending_.push({callback, s->seq_id});
     }
+    LLM_ENGINE_LOG("spoofed_blitz_decode")
+        << "H2D send token_id=" << h2d_buf[0] << " seq_id_wire=" << seq_id_wire
+        << " position=" << h2d_buf[2] << std::endl;
     h2d->write(h2d_buf, 1);
   }
 }

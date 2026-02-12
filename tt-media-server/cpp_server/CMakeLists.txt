@@ -56,11 +56,6 @@ if(EXISTS "${tt-metalium_DIR}/tt-metalium-config.cmake")
     find_package(tt-metalium CONFIG QUIET)
 endif()
 
-# SpoofedBlitzDecode requires tt-metalium experimental sockets (d2h/h2d). Only include when available.
-find_file(TT_METAL_D2H_SOCKET_HPP tt-metalium/experimental/sockets/d2h_socket.hpp
-    PATHS ${TT_METAL_BUILD}/include ${TT_METAL_HOME} ${TT_METAL_HOME}/tt_metal ${TT_METAL_HOME}/tt_metal/api
-    NO_DEFAULT_PATH
-)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
     src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
@@ -69,13 +64,8 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/model_runner.cpp
     src/runners/llm_engine/engine/scheduler.cpp
     src/runners/llm_engine/engine/sequence.cpp
+    src/runners/llm_engine/engine/spoofed_blitz_decode.cpp
 )
-if(TT_METAL_D2H_SOCKET_HPP)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/spoofed_blitz_decode.cpp)
-    message(STATUS "SpoofedBlitzDecode: tt-metalium experimental sockets found, enabling")
-else()
-    message(STATUS "SpoofedBlitzDecode: tt-metalium experimental/sockets/d2h_socket.hpp not found, skipping")
-endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
@@ -83,13 +73,11 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 target_link_libraries(llm_engine PUBLIC Boost::boost)
-if(TT_METAL_D2H_SOCKET_HPP)
-    if(TARGET TT::Metalium)
-        target_link_libraries(llm_engine PUBLIC TT::Metalium)
-    else()
-        target_link_directories(llm_engine PUBLIC ${TT_METAL_BUILD} ${TT_METAL_BUILD}/lib)
-        target_link_libraries(llm_engine PUBLIC metalium_runtime)
-    endif()
+if(TARGET TT::Metalium)
+    target_link_libraries(llm_engine PUBLIC TT::Metalium)
+else()
+    target_link_directories(llm_engine PUBLIC ${TT_METAL_BUILD} ${TT_METAL_BUILD}/lib)
+    target_link_libraries(llm_engine PUBLIC metalium_runtime)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
@@ -181,10 +169,6 @@ if(ENABLE_TTNN)
     list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
-# When tt-metal sockets exist, spoofed_blitz_decode provides create/destroy. Otherwise use stub.
-if(NOT TT_METAL_D2H_SOCKET_HPP)
-    list(APPEND SOURCES src/runners/llm_engine/engine/device_context_ttmetal.cpp)
-endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})

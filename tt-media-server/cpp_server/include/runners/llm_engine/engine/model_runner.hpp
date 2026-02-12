@@ -1,11 +1,9 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
 #include <vector>
 
 #include "llm_engine/config.hpp"
@@ -38,6 +36,8 @@ class IModelRunner {
   virtual void exit() = 0;
 };
 
+class SpoofedBlitzDecode;
+
 class ModelRunnerStub : public IModelRunner {
  public:
   ModelRunnerStub(const Config& config, DecodeCallback callback);
@@ -46,15 +46,9 @@ class ModelRunnerStub : public IModelRunner {
   void exit() override;
 
  private:
-  void reader_loop();
-
   Config config_;
-  int64_t dummy_token_;
   DecodeCallback decode_callback_;
-  std::mutex work_mutex_;
-  std::vector<DecodeResult> work_queue_;
-  std::atomic<bool> stop_{false};
-  std::thread reader_thread_;  // must be last: uses all members above
+  std::unique_ptr<SpoofedBlitzDecode> spoofed_decode_;
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
