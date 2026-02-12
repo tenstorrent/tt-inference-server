@@ -129,10 +129,10 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loading tokenizer from: " << tokenizer_file_path << "\n";
-    TokenizerUtil tokenizer(tokenizer_file_path);
+    auto& tokenizer = TokenizerUtil::instance(tokenizer_file_path);
 
     // Check if tokenizer loaded successfully
-    if (tokenizer.encode("test").empty()) {
+    if (!tokenizer.is_loaded()) {
         std::cerr << "Failed to load tokenizer from: " << tokenizer_file_path << "\n";
         std::cerr << "Usage: " << argv[0] << " [tokenizer_path]\n";
         std::cerr << "Example: " << argv[0] << " tokenizers/tokenizer.json\n";

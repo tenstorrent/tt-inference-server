@@ -19,34 +19,38 @@ protected:
         if (tokenizer_file_path.empty()) {
             GTEST_SKIP() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
         }
-        tokenizer = TokenizerUtil(tokenizer_file_path);
 
-        // Check if tokenizer loaded successfully by testing encode
-        if (tokenizer.encode("test").empty()) {
+        // Get singleton instance (initialized on first call)
+        auto& tok = TokenizerUtil::instance(tokenizer_file_path);
+
+        // Check if tokenizer loaded successfully
+        if (!tok.is_loaded()) {
             GTEST_SKIP() << "Failed to load tokenizer from: " << tokenizer_file_path;
         }
     }
 
-    TokenizerUtil tokenizer;
+    TokenizerUtil& tokenizer() {
+        return TokenizerUtil::instance();
+    }
 };
 
 TEST_F(TokenizerTest, EncodeDecodeRoundTrip) {
     std::string prompt = "The quick brown fox jumps over the lazy dog.";
 
-    auto tokens = tokenizer.encode(prompt);
+    auto tokens = tokenizer().encode(prompt);
     EXPECT_GT(tokens.size(), 0);
 
-    std::string decoded = tokenizer.decode(tokens);
+    std::string decoded = tokenizer().decode(tokens);
     EXPECT_FALSE(decoded.empty());
 }
 
 TEST_F(TokenizerTest, EmptyStringEncode) {
-    auto tokens = tokenizer.encode("");
+    auto tokens = tokenizer().encode("");
     EXPECT_EQ(tokens.size(), 0);
 }
 
 TEST_F(TokenizerTest, EmptyTokensDecode) {
-    std::string decoded = tokenizer.decode({});
+    std::string decoded = tokenizer().decode({});
     EXPECT_EQ(decoded, "");
 }
 
@@ -110,7 +114,7 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     size_t total_mismatches = 0;
 
     for (const auto& [prompt, expected] : expected_tokens) {
-        auto cpp_tokens = tokenizer.encode(prompt);
+        auto cpp_tokens = tokenizer().encode(prompt);
 
         EXPECT_GT(cpp_tokens.size(), 0) << "Empty C++ tokens for: " << prompt;
 

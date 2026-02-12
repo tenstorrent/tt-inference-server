@@ -9,6 +9,11 @@
 
 namespace tt::utils {
 
+TokenizerUtil& TokenizerUtil::instance(const std::string& path) {
+    static TokenizerUtil instance(path);
+    return instance;
+}
+
 TokenizerUtil::TokenizerUtil(const std::string& path) {
     if (path.empty()) {
         return;
@@ -35,27 +40,27 @@ TokenizerUtil::TokenizerUtil(const std::string& path) {
 
     if (!tok_) {
         std::cerr << "[TokenizerUtil] Failed to create tokenizer from: " << path << std::endl;
+    } else {
+        std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
     }
 }
 
-TokenizerUtil::~TokenizerUtil() = default;
-
-TokenizerUtil::TokenizerUtil(TokenizerUtil&&) noexcept = default;
-
-TokenizerUtil& TokenizerUtil::operator=(TokenizerUtil&&) noexcept = default;
+bool TokenizerUtil::is_loaded() const {
+    return tok_ != nullptr;
+}
 
 std::vector<int> TokenizerUtil::encode(const std::string& text) const {
-    if (tok_) {
-        return tok_->Encode(text);
+    if (!tok_) {
+        throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot encode");
     }
-    return {};
+    return tok_->Encode(text);
 }
 
 std::string TokenizerUtil::decode(const std::vector<int>& token_ids) const {
-    if (tok_) {
-        return tok_->Decode(token_ids);
+    if (!tok_) {
+        throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }
-    return "";
+    return tok_->Decode(token_ids);
 }
 
 }  // namespace tt::utils
