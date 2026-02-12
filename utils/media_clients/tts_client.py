@@ -273,7 +273,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
                 - audio_duration: Duration of generated audio in seconds
         """
-        logger.info("🔊 Calling TTS /audio/speech endpoint")
+        logger.info("🔊 Calling TTS /v1/audio/speech endpoint")
 
         # For eval workflow, all_params is an object with tasks attribute
         # For benchmark workflow, all_params is a list, so use default text
@@ -295,7 +295,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         }
         payload = {"text": text, "response_format": "json"}
 
-        url = f"{self.base_url}/audio/speech"
+        url = f"{self.base_url}/v1/audio/speech"
         start_time = time.monotonic()
         ttft_ms = None
         audio_duration = None
