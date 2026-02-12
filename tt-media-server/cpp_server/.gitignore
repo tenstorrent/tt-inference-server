@@ -15,3 +15,7 @@ CMakeFiles/
 logs/
 
 **/vllm-venv
+
+# tt-metal (deps/tt-metal): local build and install dirs (submodule source is tracked)
+deps/tt-metal/build/
+deps/tt-metal/install/

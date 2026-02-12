@@ -1,0 +1,3 @@
+[submodule "tt-media-server/cpp_server/deps/tt-metal"]
+	path = tt-media-server/cpp_server/deps/tt-metal
+	url = https://github.com/tenstorrent/tt-metal

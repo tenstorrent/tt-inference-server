@@ -9,6 +9,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
+# Required dependency: tt-metal (TT-NN). Submodule in deps/tt-metal, install into deps/tt-metal/install.
+# Override: set env TT_METAL_INSTALL_DIR or pass -DTT_METAL_INSTALL_DIR=/path.
+set(TT_METAL_INSTALL_DIR "" CACHE PATH "Install prefix of tt-metal; default: deps/tt-metal/install")
+if(NOT TT_METAL_INSTALL_DIR AND DEFINED ENV{TT_METAL_INSTALL_DIR})
+    set(TT_METAL_INSTALL_DIR "$ENV{TT_METAL_INSTALL_DIR}")
+endif()
+if(NOT TT_METAL_INSTALL_DIR)
+    set(TT_METAL_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/tt-metal/install")
+endif()
+if(NOT EXISTS "${TT_METAL_INSTALL_DIR}")
+    message(FATAL_ERROR "tt-metal install not found at ${TT_METAL_INSTALL_DIR}. "
+        "Build and install tt-metal (in deps/tt-metal: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build && cmake --install build --prefix install)")
+endif()
+list(PREPEND CMAKE_PREFIX_PATH "${TT_METAL_INSTALL_DIR}")
+find_package(TT-NN REQUIRED)
+message(STATUS "Using tt-metal (TT-NN) from ${TT_METAL_INSTALL_DIR}")
+
 # Find Drogon
 find_package(Drogon REQUIRED)
 

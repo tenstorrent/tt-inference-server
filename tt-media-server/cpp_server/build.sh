@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 ENABLE_TTNN="OFF"
+ENABLE_TTMETAL="OFF"
+TT_METAL_INSTALL_DIR=""
 
 # Parse arguments
 TEST="OFF"
@@ -22,6 +24,16 @@ while [[ $# -gt 0 ]]; do
         --ttnn)
             ENABLE_TTNN="ON"
             shift
+            ;;
+        --tt-metal)
+            ENABLE_TTMETAL="ON"
+            if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+                TT_METAL_INSTALL_DIR="$2"
+                shift 2
+            else
+                TT_METAL_INSTALL_DIR="${TT_METAL_INSTALL_DIR:-${SCRIPT_DIR}/deps/tt-metal/install}"
+                shift
+            fi
             ;;
         --test)
             TEST="ON"
@@ -43,6 +55,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --debug    Build in Debug mode (default: Release)"
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
+            echo "  --tt-metal [PATH]  Use tt-metal (default: deps/tt-metal/install); PATH or env TT_METAL_INSTALL_DIR overrides"
             echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --tsan     Build with ThreadSanitizer for data-race detection"
             echo "  --asan     Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
@@ -66,6 +79,7 @@ echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
+echo "  tt-metal (TT-NN): ${ENABLE_TTMETAL}${TT_METAL_INSTALL_DIR:+ (${TT_METAL_INSTALL_DIR})}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
@@ -134,6 +148,13 @@ cd "${BUILD_DIR}"
 # Configure
 echo ""
 echo "Configuring CMake..."
+CMAKE_EXTRA=""
+if [[ "${ENABLE_TTMETAL}" = "ON" ]]; then
+    CMAKE_EXTRA="-DENABLE_TTMETAL=ON"
+    if [[ -n "${TT_METAL_INSTALL_DIR}" ]]; then
+        CMAKE_EXTRA="${CMAKE_EXTRA} -DTT_METAL_INSTALL_DIR=${TT_METAL_INSTALL_DIR}"
+    fi
+fi
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
@@ -141,6 +162,7 @@ cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
       -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}" \
+      ${CMAKE_EXTRA} \
       ..
 
 # Build

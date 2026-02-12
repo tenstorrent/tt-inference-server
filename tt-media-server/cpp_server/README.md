@@ -360,6 +360,16 @@ Token generation timing:
 
 ## Building
 
+### Get sources (submodules)
+
+After cloning, initialize submodules (required for `deps/tt-metal`):
+
+```bash
+git submodule update --init --recursive
+```
+
+Or clone with submodules in one step: `git clone --recurse-submodules <repo-url>`.
+
 ### Prerequisites
 
 1. **CMake** >= 3.16
@@ -383,12 +393,34 @@ make -j$(nproc)
 sudo make install
 ```
 
+### tt-metal (TT-NN) dependency
+
+tt-metal is a required git submodule in **`deps/tt-metal`**, installed into **`deps/tt-metal/install`**.
+
+1. Ensure submodules are initialized (from repo root; see "Get sources" above).
+   ```bash
+   git submodule update --init --recursive
+   ```
+   This populates `deps/tt-metal`. If you already cloned with `--recurse-submodules`, you’re done.
+
+2. Build and install tt-metal into the default prefix:
+   ```bash
+   cd tt-media-server/cpp_server/deps/tt-metal
+   git submodule update --init --recursive   # tt-metal’s own submodules
+   cmake -B build -DCMAKE_BUILD_TYPE=Release
+   cmake --build build
+   cmake --install build --prefix install
+   cd ../../..
+   ```
+
+3. Build cpp_server (see below). It uses `deps/tt-metal/install` by default. Override with env `TT_METAL_INSTALL_DIR` or `-DTT_METAL_INSTALL_DIR=/path` if needed.
+
 ### Build the Server
 
 ```bash
 cd cpp_server
 chmod +x build.sh
-./build.sh           # Release build
+./build.sh           # Release build (requires deps/tt-metal installed; see above)
 ./build.sh --debug   # Debug build
 ./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
 ./build.sh --asan    # AddressSanitizer + LeakSanitizer (memory/leak detection)
