@@ -140,13 +140,15 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install ."
 
 # Install Drogon from GitHub
-RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libboost-dev \
+    && git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
     && cd /tmp/drogon \
     && mkdir build && cd build \
     && cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
     && make -j$(nproc) \
     && make install \
-    && cd / && rm -rf /tmp/drogon
+    && cd / && rm -rf /tmp/drogon \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Build C++ server
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
