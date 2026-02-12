@@ -116,7 +116,9 @@ class ImageGenerationEvalsTest(BaseTest):
         if isinstance(prompts, dict):
             return prompts
 
-        status_list = await self._generate_all_images_async(request, prompts)
+        status_list = await self._generate_all_images_async(
+            request, prompts, timeout_sec
+        )
         if len(status_list) < request.num_prompts:
             return self._error(
                 f"ImageGenerationEvalTest only {len(status_list)}/{request.num_prompts} images generated"
@@ -206,6 +208,7 @@ class ImageGenerationEvalsTest(BaseTest):
         self,
         request: ImageGenerationEvalsTestRequest,
         prompts: list[str],
+        timeout_sec: int,
     ) -> list[ImageGenerationTestStatus]:
         """Generate images for all prompts concurrently."""
         logger.info("Step 2: Generating %s images concurrently", len(prompts))
@@ -213,8 +216,6 @@ class ImageGenerationEvalsTest(BaseTest):
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed")
 
-        # Timeout is always set on request by _parse_request (from config when missing)
-        timeout_sec = request.request_timeout
         ctx = ImageGenContext(
             base_url=request.server_url or f"http://localhost:{self.service_port}",
             headers=self._build_headers(),
