@@ -6,8 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-
-#include "utils/tokenizer_impl.hpp"
+#include <tokenizers_cpp.h>
 
 namespace tt::utils {
 
@@ -37,8 +36,7 @@ public:
     std::string decode(const std::vector<int>& token_ids) const;
 
 private:
-    bool is_loaded() const;
-    std::unique_ptr<TokenizerUtilImpl> impl_;
+    std::unique_ptr<tokenizers::Tokenizer> tok_;
 };
 
 }  // namespace tt::utils
