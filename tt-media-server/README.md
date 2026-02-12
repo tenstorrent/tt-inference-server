@@ -218,11 +218,11 @@ curl -X 'POST' \
 
 The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
 
-- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions` or `/audio/translations`
+- Base64 JSON Request: Send a JSON POST request to `/v1/audio/transcriptions` or `/v1/audio/translations`
 Sample for calling the audio transcription/translations endpoint via curl:
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/audio/transcriptions' \
+  'http://127.0.0.1:8000/v1/audio/transcriptions' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -238,10 +238,10 @@ test_data.json file example:
 }
 ```
 
-- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions` or `/audio/translations`
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/v1/audio/transcriptions` or `/v1/audio/translations`
 ```bash
 # WAV file upload
-curl -X POST "http://localhost:8000/audio/transcriptions" \
+curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
   -H "Authorization: Bearer your-secret-key" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
@@ -265,7 +265,7 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model. The response is binary audio (WAV, MP3, OGG) or JSON with base64 audio and metadata.
 
-**Endpoint:** `POST /audio/speech`  
+**Endpoint:** `POST /v1/audio/speech`  
 **Content-Type:** `application/json`
 
 ## Request parameters
@@ -295,7 +295,7 @@ The server sends `Content-Disposition: attachment; filename=speech.<format>` (e.
 **Default (WAV):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system."}' \
@@ -307,7 +307,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **MP3:**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "mp3"}' \
@@ -319,7 +319,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **OGG (or use -J -O to save as speech.ogg from Content-Disposition):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "ogg"}' \
@@ -329,7 +329,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **JSON response (base64 audio + metadata):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "verbose_json"}' \
@@ -381,9 +381,9 @@ curl -X 'POST' \
 }'
 ```
 
-- File Upload: Send a multipart form data POST request to `/search-image`
+- File Upload: Send a multipart form data POST request to `/v1/cnn/search-image`
 ```bash
-curl -X POST "http://localhost:8000/search-image" \
+curl -X POST "http://localhost:8000/v1/cnn/search-image" \
   -H "Authorization: Bearer your-secret-key" \
   -F "file=@/path/to/image.jpg" \
   -F "response_format=json" \
@@ -469,7 +469,7 @@ curl -X 'POST' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -501,7 +501,7 @@ Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -510,7 +510,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -519,7 +519,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -528,7 +528,7 @@ curl -X 'POST' \
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/checkpoints' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
