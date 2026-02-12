@@ -365,6 +365,7 @@ Token generation timing:
 1. **CMake** >= 3.16
 2. **Drogon Framework** >= 1.8
 3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
+4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue). On Ubuntu/Debian: `sudo apt-get install libboost-dev`
 
 ### Install Drogon (Ubuntu/Debian)
 
@@ -413,6 +414,23 @@ chmod +x build.sh
    valgrind --leak-check=full ./build/scheduler_test
    ```
    Build a normal (non-ASan) binary; Valgrind instruments at runtime.
+
+### Tokenizer (mlc-ai/tokenizers-cpp)
+
+The server includes tokenizer support for encode/decode:
+
+1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
+2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
+3. Build the server:
+   ```bash
+   ./build.sh
+   ```
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable.
+   To fetch DeepSeek V3 tokenizer from Hugging Face into `tokenizers/`:
+   ```bash
+   mkdir -p cpp_server/tokenizers
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
+   ```
 
 ## Performance
 

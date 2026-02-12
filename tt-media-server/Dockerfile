@@ -141,16 +141,21 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install ."
 
 # Install Drogon from GitHub
-RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libboost-dev \
+    && git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
     && cd /tmp/drogon \
     && mkdir build && cd build \
     && cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
     && make -j$(nproc) \
     && make install \
-    && cd / && rm -rf /tmp/drogon
+    && cd / && rm -rf /tmp/drogon \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Build C++ server
+# Build C++ server (requires Rust for tokenizers-cpp)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${TT_METAL_HOME}/server/cpp_server \
     && ./build.sh --ttnn"
 
