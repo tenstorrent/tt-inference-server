@@ -135,8 +135,7 @@ set(SOURCES
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
-    src/scheduler/multiprocess_scheduler.cpp
-    src/services/base_service.cpp
+    src/services/llm_service.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES
@@ -161,7 +160,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon and llm_engine (used by multiprocess_scheduler)
+# Link Drogon and llm_engine (used by LLMService)
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)

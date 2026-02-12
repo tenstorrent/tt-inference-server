@@ -59,8 +59,6 @@ void LLMEngine::step() {
 void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
-    
-    std::string status;
     assert(seq);
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 

@@ -43,11 +43,13 @@ void LLMController::tokenize_prompt_if_needed(domain::CompletionRequest& request
 }
 
 std::string LLMController::generate_completion_id() {
+    static std::mutex gen_mutex;
     static std::random_device rd;
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<> dis(0, 15);
     static const char* hex_chars = "0123456789abcdef";
 
+    std::lock_guard<std::mutex> lock(gen_mutex);
     std::ostringstream ss;
     ss << "cmpl-";
     for (int i = 0; i < 24; ++i) {

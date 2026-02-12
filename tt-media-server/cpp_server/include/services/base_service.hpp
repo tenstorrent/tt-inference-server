@@ -3,55 +3,69 @@
 
 #pragma once
 
-#include <memory>
 #include <functional>
+#include <future>
+#include <string>
+#include <vector>
 
-#include "scheduler/multiprocess_scheduler.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 
 namespace tt::services {
 
 /**
- * Base service class providing common functionality for all services.
- * Similar to Python's BaseService.
+ * Abstract base service class defining the interface for all completion services.
+ * Concrete implementations (e.g. LLMService) provide scheduling, worker management,
+ * and request dispatching.
  */
 class BaseService {
 public:
-    BaseService();
     virtual ~BaseService() = default;
 
     /**
      * Start the service and its workers.
      */
-    virtual void start();
+    virtual void start() = 0;
 
     /**
      * Stop the service and cleanup resources.
      */
-    virtual void stop();
+    virtual void stop() = 0;
 
     /**
      * Check if the model is ready.
      */
-    bool is_model_ready() const;
+    virtual bool is_model_ready() const = 0;
 
     /**
-     * Get system status for monitoring.
+     * Worker info for monitoring.
+     */
+    struct WorkerInfo {
+        std::string worker_id;
+        bool is_ready;
+        size_t processed_requests;
+    };
+
+    /**
+     * System status for monitoring.
      */
     struct SystemStatus {
         bool model_ready;
         size_t queue_size;
         size_t max_queue_size;
         std::string device;
-        std::vector<scheduler::MultiprocessScheduler::WorkerInfo> worker_info;
+        std::vector<WorkerInfo> worker_info;
     };
-    SystemStatus get_system_status() const;
+
+    /**
+     * Get system status for monitoring.
+     */
+    virtual SystemStatus get_system_status() const = 0;
 
     /**
      * Process a non-streaming request.
      */
-    std::future<domain::CompletionResponse> process_request(domain::CompletionRequest request);
+    virtual std::future<domain::CompletionResponse> process_request(domain::CompletionRequest request) = 0;
 
     /**
      * Process a streaming request.
@@ -59,11 +73,11 @@ public:
      * @param chunk_callback Called for each streaming chunk
      * @param done_callback Called when streaming is complete
      */
-    void process_streaming_request(
+    virtual void process_streaming_request(
         domain::CompletionRequest request,
         std::function<void(const domain::StreamingChunkResponse&)> chunk_callback,
         std::function<void()> done_callback
-    );
+    ) = 0;
 
 protected:
     /**
@@ -81,10 +95,6 @@ protected:
     virtual domain::CompletionResponse post_process(domain::CompletionResponse response) {
         return response;
     }
-
-    std::shared_ptr<scheduler::MultiprocessScheduler> scheduler_;
-    size_t max_queue_size_ = 10000;
-    std::string device_ = "cpu";
 };
 
 } // namespace tt::services
