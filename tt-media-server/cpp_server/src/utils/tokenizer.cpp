@@ -13,7 +13,6 @@
 
 namespace tt::utils {
 
-// Destructor and move ops; impl_ complete type is in tokenizer_impl.hpp when ENABLE_TOKENIZER.
 TokenizerUtil::~TokenizerUtil() = default;
 
 TokenizerUtil::TokenizerUtil(TokenizerUtil&&) noexcept = default;

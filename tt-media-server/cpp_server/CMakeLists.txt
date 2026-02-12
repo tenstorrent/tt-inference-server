@@ -114,10 +114,23 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Tokenizer test (requires ENABLE_TOKENIZER)
+if(ENABLE_TOKENIZER)
+    add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp)
+    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
+    target_include_directories(test_tokenizer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_definitions(test_tokenizer PRIVATE ENABLE_TOKENIZER)
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
 gtest_discover_tests(sequence_test)
+if(ENABLE_TOKENIZER)
+    gtest_discover_tests(test_tokenizer)
+endif()
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -127,6 +140,16 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+
+# Tokenizer benchmark (requires ENABLE_TOKENIZER)
+if(ENABLE_TOKENIZER)
+    add_executable(tokenizer_benchmark tests/tokenizer_benchmark.cpp src/utils/tokenizer.cpp)
+    target_include_directories(tokenizer_benchmark PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_definitions(tokenizer_benchmark PRIVATE ENABLE_TOKENIZER)
+    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp)
+endif()
 
 # Source files
 set(SOURCES
