@@ -13,7 +13,6 @@ import torch
 import ttnn
 from config.constants import SupportedModels
 from config.settings import settings
-from device_workers.worker_utils import setup_cpu_threading_limits
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import (
     TextToSpeechResponse,
@@ -53,7 +52,7 @@ class SpeechT5Constants:
 
 
 class TTSpeechT5Runner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
+    def __init__(self, device_id: str):
         super().__init__(device_id)
         self.processor = None
         self.model = None  # HuggingFace model reference
@@ -63,9 +62,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.ttnn_postnet = None
         self.generator = None  # For trace execution
         self.speaker_manager = None
-
-        # Limit threading for stability during inference
-        setup_cpu_threading_limits("1")
 
         # Explicitly disable fabric for non-galaxy devices
         if not settings.is_galaxy:
@@ -264,7 +260,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             await self._run_async(
                 [
                     TextToSpeechRequest.model_construct(
-                        text="Hello world", response_format="audio"
+                        text="Hello world", response_format="wav"
                     )
                 ]
             )

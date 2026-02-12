@@ -52,13 +52,20 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
             "accuracy_check": 1,
         }
 
+        mock_fvd_fvmd_result = {"fvd": 0.5, "fvmd": 0.6}
+
         with patch.object(strategy, "get_health", return_value=(True, "tt-mochi")):
             with patch.object(
                 strategy,
                 "_run_video_generation_eval",
                 return_value=mock_eval_result,
             ):
-                strategy.run_eval()
+                with patch.object(
+                    strategy,
+                    "_run_video_fvd_and_fvmd_eval",
+                    return_value=mock_fvd_fvmd_result,
+                ):
+                    strategy.run_eval()
 
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -97,6 +104,8 @@ class TestVideoClientStrategyRunEval(unittest.TestCase):
             "max_clip": 0.9,
             "clip_standard_deviation": 0.05,
             "accuracy_check": 1,
+            "fvd": 0.5,
+            "fvmd": 0.6,
         }
         for key, value in expected.items():
             assert eval_result[key] == value, f"Mismatch for {key}"

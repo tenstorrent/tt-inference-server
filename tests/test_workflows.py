@@ -15,7 +15,6 @@ import pytest
 from run import main
 from workflows.model_spec import (
     MODEL_SPECS,
-    ModelSource,
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
@@ -24,7 +23,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
 )
 from workflows.workflow_config import WORKFLOW_CONFIGS
-from workflows.workflow_types import WorkflowType
+from workflows.workflow_types import ModelSource, WorkflowType
 
 
 class TestWorkflowUtils:

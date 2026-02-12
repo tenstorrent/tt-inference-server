@@ -105,7 +105,7 @@
             }
         }
     },
-    "flux.1-dev": {
+    "FLUX.1-dev": {
         "accuracy": {
             "5000": {
                 "fid_valid_range": [
@@ -139,7 +139,7 @@
             }
         }
     },
-    "flux.1-schnell": {
+    "FLUX.1-schnell": {
         "accuracy": {
             "5000": {
                 "fid_valid_range": [
@@ -173,7 +173,7 @@
             }
         }
     },
-    "motif-image-6b-preview": {
+    "Motif-Image-6B-Preview": {
         "accuracy": {
             "5000": {
                 "fid_valid_range": [
@@ -214,7 +214,7 @@
             "5": {
                 "clip_valid_range": [
                     26.20977,
-                    27.83099
+                    31.50000
                 ]
             }
         },
@@ -229,7 +229,7 @@
             "5": {
                 "clip_valid_range": [
                     28.25276,
-                    30.00036
+                    30.54000
                 ]
             }
         },

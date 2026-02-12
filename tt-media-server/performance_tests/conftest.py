@@ -12,10 +12,10 @@ import requests
 
 DEVICE_IDS = "(0)"
 IS_GALAXY = "False"
-SERVER_BASE_URL = "http://127.0.0.1:8000"
+SERVER_BASE_URL = os.environ.get("SERVER_BASE_URL", "http://127.0.0.1:8000")
 SERVER_READY_TIMEOUT_SEC = 30
 SERVER_READY_POLL_INTERVAL_SEC = 0.5
-TEST_RUNNER_FREQUENCY_MS = 20
+TEST_RUNNER_FREQUENCY_MS = int(os.environ.get("TEST_RUNNER_FREQUENCY_MS", "20"))
 
 
 def pytest_configure(config):
@@ -30,15 +30,20 @@ def wait_for_server_ready(
     base_url: str = SERVER_BASE_URL,
     timeout: int = SERVER_READY_TIMEOUT_SEC,
     poll_interval: float = SERVER_READY_POLL_INTERVAL_SEC,
+    liveness_path: str = "/tt-liveness",
+    expected_status: str = "alive",
 ) -> bool:
-    """Poll the tt-liveness endpoint until the server is ready or timeout is reached."""
+    """Poll the liveness endpoint until the server is ready or timeout is reached."""
     start_time = time.time()
-    liveness_url = f"{base_url}/tt-liveness"
+    liveness_url = f"{base_url.rstrip('/')}{liveness_path}"
 
     while time.time() - start_time < timeout:
         try:
             response = requests.get(liveness_url, timeout=2)
-            if response.status_code == 200 and response.json().get("status") == "alive":
+            if (
+                response.status_code == 200
+                and response.json().get("status") == expected_status
+            ):
                 return True
         except requests.exceptions.RequestException:
             pass
@@ -54,7 +59,29 @@ def server_process():
     This fixture starts the server in a subprocess with LLMTestRunner configuration,
     waits for it to be ready, and shuts it down after all tests complete.
     Server stdout/stderr is logged to performance_tests/server.log.
+
+    When EXTERNAL_LLM_SERVER=1 is set (e.g. CI testing against C++ server),
+    no process is started; the fixture only waits for the existing server at
+    SERVER_BASE_URL to be ready.
     """
+    base_url = os.environ.get("SERVER_BASE_URL", SERVER_BASE_URL)
+    if os.environ.get("EXTERNAL_LLM_SERVER") == "1":
+        print(f"\nUsing external server at {base_url} (EXTERNAL_LLM_SERVER=1)")
+        print(
+            f"Waiting for server to be ready (timeout: {SERVER_READY_TIMEOUT_SEC}s)..."
+        )
+        if not wait_for_server_ready(
+            base_url=base_url,
+            liveness_path="/health",
+            expected_status="healthy",
+        ):
+            raise RuntimeError(
+                f"External server at {base_url} did not become ready within "
+                f"{SERVER_READY_TIMEOUT_SEC} seconds"
+            )
+        print("Server is ready!")
+        yield None
+        return
 
     # Build environment for server process
     env = os.environ.copy()

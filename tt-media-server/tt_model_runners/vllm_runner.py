@@ -6,7 +6,7 @@ import os
 import traceback
 
 from domain.completion_request import CompletionRequest
-from domain.completion_response import CompletionStreamChunk
+from domain.completion_response import CompletionOutput, CompletionResult
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
@@ -14,10 +14,13 @@ from utils.sampling_params_builder import build_sampling_params
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
+CHUNK_TYPE = "streaming_chunk"
+FINAL_TYPE = "final_result"
+
 
 class VLLMRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     @log_execution_time(
         "VLLM model load",
@@ -87,17 +90,14 @@ class VLLMRunner(BaseDeviceRunner):
             raise RuntimeError(f"Inference failed: {str(e)}") from e
 
     async def _generate_streaming(self, request: CompletionRequest):
-        """✅ Yields tuples of (task_id, is_final, text) to avoid pickling"""
-        task_id = request._task_id
+        """Yields CompletionOutput dicts for streaming generation."""
 
         chunks = []
-        chunks_append = chunks.append
-
         strip_eos = TextUtils.strip_eos
         sampling_params = build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
-            self._build_vllm_input(request), sampling_params, task_id
+            self._build_vllm_input(request), sampling_params, request._task_id
         ):
             outputs = request_output.outputs
             if not outputs:
@@ -113,16 +113,23 @@ class VLLMRunner(BaseDeviceRunner):
                     if not chunk_text:
                         continue
 
-                chunks_append(chunk_text)
+                chunks.append(chunk_text)
 
-                yield (task_id, 0, chunk_text)
-
-        # do this on purpose to avoid over max decode issues
-        yield (task_id, 1, "final_text")
+                yield CompletionOutput(
+                    type=CHUNK_TYPE,
+                    data=CompletionResult(text=chunk_text),
+                )
 
         self.logger.info(f"Device {self.device_id}: Streaming generation completed")
 
-    async def process_request_non_streaming(self, request: CompletionRequest):
+        yield CompletionOutput(
+            type=FINAL_TYPE,
+            data=CompletionResult(text="final_text"),
+        )
+
+    async def process_request_non_streaming(
+        self, request: CompletionRequest
+    ) -> CompletionOutput:
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
         sampling_params = build_sampling_params(request)
@@ -138,7 +145,10 @@ class VLLMRunner(BaseDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
 
-        return CompletionStreamChunk(text=generated_text)
+        return CompletionOutput(
+            type=FINAL_TYPE,
+            data=CompletionResult(text=generated_text),
+        )
 
     async def _generate_non_streaming(self, requests: list[CompletionRequest]):
         tasks = [self.process_request_non_streaming(request) for request in requests]

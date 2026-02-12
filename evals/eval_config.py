@@ -1846,6 +1846,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=31.89,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1858,6 +1860,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=51.66,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1870,6 +1874,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=18.58,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1882,6 +1888,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=18.75,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1894,6 +1902,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=22.65,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1906,6 +1916,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
+                    gpu_reference_score=7.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1925#issuecomment-3813050051",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -1999,6 +2011,90 @@ _eval_config_list = [
                     },
                 ),
             ),
+            EvalTask(
+                task_name="longbench_code_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=48.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=63.34,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=20.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=22.22,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=14.86,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
@@ -2054,6 +2150,57 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="black-forest-labs/FLUX.1-dev",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="black-forest-labs/FLUX.1-schnell",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Motif-Technologies/Motif-Image-6B-Preview",
         tasks=[
             EvalTask(
                 task_name="load_image",
@@ -2427,66 +2574,44 @@ _eval_config_list = [
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[
             EvalTask(
-                task_name="gpqa_diamond_generative_n_shot",
-                num_fewshot=0,
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                },
+                task_name="aime25",
+                workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
                 score=EvalTaskScore(
-                    published_score=71.5,  # GPQA Diamond score
+                    published_score=91.7,  # AIME 2025 score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,flexible-extract",
-                        ],
-                        "unit": "percent",
-                    },
+                    score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                },
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={"reasoning_effort": "high"},
             ),
             EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
+                task_name="gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
                 score=EvalTaskScore(
-                    published_score=85.3,  # MMLU Pro score
+                    published_score=71.5,  # GPQA Diamond score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
+                    score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
                 },
-            ),
-            EvalTask(
-                task_name="r1_aime24",
-                score=EvalTaskScore(
-                    published_score=92.1,  # AIME 2024 score (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={"reasoning_effort": "high"},
             ),
         ],
     ),
@@ -2494,78 +2619,44 @@ _eval_config_list = [
         hf_model_repo="openai/gpt-oss-120b",
         tasks=[
             EvalTask(
-                task_name="gpqa_diamond_generative_n_shot",
-                num_fewshot=0,
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                },
+                task_name="aime25",
+                workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
                 score=EvalTaskScore(
-                    published_score=80.1,  # GPQA Diamond score
+                    published_score=92.5,  # AIME 2025 score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=90.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1322#issuecomment-3801635211",
                     score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,flexible-extract",
-                        ],
-                        "unit": "percent",
-                    },
+                    score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
-                model_kwargs={
-                    # "max_length": 131072,  # Support long context as recommended for RULER
-                    "max_length": 65536,  # Support long context as recommended for RULER
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
                 },
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={"reasoning_effort": "high"},
             ),
             EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
+                task_name="gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_GPT_OSS,
                 score=EvalTaskScore(
-                    published_score=90.0,  # MMLU Pro score
+                    published_score=80.1,  # GPQA Diamond score (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=79.7,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1322#issuecomment-3801635211",
                     score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
+                    score_func_kwargs={"result_keys": ["score"], "unit": "percent"},
                 ),
-                model_kwargs={
-                    # "max_length": 131072,  # Support long context as recommended for RULER
-                    "max_length": 65536,  # Support long context as recommended for RULER
-                },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
                 },
-            ),
-            EvalTask(
-                task_name="r1_aime24",
-                score=EvalTaskScore(
-                    published_score=95.8,  # AIME 2024 score (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    # "max_length": 131072,  # Support long context as recommended for RULER
-                    "max_length": 65536,  # Support long context as recommended for RULER
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
+                use_chat_api=True,
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={"reasoning_effort": "high"},
             ),
         ],
     ),

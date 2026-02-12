@@ -62,6 +62,7 @@ def mock_args():
         model_spec_json=None,
         tt_metal_python_venv_dir=None,
         no_auth=False,
+        concurrency_sweeps=False,
     )
 
 
@@ -252,6 +253,7 @@ class TestArgumentParsing:
             "--vllm-override-args",
             '{"max_model_len": 4096}',
             "--no-auth",
+            "--concurrency-sweeps",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -269,6 +271,7 @@ class TestArgumentParsing:
         assert args.override_tt_config == '{"data_parallel": 16}'
         assert args.vllm_override_args == '{"max_model_len": 4096}'
         assert args.no_auth is True
+        assert args.concurrency_sweeps is True
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -285,6 +288,7 @@ class TestArgumentParsing:
         assert args.override_tt_config is None
         assert args.vllm_override_args is None
         assert args.no_auth is False
+        assert args.concurrency_sweeps is False
 
 
 class TestArgsInference:

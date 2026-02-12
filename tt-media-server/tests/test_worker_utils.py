@@ -41,12 +41,12 @@ sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 sys.modules["tt_model_runners.base_device_runner"] = Mock()
 sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
-# Now import the module under test
-from device_workers.worker_utils import (
+# Now import the modules under test
+from device_workers.worker_utils import initialize_device_worker
+from utils.runner_utils import (
     _setup_galaxy_mesh_config,
-    initialize_device_worker,
     setup_cpu_threading_limits,
-    setup_worker_environment,
+    setup_runner_environment,
 )
 
 
@@ -59,27 +59,23 @@ class TestSetupCPUThreadingLimits:
         num_threads = 2
 
         with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "device_workers.worker_utils.set_torch_thread_limits"
-            ) as mock_set:
+            with patch("utils.runner_utils.set_torch_thread_limits") as mock_set:
                 setup_cpu_threading_limits(cpu_threads, num_threads)
 
                 assert os.environ["OMP_NUM_THREADS"] == "4"
                 assert os.environ["MKL_NUM_THREADS"] == "4"
-                assert os.environ["TORCH_NUM_THREADS"] == "4"
+                assert os.environ["TORCH_NUM_THREADS"] == "2"
                 mock_set.assert_called_once_with(num_threads=2)
 
     def test_sets_throttle_level_when_configured(self):
         """Test that throttle level is set when configured in settings"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.set_torch_thread_limits"):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
                 # Create a mock settings with throttle level
                 mock_settings_with_throttle = Mock()
                 mock_settings_with_throttle.default_throttle_level = "3"
 
-                with patch(
-                    "device_workers.worker_utils.settings", mock_settings_with_throttle
-                ):
+                with patch("utils.runner_utils.settings", mock_settings_with_throttle):
                     setup_cpu_threading_limits("2", 1)
 
                     assert os.environ["TT_MM_THROTTLE_PERF"] == "3"
@@ -87,14 +83,12 @@ class TestSetupCPUThreadingLimits:
     def test_skips_throttle_level_when_not_configured(self):
         """Test that throttle level is not set when not configured"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.set_torch_thread_limits"):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
                 # Create a mock settings without throttle level
                 mock_settings_no_throttle = Mock()
                 mock_settings_no_throttle.default_throttle_level = None
 
-                with patch(
-                    "device_workers.worker_utils.settings", mock_settings_no_throttle
-                ):
+                with patch("utils.runner_utils.settings", mock_settings_no_throttle):
                     setup_cpu_threading_limits("2", 1)
 
                     assert "TT_MM_THROTTLE_PERF" not in os.environ
@@ -102,35 +96,32 @@ class TestSetupCPUThreadingLimits:
     def test_default_num_threads(self):
         """Test default num_threads parameter"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "device_workers.worker_utils.set_torch_thread_limits"
-            ) as mock_set:
+            with patch("utils.runner_utils.set_torch_thread_limits") as mock_set:
                 setup_cpu_threading_limits("2")
 
                 mock_set.assert_called_with(num_threads=1)
 
 
-class TestSetupWorkerEnvironment:
-    """Test cases for setup_worker_environment function"""
+class TestSetupRunnerEnvironment:
+    """Test cases for setup_runner_environment function"""
 
     def test_sets_device_visibility(self):
         """Test that device visibility environment variables are set"""
         worker_id = "0"
 
         with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+            with patch("utils.runner_utils.get_telemetry_client"):
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_VISIBLE_DEVICES"] == "0"
-                assert os.environ["TT_METAL_VISIBLE_DEVICES"] == "0"
 
     def test_sets_metal_cache_path(self):
         """Test that TT_METAL_CACHE is set correctly"""
         worker_id = "0"
 
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+            with patch("utils.runner_utils.get_telemetry_client"):
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0"
 
@@ -139,17 +130,17 @@ class TestSetupWorkerEnvironment:
         worker_id = "0,1"
 
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("device_workers.worker_utils.get_telemetry_client"):
-                setup_worker_environment(worker_id)
+            with patch("utils.runner_utils.get_telemetry_client"):
+                setup_runner_environment(worker_id)
 
                 assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0_1"
 
     def test_initializes_telemetry_when_enabled(self):
         """Test that telemetry is initialized when enabled"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.set_torch_thread_limits"):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch(
-                    "device_workers.worker_utils.get_telemetry_client"
+                    "utils.runner_utils.get_telemetry_client"
                 ) as mock_get_telemetry:
                     # Create settings with telemetry enabled
                     mock_settings_telemetry = Mock()
@@ -157,34 +148,18 @@ class TestSetupWorkerEnvironment:
                     mock_settings_telemetry.is_galaxy = False
                     mock_settings_telemetry.default_throttle_level = None
 
-                    with patch(
-                        "device_workers.worker_utils.settings", mock_settings_telemetry
-                    ):
-                        setup_worker_environment("0")
+                    with patch("utils.runner_utils.settings", mock_settings_telemetry):
+                        setup_runner_environment("0")
 
                         mock_get_telemetry.assert_called_once()
-
-    def test_skips_telemetry_when_disabled(self):
-        """Test that telemetry is not initialized when disabled"""
-        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
-        mock_settings.enable_telemetry = False
-        mock_get_telemetry = Mock()
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "device_workers.worker_utils.get_telemetry_client", mock_get_telemetry
-            ):
-                setup_worker_environment("0")
-
-                mock_get_telemetry.assert_not_called()
 
     def test_calls_galaxy_setup_when_enabled(self):
         """Test that galaxy mesh config is set up when is_galaxy is True"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("device_workers.worker_utils.set_torch_thread_limits"):
-                with patch("device_workers.worker_utils.get_telemetry_client"):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
                     with patch(
-                        "device_workers.worker_utils._setup_galaxy_mesh_config"
+                        "utils.runner_utils._setup_galaxy_mesh_config"
                     ) as mock_galaxy:
                         # Create settings with galaxy enabled
                         mock_settings_galaxy = Mock()
@@ -192,35 +167,17 @@ class TestSetupWorkerEnvironment:
                         mock_settings_galaxy.is_galaxy = True
                         mock_settings_galaxy.default_throttle_level = None
 
-                        with patch(
-                            "device_workers.worker_utils.settings", mock_settings_galaxy
-                        ):
-                            setup_worker_environment("0")
+                        with patch("utils.runner_utils.settings", mock_settings_galaxy):
+                            setup_runner_environment("0")
 
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
-
-    def test_skips_galaxy_setup_when_disabled(self):
-        pytest.skip("Disabled - causes test isolation issues with module-level mocking")
-        """Test that galaxy mesh config is not set up when is_galaxy is False"""
-        mock_settings.is_galaxy = False
-
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("device_workers.worker_utils.get_telemetry_client"):
-                with patch(
-                    "device_workers.worker_utils._setup_galaxy_mesh_config"
-                ) as mock_galaxy:
-                    setup_worker_environment("0")
-
-                    mock_galaxy.assert_not_called()
 
     def test_custom_cpu_threads(self):
         """Test custom cpu_threads parameter"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch(
-                "device_workers.worker_utils.set_torch_thread_limits"
-            ) as mock_set:
-                with patch("device_workers.worker_utils.get_telemetry_client"):
-                    setup_worker_environment("0", cpu_threads="8", num_threads=4)
+            with patch("utils.runner_utils.set_torch_thread_limits") as mock_set:
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    setup_runner_environment("0", cpu_threads="8", num_torch_threads=4)
 
                     assert os.environ["OMP_NUM_THREADS"] == "8"
                     mock_set.assert_called_with(num_threads=4)
@@ -256,7 +213,7 @@ class TestSetupGalaxyMeshConfig:
             mock_settings_n300 = Mock()
             mock_settings_n300.device_mesh_shape = (2, 1)
 
-            with patch("device_workers.worker_utils.settings", mock_settings_n300):
+            with patch("utils.runner_utils.settings", mock_settings_n300):
                 _setup_galaxy_mesh_config("/opt/tt-metal")
 
                 expected_path = (
@@ -272,7 +229,7 @@ class TestSetupGalaxyMeshConfig:
             mock_settings_t3k = Mock()
             mock_settings_t3k.device_mesh_shape = (2, 4)
 
-            with patch("device_workers.worker_utils.settings", mock_settings_t3k):
+            with patch("utils.runner_utils.settings", mock_settings_t3k):
                 _setup_galaxy_mesh_config("/opt/tt-metal")
 
                 expected_path = (
@@ -288,7 +245,7 @@ class TestSetupGalaxyMeshConfig:
             mock_settings_unknown = Mock()
             mock_settings_unknown.device_mesh_shape = (3, 3)  # Unknown shape
 
-            with patch("device_workers.worker_utils.settings", mock_settings_unknown):
+            with patch("utils.runner_utils.settings", mock_settings_unknown):
                 _setup_galaxy_mesh_config("/opt/tt-metal")
 
                 assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
@@ -337,9 +294,9 @@ class TestInitializeDeviceWorker:
         ):
             with patch("asyncio.new_event_loop", return_value=mock_loop):
                 with patch("asyncio.set_event_loop"):
-                    initialize_device_worker("0", mock_logger, num_torch_threads=4)
+                    initialize_device_worker("0", mock_logger)
 
-                    mock_get_device_runner.assert_called_once_with("0", 4)
+                    mock_get_device_runner.assert_called_once_with("0")
 
     def test_calls_set_device_and_warmup(self):
         """Test that set_device and warmup are called"""

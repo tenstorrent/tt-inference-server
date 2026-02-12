@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
+      cpp-server: ${{ steps.filter.outputs.cpp_server }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -23,6 +24,8 @@ jobs:
               - '**/requirements*.txt'
               - 'pyproject.toml'
               - '.github/workflows/*.yml'
+            cpp_server:
+              - 'tt-media-server/cpp_server/**'
 
   lint:
     needs: detect-changes
@@ -38,7 +41,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.0
 
       - name: Run ruff linter
         run: ruff check .
@@ -491,6 +494,171 @@ jobs:
       - name: Check test result
         run: exit ${{ env.TEST_EXIT_CODE }}
 
+  cpp-server-ttnn-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server TTNN Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install libboost-dev
+          sudo apt-get install -y -qq cmake g++ pkg-config \
+            libjsoncpp-dev uuid-dev zlib1g-dev
+
+      - name: Clone Drogon for build
+        run: |
+          mkdir -p cpp_server/deps
+          git clone --depth 1 --branch v1.9.8 https://github.com/drogonframework/drogon.git cpp_server/deps/drogon
+          cd cpp_server/deps/drogon
+          git submodule update --init
+          cd ../../..
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh --ttnn
+
+  cpp-server-llm-streaming:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server LLM Streaming Performance Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install libboost-dev
+          sudo apt-get install -y -qq cmake g++ pkg-config \
+            libjsoncpp-dev uuid-dev zlib1g-dev
+
+      - name: Clone Drogon for build
+        run: |
+          mkdir -p cpp_server/deps
+          git clone --depth 1 --branch v1.9.8 https://github.com/drogonframework/drogon.git cpp_server/deps/drogon
+          cd cpp_server/deps/drogon
+          git submodule update --init
+          cd ../../..
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh --test
+          cd ..
+
+      - name: Run C++ unit tests
+        run: |
+          cd cpp_server/build
+          ctest --output-on-failure
+          cd ../..
+
+      - name: Start C++ server (test runner mode)
+        run: |
+          cd cpp_server/build
+          export TT_RUNNER_TYPE=llm_test
+          export TEST_RUNNER_FREQUENCY_MS=1
+          ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+
+      - name: Install Python test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-asyncio aiohttp requests
+
+      - name: Run LLM Streaming test against C++ server
+        env:
+          EXTERNAL_LLM_SERVER: "1"
+          SERVER_BASE_URL: "http://127.0.0.1:8000"
+          TEST_RUNNER_FREQUENCY_MS: "1"
+        run: |
+          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          # Extract CI report and write job summary (same as llm-streaming-performance)
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          if [ $TEST_EXIT_CODE -eq 0 ]; then STATUS="✅ PASSED"; else STATUS="❌ FAILED"; fi
+          {
+            echo "## 🚀 C++ Server LLM Streaming Test"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | $STATUS |"
+            echo "| **Tokens Received** | $TOKENS |"
+            echo "| **Total Time** | ${TOTAL_TIME}ms |"
+            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
+            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
+            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Stop C++ server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== C++ Server Logs ==="
+          if [ -f cpp_server.log ]; then
+            cat cpp_server.log
+          else
+            echo "No cpp_server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-llm-streaming-logs
+          path: tt-media-server/cpp_server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
 
   forge-runner-changes:
     name: Detect Forge Runner Changes

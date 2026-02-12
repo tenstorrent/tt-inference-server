@@ -184,7 +184,7 @@ def main():
             args.output_path,
             cli_args.get("service_port"),
         )
-        return_code = run_command(command=cmd, logger=logger, env=env_vars, check=False)
+        return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)
 
     if all(return_code == 0 for return_code in return_codes):
