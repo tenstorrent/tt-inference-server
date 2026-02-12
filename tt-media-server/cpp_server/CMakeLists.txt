@@ -49,14 +49,18 @@ option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 if(NOT TT_METAL_BUILD OR NOT TT_METAL_HOME)
     message(FATAL_ERROR "TT_METAL_HOME and TT_METAL_BUILD are required. Use build.sh or pass -DTT_METAL_HOME=... -DTT_METAL_BUILD=...")
 endif()
-set(TT_METAL_INCLUDE_DIRS ${TT_METAL_BUILD}/include ${TT_METAL_HOME} ${TT_METAL_HOME}/tt_metal)
+set(TT_METAL_INCLUDE_DIRS ${TT_METAL_BUILD}/include ${TT_METAL_HOME} ${TT_METAL_HOME}/tt_metal ${TT_METAL_HOME}/tt_metal/api)
 set(tt-metalium_DIR "${TT_METAL_BUILD}/lib/cmake/tt-metalium")
 if(EXISTS "${tt-metalium_DIR}/tt-metalium-config.cmake")
     list(PREPEND CMAKE_PREFIX_PATH "${TT_METAL_BUILD}")
     find_package(tt-metalium CONFIG QUIET)
 endif()
 
-# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+# SpoofedBlitzDecode requires tt-metalium experimental sockets (d2h/h2d). Only include when available.
+find_file(TT_METAL_D2H_SOCKET_HPP tt-metalium/experimental/sockets/d2h_socket.hpp
+    PATHS ${TT_METAL_BUILD}/include ${TT_METAL_HOME} ${TT_METAL_HOME}/tt_metal ${TT_METAL_HOME}/tt_metal/api
+    NO_DEFAULT_PATH
+)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
     src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
@@ -66,12 +70,27 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/scheduler.cpp
     src/runners/llm_engine/engine/sequence.cpp
 )
+if(TT_METAL_D2H_SOCKET_HPP)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/spoofed_blitz_decode.cpp)
+    message(STATUS "SpoofedBlitzDecode: tt-metalium experimental sockets found, enabling")
+else()
+    message(STATUS "SpoofedBlitzDecode: tt-metalium experimental/sockets/d2h_socket.hpp not found, skipping")
+endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
 )
 target_link_libraries(llm_engine PUBLIC Boost::boost)
+if(TT_METAL_D2H_SOCKET_HPP)
+    if(TARGET TT::Metalium)
+        target_link_libraries(llm_engine PUBLIC TT::Metalium)
+    else()
+        target_link_directories(llm_engine PUBLIC ${TT_METAL_BUILD} ${TT_METAL_BUILD}/lib)
+        target_link_libraries(llm_engine PUBLIC metalium_runtime)
+    endif()
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
@@ -162,7 +181,10 @@ if(ENABLE_TTNN)
     list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
-list(APPEND SOURCES src/runners/llm_engine/engine/device_context_ttmetal.cpp)
+# When tt-metal sockets exist, spoofed_blitz_decode provides create/destroy. Otherwise use stub.
+if(NOT TT_METAL_D2H_SOCKET_HPP)
+    list(APPEND SOURCES src/runners/llm_engine/engine/device_context_ttmetal.cpp)
+endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
