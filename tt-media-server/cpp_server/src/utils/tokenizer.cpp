@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "config/settings.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -59,6 +60,51 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }
     return tok_->Decode(token_ids);
+}
+
+namespace {
+
+const char* DEFAULT_BOS = "\n";
+const char* USER_TAG = "<<|User|>>";
+const char* ASSISTANT_TAG = "<<|Assistant|>>";
+const char* DEFAULT_EOS = "<<|end▁of▁sentence|>>";
+
+}  // namespace
+
+std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
+    bool add_generation_prompt) {
+    TokenizerConfig cfg;
+    std::string config_path = tt::config::tokenizer_config_path();
+    if (config_path.empty()) {
+        throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
+    }
+    load_tokenizer_config(config_path, cfg);
+    std::string bos = cfg.bos_token.empty() ? DEFAULT_BOS : cfg.bos_token;
+    std::string eos = cfg.eos_token.empty() ? std::string(DEFAULT_EOS) : cfg.eos_token;
+
+    std::ostringstream out;
+    std::string system_prompt;
+    bool first_system = true;
+    for (const auto& m : messages) {
+        if (m.role != "system") continue;
+        if (!first_system) system_prompt += "\n\n";
+        system_prompt += m.content;
+        first_system = false;
+    }
+    out << bos << system_prompt;
+    for (const auto& m : messages) {
+        std::string role = m.role.empty() ? "user" : m.role;
+        if (role == "system") continue;
+        if (role == "user") {
+            out << USER_TAG << m.content;
+        } else if (role == "assistant") {
+            out << ASSISTANT_TAG << m.content << eos;
+        }
+    }
+    if (add_generation_prompt) {
+        out << ASSISTANT_TAG;
+    }
+    return out.str();
 }
 
 }  // namespace tt::utils

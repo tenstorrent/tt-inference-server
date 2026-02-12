@@ -10,7 +10,7 @@
 
 #include "domain/chat_message.hpp"
 #include "domain/completion_request.hpp"
-#include "chat_templates/deepseek/chat_template.hpp"
+#include "utils/tokenizer.hpp"
 #include <json/json.h>
 
 namespace tt::domain {
@@ -154,7 +154,7 @@ struct ChatCompletionRequest {
         CompletionRequest out;
         out.task_id = task_id;
         out.model = model;
-        out.prompt = tt::chat_templates::deepseek::messages_to_prompt(messages);
+        out.prompt = tt::utils::Tokenizer::apply_chat_template(messages);
 
         out.echo = echo;
         out.max_tokens = max_tokens;

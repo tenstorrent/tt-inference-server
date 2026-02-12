@@ -3,6 +3,7 @@
 
 #include "utils/tokenizer.hpp"
 #include "config/settings.hpp"
+#include "domain/chat_message.hpp"
 
 #include <gtest/gtest.h>
 #include <map>
@@ -11,6 +12,7 @@
 #include <sstream>
 
 using namespace tt::utils;
+using namespace tt::domain;
 
 class TokenizerTest : public ::testing::Test {
 protected:
@@ -152,4 +154,40 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     std::cout << "  Total prompts:  " << expected_tokens.size() << "\n";
     std::cout << "  Matches:        " << total_matches << "\n";
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
+}
+
+TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
+    // Same message list as used in HuggingFace docs for apply_chat_template.
+    std::vector<ChatMessage> messages = {
+        {"user", "Hello"},
+        {"assistant", "Hi!"},
+        {"user", "How are you?"},
+    };
+
+    // Build expected output from the same config our implementation uses.
+    // Format matches HuggingFace DeepSeek-V3: bos_token + system + <<|User|>>content +
+    // <<|Assistant|>>content+eos_token + ... + <<|Assistant|>> (if add_generation_prompt).
+    std::string config_path = tt::config::tokenizer_config_path();
+    ASSERT_FALSE(config_path.empty()) << "tokenizer_config.json required for this test";
+
+    TokenizerConfig cfg;
+    ASSERT_TRUE(load_tokenizer_config(config_path, cfg)) << "Failed to load tokenizer config";
+
+    const std::string bos = cfg.bos_token.empty() ? "\n" : cfg.bos_token;
+    const std::string eos = cfg.eos_token.empty() ? "<<|end▁of▁sentence|>>" : cfg.eos_token;
+
+    std::string expected;
+    expected += bos;
+    expected += "<<|User|>>Hello";
+    expected += "<<|Assistant|>>Hi!";
+    expected += eos;
+    expected += "<<|User|>>How are you?";
+    expected += "<<|Assistant|>>";
+
+    std::string actual = Tokenizer::apply_chat_template(messages, true);
+
+    EXPECT_EQ(actual, expected)
+        << "apply_chat_template output should match HuggingFace DeepSeek-V3 format.\n"
+        << "  Expected length: " << expected.size() << "\n"
+        << "  Actual length:   " << actual.size();
 }
