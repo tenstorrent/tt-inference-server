@@ -30,6 +30,40 @@ This server is built to serve non-LLM models. Currently supported models:
 
 More details about each folder will be provided below
 
+# API Versioning
+
+All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy paths without the `/v1` prefix are still supported during a deprecation period but will be removed after **2026-06-30**.
+
+## Versioned vs legacy paths
+
+| Primary (use this)             | Legacy (deprecated)        |
+|--------------------------------|----------------------------|
+| `/v1/image/generations`        | `/image/generations`       |
+| `/v1/audio/transcriptions`     | `/audio/transcriptions`    |
+| `/v1/audio/speech`             | `/audio/speech`            |
+| `/v1/video/generations`        | `/video/generations`       |
+| `/v1/cnn/search-image`         | `/cnn/search-image`        |
+| `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
+| `/v1/completions`              | `/completions`             |
+| `/v1/embeddings`               | `/embeddings`              |
+| `/v1/tokenize`                 | `/tokenize`                |
+
+## Deprecation headers
+
+Requests to legacy paths return three extra HTTP headers per RFC 8594 and RFC 8288:
+
+```
+Deprecation: true
+Sunset: 2026-06-30
+Link: </v1/image/generations>; rel="successor-version"
+```
+
+- **`Deprecation: true`** -- signals the endpoint is deprecated.
+- **`Sunset: 2026-06-30`** -- the date after which the legacy path will be removed.
+- **`Link`** -- points to the replacement `/v1/...` endpoint.
+
+Maintenance endpoints (`/tt-liveness`, `/tt-deep-reset`, `/tt-reset-device`) are internal and do not use the `/v1` prefix.
+
 # Installation instructions
 
 To just run a server build a docker file and run it.
