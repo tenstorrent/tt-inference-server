@@ -391,7 +391,7 @@ class JobManager:
                         )
 
             self._logger.info(
-                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
+                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
             )
 
     def _cleanup_job(self, job: Job):

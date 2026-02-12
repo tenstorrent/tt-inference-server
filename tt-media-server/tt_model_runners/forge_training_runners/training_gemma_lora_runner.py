@@ -89,8 +89,12 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             task_type=request.lora_task_type,
         )
 
+        # If we call run multiple times, we need to unload the model from the previous lora adapter
         if hasattr(self, '_peft_model') and isinstance(self._peft_model, PeftModel):
+            self.logger.info(f"Device {self.device_id}: Unloading previous lora adapter")
             self.hf_model = self._peft_model.unload()
+            if hasattr(self.hf_model, 'peft_config'):
+                delattr(self.hf_model, 'peft_config')
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
@@ -206,7 +210,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
         finally:
-            self.logger.debug(f"Device {self.device_id}: Training completed")
+            del self.optimizer
+            del self.model
+            del self.loss_fn
+            del self.train_dataset
+            del self.eval_dataset
+            del self.train_dataloader
+            del self.eval_dataloader
+            self.logger.info(f"Device {self.device_id}: Training completed - memory cleaned up")
         
         return model_path
 
