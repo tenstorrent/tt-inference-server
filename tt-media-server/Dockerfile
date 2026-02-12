@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y \
     libjsoncpp-dev \
     uuid-dev \
     zlib1g-dev \
+    libboost-all-dev \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
