@@ -8,6 +8,7 @@
 #include "runners/llm_engine/engine/llm_engine.hpp"
 #include "runners/llm_engine/engine/scheduler.hpp"
 #include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
+#include "runners/llm_engine/engine/device_context_ttmetal.hpp"
 
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -22,7 +23,21 @@
 #include <sys/wait.h>
 
 namespace tt::scheduler {
-    
+
+namespace {
+struct WorkerTtMetalState {
+    static void sigterm_handler(int) {
+        if (s_ctx) {
+            llm_engine::destroy_ttmetal_decode_context(s_ctx);
+            s_ctx = nullptr;
+        }
+        _exit(0);
+    }
+    static void* s_ctx;
+};
+void* WorkerTtMetalState::s_ctx = nullptr;
+}  // namespace
+
 constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
 
 namespace {
@@ -77,6 +92,9 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         }
         // Set TT_VISIBLE_DEVICES from parsed DEVICE_IDS (content inside Nth bracket pair)
         env_config.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(i);
+        if (const char* home = std::getenv("TT_METAL_HOME"); home != nullptr) {
+            env_config.env_vars["TT_METAL_RUNTIME_ROOT"] = home;
+        }
 
         // Fork worker process
         pid_t pid = fork();
@@ -189,8 +207,21 @@ void MultiprocessScheduler::stop() {
     llm_engine::Config config;
     config.num_kvcache_blocks = 128;
 
+    void* ttmetal_ctx = llm_engine::create_ttmetal_decode_context_and_config(&config);
+    if (ttmetal_ctx) {
+        std::cout << "[Worker " << worker_id << "] Opened tt-metal mesh device (1,1)\n" << std::flush;
+    } else {
+        std::cout << "[Worker " << worker_id << "] No tt-metal mesh device opened (no devices or open failed)\n" << std::flush;
+    }
+    WorkerTtMetalState::s_ctx = ttmetal_ctx;
+    struct sigaction sa = {};
+    sa.sa_handler = WorkerTtMetalState::sigterm_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, nullptr);
+
     auto scheduler = std::make_unique<llm_engine::Scheduler>(config, task_buffer);
-    
+
     auto engine = std::make_unique<llm_engine::LLMEngine>(config, [&token_buffer](llm_engine::SequenceID seq_id, uint64_t token_id, bool finished){
         auto token = ipc::SharedToken{
             .token_index = 0,
@@ -203,6 +234,11 @@ void MultiprocessScheduler::stop() {
     },
     std::move(scheduler));
     engine->run();
+
+    if (ttmetal_ctx) {
+        llm_engine::destroy_ttmetal_decode_context(ttmetal_ctx);
+        std::cout << "[Worker " << worker_id << "] Closed tt-metal mesh device\n" << std::flush;
+    }
     _exit(0);
 }
 

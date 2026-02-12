@@ -9,6 +9,19 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 ENABLE_TTNN="OFF"
 
+# TT-Metal is the main dependency: always use TT_METAL_HOME/build_Release
+TT_METAL_HOME="${TT_METAL_HOME:-${SCRIPT_DIR}/deps/tt-metal}"
+TT_METAL_BUILD="${TT_METAL_HOME}/build_Release"
+if [ ! -d "${TT_METAL_BUILD}" ]; then
+    echo "Error: tt-metal build required at ${TT_METAL_BUILD}"
+    echo "       Set TT_METAL_HOME or build: cmake -B build_Release -S . -DCMAKE_BUILD_TYPE=Release && cmake --build build_Release"
+    exit 1
+fi
+# Use same compiler as tt-metal (usually Clang) to avoid ABI/header issues
+if [ -z "${CXX}" ] && command -v clang++-17 >/dev/null 2>&1; then
+    export CXX=clang++-17 CC=clang-17
+fi
+
 # Parse arguments
 TEST="OFF"
 SANITIZE_THREAD="OFF"
@@ -65,6 +78,7 @@ fi
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
+echo "  TT-Metal: ${TT_METAL_BUILD}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
@@ -136,6 +150,8 @@ echo "Configuring CMake..."
 cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" \
       -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+      -DTT_METAL_HOME="${TT_METAL_HOME}" \
+      -DTT_METAL_BUILD="${TT_METAL_BUILD}" \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
       -DLLM_ENGINE_DEBUG_BUILD=OFF \
       -DTEST="${TEST}" \
@@ -162,6 +178,8 @@ echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"
 echo "  -t, --threads N     Number of IO threads"
+echo ""
+echo "For tt-metal mesh device: set TT_METAL_HOME when running (e.g. export TT_METAL_HOME=/path/to/tt-metal)."
 echo ""
 if [ "${ENABLE_TTNN}" = "ON" ]; then
     echo "TTNN runner enabled. Set TT_RUNNER_TYPE=ttnn_test to use it."

@@ -45,6 +45,17 @@ find_package(Boost REQUIRED)
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
 
+# TT-Metal is the main dependency (required; build at TT_METAL_HOME/build_Release)
+if(NOT TT_METAL_BUILD OR NOT TT_METAL_HOME)
+    message(FATAL_ERROR "TT_METAL_HOME and TT_METAL_BUILD are required. Use build.sh or pass -DTT_METAL_HOME=... -DTT_METAL_BUILD=...")
+endif()
+set(TT_METAL_INCLUDE_DIRS ${TT_METAL_BUILD}/include ${TT_METAL_HOME} ${TT_METAL_HOME}/tt_metal)
+set(tt-metalium_DIR "${TT_METAL_BUILD}/lib/cmake/tt-metalium")
+if(EXISTS "${tt-metalium_DIR}/tt-metalium-config.cmake")
+    list(PREPEND CMAKE_PREFIX_PATH "${TT_METAL_BUILD}")
+    find_package(tt-metalium CONFIG QUIET)
+endif()
+
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
@@ -151,6 +162,8 @@ if(ENABLE_TTNN)
     list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
+list(APPEND SOURCES src/runners/llm_engine/engine/device_context_ttmetal.cpp)
+
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
@@ -173,6 +186,15 @@ endif()
 # TTNN support (optional)
 if(ENABLE_TTNN)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
+endif()
+
+# TT-Metal (main dependency): mesh device 1x1 per worker
+target_include_directories(${PROJECT_NAME} PRIVATE ${TT_METAL_INCLUDE_DIRS})
+if(TARGET TT::Metalium)
+    target_link_libraries(${PROJECT_NAME} PRIVATE TT::Metalium)
+else()
+    target_link_directories(${PROJECT_NAME} PRIVATE ${TT_METAL_BUILD} ${TT_METAL_BUILD}/lib)
+    target_link_libraries(${PROJECT_NAME} PRIVATE metalium_runtime)
 endif()
 
 # Compiler warnings
