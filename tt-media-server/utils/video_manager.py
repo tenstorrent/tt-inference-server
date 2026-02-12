@@ -3,9 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import subprocess
 import uuid
-from utils.helpers import log_execution_time
+
+from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+
 
 class VideoManager:
     def __init__(self):
@@ -19,17 +22,20 @@ class VideoManager:
         """
         self._logger.info(f"Starting video export with fps={fps}")
 
-        if hasattr(frames, 'frames'):
+        if hasattr(frames, "frames"):
             frames = frames.frames
             self._logger.info(f"Extracted frames shape: {frames.shape}")
 
         self._logger.info(f"Input frames type: {type(frames)}")
-        self._logger.info(f"Input frames shape: {getattr(frames, 'shape', 'No shape attribute')}")
+        self._logger.info(
+            f"Input frames shape: {getattr(frames, 'shape', 'No shape attribute')}"
+        )
 
         # Auto-generate path in videos directory
         video_id = str(uuid.uuid4())
-        os.makedirs("videos", exist_ok=True)
-        output_path = f"videos/{video_id}.mp4"
+        video_dir = "/tmp/videos"
+        os.makedirs(video_dir, exist_ok=True)
+        output_path = f"{video_dir}/{video_id}.mp4"
         self._logger.info(f"Generated output path: {output_path}")
 
         try:
@@ -39,21 +45,9 @@ class VideoManager:
             # Process frames for diffusers
             processed_frames = self._process_frames_for_export(frames)
             export_to_video(processed_frames, output_video_path=output_path, fps=fps)
-            self._logger.info("Successfully exported video using diffusers")
 
-            # Read the video file as bytes for HTTP response
-            with open(output_path, 'rb') as f:
-                video_bytes = f.read()
-
-            self._logger.info(f"Video file size: {len(video_bytes)} bytes")
-
-            try:
-                os.remove(output_path)
-                self._logger.info(f"Cleaned up temporary file: {output_path}")
-            except Exception as cleanup_error:
-                self._logger.warning(f"Failed to clean up temporary file: {cleanup_error}")
-
-            return video_bytes
+            self._logger.info(f"Video export completed successfully: {output_path}")
+            return output_path
 
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
@@ -79,7 +73,9 @@ class VideoManager:
             # Shape: (num_frames, height, width, channels) - this is what we want
             self._logger.info(f"Frames in correct 4D format: {frames.shape}")
             num_frames, height, width, channels = frames.shape
-            self._logger.info(f"Video details: {num_frames} frames, {height}x{width}, {channels} channels")
+            self._logger.info(
+                f"Video details: {num_frames} frames, {height}x{width}, {channels} channels"
+            )
         else:
             self._logger.error(f"Unexpected frame shape: {frames.shape}")
             raise ValueError(f"Unexpected frame dimensions: {frames.shape}")
@@ -87,7 +83,9 @@ class VideoManager:
         # Validate channels
         if frames.shape[-1] not in [1, 3, 4]:
             self._logger.error(f"Unsupported channel count: {frames.shape[-1]}")
-            raise ValueError(f"Frames have {frames.shape[-1]} channels, expected 1, 3, or 4")
+            raise ValueError(
+                f"Frames have {frames.shape[-1]} channels, expected 1, 3, or 4"
+            )
 
         # Convert to list of individual frames
         frame_list = []
@@ -110,7 +108,31 @@ class VideoManager:
         self._logger.info(f"Processed {len(frame_list)} frames")
         if frame_list:
             sample_frame = frame_list[0]
-            self._logger.info(f"Sample frame shape: {sample_frame.shape}, dtype: {sample_frame.dtype}")
-            self._logger.info(f"Sample frame value range: [{sample_frame.min():.4f}, {sample_frame.max():.4f}]")
+            self._logger.info(
+                f"Sample frame shape: {sample_frame.shape}, dtype: {sample_frame.dtype}"
+            )
+            self._logger.info(
+                f"Sample frame value range: [{sample_frame.min():.4f}, {sample_frame.max():.4f}]"
+            )
 
         return frame_list
+
+    @staticmethod
+    def ensure_faststart(input_path, output_path):
+        """
+        Rewrites the MP4 file with -movflags faststart using ffmpeg.
+        """
+        cmd = [
+            "ffmpeg",
+            "-y",  # Overwrite output file if it exists
+            "-i",
+            input_path,
+            "-c",
+            "copy",
+            "-movflags",
+            "faststart",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {result.stderr}")

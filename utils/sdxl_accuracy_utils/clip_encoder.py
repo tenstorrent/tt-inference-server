@@ -64,7 +64,9 @@ class CLIPEncoder(nn.Module):
         return "openai"
 
     @torch.no_grad()
-    def get_clip_score(self, text: Union[str, List[str]], image: Union[Image.Image, torch.Tensor]) -> torch.Tensor:
+    def get_clip_score(
+        self, text: Union[str, List[str]], image: Union[Image.Image, torch.Tensor]
+    ) -> torch.Tensor:
         """
         Computes the similarity score between the given text(s) and image using the CLIP model.
 

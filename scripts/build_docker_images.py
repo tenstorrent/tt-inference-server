@@ -2,19 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import logging
-import sys
-import subprocess
-import tempfile
-import shutil
-from pathlib import Path
 import argparse
-import os
-import multiprocessing
-from datetime import datetime
 import json
-import urllib.request
+import logging
+import multiprocessing
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -22,9 +22,9 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import get_repo_root_path
-from workflows.log_setup import setup_workflow_script_logger
 
 logger = logging.getLogger(__file__)
 
@@ -46,21 +46,31 @@ def _build_combination_id(tt_metal_commit, vllm_commit):
     return f"{tm}-{vc}"
 
 
-def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
+def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir, stdout_only=False):
     """
-    Set up individual logger for each combination with file logging only.
-    Console output is handled by the main process to avoid overlapping.
+    Set up individual logger for each combination.
+    Default: logs to file only.
+    With stdout_only=True: logs to stdout only (no file).
+
+    Args:
+        tt_metal_commit: tt-metal commit hash
+        vllm_commit: vllm commit hash
+        log_dir: Directory for log files
+        stdout_only: If True, only log to stdout (no file logging)
     """
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
     logger_name = f"process_{combination_id}"
 
-    # Create log directory if it doesn't exist
+    # Create log directory if it doesn't exist (only if we're logging to file)
     log_dir = Path(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    if not stdout_only:
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     # Create log file path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"build_{timestamp}_{combination_id}.log"
+    log_file = (
+        log_dir / f"build_{timestamp}_{combination_id}.log" if not stdout_only else None
+    )
 
     # Create logger
     process_logger = logging.getLogger(logger_name)
@@ -70,18 +80,23 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
     if process_logger.handlers:
         process_logger.handlers.clear()
 
-    # File handler for this combination (NO console handler to avoid overlap)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-
     # Formatter
     formatter = logging.Formatter(
         f"[{combination_id}] %(asctime)s - %(levelname)s: %(message)s"
     )
-    file_handler.setFormatter(formatter)
 
-    # Add only file handler - no console handler to prevent overlapping output
-    process_logger.addHandler(file_handler)
+    # File handler (default behavior - only if not stdout_only)
+    if not stdout_only:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        process_logger.addHandler(file_handler)
+    else:
+        # Console handler for stdout-only mode (with combination_id prefix for clarity)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        process_logger.addHandler(console_handler)
 
     return process_logger, log_file
 
@@ -155,12 +170,13 @@ def process_sha_combination(args_tuple):
         push,
         container_app_uid,
         dry_run,
+        stdout_only,
     ) = args_tuple
 
     # Set up individual logging for this combination
     logs_dir = get_build_logs_dir()
     process_logger, log_file = setup_individual_logger(
-        tt_metal_commit, vllm_commit, logs_dir
+        tt_metal_commit, vllm_commit, logs_dir, stdout_only=stdout_only
     )
 
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
@@ -170,10 +186,13 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"tt_metal_commit: {tt_metal_commit}")
         process_logger.info(f"vllm_commit: {vllm_commit}")
         process_logger.info(f"ubuntu_version: {ubuntu_version}")
-        process_logger.info(f"Log file: {log_file}")
+        if log_file:
+            process_logger.info(f"Log file: {log_file}")
+        else:
+            process_logger.info("Logging to stdout only (no file logging)")
 
         # Resolve tt_metal_commit to full SHA early in the process
-        process_logger.info(f"Resolving tt_metal_commit to full SHA...")
+        process_logger.info("Resolving tt_metal_commit to full SHA...")
         resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
         process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
 
@@ -188,14 +207,14 @@ def process_sha_combination(args_tuple):
 
         # Track image status for all image types
         image_status = {}
-        
+
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
         for image_type in ["tt_metal_base", "cloud", "dev", "release"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
-            
+
             image_status[image_type] = {
                 "tag": image_tag,
                 "local_exists": local_exists,
@@ -211,60 +230,93 @@ def process_sha_combination(args_tuple):
         build_release_image_flag = True
 
         if not force_build:
-            if image_status["cloud"]["local_exists"] or image_status["cloud"]["remote_exists"]:
+            if (
+                image_status["cloud"]["local_exists"]
+                or image_status["cloud"]["remote_exists"]
+            ):
                 build_cloud_image_flag = False
                 process_logger.info("Cloud image already exists, skipping build")
 
-            if image_status["dev"]["local_exists"] or image_status["dev"]["remote_exists"]:
+            if (
+                image_status["dev"]["local_exists"]
+                or image_status["dev"]["remote_exists"]
+            ):
                 build_dev_image_flag = False
                 process_logger.info("Dev image already exists, skipping build")
                 # Dev image is built FROM cloud image, so cloud must exist too
                 if build_cloud_image_flag:
                     build_cloud_image_flag = False
-                    process_logger.info("Dev image exists, cloud image must exist too, skipping cloud build")
+                    process_logger.info(
+                        "Dev image exists, cloud image must exist too, skipping cloud build"
+                    )
 
-            if image_status["release"]["local_exists"] or image_status["release"]["remote_exists"]:
+            if (
+                image_status["release"]["local_exists"]
+                or image_status["release"]["remote_exists"]
+            ):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
                 # Release image is built FROM cloud image, so cloud must exist too
                 if build_cloud_image_flag:
                     build_cloud_image_flag = False
-                    process_logger.info("Release image exists, cloud image must exist too, skipping cloud build")
-                
-            if image_status["tt_metal_base"]["local_exists"] or image_status["tt_metal_base"]["remote_exists"]:
+                    process_logger.info(
+                        "Release image exists, cloud image must exist too, skipping cloud build"
+                    )
+
+            if (
+                image_status["tt_metal_base"]["local_exists"]
+                or image_status["tt_metal_base"]["remote_exists"]
+            ):
                 build_tt_metal_base_flag = False
 
-            if release and build_release_image_flag and not image_status["cloud"]["local_exists"]:
-                # NOTE: copying a dev image into a release image is not guaranteed 
+            if (
+                release
+                and build_release_image_flag
+                and not image_status["cloud"]["local_exists"]
+            ):
+                # NOTE: copying a dev image into a release image is not guaranteed
                 # to have correct code in it, so it is required to build the cloud image
                 # as part of release process.
-                process_logger.info("Cloud image does not exist locally, building cloud image to safely build release image")
+                process_logger.info(
+                    "Cloud image does not exist locally, building cloud image to safely build release image"
+                )
                 build_cloud_image_flag = True
                 # might as well build the dev image too, just a different tag
                 build_dev_image_flag = True
 
         # Build tt-metal base image only if needed
-        if (build_cloud_image_flag or build_dev_image_flag) and build_tt_metal_base_flag:
+        if (
+            build_cloud_image_flag or build_dev_image_flag
+        ) and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
                 process_logger.info("[DRY-RUN] Would build tt-metal base image...")
             else:
                 process_logger.info("Building tt-metal base image...")
                 try:
-                    build_tt_metal_base_image(image_tags["tt_metal_base"], resolved_tt_metal_commit, ubuntu_version, process_logger)
+                    build_tt_metal_base_image(
+                        image_tags["tt_metal_base"],
+                        resolved_tt_metal_commit,
+                        ubuntu_version,
+                        process_logger,
+                    )
                     image_status["tt_metal_base"]["build_succeeded"] = True
                 except Exception as e:
                     process_logger.error(f"Failed to build tt-metal base image: {e}")
                     image_status["tt_metal_base"]["build_succeeded"] = False
                     raise
         else:
-            process_logger.info("All final images exist, skipping tt-metal base image build")
+            process_logger.info(
+                "All final images exist, skipping tt-metal base image build"
+            )
 
         # Build cloud image
         if build_cloud_image_flag:
             image_status["cloud"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}"
+                )
             else:
                 process_logger.info("Building cloud image...")
                 try:
@@ -287,7 +339,9 @@ def process_sha_combination(args_tuple):
         if build_dev_image_flag:
             image_status["dev"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build dev image: {image_tags['dev']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build dev image: {image_tags['dev']}"
+                )
             else:
                 process_logger.info("Building dev image...")
                 try:
@@ -304,7 +358,9 @@ def process_sha_combination(args_tuple):
         if release and build_release_image_flag:
             image_status["release"]["build_attempted"] = True
             if dry_run:
-                process_logger.info(f"[DRY-RUN] Would build release image: {image_tags['release']}")
+                process_logger.info(
+                    f"[DRY-RUN] Would build release image: {image_tags['release']}"
+                )
             else:
                 process_logger.info("Building release image...")
                 try:
@@ -350,7 +406,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "images": image_status,
         }
 
@@ -369,15 +425,17 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "error": str(e),
-            "images": image_status if 'image_status' in locals() else {},
+            "images": image_status if "image_status" in locals() else {},
         }
 
 
 def run_command_with_logging(command, logger, check=True, cwd=None):
     """
-    Run a command and write output directly to the process log file.
+    Run a command and write output to log file (default) or stdout (if stdout-only mode).
+    Default behavior: writes to log file only.
+    stdout-only mode: writes to stdout in real-time.
     """
     if isinstance(command, str):
         command = command.split()
@@ -406,6 +464,11 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
         # Capture output while streaming it
         stdout_lines = []
 
+        # Check if there's a console handler (stdout-only mode)
+        has_console_handler = any(
+            isinstance(handler, logging.StreamHandler) for handler in logger.handlers
+        )
+
         # Read output line by line as it's produced
         for line in iter(process.stdout.readline, ""):
             line = line.rstrip()
@@ -415,6 +478,9 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
                 if log_file_handler:
                     log_file_handler.stream.write(line + "\n")
                     log_file_handler.stream.flush()
+                # Print to stdout only if console handler is present (stdout-only mode)
+                if has_console_handler:
+                    print(line, flush=True)
 
         # Wait for process to complete
         process.wait()
@@ -450,7 +516,7 @@ def check_image_exists_remote(image_tag):
     try:
         cmd = ["docker", "manifest", "inspect", image_tag]
         logger.info(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
             logger.info(f"✅ The image exists on GHCR: {image_tag}")
             return True
@@ -472,7 +538,6 @@ def check_image_exists_local(image_tag):
             ["docker", "inspect", "--type=image", image_tag],
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0:
             logger.info(f"✅ The image exists locally: {image_tag}")
@@ -489,12 +554,23 @@ def validate_inputs(ubuntu_version, container_app_uid):
     """
     Validate input parameters.
     """
-    repo_root = get_repo_root_path()
-    expected_suffix = "tt-inference-server"
 
-    if not str(repo_root).endswith(expected_suffix):
+    # Make sure we are in the git root
+    try:
+        git_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        current_dir = os.getcwd()
+        if current_dir != git_root:
+            raise ValueError(
+                f"Script must be run in tt-inference-server repo root. "
+                f"Current directory: {current_dir}, git root: {git_root}"
+            )
+    except subprocess.CalledProcessError:
         raise ValueError(
-            f"Script must be run in tt-inference-server repo root, found: {repo_root}"
+            "Script must be run in a git repository. Could not determine git root directory."
         )
 
     if ubuntu_version not in ["22.04", "20.04"]:
@@ -559,7 +635,6 @@ def resolve_commit_to_full_sha(tt_metal_commit):
             shell=True,
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Parse the output: "SHA\trefs/..."
@@ -584,21 +659,25 @@ def resolve_commit_to_full_sha(tt_metal_commit):
                     return sha
     except Exception as e:
         logger.debug(f"ls-remote failed for {tt_metal_commit}: {e}")
-    
+
     # Fallback: Try GitHub API for short SHA resolution
     try:
         logger.info(f"Trying GitHub commits API fallback for {tt_metal_commit}...")
         api_url = f"https://api.github.com/repos/tenstorrent/tt-metal/commits/{tt_metal_commit}"
-        
+
         with urllib.request.urlopen(api_url, timeout=10) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                full_sha = data['sha']
-                logger.info(f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}")
+                full_sha = data["sha"]
+                logger.info(
+                    f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}"
+                )
                 return full_sha
             else:
-                logger.debug(f"GitHub API returned status {response.status} for {tt_metal_commit}")
-                
+                logger.debug(
+                    f"GitHub API returned status {response.status} for {tt_metal_commit}"
+                )
+
     except urllib.error.HTTPError as e:
         if e.code == 404:
             logger.debug(f"GitHub API: commit {tt_metal_commit} not found (404)")
@@ -610,23 +689,26 @@ def resolve_commit_to_full_sha(tt_metal_commit):
         logger.debug(f"GitHub API JSON decode error for {tt_metal_commit}: {e}")
     except Exception as e:
         logger.debug(f"GitHub API fallback failed for {tt_metal_commit}: {e}")
-    
+
     # If we can't resolve it, return the original reference
     logger.info(f"Could not resolve {tt_metal_commit} to full SHA, using as-is")
     return tt_metal_commit
 
 
-def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger):
+def build_tt_metal_base_image(
+    tt_metal_base_tag, tt_metal_commit, ubuntu_version, logger=logger
+):
     """
     Build the tt-metal base image if it doesn't exist.
-    
+
     Args:
         tt_metal_base_tag: Docker image tag to build tt-metal base image with
         tt_metal_commit: Already resolved full SHA commit hash
         ubuntu_version: Ubuntu version to use
         logger: Logger instance
     """
-    os_version = f"ubuntu-{ubuntu_version}-amd64"
+    # note: note used
+    # os_version = f"ubuntu-{ubuntu_version}-amd64"
 
     if check_image_exists_local(tt_metal_base_tag):
         logger.info(f"TT-Metal base image already exists: {tt_metal_base_tag}")
@@ -671,7 +753,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
             logger.info("Fetched as tag.")
         except subprocess.CalledProcessError:
             try:
-                logger.info("Trying to fetch as commit SHA from shallow repo history ...")
+                logger.info(
+                    "Trying to fetch as commit SHA from shallow repo history ..."
+                )
                 run_command_with_logging(
                     ["git", "fetch", "--depth", "1", "origin", resolved_commit],
                     logger=logger,
@@ -680,7 +764,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                 )
                 logger.info("Fetched as commit SHA.")
             except subprocess.CalledProcessError:
-                logger.info("Trying to fetch in unshallow repo history, this make take a minute ...")
+                logger.info(
+                    "Trying to fetch in unshallow repo history, this make take a minute ..."
+                )
                 try:
                     run_command_with_logging(
                         ["git", "fetch", "--unshallow"],
@@ -690,7 +776,9 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
                     )
                     logger.info("Fetched full history successfully.")
                 except subprocess.CalledProcessError:
-                    logger.info("Trying full repo history fetch, this make take a minute ...")
+                    logger.info(
+                        "Trying full repo history fetch, this make take a minute ..."
+                    )
                     run_command_with_logging(
                         ["git", "fetch", "origin"],
                         logger=logger,
@@ -711,6 +799,8 @@ def build_tt_metal_base_image(tt_metal_base_tag, tt_metal_commit, ubuntu_version
         build_command = [
             "docker",
             "build",
+            "--platform",
+            "linux/amd64",
             "-t",
             tt_metal_base_tag,
             "--build-arg",
@@ -756,7 +846,7 @@ def build_cloud_image(
 ):
     """
     Build the cloud Docker image.
-    
+
     Args:
         image_tags: Dictionary of image tags
         tt_metal_commit: Already resolved full SHA commit hash
@@ -855,6 +945,44 @@ def push_image(image_tag, logger):
     logger.info(f"Successfully pushed image: {image_tag}")
 
 
+def list_image_combinations(model_configs, build_metal_commit=None):
+    """
+    Get unique Docker image commit combinations that would be built.
+
+    Args:
+        model_configs: Dictionary of model configurations
+        build_metal_commit: Only return combinations with this exact tt-metal commit
+
+    Returns:
+        Set of tuples (tt_metal_commit, vllm_commit) representing unique combinations
+    """
+    unique_sha_combinations = {
+        (config.tt_metal_commit, config.vllm_commit)
+        for config in model_configs.values()
+        if config.vllm_commit is not None
+    }
+
+    skipped_count = sum(
+        1 for config in model_configs.values() if config.vllm_commit is None
+    )
+
+    if skipped_count > 0:
+        logger.info(f"Skipped {skipped_count} model config(s) with vllm_commit=None")
+
+    if build_metal_commit:
+        unique_sha_combinations = {
+            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
+        }
+
+    if not unique_sha_combinations:
+        logger.warning(
+            f"No configurations found with tt_metal_commit={build_metal_commit}"
+        )
+        return set()
+
+    return unique_sha_combinations
+
+
 def build_docker_images(
     model_configs,
     force_build=False,
@@ -865,6 +993,7 @@ def build_docker_images(
     max_workers=None,
     single_threaded=False,
     dry_run=False,
+    stdout_only=False,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -879,37 +1008,24 @@ def build_docker_images(
         max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
         single_threaded: Run builds sequentially instead of in parallel (for debugging)
         dry_run: Print summary of what would be built without building
+        stdout_only: If True, only log to stdout (no file logging)
     """
     # Validate inputs
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
 
-    # Filter combinations if build_metal_commit is specified
-    unique_sha_combinations = {
-        (config.tt_metal_commit, config.vllm_commit)
-        for config in model_configs.values()
-        if config.vllm_commit is not None
-    }
-    
-    skipped_count = sum(
-        1 for config in model_configs.values() if config.vllm_commit is None
+    # Get unique combinations using the shared function
+    unique_sha_combinations = list_image_combinations(
+        model_configs,
+        build_metal_commit=build_metal_commit,
     )
-    
-    if skipped_count > 0:
-        logger.info(
-            f"Skipped {skipped_count} model config(s) with vllm_commit=None"
-        )
-
-    if build_metal_commit:
-        unique_sha_combinations = {
-            combo for combo in unique_sha_combinations if combo[0] == build_metal_commit
-        }
 
     if not unique_sha_combinations:
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
         return
+
     unique_sha_combinations_str = "\n".join(
         [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
     )
@@ -941,6 +1057,7 @@ def build_docker_images(
             push,
             container_app_uid,
             dry_run,
+            stdout_only,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -954,11 +1071,9 @@ def build_docker_images(
         logger.info("=" * 80)
         logger.info("DRY-RUN MODE: Checking image status without building")
         logger.info("=" * 80)
-    
+
     # Use multiprocessing.Pool to process combinations in parallel
-    logger.info(
-        f"Processing {len(args_tuples)} combinations with {workers} workers"
-    )
+    logger.info(f"Processing {len(args_tuples)} combinations with {workers} workers")
 
     if single_threaded:
         results = []
@@ -976,15 +1091,21 @@ def build_docker_images(
     for result in results:
         if result["success"]:
             success_count += 1
-            logger.info(
-                f"✅ Success: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.info(f"✅ Success: {result['combination_id']}{log_info}")
         else:
             failure_count += 1
             failed_combinations.append(result)
-            logger.error(
-                f"❌ Failed: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.error(f"❌ Failed: {result['combination_id']}{log_info}")
             logger.error(f"   Error: {result['error']}")
 
     logger.info(
@@ -992,16 +1113,22 @@ def build_docker_images(
     )
 
     if failed_combinations:
-        logger.error("Failed combinations and their log files:")
+        logger.error("Failed combinations:")
         for failed in failed_combinations:
-            logger.error(f"  - {failed['combination_id']}: {failed['log_file']}")
-        logger.error("Use the log files above to debug the specific failures.")
+            log_info = (
+                f" - Log: {failed['log_file']}"
+                if failed.get("log_file")
+                else " (stdout only)"
+            )
+            logger.error(f"  - {failed['combination_id']}{log_info}")
+        if any(f.get("log_file") for f in failed_combinations):
+            logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
     build_attempted = {"cloud": [], "dev": [], "release": []}
     build_succeeded = {"cloud": [], "dev": [], "release": []}
     remote_exists = {"cloud": [], "dev": [], "release": []}
-    
+
     for result in results:
         images = result.get("images", {})
         for image_type in ["cloud", "dev", "release"]:
@@ -1018,7 +1145,7 @@ def build_docker_images(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = get_build_logs_dir()
     json_file = logs_dir / f"build_summary_{timestamp}.json"
-    
+
     summary_data = {
         "timestamp": timestamp,
         "dry_run": dry_run,
@@ -1033,10 +1160,10 @@ def build_docker_images(
         "remote_exists": remote_exists,
         "combinations": results,
     }
-    
+
     with open(json_file, "w") as f:
         json.dump(summary_data, f, indent=2)
-    
+
     logger.info(f"Build summary saved to: {json_file}")
     logger.info("Done building Docker images.")
 
@@ -1078,6 +1205,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Print summary of what would be built without building",
     )
+    parser.add_argument(
+        "--stdout-only",
+        action="store_true",
+        help="Only log to stdout (no file logging)",
+    )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
@@ -1087,6 +1219,7 @@ if __name__ == "__main__":
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
     logger.info(f"dry_run: {args.dry_run}")
+    logger.info(f"stdout_only: {args.stdout_only}")
 
     build_docker_images(
         MODEL_SPECS,
@@ -1098,4 +1231,5 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         single_threaded=args.single_threaded,
         dry_run=args.dry_run,
+        stdout_only=args.stdout_only,
     )

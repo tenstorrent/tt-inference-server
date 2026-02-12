@@ -9,13 +9,16 @@ import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from server_tests.test_classes import TestConfig
+from tests.server_tests.test_classes import TestConfig
 
 
 class BaseTest(ABC):
-    def __init__(self, config: TestConfig, targets: Dict[str, Any]):
+    def __init__(
+        self, config: TestConfig, targets: Dict[str, Any], description: str = ""
+    ):
         self.config = config
         self.targets = targets
+        self.description = description
         self.service_port = os.getenv("SERVICE_PORT", "8000")
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
@@ -41,7 +44,7 @@ class BaseTest(ABC):
                 print("Tests completed successfully")
                 # Return both result and logs
                 return {
-                    "success": True,
+                    "success": True if result.get("success", False) else False,
                     "result": result,
                     "logs": self.logs,
                     "attempts": attempt + 1,

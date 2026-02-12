@@ -39,6 +39,76 @@ async function loadRandomImages() {
     });
 }
 
+function formatProbability(probability) {
+    if (probability === null || probability === undefined) {
+        return "N/A";
+    }
+
+    if (typeof probability === "number") {
+        const value = probability <= 1 ? probability * 100 : probability;
+        return `${value.toFixed(2)}%`;
+    }
+
+    const text = String(probability).trim();
+    if (!text) {
+        return "N/A";
+    }
+
+    if (text.endsWith("%")) {
+        const numericPortion = parseFloat(text.slice(0, -1));
+        return Number.isFinite(numericPortion) ? `${numericPortion.toFixed(2)}%` : text;
+    }
+
+    const parsed = parseFloat(text);
+    if (Number.isFinite(parsed)) {
+        const value = parsed <= 1 ? parsed * 100 : parsed;
+        return `${value.toFixed(2)}%`;
+    }
+
+    return text;
+}
+
+function extractPredictions(imageData) {
+    const topPredictions = [];
+    const output = imageData.output;
+
+    if (output) {
+        if (Array.isArray(output.labels) && Array.isArray(output.probabilities)) {
+            output.labels.forEach((label, i) => {
+                topPredictions.push({
+                    label: label ?? "N/A",
+                    probability: formatProbability(output.probabilities[i]),
+                });
+            });
+        } else if (Array.isArray(output.top5)) {
+            output.top5.forEach((entry, i) => {
+                const item = entry || {};
+                topPredictions.push({
+                    label: item.label ?? `Rank ${i + 1}`,
+                    probability: formatProbability(item.probability ?? item.score),
+                });
+            });
+        } else if (Array.isArray(output)) {
+            output.forEach((entry, i) => {
+                const item = entry || {};
+                topPredictions.push({
+                    label: item.label ?? `Rank ${i + 1}`,
+                    probability: formatProbability(item.probability ?? item.score),
+                });
+            });
+        }
+    }
+
+    if (!topPredictions.length && imageData.top1_class_label) {
+        topPredictions.push({
+            label: imageData.top1_class_label,
+            probability: formatProbability(imageData.top1_class_probability),
+        });
+    }
+
+    return topPredictions;
+}
+
 // Convert image to base64
 function imageToBase64(imgElement, maxSize = 224) {
     return new Promise((resolve) => {
@@ -131,15 +201,42 @@ async function classifyImage(imageUrl, index) {
         // Check if result has expected structure
         if (!result || !result.image_data) {
             throw new Error('Invalid API response structure');
-        }    
-        // Display result - updated for exact API response format
-        const prediction = result.image_data.top1_class_label;
-        const probability = parseFloat(result.image_data.top1_class_probability).toFixed(2);
+        }
+
+        const imageData = result.image_data;
+        const predictions = extractPredictions(imageData);
+
+        const topPrediction = predictions[0] || {
+            label: 'N/A',
+            probability: 'N/A',
+        };
+        const topLabel = topPrediction.label;
+        const topProbability = topPrediction.probability;
+
+        const rows = predictions.slice(0, 5).map((prediction) => {
+            const shortLabel = prediction.label && prediction.label.length > 30
+                ? `${prediction.label.slice(0, 30)}…`
+                : prediction.label;
+            return `<tr><td>${prediction.probability}</td><td title="${prediction.label}">${shortLabel}</td></tr>`;
+        }).join('');
+
+        const tableHtml = rows
+            ? `
+                <table class="prediction-table">
+                    <thead>
+                        <tr><th>Conf</th><th>Label</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `
+            : '';
+
         resultEl.className = 'result success';
         resultEl.style.display = 'block'; // Force display
         resultEl.innerHTML = `
-            <div class="prediction">🎯 ${prediction}</div>
-            <div class="probability">Confidence: ${probability}%</div>
+            <div class="prediction">🎯 ${topLabel}</div>
+            <div class="probability">Confidence: ${topProbability}</div>
+            ${tableHtml}
         `;
     } catch (error) {
         console.error('Classification error:', error);

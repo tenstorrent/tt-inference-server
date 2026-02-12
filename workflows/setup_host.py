@@ -23,15 +23,12 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from workflows.model_spec import (
-    ModelSpec,
-)
-from workflows.run_workflows import WorkflowSetup
+from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_hf_home_path,
     get_weights_hf_cache_dir,
 )
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import ModelSource, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -43,8 +40,8 @@ class SetupConfig:
     model_spec: ModelSpec
     host_hf_home: str = ""  # Host HF cache directory (set interactively or via env)
     model_source: str = os.getenv(
-        "MODEL_SOURCE", "huggingface"
-    )  # Either 'huggingface' or 'local'
+        "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
+    )  # Either 'huggingface', 'local' or 'noaction'
     persistent_volume_root: Path = None
     host_model_volume_root: Path = None
     host_tt_metal_cache_dir: Path = None
@@ -93,28 +90,30 @@ class SetupConfig:
         self.container_model_weights_mount_dir = (
             self.container_readonly_model_weights_dir / f"{self.model_spec.model_name}"
         )
-        if self.model_source == "huggingface":
-            if self.model_spec.hf_model_repo.startswith("meta-llama"):
-                repo_path_filter = "original"
-            else:
-                repo_path_filter = None
+        if self.model_source == ModelSource.HUGGINGFACE.value:
+            repo_path_filter = None
             self.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+                get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
                 repo_path_filter=repo_path_filter,
             )
-        elif self.model_source == "local":
+        elif self.model_source == ModelSource.LOCAL.value:
             self.update_host_model_weights_mount_dir(
                 Path(os.getenv("MODEL_WEIGHTS_DIR"))
             )
+        elif self.model_source == ModelSource.NOACTION.value:
+            pass
 
     def _validate_data(self):
-        if self.model_source not in ["huggingface", "local"]:
+        # Validate that model_source is a valid enum value
+        try:
+            ModelSource(self.model_source)
+        except ValueError:
             raise ValueError("⛔ Invalid model source.")
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert self.model_source == "huggingface", (
+        assert self.model_source == ModelSource.HUGGINGFACE.value, (
             "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         )
         if host_model_weights_snapshot_dir:
@@ -142,7 +141,7 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert self.model_source == "local", (
+        assert self.model_source == ModelSource.LOCAL.value, (
             "⛔ update_host_model_weights_mount_dir only supported for local model source."
         )
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
@@ -186,7 +185,7 @@ class HostSetupManager:
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
         if not host_weights_dir or not host_weights_dir.exists():
-            logger.info(
+            logger.warning(
                 f"Weights directory does not exist for {self.model_spec.model_name}."
             )
             return False
@@ -213,35 +212,39 @@ class HostSetupManager:
             has_tokenizer = bool(list(host_weights_dir.glob(fmt["tokenizer_format"])))
             has_params = bool(list(host_weights_dir.glob(fmt["params_format"])))
 
+            logger.info(f"has_weights: {has_weights}")
+            logger.info(f"has_tokenizer: {has_tokenizer}")
+            logger.info(f"has_params: {has_params}")
+
             if has_weights and has_tokenizer and has_params:
                 self.setup_config.model_weights_format = fmt["format_name"]
-                logger.info(f"detected {fmt['format_name']} model format")
+                logger.info(f"Detected {fmt['format_name']} model format")
                 logger.info(
                     f"✅ Setup already completed for model {self.model_spec.model_name}."
                 )
                 return True
-        logger.info(
+        logger.warning(
             f"Incomplete model setup for {self.model_spec.model_name}. "
             f"checked: {host_weights_dir}"
         )
         return False
 
     def check_setup(self) -> bool:
-        if self.setup_config.model_source == "huggingface":
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_snapshot_dir
             )
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelSource.LOCAL.value:
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )
-        elif self.setup_config.model_source == "noaction":
+        elif self.setup_config.model_source == ModelSource.NOACTION.value:
             logger.info("Assuming that server self-provides the weights. ")
         else:
             raise ValueError("⛔ Invalid model source.")
 
     def check_disk_space(self) -> bool:
-        if not self.setup_config.model_source == "huggingface":
+        if not self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             return True
         assert self.setup_config.host_hf_home, "⛔ HOST_HF_HOME not set."
         total, used, free = shutil.disk_usage(self.setup_config.host_hf_home)
@@ -319,7 +322,9 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
-        model_url = f"https://huggingface.co/api/models/{self.model_spec.hf_model_repo}"
+        model_url = (
+            f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
+        )
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -336,7 +341,7 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_model_repo}/resolve/main/{first_file}"
+        head_url = f"https://huggingface.co/{self.model_spec.hf_weights_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -369,15 +374,15 @@ class HostSetupManager:
             choice = input("Enter your choice: ").strip() or "1"
             # Map numeric choice to source type
             if choice == "1":
-                self.setup_config.model_source = "huggingface"
+                self.setup_config.model_source = ModelSource.HUGGINGFACE.value
             elif choice == "2":
-                self.setup_config.model_source = "local"
+                self.setup_config.model_source = ModelSource.LOCAL.value
             else:
                 raise ValueError("⛔ Invalid model source choice.")
 
-        if self.setup_config.model_source == "huggingface":
+        if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             self.get_hf_env_vars()
-        elif self.setup_config.model_source == "local":
+        elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
                 assert _host_model_weights_mount_dir, (
@@ -461,24 +466,9 @@ class HostSetupManager:
         )
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
-        # Bootstrap uv and create/use the managed HF setup venv
-        WorkflowSetup.bootstrap_uv()
-        uv_exec = WorkflowSetup.uv_exec
+        # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
-        if not venv_config.venv_path.exists():
-            subprocess.run(
-                [
-                    str(uv_exec),
-                    "venv",
-                    "--managed-python",
-                    f"--python={venv_config.python_version}",
-                    str(venv_config.venv_path),
-                    "--allow-existing",
-                ],
-                check=True,
-            )
-        # Ensure required packages are present in the venv
-        venv_config.setup(model_spec=self.model_spec, uv_exec=uv_exec)
+        venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
@@ -486,34 +476,23 @@ class HostSetupManager:
         assert hf_exec.exists(), (
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
-        base_cmd = [str(hf_exec)]
-        hf_repo = self.model_spec.hf_model_repo
-        if hf_repo.startswith("meta-llama"):
-            # fmt: off
-            cmd = base_cmd + [
-                "download", hf_repo,
-                "original/params.json",
-                "original/tokenizer.model",
-                "original/consolidated.*"
-            ]
-            # fmt: on
-            repo_path_filter = "original"
-        else:
-            # use default huggingface repo
-            # fmt: off
-            cmd = base_cmd + [
-                "download", hf_repo,
-                "--exclude", "original/"
-            ]
-            # fmt: on
-            repo_path_filter = None
+        hf_repo = self.model_spec.hf_weights_repo
+        # use default huggingface repo
+        # fmt: off
+        cmd = [
+            str(hf_exec),
+            "download", hf_repo,
+            "--exclude", "original/**"
+        ]
+        # fmt: on
+        repo_path_filter = None
         logger.info(f"Downloading model from Hugging Face: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
         assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         # need to update paths
         self.setup_config.update_host_model_weights_snapshot_dir(
-            get_weights_hf_cache_dir(self.model_spec.hf_model_repo),
+            get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
             repo_path_filter=repo_path_filter,
         )
         logger.info(
@@ -535,10 +514,14 @@ class HostSetupManager:
 
     def setup_weights(self):
         if not self.check_setup():
-            if self.setup_config.model_source == "huggingface":
+            if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
                 self.setup_weights_huggingface()
-            elif self.setup_config.model_source == "local":
+            elif self.setup_config.model_source == ModelSource.LOCAL.value:
                 self.setup_weights_local()
+            elif self.setup_config.model_source == ModelSource.NOACTION.value:
+                logger.info(
+                    "No action taken for model weights setup as per 'noaction' model source."
+                )
             else:
                 raise ValueError("⛔ Invalid model source.")
         logger.info("✅ done setup_weights")
@@ -570,13 +553,29 @@ def setup_host(model_spec, jwt_secret, hf_token, automatic_setup=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Model setup script")
-    parser.add_argument("model_name", help="Type of the model to setup")
-    parser.add_argument("impl", help="Implementation to use")
+    parser.add_argument(
+        "--check-weights",
+        action="store_true",
+        help="Replicate release workflow: run check_model_weights_dir and exit (for local/CI debug).",
+    )
+    parser.add_argument(
+        "--model-spec-json",
+        type=str,
+        help="Path to model spec JSON file (required for --check-weights or full setup).",
+        default=None,
+    )
+    parser.add_argument(
+        "--weights-dir",
+        type=str,
+        default=None,
+        help="Optional: test this directory instead of HF cache path (only with --check-weights).",
+    )
+    parser.add_argument("model_name", nargs="?", help="Type of the model to setup")
+    parser.add_argument("impl", nargs="?", help="Implementation to use")
     parser.add_argument(
         "--device",
         type=str,
         help="DeviceTypes str used to simulate different hardware configurations",
-        required=True,
     )
     parser.add_argument(
         "--automatic",
@@ -601,14 +600,57 @@ def main():
         help="Model implementation to use",
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
-    parser.add_argument(
-        "--model-spec-json",
-        type=str,
-        help="Path to model spec JSON file",
-        default=None,
-    )
 
     args = parser.parse_args()
+
+    if args.check_weights:
+        if not args.model_spec_json:
+            print(
+                "[setup_host] --check-weights requires --model-spec-json",
+                file=sys.stderr,
+                flush=True,
+            )
+            sys.exit(2)
+        model_spec = ModelSpec.from_json(args.model_spec_json)
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            jwt_secret=args.jwt_secret or "",
+            hf_token=args.hf_token or "",
+            automatic=True,
+        )
+        if args.weights_dir:
+            host_weights_dir = Path(args.weights_dir)
+            print(
+                f"[setup_host] Testing --weights-dir: {host_weights_dir}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            host_weights_dir = manager.setup_config.host_model_weights_snapshot_dir
+            if manager.setup_config.model_source != ModelSource.HUGGINGFACE.value:
+                host_weights_dir = manager.setup_config.host_model_weights_mount_dir
+            if host_weights_dir is None:
+                print(
+                    "[setup_host] No weights path from setup_config (HF cache dir not found for this model).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                sys.exit(1)
+            print(
+                f"[setup_host] Using path from setup_config (same as release): {host_weights_dir}",
+                file=sys.stderr,
+                flush=True,
+            )
+        ok = manager.check_model_weights_dir(host_weights_dir)
+        print(
+            f"[setup_host] check_model_weights_dir result: {ok}",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(0 if ok else 1)
+
+    if not args.model_spec_json:
+        parser.error("Full setup requires --model-spec-json (or use --check-weights).")
     model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(

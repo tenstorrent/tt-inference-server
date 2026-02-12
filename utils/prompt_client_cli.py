@@ -162,9 +162,9 @@ def main():
     parser = add_client_args(parser)
     args = parser.parse_args()
 
-    assert (
-        args.max_prompt_length != -1 or args.input_seq_len != -1
-    ), "Either --max_prompt_length or --input_seq_len must be provided."
+    assert args.max_prompt_length != -1 or args.input_seq_len != -1, (
+        "Either --max_prompt_length or --input_seq_len must be provided."
+    )
     if args.max_prompt_length == -1:
         assert args.input_seq_len > 0
         args.max_prompt_length = args.input_seq_len

@@ -25,6 +25,12 @@ Features
     Automatic Setup: Manages environment setup, including virtual environments and dependency installation.
     Logging: Detailed logging for tracking execution, errors, and debugging.
 
+## Example diagram for benchmarks workflow
+
+![inference-server-workflow-diagram-2025-08-14-1106.png](inference-server-workflow-diagram-2025-08-14-1106.png)
+
+The workflows that run end to end tests on the inference server (benchmarks, evals, tests, spec_tests, and stress_tests) all follow the same pattern in configuring how to send HTTP requests to the inference server.
+
 ## Prerequisites
 
     Python 3.8+: Required to run the CLI and setup scripts.

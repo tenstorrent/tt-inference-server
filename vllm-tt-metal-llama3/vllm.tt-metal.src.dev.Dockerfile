@@ -12,6 +12,8 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>"
 # connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
+ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs
+
 # Switch back to root for entrypoint
 USER root
 

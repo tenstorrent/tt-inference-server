@@ -2,10 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import os
 import json
 import logging
-from typing import Optional, Union
 from pathlib import Path
 import subprocess
 import jwt
@@ -45,9 +43,9 @@ def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_ma
     # Handle single directory/file symlink (standard case)
     if symlink_path.is_symlink():
         symlink_path.unlink()
-    assert (
-        not symlink_path.exists()
-    ), f"symlink location: {symlink_path} has a non-symlink there."
+    assert not symlink_path.exists(), (
+        f"symlink location: {symlink_path} has a non-symlink there."
+    )
     symlink_path.symlink_to(weights_dir)
     return symlink_path
 

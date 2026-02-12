@@ -48,7 +48,7 @@ class EnvironmentConfig:
     vllm_model: str = os.environ.get(
         "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct"
     )
-    authorization: Optional[str] = os.environ.get("AUTHORIZATION")
+    vllm_api_key: Optional[str] = os.environ.get("VLLM_API_KEY")
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")
     deploy_url: str = os.environ.get("DEPLOY_URL", "http://127.0.0.1")
     service_port: str = os.environ.get("SERVICE_PORT", "7000")

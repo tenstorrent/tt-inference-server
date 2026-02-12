@@ -2,9 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from domain.base_request import BaseRequest
-from pydantic import Field
 from typing import List, Optional, Tuple, Union
+
+from domain.base_request import BaseRequest
+from pydantic import Field, PrivateAttr, field_validator
 
 
 class ImageGenerateRequest(BaseRequest):
@@ -20,6 +21,20 @@ class ImageGenerateRequest(BaseRequest):
     guidance_rescale: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
     timesteps: Optional[List[Union[int, float]]] = None
     sigmas: Optional[List[Union[int, float]]] = None
+
+    # Image output settings
+    image_return_format: Optional[str] = Field(default="JPEG")
+    image_quality: Optional[int] = Field(default=85, ge=50, le=100)
+
+    # Private fields for internal processing
+    _segments: Optional[List[int]] = PrivateAttr(default=None)
+
+    @field_validator("image_return_format")
+    @classmethod
+    def validate_image_return_format(cls, v):
+        if v is not None and v not in ["JPEG", "PNG"]:
+            raise ValueError("image_return_format must be 'JPEG' or 'PNG'")
+        return v
 
     def update_object(self, **kwargs):
         for key, value in kwargs.items():

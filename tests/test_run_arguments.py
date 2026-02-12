@@ -61,6 +61,8 @@ def mock_args():
         reset_venvs=False,
         model_spec_json=None,
         tt_metal_python_venv_dir=None,
+        no_auth=False,
+        concurrency_sweeps=False,
     )
 
 
@@ -82,6 +84,7 @@ def mock_model_spec():
     mock_cli_args.interactive = False
     mock_cli_args.device = "n150"
     mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
+    mock_cli_args.no_auth = False
     mock_spec.cli_args = mock_cli_args
 
     return mock_spec
@@ -249,6 +252,8 @@ class TestArgumentParsing:
             '{"data_parallel": 16}',
             "--vllm-override-args",
             '{"max_model_len": 4096}',
+            "--no-auth",
+            "--concurrency-sweeps",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -265,6 +270,8 @@ class TestArgumentParsing:
         assert args.device_id == [1]
         assert args.override_tt_config == '{"data_parallel": 16}'
         assert args.vllm_override_args == '{"max_model_len": 4096}'
+        assert args.no_auth is True
+        assert args.concurrency_sweeps is True
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -280,6 +287,8 @@ class TestArgumentParsing:
         assert args.override_docker_image is None
         assert args.override_tt_config is None
         assert args.vllm_override_args is None
+        assert args.no_auth is False
+        assert args.concurrency_sweeps is False
 
 
 class TestArgsInference:
@@ -342,7 +351,7 @@ class TestRuntimeValidation:
             ("evals", True),  # Mistral-7B-Instruct-v0.3 is in EVAL_CONFIGS
             ("reports", True),
             ("release", True),  # Mistral-7B-Instruct-v0.3 is in both configs
-            ("tests", False),  # Not implemented
+            ("stress_tests", True),
         ],
     )
     def test_workflow_validation(self, mock_model_spec, workflow, should_pass):
@@ -352,7 +361,7 @@ class TestRuntimeValidation:
             if should_pass:
                 validate_runtime_args(mock_model_spec)
             else:
-                with pytest.raises(NotImplementedError):
+                with pytest.raises(AssertionError):
                     validate_runtime_args(mock_model_spec)
 
     def test_server_workflow_validation(self, mock_model_spec):
@@ -508,27 +517,28 @@ class TestOverrideArgsIntegration:
                         env_var_found = True
                         assert "test-model-spec.json" in env_setting
 
-            assert (
-                json_mount_found
-            ), f"JSON file mount not found in docker command: {docker_command}"
-            assert (
-                env_var_found
-            ), f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
+            assert json_mount_found, (
+                f"JSON file mount not found in docker command: {docker_command}"
+            )
+            assert env_var_found, (
+                f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
+            )
 
 
 class TestSecretsHandling:
     """Tests for secrets handling functionality."""
 
     @pytest.mark.parametrize(
-        "workflow,docker_server,interactive,jwt_required,hf_required",
+        "workflow,docker_server,interactive,no_auth,jwt_required,hf_required",
         [
-            ("benchmarks", False, False, False, False),  # Client-side
-            ("evals", False, False, False, False),  # Client-side
-            ("server", True, False, True, True),  # Server with docker
-            ("server", False, False, False, True),  # Server without docker
-            ("server", True, True, False, False),  # Interactive mode
-            ("release", False, False, False, True),  # Non-client workflow
-            ("reports", False, False, False, True),  # Non-client workflow
+            ("benchmarks", False, False, False, False, False),  # Client-side
+            ("evals", False, False, False, False, False),  # Client-side
+            ("server", True, False, False, True, True),  # Server with docker
+            ("server", False, False, False, False, True),  # Server without docker
+            ("server", True, True, False, False, False),  # Interactive mode
+            ("server", True, False, True, False, True),  # Server with docker + no-auth
+            ("release", False, False, False, False, True),  # Non-client workflow
+            ("reports", False, False, False, False, True),  # Non-client workflow
         ],
     )
     def test_secrets_requirements(
@@ -537,6 +547,7 @@ class TestSecretsHandling:
         workflow,
         docker_server,
         interactive,
+        no_auth,
         jwt_required,
         hf_required,
     ):
@@ -544,6 +555,7 @@ class TestSecretsHandling:
         mock_model_spec.cli_args.workflow = workflow
         mock_model_spec.cli_args.docker_server = docker_server
         mock_model_spec.cli_args.interactive = interactive
+        mock_model_spec.cli_args.no_auth = no_auth
 
         env_vars = {}
         if jwt_required:

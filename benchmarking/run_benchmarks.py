@@ -25,16 +25,21 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.benchmark_config import (
+    BENCHMARK_CONFIGS,
+    expand_concurrency_sweep_params,
+    powers_of_two_up_to,
+)
+from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, ModelType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -48,29 +53,14 @@ IMAGE_RESOLUTIONS = [
     ]
 # fmt: on
 
-
-def setup_audio_benchmarks(model_spec, logger):
-    """Setup audio-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up audio benchmarks for model: {model_spec.model_name}")
-    # Audio-specific benchmark setup can be added here
-    pass
-
-
-def setup_cnn_benchmarks(model_spec, logger):
-    """Setup CNN-specific benchmarking environment.
-
-    Args:
-        model_spec: Model specification
-        logger: Logger instance
-    """
-    logger.info(f"Setting up CNN benchmarks for model: {model_spec.model_name}")
-    # CNN-specific benchmark setup can be added here
-    pass
+BENCHMARKS_TASK_TYPES = [
+    ModelType.IMAGE,
+    ModelType.CNN,
+    ModelType.AUDIO,
+    ModelType.EMBEDDING,
+    ModelType.TEXT_TO_SPEECH,
+    ModelType.VIDEO,
+]
 
 
 def parse_args():
@@ -90,6 +80,18 @@ def parse_args():
         help="Path for benchmark output",
         required=True,
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device to run on",
+        required=False,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Model name",
+        required=False,
+    )
 
     parser.add_argument(
         "--jwt-secret",
@@ -102,6 +104,11 @@ def parse_args():
         type=str,
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
+    )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
     ret_args = parser.parse_args()
     return ret_args
@@ -121,42 +128,47 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    if params.task_type == "image":
+
+    # VLM models: use isl/osl + image dimensions
+    if params.task_type == "vlm":
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json"
         )
+    # Text models: standard isl/osl
     else:
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    # VLM models need multimodal dataset; text models use standard dataset
+    dataset_name = "random-mm" if params.task_type == "vlm" else "random"
+    backend = "vllm" if params.task_type == "text" else "openai-chat"
+
     # fmt: off
     cmd = [
-        str(task_venv_config.venv_python), str(benchmark_script),
-        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        str(benchmark_script),
+        "bench",
+        "serve",
+        "--backend", backend,
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
-        "--dataset-name", "cleaned-random",
+        "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
         "--random-output-len", str(osl),
-        "--ignore-eos",  # Ignore EOS tokens to force max output length as set
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
         "--result-filename", str(result_filename),
     ]
 
-    # Add multimodal parameters if the model supports it
-    if params.task_type == "image":
+    if params.task_type == "vlm":
         if params.image_height and params.image_width:
             cmd.extend([
-                "--random-images-per-prompt", str(params.images_per_prompt),
-                "--random-image-height", str(params.image_height),
-                "--random-image-width", str(params.image_width),
+                "--random-mm-base-items-per-request", str(params.images_per_prompt),
+                "--random-mm-bucket-config", str({(params.image_height, params.image_width, 1): 1.0}),
                 "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
@@ -178,13 +190,53 @@ def main():
     service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
+    # Automatically control trace capture based on has_builtin_warmup
+    # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
+    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
+        if model_spec.has_builtin_warmup:
+            # Model has builtin warmup - disable client-side trace capture
+            disable_trace_capture = True
+            logger.info(
+                "Model has builtin warmup (has_builtin_warmup=True), "
+                "automatically disabling trace capture for benchmarks workflow"
+            )
+
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
+    # Check for tools selection (genai vs vllm)
+    tools = cli_args.get("tools", "vllm")
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
+    logger.info(f"tools=: {tools}")
+
+    # Route to genai-perf benchmarks if tools=genai
+    if tools == "genai":
+        logger.info("Using genai-perf (Triton SDK) for benchmarking")
+
+        # Determine debug mode from limit_samples_mode
+        limit_samples_mode_str = cli_args.get("limit_samples_mode")
+        debug_mode = False
+        if limit_samples_mode_str:
+            from workflows.workflow_types import EvalLimitMode
+
+            limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
+            # Enable debug mode for quick test modes
+            if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
+                debug_mode = True
+                logger.info(
+                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
+                )
+
+        return run_genai_benchmarks(
+            model_spec=model_spec,
+            output_path=args.output_path,
+            jwt_secret=jwt_secret,
+            service_port=service_port,
+            debug=debug_mode,
+        )
 
     # set environment vars
     if jwt_secret:
@@ -207,6 +259,26 @@ def main():
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
+    # CLI arg takes precedence, fallback to model spec cli_args
+    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
+        "concurrency_sweeps", False
+    )
+    if concurrency_sweeps:
+        max_context = model_spec.device_model_spec.max_context
+        model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
+        # TODO: get the number of perf targets from the model config instead of 1
+        for task in benchmark_config.tasks[1:]:
+            if device not in task.param_map:
+                continue
+            task.param_map[device] = expand_concurrency_sweep_params(
+                task.param_map[device],
+                max_context=max_context,
+                model_max_concurrency=model_max_concurrency,
+                model_name=model_spec.model_name,
+                candidate_concurrencies=candidate_concurrencies,
+            )
+
     # check for any benchmarks to run for model on given device
     all_params = [
         param
@@ -215,15 +287,8 @@ def main():
         for param in task.param_map[device]
     ]
 
-    if model_spec.model_type == ModelType.CNN:
-        setup_cnn_benchmarks(model_spec, logger)
-        return run_cnn_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
-        )
-
-    if model_spec.model_type == ModelType.AUDIO:
-        setup_audio_benchmarks(model_spec, logger)
-        return run_audio_benchmarks(
+    if model_spec.model_type in BENCHMARKS_TASK_TYPES:
+        return run_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
 
@@ -236,11 +301,11 @@ def main():
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
     if "image" in model_spec.supported_modalities:
-        log_str += "Running image benchmarks for:\n"
+        log_str += "Running VLM benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12}\n"
         for i, param in enumerate(all_params, 1):
-            if param.task_type == "image":
+            if param.task_type == "vlm":
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
@@ -267,7 +332,7 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
-        benchmark_script = venv_config.venv_path / "scripts" / "benchmark_serving.py"
+        benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
             context_lens = [(params.isl, params.osl) for params in params_list]
@@ -323,30 +388,12 @@ def main():
     return main_return_code
 
 
-def run_cnn_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(all_params, model_spec, device, output_path, service_port):
     """
-    Run CNN benchmarks for the given model and device.
-    """
-    # TODO two tasks are picked up here instead of BenchmarkTaskCNN only!!!
-    logger.info(
-        f"Running CNN benchmarks for model: {model_spec.model_name} on device: {device.name}"
-    )
-    return MediaClientFactory.run_media_task(
-        model_spec,
-        all_params,
-        device,
-        output_path,
-        service_port,
-        task_type=MediaTaskType.BENCHMARK,
-    )
-
-
-def run_audio_benchmarks(all_params, model_spec, device, output_path, service_port):
-    """
-    Run Audio benchmarks for the given model and device.
+    Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
     logger.info(
-        f"Running Audio benchmarks for model: {model_spec.model_name} on device: {device.name}"
+        f"Running benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
     return MediaClientFactory.run_media_task(
         model_spec,

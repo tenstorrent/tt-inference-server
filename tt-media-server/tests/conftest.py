@@ -5,8 +5,20 @@
 import inspect
 import re
 import sys
+import types
 from unittest.mock import MagicMock
 
+# CRITICAL: Import and setup REAL numpy FIRST before anything else
+# This ensures that when memory_queue.py imports numpy, it gets the real one
+import numpy as np
+
+sys.modules["numpy"] = np
+if hasattr(np, "core"):
+    sys.modules["numpy.core"] = np.core
+if hasattr(np, "_core"):
+    sys.modules["numpy._core"] = np._core
+
+# Only then import pytest
 import pytest
 
 # Mock modules that are not available in test environment
@@ -17,7 +29,7 @@ mock_modules = [
     "PIL",
     "diffusers",
     "torchvision",
-    "numpy",
+    # "numpy",  # REMOVED - we use real numpy now
     "cv2",
     "pyarrow",
     "vllm",
@@ -158,18 +170,6 @@ for module in mock_modules:
             mock.ops = ops_module
             mock.models = MagicMock()
             mock.datasets = MagicMock()
-        elif module == "numpy":
-            mock.array = MagicMock()
-            mock.zeros = MagicMock()
-            mock.ones = MagicMock()
-            mock.ndarray = MagicMock()
-            mock.float32 = MagicMock()
-            mock.int32 = MagicMock()
-            mock.uint8 = MagicMock()
-            mock._core = MagicMock()
-            mock._core.multiarray = MagicMock()
-            mock.core = MagicMock()
-            mock.core.multiarray = MagicMock()
         elif module == "pytorchcv":
             mock.model_provider = MagicMock()
             # Create a mock model that looks like a PyTorch model
@@ -177,6 +177,13 @@ for module in mock_modules:
             mock_model.eval = MagicMock(return_value=mock_model)
             mock_model.to = MagicMock(return_value=mock_model)
             mock.model_provider.get_model = MagicMock(return_value=mock_model)
+        elif module == "vllm":
+            # Mock vllm module with all necessary submodules
+            mock.AsyncEngineArgs = MagicMock()
+            mock.AsyncLLMEngine = MagicMock()
+            mock.SamplingParams = MagicMock()
+            mock.sampling_params = MagicMock()
+            mock.sampling_params.RequestOutputKind = MagicMock()
 
         sys.modules[module] = mock
 
@@ -231,16 +238,10 @@ submodules = {
     "ttnn.utils_for_testing": sys.modules["ttnn"].utils_for_testing
     if "ttnn" in sys.modules
     else MagicMock(),
-    "numpy.core": sys.modules["numpy"]._core if "numpy" in sys.modules else MagicMock(),
-    "numpy.core.multiarray": sys.modules["numpy"].core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core": sys.modules["numpy"]._core
-    if "numpy" in sys.modules
-    else MagicMock(),
-    "numpy._core.multiarray": sys.modules["numpy"]._core.multiarray
-    if "numpy" in sys.modules
-    else MagicMock(),
+    "numpy.core": sys.modules.get("numpy.core", MagicMock()),
+    "numpy.core.multiarray": sys.modules.get("numpy.core", MagicMock()),
+    "numpy._core": sys.modules.get("numpy._core", MagicMock()),
+    "numpy._core.multiarray": sys.modules.get("numpy._core", MagicMock()),
     "diffusers.image_processor": sys.modules["diffusers"].image_processor
     if "diffusers" in sys.modules
     else MagicMock(),
@@ -296,11 +297,20 @@ submodules = {
     "torch_xla.core": MagicMock(),
     "torch_xla.core.xla_model": MagicMock(),
     "torch_xla.runtime": MagicMock(),
+    "vllm.sampling_params": sys.modules["vllm"].sampling_params
+    if "vllm" in sys.modules
+    else MagicMock(),
 }
 
 for submodule, mock in submodules.items():
     if submodule not in sys.modules:
         sys.modules[submodule] = mock
+
+# Mock open_ai_api modules that use FastAPI decorators with Pydantic models
+# This prevents import errors when test_device_worker.py mocks domain objects
+mock_open_ai_api_image = MagicMock()
+mock_open_ai_api_image.router = MagicMock()
+sys.modules["open_ai_api.image"] = mock_open_ai_api_image
 
 # Add tests.ttnn as a proper module mock to avoid pytest import issues
 if "tests.ttnn" not in sys.modules:
@@ -321,29 +331,12 @@ def mock_log_execution_time(*args, **kwargs):
     return decorator
 
 
-# Patch it in utils.helpers before imports
-import utils.helpers
+# Patch it in utils.decorators before imports
+import utils.decorators
 
-utils.helpers.log_execution_time = mock_log_execution_time
+utils.decorators.log_execution_time = mock_log_execution_time
 
-# Mock load_dynamic before importing forge runners
-import tt_model_runners.forge_runners.runners as forge_runners_module
-
-
-def mock_load_dynamic(model_name: str):
-    """Mock loader that returns a MagicMock model loader."""
-    mock_loader = MagicMock()
-    mock_loader.load_model = MagicMock(return_value=MagicMock())
-    mock_loader._variant_config = MagicMock()
-    mock_loader._variant_config.pretrained_model_name = f"mock_{model_name}"
-    mock_loader.image_to_input = MagicMock(return_value=MagicMock())
-    mock_loader.output_to_prediction = MagicMock(return_value=MagicMock())
-    return mock_loader
-
-
-forge_runners_module.load_dynamic = mock_load_dynamic
-
-# Mock models.demos structure for yolov4
+# Mock models.demos structure BEFORE importing any runner modules
 if "models" not in sys.modules:
     models_mock = MagicMock()
 
@@ -361,27 +354,19 @@ if "models" not in sys.modules:
     whisper_mock = MagicMock()
     whisper_tt_mock = MagicMock()
     whisper_tt_mock.ttnn_optimized_functional_whisper = MagicMock()
+    whisper_tt_mock.whisper_generator = MagicMock()
+    whisper_tt_mock.whisper_generator.GenerationParams = MagicMock()
+    whisper_tt_mock.whisper_generator.WhisperGenerator = MagicMock()
     whisper_mock.tt = whisper_tt_mock
     demos_mock.whisper = whisper_mock
-
-    # Set up yolov4 submodule
-    yolov4_mock = MagicMock()
-    yolov4_mock.post_processing = MagicMock()
-    yolov4_reference_mock = MagicMock()
-    yolov4_reference_mock.yolov4 = MagicMock()
-    yolov4_mock.reference = yolov4_reference_mock
-    demos_mock.yolov4 = yolov4_mock
 
     # Set up common submodule with get_mesh_mappers
     common_mock = MagicMock()
     common_mock.get_mesh_mappers = MagicMock(return_value=(MagicMock(), MagicMock()))
-    common_mock.YOLOV4_L1_SMALL_SIZE = 10960
-    yolov4_mock.common = common_mock
 
     # Set up runner submodule
     runner_mock = MagicMock()
     runner_mock.performant_runner = MagicMock()
-    yolov4_mock.runner = runner_mock
 
     # Set up utils submodule
     utils_mock = MagicMock()
@@ -411,6 +396,9 @@ if "models" not in sys.modules:
     mochi_mock = MagicMock()
     mochi_mock.pipeline_mochi = MagicMock()
     pipelines_mock.mochi = mochi_mock
+    motif_mock = MagicMock()
+    motif_mock.pipeline_motif = MagicMock()
+    pipelines_mock.motif = motif_mock
     wan_mock = MagicMock()
     wan_mock.pipeline_wan = MagicMock()
     pipelines_mock.wan = wan_mock
@@ -427,12 +415,6 @@ if "models" not in sys.modules:
     sys.modules["models.common.generation_utils"] = common_mock_top.generation_utils
     sys.modules["models.demos"] = demos_mock
     sys.modules["models.demos.whisper"] = whisper_mock
-    sys.modules["models.demos.yolov4"] = yolov4_mock
-    sys.modules["models.demos.yolov4.common"] = common_mock
-    sys.modules["models.demos.yolov4.runner"] = runner_mock
-    sys.modules["models.demos.yolov4.runner.performant_runner"] = (
-        runner_mock.performant_runner
-    )
     sys.modules["models.demos.utils"] = utils_mock
     sys.modules["models.demos.utils.common_demo_utils"] = utils_mock.common_demo_utils
     sys.modules["models.experimental"] = experimental_mock
@@ -451,41 +433,182 @@ if "models" not in sys.modules:
     sys.modules[
         "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
     ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
-    sys.modules["models.experimental.tt_dit"] = tt_dit_mock
-    sys.modules["models.experimental.tt_dit.parallel"] = tt_dit_mock.parallel
-    sys.modules["models.experimental.tt_dit.parallel.config"] = (
-        tt_dit_mock.parallel.config
-    )
-    sys.modules["models.experimental.tt_dit.pipelines"] = pipelines_mock
-    sys.modules["models.experimental.tt_dit.pipelines.stable_diffusion_35_large"] = (
-        sd35_large_mock
-    )
+    sys.modules["models.tt_dit"] = tt_dit_mock
+    sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel
+    sys.modules["models.tt_dit.parallel.config"] = tt_dit_mock.parallel.config
+    sys.modules["models.tt_dit.pipelines"] = pipelines_mock
+    sys.modules["models.tt_dit.pipelines.stable_diffusion_35_large"] = sd35_large_mock
     sys.modules[
-        "models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large"
+        "models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large"
     ] = sd35_large_mock.pipeline_stable_diffusion_35_large
-    sys.modules["models.experimental.tt_dit.pipelines.flux1"] = flux1_mock
-    sys.modules["models.experimental.tt_dit.pipelines.flux1.pipeline_flux1"] = (
+    sys.modules["models.tt_dit.pipelines.flux1"] = flux1_mock
+    sys.modules["models.tt_dit.pipelines.flux1.pipeline_flux1"] = (
         flux1_mock.pipeline_flux1
     )
-    sys.modules["models.experimental.tt_dit.pipelines.mochi"] = mochi_mock
-    sys.modules["models.experimental.tt_dit.pipelines.mochi.pipeline_mochi"] = (
+    sys.modules["models.tt_dit.pipelines.mochi"] = mochi_mock
+    sys.modules["models.tt_dit.pipelines.mochi.pipeline_mochi"] = (
         mochi_mock.pipeline_mochi
     )
-    sys.modules["models.experimental.tt_dit.pipelines.wan"] = wan_mock
-    sys.modules["models.experimental.tt_dit.pipelines.wan.pipeline_wan"] = (
-        wan_mock.pipeline_wan
+    sys.modules["models.tt_dit.pipelines.motif"] = motif_mock
+    sys.modules["models.tt_dit.pipelines.motif.pipeline_motif"] = (
+        motif_mock.pipeline_motif
     )
+    sys.modules["models.tt_dit.pipelines.wan"] = wan_mock
+    sys.modules["models.tt_dit.pipelines.wan.pipeline_wan"] = wan_mock.pipeline_wan
     sys.modules["models.demos.whisper"] = whisper_mock
     sys.modules["models.demos.whisper.tt"] = whisper_tt_mock
     sys.modules["models.demos.whisper.tt.ttnn_optimized_functional_whisper"] = (
         whisper_tt_mock.ttnn_optimized_functional_whisper
     )
-    sys.modules["models.demos.yolov4.reference"] = yolov4_reference_mock
-    sys.modules["models.demos.yolov4.reference.yolov4"] = yolov4_reference_mock.yolov4
-    sys.modules["models.demos.yolov4.post_processing"] = yolov4_mock.post_processing
+    sys.modules["models.demos.whisper.tt.whisper_generator"] = (
+        whisper_tt_mock.whisper_generator
+    )
 
-# Import after mocks are set up
-from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
+
+# Mock logger - BEFORE anything else
+class MockLogger:
+    """Proper mock logger that doesn't interfere with other operations"""
+
+    def info(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
+    def debug(self, msg):
+        pass
+
+
+mock_logger = MockLogger()
+mock_logger_module = type("module", (), {})()
+mock_logger_module.TTLogger = lambda: mock_logger
+sys.modules["utils.logger"] = mock_logger_module
+
+
+# Create mock runner classes with proper names BEFORE any imports
+def create_mock_runner_class(class_name: str):
+    """Create a mock runner class with the specified name."""
+
+    def mock_init(self, worker_id):
+        """Mock __init__ that accepts both worker_id"""
+        self.worker_id = worker_id
+
+    mock_class = type(
+        class_name,
+        (),
+        {"__init__": mock_init},
+    )
+    return mock_class
+
+
+# Create mock runner modules directly in sys.modules with our custom classes
+# This prevents Python from trying to import and execute the actual runner files
+runner_mocks = {
+    "tt_model_runners.sdxl_generate_runner_trace": {
+        "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
+            "TTSDXLGenerateRunnerTrace"
+        )
+    },
+    "tt_model_runners.sdxl_image_to_image_runner_trace": {
+        "TTSDXLImageToImageRunner": create_mock_runner_class("TTSDXLImageToImageRunner")
+    },
+    "tt_model_runners.sdxl_edit_runner_trace": {
+        "TTSDXLEditRunner": create_mock_runner_class("TTSDXLEditRunner")
+    },
+    "tt_model_runners.dit_runners": {
+        "TTSD35Runner": create_mock_runner_class("TTSD35Runner"),
+        "TTFlux1DevRunner": create_mock_runner_class("TTFlux1DevRunner"),
+        "TTFlux1SchnellRunner": create_mock_runner_class("TTFlux1SchnellRunner"),
+        "TTMotifImage6BPreviewRunner": create_mock_runner_class(
+            "TTMotifImage6BPreviewRunner"
+        ),
+        "TTMochi1Runner": create_mock_runner_class("TTMochi1Runner"),
+        "TTWan22Runner": create_mock_runner_class("TTWan22Runner"),
+    },
+    "tt_model_runners.whisper_runner": {
+        "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
+    },
+    "tt_model_runners.embedding_runner": {
+        "BGELargeENRunner": create_mock_runner_class("BGELargeENRunner"),
+        "Qwen3Embedding8BRunner": create_mock_runner_class("Qwen3Embedding8BRunner"),
+    },
+    "tt_model_runners.llm_test_runner": {
+        "LLMTestRunner": create_mock_runner_class("LLMTestRunner"),
+    },
+    "tt_model_runners.vllm_forge_qwen_embedding_runner": {
+        "VLLMForgeEmbeddingQwenRunner": create_mock_runner_class(
+            "VLLMForgeEmbeddingQwenRunner"
+        )
+    },
+    "tt_model_runners.mock_runner": {
+        "MockRunner": create_mock_runner_class("MockRunner")
+    },
+    "tt_model_runners.forge_training_runners.training_gemma_lora_runner": {
+        "TrainingGemmaLoraRunner": create_mock_runner_class("TrainingGemmaLoraRunner")
+    },
+    "tt_model_runners.speecht5_runner": {
+        "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
+    },
+    "tt_model_runners.forge_runners": {},
+    "tt_model_runners.forge_runners.runners": {
+        "ForgeResnetRunner": create_mock_runner_class("ForgeResnetRunner"),
+        "ForgeVovnetRunner": create_mock_runner_class("ForgeVovnetRunner"),
+        "ForgeMobilenetv2Runner": create_mock_runner_class("ForgeMobilenetv2Runner"),
+        "ForgeEfficientnetRunner": create_mock_runner_class("ForgeEfficientnetRunner"),
+        "ForgeSegformerRunner": create_mock_runner_class("ForgeSegformerRunner"),
+        "ForgeUnetRunner": create_mock_runner_class("ForgeUnetRunner"),
+        "ForgeVitRunner": create_mock_runner_class("ForgeVitRunner"),
+    },
+    "tt_model_runners.forge_runners.forge_runner": {
+        "ForgeRunner": create_mock_runner_class("ForgeRunner")
+    },
+}
+
+# Create mock modules and add them to sys.modules
+for module_name, classes in runner_mocks.items():
+    # Use types.ModuleType to create a proper module object
+    mock_module = types.ModuleType(module_name)
+    for class_name, class_obj in classes.items():
+        setattr(mock_module, class_name, class_obj)
+    sys.modules[module_name] = mock_module
+
+# Mock load_dynamic before importing forge runners
+import tt_model_runners.forge_runners.runners as forge_runners_module
+
+
+def mock_load_dynamic(model_name: str):
+    """Mock loader that returns a MagicMock model loader."""
+    mock_loader = MagicMock()
+    mock_loader.load_model = MagicMock(return_value=MagicMock())
+    mock_loader._variant_config = MagicMock()
+    mock_loader._variant_config.pretrained_model_name = f"mock_{model_name}"
+    mock_loader.image_to_input = MagicMock(return_value=MagicMock())
+    mock_loader.output_to_prediction = MagicMock(return_value=MagicMock())
+    return mock_loader
+
+
+forge_runners_module.load_dynamic = mock_load_dynamic
+
+# Also add forge runner classes to the already-imported forge_runners_module
+forge_runners_module.ForgeResnetRunner = create_mock_runner_class("ForgeResnetRunner")
+forge_runners_module.ForgeVovnetRunner = create_mock_runner_class("ForgeVovnetRunner")
+forge_runners_module.ForgeMobilenetv2Runner = create_mock_runner_class(
+    "ForgeMobilenetv2Runner"
+)
+forge_runners_module.ForgeEfficientnetRunner = create_mock_runner_class(
+    "ForgeEfficientnetRunner"
+)
+forge_runners_module.ForgeSegformerRunner = create_mock_runner_class(
+    "ForgeSegformerRunner"
+)
+forge_runners_module.ForgeUnetRunner = create_mock_runner_class("ForgeUnetRunner")
+forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
+
+# Don't import AVAILABLE_RUNNERS here - let test files import it when needed
+# The mocks are already in sys.modules, so imports will work correctly
 
 
 def pytest_addoption(parser):
@@ -522,6 +645,9 @@ def evaluation_range(request):
 
 def generate_runner_test_params():
     """Generate (runner_name, expected_class_name) tuples from AVAILABLE_RUNNERS."""
+    # Import here to avoid importing runner_fabric at conftest module level
+    from tt_model_runners.runner_fabric import AVAILABLE_RUNNERS
+
     params = []
     for runner_enum, lambda_func in AVAILABLE_RUNNERS.items():
         try:
