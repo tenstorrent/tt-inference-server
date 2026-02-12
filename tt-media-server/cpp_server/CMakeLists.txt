@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 
 # Find Drogon
 find_package(Drogon REQUIRED)
@@ -37,12 +39,26 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Boost (header-only Boost.Interprocess for IPC message queue)
+find_package(Boost REQUIRED)
+
 # Option for TTNN support
 option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+
+# Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
+set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    tokenizers_cpp
+    GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+    GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
+    GIT_SUBMODULES "msgpack" "sentencepiece"
+)
+FetchContent_MakeAvailable(tokenizers_cpp)
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
+    src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
@@ -54,6 +70,7 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_link_libraries(llm_engine PUBLIC Boost::boost rt)
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
@@ -87,9 +104,41 @@ target_include_directories(llm_engine_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(sequence_test tests/sequence_test.cpp)
+target_link_libraries(sequence_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(sequence_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Tokenizer test
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
+target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
+target_include_directories(test_tokenizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
+gtest_discover_tests(sequence_test)
+gtest_discover_tests(test_tokenizer)
+
+# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
+add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_engine)
+target_include_directories(ipc_scheduler_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+
+# Tokenizer benchmark
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
+target_include_directories(tokenizer_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp)
 
 # Source files
 set(SOURCES
@@ -100,6 +149,7 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
+    src/utils/tokenizer.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES
@@ -136,6 +186,9 @@ endif()
 if(ENABLE_TTNN)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
 endif()
+
+# Tokenizer (requires Rust)
+target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp)
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE

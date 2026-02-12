@@ -492,10 +492,9 @@ sys.modules["utils.logger"] = mock_logger_module
 def create_mock_runner_class(class_name: str):
     """Create a mock runner class with the specified name."""
 
-    def mock_init(self, worker_id, num_torch_threads=1):
-        """Mock __init__ that accepts both worker_id and num_torch_threads"""
+    def mock_init(self, worker_id):
+        """Mock __init__ that accepts both worker_id"""
         self.worker_id = worker_id
-        self.num_torch_threads = num_torch_threads
 
     mock_class = type(
         class_name,
@@ -547,8 +546,8 @@ runner_mocks = {
     "tt_model_runners.mock_runner": {
         "MockRunner": create_mock_runner_class("MockRunner")
     },
-    "tt_model_runners.lora_trainer_runner": {
-        "LoraTrainerRunner": create_mock_runner_class("LoraTrainerRunner")
+    "tt_model_runners.forge_training_runners.training_gemma_lora_runner": {
+        "TrainingGemmaLoraRunner": create_mock_runner_class("TrainingGemmaLoraRunner")
     },
     "tt_model_runners.speecht5_runner": {
         "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
