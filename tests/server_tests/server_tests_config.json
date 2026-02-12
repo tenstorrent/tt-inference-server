@@ -1723,7 +1723,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1905,7 +1905,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -2087,7 +2087,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
