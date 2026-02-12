@@ -62,22 +62,6 @@ void LLMEngine::step() {
 void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
-    
-    std::string status;
-    switch (seq->status_) {
-      case SequenceStatus::WAITING:
-        status = "WAITING";
-        break;
-      case SequenceStatus::RUNNING:
-        status = "RUNNING";
-        break;
-      case SequenceStatus::IN_FLIGHT:
-        status = "IN_FLIGHT";
-        break;
-      case SequenceStatus::FINISHED:
-        status = "FINISHED";
-        break;
-    }
     assert(seq);
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 

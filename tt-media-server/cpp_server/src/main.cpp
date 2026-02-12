@@ -6,14 +6,11 @@
 #include <csignal>
 #include <sys/stat.h>
 
-#include "api/llm_controller.hpp"
 #ifndef TEST
-#include "api/embedding_controller.hpp"
 #endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
-#include "runners/runner_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -62,9 +59,6 @@ int main(int argc, char* argv[]) {
     auto model_svc = tt::config::model_service();
     std::string service_name = tt::config::to_string(model_svc);
 
-    auto runner_ty = tt::runners::RunnerFactory::get_runner_type();
-    std::string runner_name = tt::runners::RunnerFactory::get_runner_name(runner_ty);
-
     std::cout << "=================================================\n"
               << "  TT Media Server (C++ Drogon Implementation)\n"
               << "=================================================\n"
@@ -72,12 +66,6 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-
-    if (model_svc == tt::config::ModelService::LLM) {
-        std::cout << "  Runner: " << runner_name << "\n";
-    } else {
-        std::cout << "  Runner: BGELargeENRunner (Python)\n";
-    }
 
     std::cout << "=================================================\n"
               << std::endl;

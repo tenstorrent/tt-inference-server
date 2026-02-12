@@ -100,7 +100,6 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
   for (Sequence* seq : scheduled_seqs) {
     seq->status_ = SequenceStatus::IN_FLIGHT;
-    sequences_[seq->seq_id]->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
@@ -128,15 +127,16 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     bool finished =
         (!seq->ignore_eos && token_id == eos_) ||
-        seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens);
+        seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens);
 
     if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
           << " (eos=" << (token_id == eos_) << " max_tokens="
-          << (seq->num_completion_tokens() == static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
+          << (seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;
+      sequences_.erase(seq->seq_id);
     } else {
       seq->status_ = SequenceStatus::RUNNING;
       running_.push_back(seq);
