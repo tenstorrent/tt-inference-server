@@ -129,25 +129,24 @@ fi
 
 # Create build directory
 mkdir -p "${BUILD_DIR}"
-cd "${BUILD_DIR}"
 
-# Configure
+# Configure (use -B/-S for explicit paths to avoid ambiguity)
 echo ""
 echo "Configuring CMake..."
-cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" \
+      -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
-      -DLLM_ENGINE_DEBUG_BUILD=ON \
+      -DLLM_ENGINE_DEBUG_BUILD=OFF \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
-      -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}" \
-      ..
+      -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 
-# Build
+# Build (cmake --build works with any generator: Makefiles or Ninja)
 echo ""
 echo "Building..."
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
-make -j"${NPROC}"
+cmake --build "${BUILD_DIR}" -j"${NPROC}"
 
 echo ""
 echo "=============================================="

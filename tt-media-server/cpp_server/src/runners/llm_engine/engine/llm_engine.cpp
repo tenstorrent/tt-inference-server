@@ -48,10 +48,7 @@ void LLMEngine::step() {
   drain_decode_results();
 
   auto [seqs, is_prefill] = scheduler_->schedule();
-  if (seqs.empty()) {
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
-    return;
-  }
+  if (seqs.empty()) return;
 
   model_runner_->run(seqs, is_prefill);
 
@@ -64,20 +61,6 @@ void LLMEngine::drain_decode_results() {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
     
     std::string status;
-    switch (seq->status_) {
-      case SequenceStatus::WAITING:
-        status = "WAITING";
-        break;
-      case SequenceStatus::RUNNING:
-        status = "RUNNING";
-        break;
-      case SequenceStatus::IN_FLIGHT:
-        status = "IN_FLIGHT";
-        break;
-      case SequenceStatus::FINISHED:
-        status = "FINISHED";
-        break;
-    }
     assert(seq);
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 

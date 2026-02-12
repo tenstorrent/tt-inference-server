@@ -100,7 +100,6 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
   for (Sequence* seq : scheduled_seqs) {
     seq->status_ = SequenceStatus::IN_FLIGHT;
-    sequences_[seq->seq_id]->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
