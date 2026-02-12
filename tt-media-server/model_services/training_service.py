@@ -15,7 +15,6 @@ class TrainingService(BaseJobService):
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
-
         os.makedirs("models_save", exist_ok=True)
         request._output_model_path = f"models_save/{request._task_id}.pt"
         self.logger.info(f"Generated output path: {request._output_model_path}")
