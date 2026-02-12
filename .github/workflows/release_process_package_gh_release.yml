@@ -3,7 +3,6 @@ name: Package GH Release
 run-name: ${{ format('Packaging GH release from release candidate PR {0}', inputs.release-candidate-pr-number) }}
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       release-candidate-pr-number:

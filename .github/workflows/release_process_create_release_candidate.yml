@@ -3,7 +3,6 @@ name: Create Release Candidate PR
 run-name: ${{ format('Creating release PR from pre-release PR {0}', inputs.prerelease-pr-number) }}
 
 on:
-  push:
   workflow_dispatch:
     inputs:
       prerelease-pr-number:
@@ -198,6 +197,13 @@ jobs:
           rm crane.tar.gz
           crane version
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: vmaksimovicTT
+          password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -230,7 +236,7 @@ jobs:
 
       - name: Make release image artifacts
         run: |
-          python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --release --dry-run
+          python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --release
 
       - name: Get tt-metal commits
         id: get-commits
@@ -299,6 +305,8 @@ jobs:
         run: |
           set -e
 
+          TARGET_BRANCH="main"
+
           # Remove "Candidate " from the title
           NEW_PR_TITLE=$(echo "$PR_TITLE" | sed 's/Release Candidate /Release /')
 
@@ -306,16 +314,16 @@ jobs:
           PR_BODY_FILE=$(mktemp)
           echo "$PR_BODY" > "$PR_BODY_FILE"
 
-          echo "📝 Creating new draft PR from '$HEAD_REF' to 'replica_main'..."
+          echo "📝 Creating new draft PR from '$HEAD_REF' to '$TARGET_BRANCH'..."
 
-          # Create draft PR against replica_main
+          # Create draft PR against target branch
           gh pr create \
             --repo "$REPO" \
             --title "$NEW_PR_TITLE" \
             --body-file "$PR_BODY_FILE" \
-            --base replica_main \
+            --base "$TARGET_BRANCH" \
             --head "$HEAD_REF" \
             --draft
 
           rm -f "$PR_BODY_FILE"
-          echo "✅ Successfully created draft PR from '$HEAD_REF' to 'replica_main'"
+          echo "✅ Successfully created draft PR from '$HEAD_REF' to '$TARGET_BRANCH'"
