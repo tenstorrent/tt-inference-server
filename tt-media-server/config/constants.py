@@ -183,8 +183,10 @@ class DeviceTypes(Enum):
     N300 = "n300"
     GALAXY = "galaxy"
     T3K = "t3k"
-    QBGE = "qbge"
     P300 = "p300"
+    P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
+    P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
+    P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
 
 
 class QueueType(Enum):
@@ -199,6 +201,7 @@ class DeviceIds(Enum):
     DEVICE_IDS_2_GROUP = "(0,1)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
+    DEVICE_IDS_8_GROUP = "(0,1,2,3,4,5,6,7)"
     DEVICE_IDS_16 = (
         "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
     )
@@ -368,7 +371,7 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
-    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.QBGE): {
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
@@ -396,7 +399,7 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
-    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.QBGE): {
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
@@ -462,6 +465,27 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -475,8 +499,22 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_WAN_2_2, DeviceTypes.QBGE): {
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
