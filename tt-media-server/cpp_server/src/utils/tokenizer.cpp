@@ -43,6 +43,10 @@ TokenizerUtil::TokenizerUtil(const std::string& path) {
     std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
 }
 
+bool TokenizerUtil::is_loaded() const {
+    return tok_ != nullptr;
+}
+
 std::vector<int> TokenizerUtil::encode(const std::string& text) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot encode");
