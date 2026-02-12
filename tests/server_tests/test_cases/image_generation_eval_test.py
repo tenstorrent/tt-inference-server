@@ -47,6 +47,8 @@ class ImageGenConfig:
     )
     GUIDANCE_SCALE: float = 8.0
     SEED: int = 0
+    IMAGE_RETURN_FORMAT: str = "PNG"
+    IMAGE_QUALITY: int = 100
     REQUEST_TIMEOUT: int = 5000
 
 
@@ -352,6 +354,8 @@ class ImageGenerationEvalsTest(BaseTest):
             "num_inference_steps": num_inference_steps,
             "seed": CONFIG.SEED,
             "guidance_scale": CONFIG.GUIDANCE_SCALE,
+            "image_return_format": CONFIG.IMAGE_RETURN_FORMAT,
+            "image_quality": CONFIG.IMAGE_QUALITY,
             "number_of_images": 1,
         }
 
