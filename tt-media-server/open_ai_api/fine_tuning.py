@@ -7,9 +7,9 @@ from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
-from security.api_key_cheker import get_api_key
+from security.api_key_checker import get_api_key
 
 router = APIRouter()
 
@@ -17,7 +17,7 @@ router = APIRouter()
 @router.post("/jobs")
 async def submit_fine_tuning_request(
     request: TrainingRequest,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -30,6 +30,10 @@ async def submit_fine_tuning_request(
         HTTPException: If fine tuning job submission fails.
     """
     try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
+    try:
         job_data = await service.create_job(JobTypes.TRAINING, request)
         return JSONResponse(content=job_data, status_code=201)
     except Exception as e:
@@ -38,7 +42,7 @@ async def submit_fine_tuning_request(
 
 @router.get("/jobs")
 async def list_fine_tuning_jobs(
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -60,7 +64,7 @@ async def list_fine_tuning_jobs(
 @router.get("/jobs/{job_id}")
 async def get_fine_tuning_job_metadata(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -79,10 +83,10 @@ async def get_fine_tuning_job_metadata(
     return JSONResponse(content=job_data)
 
 
-@router.delete("/jobs/{job_id}/cancel")
+@router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -94,25 +98,19 @@ async def cancel_fine_tuning_job(
     Raises:
         HTTPException: If job not found or cannot be cancelled.
     """
-    success = service.cancel_job(job_id)
-    if not success:
+    status = service.cancel_job(job_id)
+    if not status:
         raise HTTPException(
             status_code=400, detail="Job not found or cannot be cancelled"
         )
 
-    return JSONResponse(
-        content={
-            "id": job_id,
-            "object": JobTypes.TRAINING.value,
-            "deleted": True,
-        }
-    )
+    return JSONResponse(content=status)
 
 
 @router.get("/jobs/{job_id}/checkpoints")
 async def list_fine_tuning_checkpoints(
     job_id: str,
-    service: BaseService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
@@ -125,9 +123,12 @@ async def list_fine_tuning_checkpoints(
         HTTPException: If job not found.
     """
     try:
-        # TODO: Implement checkpoint retrieval from database
-        service.get_job_result(job_id)
-        return JSONResponse(content={"object": "list", "data": [], "has_more": False})
+        # TODO: Implement file retrieval instead of result path, and discuss if we return
+        # all checkpoints or just the last model weights state which is saved to result_path
+        result_path = service.get_job_result_path(job_id)
+        return JSONResponse(
+            content={"object": "string", "data": result_path, "has_more": False}
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to get checkpoints: {str(e)}"

@@ -10,9 +10,12 @@ This server is built to serve non-LLM models. Currently supported models:
 6. Mochi1
 7. Wan2.2
 8. Motif-Image-6B-Preview
-9. Whisper
-10. Microsoft Resnet (Forge)
-11. VLLM with TT Plugin
+9. Qwen-Image
+10. Whisper
+11. Microsoft Resnet (Forge)
+12. VLLM with TT Plugin
+13. bge-large-en-v1.5
+14. Qwen3-Embedding-8B
 
 # Repo structure
 
@@ -96,23 +99,25 @@ source run_uvicorn.sh
 - Only Galaxy and T3K hardware with sufficient devices is supported
 - Choose the configuration based on your hardware availability and performance requirements
 
-Please note that only T3K and 6u galaxy are supported.
 
 ## Supported DiT models
 The setup for other supported DiT models is very similar to [Standard SD-3.5 Setup](#standard-sd-35-setup). Choose a configuration from the table below, and run the server.
 
 | MODEL | Supported device options|
 |-------|--------|
+| stable-diffusion-3.5-large | galaxy, t3k |
 | flux.1-dev | galaxy, t3k, p300, qbge |
 | flux.1-schnell | galaxy, t3k, p300, qbge |
 | motif-image-6b-preview | galaxy, t3k |
+| qwen-image | galaxy, t3k |
+| qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 
 For example, to run flux.1-dev on t3k
-1. Set the model special env variable ```export MODEL=flux.1-dev```depending on the model.
-2. Set device special env variable ```export DEVICE=t3k```
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```
+1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
+2. Set device special env variable e.g ```export DEVICE=t3k```.
+3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
 ## VLLM with TT Plugin Setup
 
@@ -258,18 +263,103 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 # Text-to-Speech (TTS) test call
 
-The Text-to-Speech API converts text to speech audio using the SpeechT5 model.
+The Text-to-Speech API converts text to speech audio using the SpeechT5 model. The response is binary audio (WAV, MP3, OGG) or JSON with base64 audio and metadata.
 
-- JSON Request: Send a JSON POST request to `/speech`
+**Endpoint:** `POST /audio/speech`  
+**Content-Type:** `application/json`
+
+## Request parameters
+
+| Parameter           | Required | Description |
+|--------------------|----------|-------------|
+| `text`             | Yes      | Input text to convert to speech. |
+| `response_format`  | No       | Output format: `wav` (default), `mp3`, `ogg`, `json`, or `verbose_json`. |
+
+## Response formats
+
+- **`wav`** (default) – Binary WAV (`Content-Type: audio/wav`). No ffmpeg required.
+- **`mp3`** – Binary MP3 (`Content-Type: audio/mpeg`). Requires ffmpeg on the server.
+- **`ogg`** – Binary OGG (`Content-Type: audio/ogg`). Requires ffmpeg on the server.
+- **`json`** / **`verbose_json`** – JSON body with base64-encoded audio (`audio`), `duration`, `sample_rate`, `format`. No ffmpeg required.
+
+If `response_format` is `mp3` or `ogg` but ffmpeg is not in PATH (or encoding fails), the server logs a warning and **falls back to WAV** (HTTP 200, `Content-Type: audio/wav`).
+
+**Prerequisite for MP3/OGG:** Install ffmpeg so the server can encode to MP3/OGG. From tt-media-server: `sudo apt update && sudo apt install -y ffmpeg`. Same as in [For development running](#for-development-running) step 4.
+
+## Content-Disposition and curl -J -O
+
+The server sends `Content-Disposition: attachment; filename=speech.<format>` (e.g. `speech.wav`, `speech.mp3`, `speech.ogg`) so the suggested filename matches the actual format. Use **`curl -J -O`** to save with that filename and avoid extension mismatch (e.g. requesting ogg but saving as `output.mp3`).
+
+## Examples
+
+**Default (WAV):**
+
 ```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/audio/speech' \
-  -H 'accept: application/json' \
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
-  -d '{
-  "text": "Hello, this is a test of the text to speech system."
-}'
+  -d '{"text": "Hello, this is a test of the text to speech system."}' \
+  --output output.wav \
+  --silent \
+  --show-error
+```
+
+**MP3:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "mp3"}' \
+  --output output.mp3 \
+  --silent \
+  --show-error
+```
+
+**OGG (or use -J -O to save as speech.ogg from Content-Disposition):**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "ogg"}' \
+  -J -O
+```
+
+**JSON response (base64 audio + metadata):**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "verbose_json"}' \
+  --silent
+```
+
+**Request body examples (Swagger/OpenAPI):**
+
+```json
+{"text": "Hello, this is a test of the text to speech system."}
+```
+
+```json
+{"text": "Hello world", "response_format": "wav"}
+```
+
+```json
+{"text": "Hello world", "response_format": "mp3"}
+```
+
+```json
+{"text": "Hello world", "response_format": "ogg"}
+```
+
+```json
+{"text": "Hello world", "response_format": "json"}
+```
+
+```json
+{"text": "Hello world", "response_format": "verbose_json"}
 ```
 
 # Image search test call
@@ -353,8 +443,7 @@ curl -X 'GET' \
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint supports HTTP range requests for efficient streaming and partial downloads.
-The example below downloads the full file unless a `Range` header is specified.
+The `/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
@@ -363,22 +452,11 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-To download only a portion of the video (e.g., the first 1 MB), use the `Range` header:
-
-```bash
-curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Range: bytes=0-1048575' \
-  -o partial_output.mp4
-```
-This will download only the first 1 MB (bytes 0–1048575) of the video file.
-
 ## Cancel video job and assets
 
 ```bash
-curl -X 'DELETE' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+curl -X 'POST' \
+  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -440,7 +518,7 @@ curl -X 'GET' \
 ## Cancel fine-tuning job
 
 ```bash
-curl -X 'DELETE' \
+curl -X 'POST' \
   'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
@@ -546,6 +624,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 | `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
+
 ## Queue and Batch Configuration
 
 | Environment Variable | Default Value | Description |
@@ -554,6 +633,8 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MAX_BATCH_SIZE` | `1` | Maximum batch size for inference requests. Currently limited to 1 for stability |
 | `MAX_BATCH_DELAY_TIME_MS` | `None` | Maximum wait time in milliseconds after the first request before a batch is executed, allowing more requests to accumulate without adding significant latency |
 | `USE_DYNAMIC_BATCHER` | `False` | Boolean flag to enable dynamic batching for improved throughput. When enabled, the server attempts to batch multiple requests together for more efficient processing |
+| `USE_QUEUE_PER_WORKER` | `False` | Boolean flag to enable per-worker result queues. When enabled, each worker has its own dedicated result queue instead of a shared queue, which can improve performance in high-concurrency scenarios by reducing queue contention |
+| `QUEUE_FOR_MULTIPROCESSING` | `TTQueue` | Selects the queue implementation for inter-process communication. Options: `TTQueue` (default, Python's multiprocessing.Queue), `FasterFifo` (high-performance, uses faster-fifo library). |
 
 ### Dynamic Batching
 
@@ -598,6 +679,7 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | `JOB_RETENTION_SECONDS` | `86400` | Duration in seconds to keep completed or failed jobs before automatic removal. Jobs older than this threshold are cleaned up to free memory. Default is 1 day |
 | `JOB_MAX_STUCK_TIME_SECONDS` | `10800` | Maximum time in seconds a job can remain in "in_progress" status before being automatically cancelled as stuck. Helps prevent zombie jobs from consuming resources. Default is 3 hours |
 | `ENABLE_JOB_PERSISTENCE` | `False` | Boolean flag to enable persistent job storage to database. When enabled, jobs are saved to disk and can survive server restarts |
+| `JOB_DATABASE_PATH` | `./jobs.db` | The file system path where the job database is stored. This setting is only applicable when job persistence is enabled |
 
 ## VLLM Settings
 

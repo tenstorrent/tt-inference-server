@@ -324,7 +324,7 @@ run.py --tools vllm
   ↓
 benchmarking/run_benchmarks.py
   ↓
-.workflow_venvs/.venv_benchmarks_http_client_vllm_api/scripts/benchmark_serving.py
+.workflow_venvs/.venv_benchmarks_vllm/bin/serve
   ↓
 Results → workflow_logs/benchmarks_output/benchmark_*.json
 ```
@@ -569,7 +569,7 @@ tt-inference-server/
 │       ├── benchmarks/                # Combined reports
 │       └── benchmarks_aiperf/         # AIPerf detailed reports
 └── .workflow_venvs/
-    ├── .venv_benchmarks_http_client_vllm_api/  # vLLM environment
+    ├── .venv_benchmarks_vllm/                  # vLLM environment
     ├── .venv_benchmarks_aiperf/                # AIPerf environment
     └── .venv_benchmarks_aiperf/artifacts/      # AIPerf raw output
 ```

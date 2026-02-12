@@ -16,11 +16,15 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
+    QueueType,
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
+from utils.logger import TTLogger
+
+logger = TTLogger()
 
 
 class Settings(BaseSettings):
@@ -46,14 +50,14 @@ class Settings(BaseSettings):
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
-    use_queue_per_worker: bool = False
-    use_memory_queue: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
+    use_queue_per_worker: bool = False
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Worker management settings
     new_device_delay_seconds: int = 0
@@ -72,6 +76,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
+    job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
 
@@ -138,6 +143,11 @@ class Settings(BaseSettings):
         ):
             self._calculate_audio_chunk_duration()
 
+        if self.max_batch_size < self.vllm.max_num_seqs:
+            logger.warning(
+                f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
+            )
+
     def _set_device_pairs_overrides(self):
         if self.is_galaxy:
             device_manager = DeviceManager()
@@ -158,6 +168,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
         ]:

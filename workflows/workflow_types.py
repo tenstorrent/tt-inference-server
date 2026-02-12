@@ -24,7 +24,7 @@ class WorkflowType(IntEnum):
 
 
 class WorkflowVenvType(IntEnum):
-    LOCAL_SETUP_VALIDATION = auto()
+    SYSTEM_SOFTWARE_VALIDATION = auto()
     STRESS_TESTS_RUN_SCRIPT = auto()
     STRESS_TESTS = auto()
     EVALS_RUN_SCRIPT = auto()
@@ -35,36 +35,45 @@ class WorkflowVenvType(IntEnum):
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
+    EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
+    BENCHMARKS_VIDEO = auto()
+    BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     HF_SETUP = auto()
+    EVALS_GPT_OSS = auto()
     SERVER = auto()
+    TT_SMI = auto()
+    TT_TOPOLOGY = auto()
 
 
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
+    HTTP_CLIENT_VIDEO_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
 
 class DeviceTypes(IntEnum):
     CPU = auto()
+    GPU = auto()
     E150 = auto()
     N150 = auto()
+    N150X4 = auto()
+    N300 = auto()
+    T3K = auto()
     P100 = auto()
     P150 = auto()
     P150X4 = auto()
     P150X8 = auto()
-    N150X4 = auto()
-    N300 = auto()
-    T3K = auto()
     GALAXY = auto()
     GALAXY_T3K = auto()
-    GPU = auto()
+    DUAL_GALAXY = auto()
+    QUAD_GALAXY = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -87,6 +96,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
+            DeviceTypes.DUAL_GALAXY: "DUAL",
+            DeviceTypes.QUAD_GALAXY: "QUAD",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -95,18 +106,19 @@ class DeviceTypes(IntEnum):
 
     def to_product_str(self) -> str:
         mapping = {
-            DeviceTypes.CPU: "CPU",
             DeviceTypes.E150: "e150",
             DeviceTypes.N150: "n150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
-            DeviceTypes.P150X4: "4xp150",
-            DeviceTypes.P150X8: "8xp150",
+            DeviceTypes.P150X4: "BH QuietBox",
+            DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
-            DeviceTypes.T3K: "TT-LoudBox",
-            DeviceTypes.GALAXY: "Tenstorrent Galaxy",
-            DeviceTypes.GALAXY_T3K: "Tenstorrent Galaxy",
+            DeviceTypes.T3K: "WH LoudBox/QuietBox",
+            DeviceTypes.GALAXY: "WH Galaxy",
+            DeviceTypes.GALAXY_T3K: "WH Galaxy",
+            DeviceTypes.DUAL_GALAXY: "Dual WH Galaxy",
+            DeviceTypes.QUAD_GALAXY: "Quad WH Galaxy",
         }
         if self not in mapping:
             raise ValueError(f"Invalid DeviceType: {self}")
@@ -224,15 +236,14 @@ class ModelStatusTypes(IntEnum):
     COMPLETE = auto()
     TOP_PERF = auto()
 
-    @classmethod
-    def to_display_string(cls, check_type: str):
-        disp_map = {
+    @property
+    def display_string(self) -> str:
+        return {
             ModelStatusTypes.EXPERIMENTAL: "🛠️ Experimental",
             ModelStatusTypes.FUNCTIONAL: "🟡 Functional",
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
-        }
-        return disp_map[check_type]
+        }[self]
 
 
 class EvalLimitMode(IntEnum):
@@ -256,3 +267,66 @@ class VersionMode(IntEnum):
 
     STRICT = auto()  # Requirement must be met, raises an error otherwise.
     SUGGESTED = auto()  # A warning is issued if the requirement is not met.
+
+
+class InferenceEngine(Enum):
+    VLLM = "vLLM"
+    MEDIA = "media"
+    FORGE = "forge"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
+            InferenceEngine.MEDIA: "tt-media-server",
+            InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+        }[self]
+
+    @classmethod
+    def from_string(cls, name: str):
+        return cls[name.upper()]
+
+
+class ModelSource(Enum):
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    NOACTION = "noaction"
+
+
+class ModelType(IntEnum):
+    LLM = auto()
+    CNN = auto()
+    AUDIO = auto()
+    IMAGE = auto()
+    EMBEDDING = auto()
+    TEXT_TO_SPEECH = auto()
+    VIDEO = auto()
+    VLM = auto()  # Vision-Language Models (text+image-to-text)
+
+    @property
+    def display_name(self) -> str:
+        display_names = {
+            ModelType.LLM: "Large Language Model",
+            ModelType.CNN: "Convolutional Neural Network",
+            ModelType.AUDIO: "Audio",
+            ModelType.IMAGE: "Image",
+            ModelType.EMBEDDING: "Embedding",
+            ModelType.TEXT_TO_SPEECH: "Text-to-Speech",
+            ModelType.VIDEO: "Video",
+            ModelType.VLM: "Vision-Language Model",
+        }
+        return display_names[self]
+
+    @property
+    def short_name(self) -> str:
+        short_names = {
+            ModelType.LLM: "LLM",
+            ModelType.VLM: "VLM",
+            ModelType.AUDIO: "Audio",
+            ModelType.IMAGE: "Image",
+            ModelType.CNN: "CNN",
+            ModelType.EMBEDDING: "Embedding",
+            ModelType.TEXT_TO_SPEECH: "TTS",
+            ModelType.VIDEO: "Video",
+        }
+        return short_names[self]

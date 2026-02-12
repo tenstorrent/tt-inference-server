@@ -1,5 +1,5 @@
-name: Add a Model to Model Readiness
-description: Add support for a new model in the Model Readiness suite.
+name: Add Model Readiness Support for a New Model
+description: Add support for a new model in the Model Readiness test suite.
 title: "[Model Readiness Support]: "
 labels: ["model_readiness_support"]
 projects: ["tenstorrent/130"]

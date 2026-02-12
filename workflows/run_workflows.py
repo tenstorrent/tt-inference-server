@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import logging
-import sys
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
@@ -15,14 +14,12 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.workflow_venvs import VENV_CONFIGS, default_venv_path
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
 
 class WorkflowSetup:
-    workflow_setup_venv = default_venv_path / ".venv_setup_workflow"
-
     def __init__(self, model_spec, json_fpath):
         self.model_spec = model_spec
         self.model_spec_json_path = json_fpath
@@ -54,43 +51,6 @@ class WorkflowSetup:
         if _config:
             self.config = _config
 
-    @classmethod
-    def bootstrap_uv(cls):
-        # Step 1: Check Python version
-        python_version = sys.version_info
-        if python_version < (3, 6):
-            raise ValueError("Python 3.6 or higher is required.")
-
-        logger.info(
-            "Python version: %d.%d.%d",
-            python_version.major,
-            python_version.minor,
-            python_version.micro,
-        )
-
-        # Step 2: Create a virtual environment
-        uv_exec = cls.workflow_setup_venv / "bin" / "uv"
-        if not cls.workflow_setup_venv.exists():
-            logger.info(
-                "Creating virtual environment in '%s'...", cls.workflow_setup_venv
-            )
-            run_command(
-                f"{sys.executable} -m venv {cls.workflow_setup_venv}", logger=logger
-            )
-            # Step 3: Install 'uv' using pip
-            # Note: Activating the virtual environment in a script doesn't affect the current shell,
-            # so we directly use the pip executable from the venv.
-            pip_exec = cls.workflow_setup_venv / "bin" / "pip"
-
-            logger.info("Installing 'uv' using pip...")
-            run_command(f"{pip_exec} install uv", logger=logger)
-
-            logger.info("uv bootsrap installation complete.")
-            # check version
-            run_command(f"{str(uv_exec)} --version", logger=logger)
-
-        cls.uv_exec = uv_exec
-
     def create_required_venvs(self):
         required_venv_types = set([self.workflow_config.workflow_run_script_venv_type])
         if self.config:
@@ -101,24 +61,7 @@ class WorkflowSetup:
             if venv_type is None:
                 continue
             venv_config = VENV_CONFIGS[venv_type]
-            # setup venv using uv if not exists
-            if not venv_config.venv_path.exists():
-                python_version = venv_config.python_version
-                # uv venv: https://docs.astral.sh/uv/reference/cli/#uv-venv
-                # --python: set the python interpreter version in venv
-                # --allow-existing: if venv exists, check if it has correct package versions
-                # --seed: Install seed packages (one or more of: pip, setuptools, and wheel)
-                # --managed-python: explicitly use uv managed python versions
-                run_command(
-                    f"{str(self.uv_exec)} venv --managed-python --python={python_version} {venv_config.venv_path} --allow-existing",
-                    logger=logger,
-                )
-            # venv setup
-            # NOTE: because uv venv does not create a separate uv binary we need to
-            # pass the uv_exec binary to the venv setup functions
-            setup_completed = venv_config.setup(
-                model_spec=self.model_spec, uv_exec=self.uv_exec
-            )
+            setup_completed = venv_config.setup(model_spec=self.model_spec)
             assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
     def setup_workflow(self):

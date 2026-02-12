@@ -34,18 +34,13 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Set
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workflows.model_spec import (
     spec_templates,
     ModelSpecTemplate,
-    generate_default_docker_link,
-    VERSION,
-    InferenceEngine,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
 
 
 def map_perf_status_to_model_status(perf_status):
@@ -57,229 +52,6 @@ def map_perf_status_to_model_status(perf_status):
         "top_perf": "ModelStatusTypes.TOP_PERF",
     }
     return status_map.get(perf_status.lower() if perf_status else None)
-
-
-# Mapping inference engine to documentation link
-INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "vllm-tt-metal-llama3/README.md",
-    InferenceEngine.MEDIA.value: "tt-media-server/README.md",
-    InferenceEngine.FORGE.value: "tt-media-server/README.md",
-}
-
-# Mapping device type to hardware link text
-DEVICE_HARDWARE_LINKS = {
-    DeviceTypes.T3K: "[WH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox)/[WH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (T3K)",
-    DeviceTypes.N150: "[n150](https://tenstorrent.com/hardware/wormhole)",
-    DeviceTypes.N300: "[n300](https://tenstorrent.com/hardware/wormhole)",
-    DeviceTypes.GALAXY: "[Galaxy](https://tenstorrent.com/hardware/galaxy)",
-    DeviceTypes.P100: "[p100](https://tenstorrent.com/hardware/blackhole)",
-    DeviceTypes.P150: "[p150](https://tenstorrent.com/hardware/blackhole)",
-    DeviceTypes.P150X4: "[BH-QuietBox](https://tenstorrent.com/hardware/tt-quietbox) (P150X4)",
-    DeviceTypes.P150X8: "[BH-LoudBox](https://tenstorrent.com/hardware/tt-loudbox) (P150X8)",
-}
-
-
-def get_hardware_str(devices: Set[DeviceTypes]) -> str:
-    device_links = []
-    for d in devices:
-        link = DEVICE_HARDWARE_LINKS.get(d)
-        if link:
-            device_links.append(link)
-
-    hardware_str = ", ".join(device_links)
-    return hardware_str
-
-
-def generate_markdown_table(templates_to_use=None, status_filter=None) -> str:
-    """
-    Generate a markdown table from model spec templates.
-
-    Args:
-        templates_to_use: Optional list of templates. Falls back to global spec_templates.
-        status_filter: Optional ModelStatusTypes value to filter templates by status.
-
-    Returns:
-        Markdown table string with header and rows.
-    """
-    header = (
-        "| Model Name | Hardware | Model Weights | tt-metal commit | Docker Image |\n"
-        "|-------|---------------|----------|-----------------|---------------|\n"
-    )
-    rows = []
-
-    # Use provided templates or fall back to global spec_templates
-    templates = templates_to_use if templates_to_use is not None else spec_templates
-
-    # Filter by status if specified
-    if status_filter is not None:
-        templates = [t for t in templates if t.status == status_filter]
-
-    # Build row data for sorting
-    row_data = []
-    for spec in templates:
-        try:
-            # Create a descriptive model architecture name
-            default_hardware = {
-                dev_spec.device
-                for dev_spec in spec.device_model_specs
-                if dev_spec.default_impl
-            }
-            hardware = get_hardware_str(default_hardware)
-            if not hardware:
-                continue
-
-            # Create Model column with display_name or first weight name, linked to README
-            model_name = (
-                spec.display_name
-                if spec.display_name
-                else model_name_from_weight(spec.weights[0])
-            )
-            readme_link = INFERENCE_ENGINE_README_LINKS.get(spec.inference_engine, "")
-            model_str = f"[{model_name}]({readme_link})" if readme_link else model_name
-
-            # Create multiple HF repo weight links using full repo name
-            model_weights = []
-            for weight in spec.weights:
-                model_weights.append(f"[{weight}](https://huggingface.co/{weight})")
-            model_weights_str = "<br/>".join(model_weights)
-
-            # Get sort key from first weight's model name
-            sort_key = model_name_from_weight(spec.weights[0]) if spec.weights else ""
-
-            # Generate code link directly since ModelSpecTemplate doesn't have code_link
-            code_link = f"{spec.impl.repo_url}/tree/{spec.tt_metal_commit}/{spec.impl.code_path}"
-            tt_metal_commit = f"[{spec.tt_metal_commit[:16]}]({code_link})"
-
-            # Handle docker_image which might be None for templates
-            if spec.docker_image:
-                docker_image_full = spec.docker_image
-                _, ghcr_tag = spec.docker_image.split(":")
-            else:
-                # Generate default docker image like ModelSpec does
-                docker_image_full = generate_default_docker_link(
-                    VERSION, spec.tt_metal_commit, spec.vllm_commit
-                )
-                _, ghcr_tag = docker_image_full.split(":")
-
-            # NOTE: because %2F is used in package name it gets decoded by browser when clinking link
-            # best is to link to package root with ghcr.io, cannot link directly to the tag
-            docker_image_str = f"[{ghcr_tag[:21]}](https://{docker_image_full})"
-            row = f"| {model_str} | {hardware} | {model_weights_str} | {tt_metal_commit} | {docker_image_str} |"
-            row_data.append((sort_key, row))
-        except Exception as e:
-            print(f"Error processing ModelSpecTemplate: {e}", file=sys.stderr)
-            raise e
-
-    # Sort by model name (first weight)
-    row_data.sort(key=lambda x: x[0].lower())
-    rows = [row for _, row in row_data]
-
-    markdown_str = header + "\n".join(rows)
-
-    return markdown_str
-
-
-# Status groups to include in grouped markdown output, ordered by priority
-PUBLISHED_STATUS_GROUPS = (
-    ModelStatusTypes.TOP_PERF,
-    ModelStatusTypes.COMPLETE,
-    ModelStatusTypes.FUNCTIONAL,
-)
-
-# Markdown table structure: header line + separator line
-_MARKDOWN_TABLE_HEADER_LINE_COUNT = 2
-
-
-def _get_status_markers(status: ModelStatusTypes) -> tuple:
-    """Generate HTML comment markers for a status type."""
-    name = status.name
-    return (f"<!-- {name}_MODELS_START -->", f"<!-- {name}_MODELS_END -->")
-
-
-def _table_has_data_rows(table: str) -> bool:
-    """Check if a markdown table has any data rows beyond header and separator."""
-    line_count = len(table.strip().split("\n"))
-    return line_count > _MARKDOWN_TABLE_HEADER_LINE_COUNT
-
-
-def _generate_status_section_markdown(
-    status: ModelStatusTypes,
-    templates_to_use=None,
-    include_header: bool = True,
-    empty_message: str = None,
-) -> str:
-    """
-    Generate markdown content for a single status type with markers.
-
-    Args:
-        status: ModelStatusTypes value to filter templates by.
-        templates_to_use: Optional list of templates. Falls back to global spec_templates.
-        include_header: Whether to include the section header (### Status Models).
-        empty_message: Optional message to show when no models match. If None, returns empty string.
-
-    Returns:
-        Markdown string with table wrapped in HTML comment markers, or empty string if no data.
-    """
-    start_marker, end_marker = _get_status_markers(status)
-    table = generate_markdown_table(
-        templates_to_use=templates_to_use, status_filter=status
-    )
-
-    if not _table_has_data_rows(table):
-        if empty_message:
-            return f"{start_marker}\n{empty_message}\n{end_marker}"
-        return ""
-
-    section_title = ModelStatusTypes.to_display_string(status)
-    if include_header:
-        content = f"### {section_title} Models\n\n{table}"
-    else:
-        content = table
-
-    return f"{start_marker}\n{content}\n{end_marker}"
-
-
-def generate_grouped_markdown_tables(templates_to_use=None) -> str:
-    """
-    Generate markdown tables grouped by status: Top Performance, Complete, Functional.
-
-    Excludes Experimental status models. Each section is wrapped in HTML comment markers.
-
-    Args:
-        templates_to_use: Optional list of templates. Falls back to global spec_templates.
-
-    Returns:
-        Markdown string with tables separated by status section headers and markers.
-    """
-    sections = []
-    for status in PUBLISHED_STATUS_GROUPS:
-        section = _generate_status_section_markdown(
-            status=status,
-            templates_to_use=templates_to_use,
-            include_header=True,
-        )
-        if section:
-            sections.append(section)
-
-    return "\n\n".join(sections)
-
-
-def generate_experimental_models_markdown(templates_to_use=None) -> str:
-    """
-    Generate markdown content for experimental models with markers for idempotent replacement.
-
-    Args:
-        templates_to_use: Optional list of templates. Falls back to global spec_templates.
-
-    Returns:
-        Markdown string with experimental models table wrapped in HTML comment markers.
-    """
-    return _generate_status_section_markdown(
-        status=ModelStatusTypes.EXPERIMENTAL,
-        templates_to_use=templates_to_use,
-        include_header=False,
-        empty_message="_No experimental models at this time._",
-    )
 
 
 def model_name_from_weight(weight):
@@ -704,155 +476,195 @@ def export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
-def _replace_marker_content(
-    content: str, status: ModelStatusTypes, new_section: str
-) -> str:
+def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"):
     """
-    Replace content between status markers in a document.
+    Generate model support documentation by calling generate_model_support_docs.py.
 
     Args:
-        content: Full document content
-        status: ModelStatusTypes to identify which markers to use
-        new_section: New content to place between markers (includes markers)
-
-    Returns:
-        Updated content with replaced section, or original if markers not found
+        model_spec_path: Path to the model_spec.py file
+        output_dir: Output directory for model support docs (default: docs/model_support)
     """
-    start_marker, end_marker = _get_status_markers(status)
-    start_pos = content.find(start_marker)
-    end_pos = content.find(end_marker)
+    from scripts.release.generate_model_support_docs import (
+        EXCLUDED_DEVICES,
+        DEVICE_HARDWARE_PAGE_GROUPS_MAPPING,
+        generate_models_by_hardware_page,
+        generate_model_type_page,
+        generate_model_page_group_page,
+        group_templates_by_model,
+        get_model_type_for_templates,
+        get_model_subdir,
+        get_model_page_group_filename,
+        write_file,
+    )
+    from workflows.workflow_types import ModelType
 
-    if start_pos == -1 or end_pos == -1:
-        return content
+    # Dynamically import the updated model_spec module to get fresh spec_templates
+    repo_root = model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-    end_pos += len(end_marker)
-    return content[:start_pos] + new_section + content[end_pos:]
+    spec = importlib.util.spec_from_file_location("model_spec_docs", model_spec_path)
+    model_spec_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model_spec_module)
+
+    templates = model_spec_module.spec_templates
+    output_path = Path(output_dir)
+
+    print(f"Generating Model Support documentation from {len(templates)} templates")
+    print(f"Output directory: {output_path}")
+
+    # Note: docs/model_support/README.md is no longer generated.
+    # The model support content is maintained directly in root README.md
+    # via update_readme_model_support() function.
+
+    # Generate models by hardware page
+    hardware_content = generate_models_by_hardware_page(templates)
+    write_file(output_path / "models_by_hardware.md", hardware_content)
+
+    # Generate model type table pages (in subdirectory as README.md)
+    for model_type in ModelType:
+        type_templates = [t for t in templates if t.model_type == model_type]
+        if not type_templates:
+            continue
+
+        subdir = model_type.short_name.lower()
+        page_content = generate_model_type_page(templates, model_type)
+        write_file(output_path / subdir / "README.md", page_content)
+
+    # Group templates by model name and generate per-page-group pages in subdirectories
+    model_groups = group_templates_by_model(templates)
+
+    for model_name, model_templates in model_groups.items():
+        model_type = get_model_type_for_templates(model_templates)
+        subdir = get_model_subdir(model_type)
+
+        # Get all devices for this model
+        model_devices = set()
+        for template in model_templates:
+            for dev_spec in template.device_model_specs:
+                model_devices.add(dev_spec.device)
+
+        # Generate one page per page group (not per device)
+        generated_groups = set()
+        for device in model_devices:
+            if device in EXCLUDED_DEVICES:
+                continue
+            group = DEVICE_HARDWARE_PAGE_GROUPS_MAPPING.get(device)
+            if group and id(group) not in generated_groups:
+                generated_groups.add(id(group))
+                filename = get_model_page_group_filename(model_name, group)
+                page_content = generate_model_page_group_page(
+                    model_name, model_templates, group
+                )
+                write_file(output_path / subdir / filename, page_content)
+
+    print("Documentation generation complete!")
 
 
 def update_readme_model_support(model_spec_path, readme_path="README.md"):
     """
-    Update the Model Support tables in README.md with the latest model specs.
+    Update the Model Support section in README.md with links to docs/model_support/.
 
-    Uses HTML comment markers for idempotent replacement of each status section.
-    Generates tables for: Top Performance, Complete, Functional.
+    Generates docs/model_support/ documentation (model type pages, hardware page,
+    individual model pages), then generates the model support section content directly
+    and adjusts paths to work from repo root. Uses HTML comment markers for idempotent
+    replacement.
 
     Args:
         model_spec_path: Path to the model_spec.py file
         readme_path: Path to README.md file (default: README.md)
     """
+    from scripts.release.generate_model_support_docs import generate_directory_readme
+
     readme_file = Path(readme_path)
     if not readme_file.exists():
         print(f"Warning: README.md not found at {readme_path}, skipping update")
         return
 
-    # Dynamically import the updated model_spec module to get fresh spec_templates
+    # First, regenerate the model support docs (model type pages, hardware page, model pages)
+    generate_model_support_docs(model_spec_path)
+
+    # Load templates to generate the model support section content directly
     repo_root = model_spec_path.parent.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    spec = importlib.util.spec_from_file_location("model_spec_updated", model_spec_path)
+    spec = importlib.util.spec_from_file_location("model_spec_readme", model_spec_path)
     model_spec_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(model_spec_module)
+    templates = model_spec_module.spec_templates
 
-    # Get the updated spec_templates from the reloaded module
-    updated_spec_templates = model_spec_module.spec_templates
+    # Generate the model support content directly (no intermediate file)
+    model_support_content = generate_directory_readme(templates)
+
+    # Adjust relative paths to work from repo root
+    # - Links like (llm/README.md) -> (docs/model_support/llm/README.md)
+    # - Links like (models_by_hardware.md#...) -> (docs/model_support/models_by_hardware.md#...)
+    # - Links like (llm/Model.md) -> (docs/model_support/llm/Model.md)
+    # Skip external links (http/https) and parent links (..)
+    def adjust_link(match):
+        link_text = match.group(1)
+        link_path = match.group(2)
+
+        # Skip external links and parent directory links
+        if link_path.startswith(("http://", "https://", "..")):
+            return match.group(0)
+
+        # Prepend docs/model_support/ to relative paths
+        return f"[{link_text}](docs/model_support/{link_path})"
+
+    adjusted_content = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)", adjust_link, model_support_content
+    )
+
+    # Remove the "# Model Support" header since README.md already has "## Model Support"
+    # and remove the intro line about "This directory contains..."
+    lines = adjusted_content.split("\n")
+    filtered_lines = []
+    skip_next_empty = False
+    for line in lines:
+        if line.startswith("# Model Support"):
+            skip_next_empty = True
+            continue
+        if line.startswith("This directory contains documentation"):
+            skip_next_empty = True
+            continue
+        if skip_next_empty and line.strip() == "":
+            skip_next_empty = False
+            continue
+        skip_next_empty = False
+        filtered_lines.append(line)
+
+    model_support_section = "\n".join(filtered_lines).strip()
 
     # Read current README content
     with open(readme_file, "r") as f:
         content = f.read()
 
-    # Replace each status section using markers for idempotent updates
-    updated_content = content
-    for status in PUBLISHED_STATUS_GROUPS:
-        new_section = _generate_status_section_markdown(
-            status=status,
-            templates_to_use=updated_spec_templates,
-            include_header=True,
+    # Replace content between MODEL_SUPPORT markers
+    start_marker = "<!-- MODEL_SUPPORT_START -->"
+    end_marker = "<!-- MODEL_SUPPORT_END -->"
+
+    start_pos = content.find(start_marker)
+    end_pos = content.find(end_marker)
+
+    if start_pos == -1 or end_pos == -1:
+        print(
+            f"Warning: Model Support markers not found in {readme_path}, skipping update"
         )
-        if new_section:
-            updated_content = _replace_marker_content(
-                updated_content, status, new_section
-            )
+        return
+
+    # Build new section with markers
+    new_section = f"{start_marker}\n{model_support_section}\n{end_marker}"
+
+    end_pos += len(end_marker)
+    updated_content = content[:start_pos] + new_section + content[end_pos:]
 
     # Write back to file
     with open(readme_file, "w") as f:
         f.write(updated_content)
 
-    print(f"\nSuccessfully updated Model Support tables in {readme_path}")
-
-
-def update_experimental_models_doc(
-    model_spec_path, experimental_doc_path="docs/experimental_models.md"
-):
-    """
-    Update the experimental models documentation file with the latest experimental model specs.
-
-    Creates the file if it doesn't exist. Uses HTML comment markers to replace the
-    experimental models section idempotently.
-
-    Args:
-        model_spec_path: Path to the model_spec.py file
-        experimental_doc_path: Path to experimental models doc (default: docs/experimental_models.md)
-    """
-    experimental_file = Path(experimental_doc_path)
-
-    # Dynamically import the updated model_spec module to get fresh spec_templates
-    repo_root = model_spec_path.parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-
-    spec = importlib.util.spec_from_file_location(
-        "model_spec_experimental", model_spec_path
-    )
-    model_spec_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(model_spec_module)
-
-    # Get the updated spec_templates from the reloaded module
-    updated_spec_templates = model_spec_module.spec_templates
-
-    # Generate the experimental models markdown with markers
-    experimental_content = generate_experimental_models_markdown(
-        templates_to_use=updated_spec_templates
-    )
-
-    # Default header content for new file
-    header_content = (
-        "# Experimental Models\n\n"
-        "Models with Experimental status are under active development and may have "
-        "stability or performance issues. If you encounter problems with any model "
-        "please [file an issue](https://github.com/tenstorrent/tt-inference-server/issues/new?template=Blank+issue).\n\n"
-    )
-
-    if not experimental_file.exists():
-        # Create directory if needed
-        experimental_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Create new file with header and experimental content
-        full_content = header_content + experimental_content + "\n"
-        with open(experimental_file, "w") as f:
-            f.write(full_content)
-        print(f"\nCreated experimental models doc: {experimental_doc_path}")
-        return
-
-    # File exists - read and update using marker-based replacement
-    with open(experimental_file, "r") as f:
-        content = f.read()
-
-    start_marker, end_marker = _get_status_markers(ModelStatusTypes.EXPERIMENTAL)
-
-    if start_marker in content and end_marker in content:
-        # Markers found - replace content between them (idempotent)
-        updated_content = _replace_marker_content(
-            content, ModelStatusTypes.EXPERIMENTAL, experimental_content
-        )
-    else:
-        # Markers not found - append section at end with markers
-        updated_content = content.rstrip() + "\n\n" + experimental_content + "\n"
-
-    with open(experimental_file, "w") as f:
-        f.write(updated_content)
-
-    print(f"\nSuccessfully updated experimental models doc: {experimental_doc_path}")
+    print(f"\nSuccessfully updated Model Support section in {readme_path}")
 
 
 def main():
@@ -903,7 +715,7 @@ def main():
             "Running in --output-only mode: generating outputs without modifying model_spec.py"
         )
 
-        # Update README.md Model Support table
+        # Update README.md Model Support section and regenerate docs/model_support/
         update_readme_model_support(model_spec_path, args.readme_path)
 
         # Update experimental models doc
@@ -995,6 +807,7 @@ def main():
             continue
 
         # Update the template fields
+        # If --ignore-perf-status is set, don't update status
         status_to_update = None if args.ignore_perf_status else status
         updated_template = update_template_fields(
             template_text, tt_metal_commit, vllm_commit, status_to_update
@@ -1026,7 +839,8 @@ def main():
                 template, last_good_data
             )
             model_arch = model_name_from_weight(weights[0]) if weights else "unknown"
-            status_after = status_before if args.ignore_perf_status else status
+            # For status_after, use None if ignoring perf status, otherwise use the status
+            status_after = None if args.ignore_perf_status else status
 
             update_records.append(
                 {
@@ -1074,7 +888,7 @@ def main():
                 diff_markdown_path = last_good_path.parent / "release_models_diff.md"
                 generate_release_diff_markdown(update_records, diff_markdown_path)
 
-            # Update README.md Model Support table with the updated model specs
+            # Update README.md Model Support section and regenerate docs/model_support/
             update_readme_model_support(model_spec_path)
 
             # Update experimental models doc

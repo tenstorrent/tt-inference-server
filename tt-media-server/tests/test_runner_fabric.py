@@ -13,7 +13,7 @@ from tt_model_runners.runner_fabric import get_device_runner
 @pytest.mark.parametrize(
     "runner_name_param, expected_class_name",
     [
-        ("vllm_forge", "VLLMForgeRunner"),
+        ("vllm", "VLLMRunner"),
     ],
 )
 def test_runner_creation_unique(

@@ -32,6 +32,9 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.TEXT_TO_SPEECH: lambda: __import__(
         "model_services.text_to_speech_service", fromlist=["TextToSpeechService"]
     ).TextToSpeechService(),
+    ModelServices.EMBEDDING: lambda: __import__(
+        "model_services.embedding_service", fromlist=["EmbeddingService"]
+    ).EmbeddingService(),
 }
 
 # Singleton holders per service type
