@@ -396,7 +396,7 @@ chmod +x build.sh
 
 ### Tokenizer (mlc-ai/tokenizers-cpp)
 
-The server includes tokenizer support for encode/decode (vLLM-style: encode in `pre_process`, decode in runner):
+The server includes tokenizer support for encode/decode:
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
 2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
@@ -410,8 +410,6 @@ The server includes tokenizer support for encode/decode (vLLM-style: encode in `
    mkdir -p cpp_server/tokenizers
    wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
    ```
-
-String prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 
 ## Performance
 
