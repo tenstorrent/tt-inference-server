@@ -151,8 +151,21 @@ class ImageGenerationEvalsTest(BaseTest):
             "accuracy_check": accuracy_check,
         }
 
+        success = accuracy_check == AccuracyResult.PASS
+        result_name = (
+            AccuracyResult(accuracy_check).name
+            if accuracy_check in AccuracyResult._value2member_map_
+            else f"UNKNOWN({accuracy_check})"
+        )
+        logger.info(
+            f"Eval summary for {request.model_name}:\n"
+            f"  num_prompts={request.num_prompts}, num_inference_steps={request.num_inference_steps}\n"
+            f"  FID={fid_score:.4f}, CLIP={avg_clip:.4f} ± {std_clip:.4f}\n"
+            f"  accuracy_check={accuracy_check} ({result_name}), success={success}"
+        )
+
         return {
-            "success": accuracy_check == AccuracyResult.PASS,
+            "success": success,
             "eval_results": self.eval_results,
         }
 
