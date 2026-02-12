@@ -198,7 +198,7 @@ If server is running in development mode (ENVIRONMENT=development), OpenAPI endp
 Sample for calling the endpoint for image generation via curl:
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/image/generations' \
+  'http://127.0.0.1:8000/v1/image/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -408,7 +408,7 @@ curl -X POST "http://localhost:8000/search-image" \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/video/generations' \
+  'http://127.0.0.1:8000/v1/video/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -436,18 +436,18 @@ Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  'http://127.0.0.1:8000/v1/video/generations/{video_id}' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint for downloading a video file
+The `/v1/video/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  'http://127.0.0.1:8000/v1/video/generations/{video_id}/download' \
   -H 'Authorization: Bearer your-secret-key' \
   -o output.mp4
 ```
@@ -456,7 +456,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
+  'http://127.0.0.1:8000/v1/video/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
