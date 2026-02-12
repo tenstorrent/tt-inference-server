@@ -718,6 +718,9 @@ def main():
         # Update README.md Model Support section and regenerate docs/model_support/
         update_readme_model_support(model_spec_path, args.readme_path)
 
+        # Update experimental models doc
+        update_experimental_models_doc(model_spec_path)
+
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
         export_model_specs_json(model_spec_path, output_json_path)
@@ -887,6 +890,9 @@ def main():
 
             # Update README.md Model Support section and regenerate docs/model_support/
             update_readme_model_support(model_spec_path)
+
+            # Update experimental models doc
+            update_experimental_models_doc(model_spec_path)
     else:
         print("\nNo updates needed.")
 
