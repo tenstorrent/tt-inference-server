@@ -116,7 +116,6 @@ add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp s
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${rapidjson_SOURCE_DIR}/include
 )
 
 include(GoogleTest)
@@ -150,7 +149,6 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
-    src/services/llm_service.cpp
     src/utils/tokenizer.cpp
 )
 if(NOT TEST)
