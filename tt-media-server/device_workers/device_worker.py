@@ -60,11 +60,14 @@ def device_worker(
 
         start_time = time.time()
         while (
-            len(requests) < settings.max_batch_size and (time.time() - start_time) < 0.1
+            len(requests) < settings.max_batch_size and (time.time() - start_time) < 0.5
         ):
+            # do not wait if queue is empty
+            if (task_queue.qsize() == 0):
+                break
             needed = settings.max_batch_size - len(requests)
             more = task_queue.get_many(
-                max_messages_to_get=needed, block=False, timeout=0.0
+                max_messages_to_get=needed, block=False
             )
             if more:
                 requests.extend(more)
