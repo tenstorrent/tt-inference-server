@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -18,18 +19,16 @@ namespace llm_engine {
 
 namespace {
 
-struct DecodeEntry {
+constexpr uint32_t kSeqIdMaxBytes = 36;
+
+struct WireFormat {
   uint32_t token_id;
-  uint32_t seq_id;
-  uint32_t position_id;
+  uint32_t position;
+  char seq_id[kSeqIdMaxBytes];
 };
-constexpr uint32_t kWordsPerEntry = 3;
-constexpr uint32_t kBytesPerEntry = kWordsPerEntry * sizeof(uint32_t);
-static_assert(sizeof(DecodeEntry) == kBytesPerEntry, "DecodeEntry must be 12 bytes");
+static_assert(sizeof(WireFormat) <= 64, "wire format must fit in one page");
 
 constexpr uint32_t kPageSize = 64;
-constexpr uint32_t kPageSizeWords = kPageSize / sizeof(uint32_t);
-static_assert(kPageSize >= kBytesPerEntry, "page must fit one DecodeEntry");
 
 constexpr uint32_t kDataSizeOnePage = 64;
 constexpr uint32_t kFifoSize = 2048;
@@ -150,7 +149,8 @@ void destroy_ttmetal_decode_context(void* ctx) {
   delete static_cast<TTMetalDecodeContext*>(ctx);
 }
 
-SpoofedBlitzDecode::SpoofedBlitzDecode(const Config& config) : config_{config} {}
+SpoofedBlitzDecode::SpoofedBlitzDecode(const Config& config, DecodeCallback decode_callback)
+    : config_{config}, decode_callback_{std::move(decode_callback)} {}
 
 SpoofedBlitzDecode::~SpoofedBlitzDecode() { exit(); }
 
@@ -167,45 +167,36 @@ void SpoofedBlitzDecode::run() {
 void SpoofedBlitzDecode::receiver_loop() {
   auto* d2h = static_cast<tt::tt_metal::distributed::D2HSocket*>(config_.d2h_socket);
   while (!receiver_shutdown_.load()) {
-    uint32_t recv_buf[kPageSizeWords] = {};
-    d2h->read(recv_buf, 1);
+    WireFormat recv{};
+    d2h->read(reinterpret_cast<uint32_t*>(&recv), 1);
     d2h->barrier();
 
-    int64_t token_id = static_cast<int64_t>(recv_buf[0]);
-    LLM_ENGINE_LOG("spoofed_blitz_decode") << "D2H recv token_id=" << token_id << std::endl;
-    PendingCallback pending;
-    {
-      std::lock_guard<std::mutex> lock(pending_mutex_);
-      if (pending_.empty()) continue;
-      pending = std::move(pending_.front());
-      pending_.pop();
-    }
+    int64_t token_id = static_cast<int64_t>(recv.token_id);
+    SequenceID seq_id;
+    const char* end =
+        static_cast<const char*>(std::memchr(recv.seq_id, '\0', sizeof(recv.seq_id)));
+    seq_id.id.assign(recv.seq_id, end ? static_cast<size_t>(end - recv.seq_id) : sizeof(recv.seq_id));
     LLM_ENGINE_LOG("spoofed_blitz_decode")
-        << "decode seq_id=" << pending.seq_id << " token=" << token_id << std::endl;
-    if (pending.cb) pending.cb({pending.seq_id, token_id});
+        << "D2H recv token_id=" << token_id << " seq_id=" << seq_id << std::endl;
+    if (decode_callback_) decode_callback_({seq_id, token_id});
   }
 }
 
-void SpoofedBlitzDecode::decode(const std::vector<Sequence*>& seqs, DecodeCallback callback) {
+void SpoofedBlitzDecode::decode(const std::vector<Sequence*>& seqs) {
   if (seqs.empty()) return;
 
   auto* h2d = static_cast<tt::tt_metal::distributed::H2DSocket*>(config_.h2d_socket);
   for (Sequence* s : seqs) {
-    uint32_t seq_id_wire =
-        static_cast<uint32_t>(std::hash<std::string>{}(s->seq_id.id) & 0xFFFFFFFFu);
-    uint32_t h2d_buf[kPageSizeWords] = {};
-    h2d_buf[0] = static_cast<uint32_t>((s->last_token + 1) & 0xFFFFFFFFu);
-    h2d_buf[1] = seq_id_wire;
-    h2d_buf[2] = static_cast<uint32_t>(s->size() & 0xFFFFFFFFu);
+    WireFormat wf{};
+    wf.token_id = static_cast<uint32_t>((s->last_token + 1) & 0xFFFFFFFFu);
+    wf.position = static_cast<uint32_t>(s->size() & 0xFFFFFFFFu);
+    std::memset(wf.seq_id, 0, sizeof(wf.seq_id));
+    std::strncpy(wf.seq_id, s->seq_id.id.c_str(), sizeof(wf.seq_id) - 1);
 
-    {
-      std::lock_guard<std::mutex> lock(pending_mutex_);
-      pending_.push({callback, s->seq_id});
-    }
     LLM_ENGINE_LOG("spoofed_blitz_decode")
-        << "H2D send token_id=" << h2d_buf[0] << " seq_id_wire=" << seq_id_wire
-        << " position=" << h2d_buf[2] << std::endl;
-    h2d->write(h2d_buf, 1);
+        << "H2D send token_id=" << wf.token_id << " position=" << wf.position
+        << " seq_id=" << s->seq_id << std::endl;
+    h2d->write(reinterpret_cast<uint32_t*>(&wf), 1);
   }
 }
 

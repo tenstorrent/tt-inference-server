@@ -19,7 +19,7 @@ std::vector<DecodeResult> DecodeQueue::drain() {
 ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
     : config_{config},
       decode_callback_{std::move(callback)},
-      spoofed_decode_{std::make_unique<SpoofedBlitzDecode>(config)} {
+      spoofed_decode_{std::make_unique<SpoofedBlitzDecode>(config, decode_callback_)} {
   spoofed_decode_->run();
 }
 
@@ -36,7 +36,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
       decode_callback_({seq->seq_id, seq->last_token + 1});
     }
   } else {
-    spoofed_decode_->decode(seqs, decode_callback_);
+    spoofed_decode_->decode(seqs);
   }
 }
 
