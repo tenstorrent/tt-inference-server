@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "scheduler/multiprocess_scheduler.hpp"
+#include "config/settings.hpp"
 #include "runners/llm_test_runner.hpp"
 #include "runners/runner_factory.hpp"
 
@@ -63,9 +64,8 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         if (i < env_configs.size()) {
             env_config = env_configs[i];
         }
-        // Always set device ID
-        env_config.env_vars["TT_DEVICE_ID"] = std::to_string(i);
-        env_config.env_vars["TT_WORKER_ID"] = std::to_string(i);
+        // Set TT_VISIBLE_DEVICES from parsed DEVICE_IDS (content inside Nth bracket pair)
+        env_config.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(i);
 
         // Fork worker process
         pid_t pid = fork();
@@ -83,8 +83,12 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         }
     }
 
-    // Start consumer thread
-    consumer_thread_ = std::thread(&MultiprocessScheduler::consumer_loop, this);
+    // Start one consumer thread per worker for parallel token processing
+    consumer_threads_.reserve(num_workers_);
+    for (size_t i = 0; i < num_workers_; i++) {
+        consumer_threads_.emplace_back(&MultiprocessScheduler::consumer_loop_for_worker, this, i);
+    }
+    std::cout << "[MultiprocessScheduler] Started " << num_workers_ << " consumer threads\n" << std::flush;
 
     // Wait for workers to signal ready
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -115,10 +119,13 @@ void MultiprocessScheduler::stop() {
         }
     }
 
-    // Wait for consumer thread
-    if (consumer_thread_.joinable()) {
-        consumer_thread_.join();
+    // Wait for all consumer threads
+    for (auto& thread : consumer_threads_) {
+        if (thread.joinable()) {
+            thread.join();
+        }
     }
+    consumer_threads_.clear();
 
     // Wait for worker processes
     for (auto& worker : workers_) {
@@ -179,8 +186,8 @@ void MultiprocessScheduler::stop() {
         // Check for new task
         ipc::SharedToken task_token;
         if (!task_buffer.pop(task_token)) {
-            // No task available, brief sleep
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            // No task available, yield to avoid busy-spinning but minimize latency
+            std::this_thread::yield();
             continue;
         }
 
@@ -263,85 +270,76 @@ void MultiprocessScheduler::stop() {
     _exit(0);
 }
 
-void MultiprocessScheduler::consumer_loop() {
-    std::cout << "[Consumer] Started\n" << std::flush;
+void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
+    std::cout << "[Consumer-" << worker_idx << "] Started\n" << std::flush;
 
-    // Poll all worker token buffers
+    auto& worker = workers_[worker_idx];
+    if (!worker.token_buffer) {
+        std::cout << "[Consumer-" << worker_idx << "] No token buffer, exiting\n" << std::flush;
+        return;
+    }
+
+    // Poll only this worker's token buffer
     while (running_) {
         bool any_activity = false;
 
-        for (auto& worker : workers_) {
-            if (!worker.token_buffer) continue;
+        ipc::SharedToken token;
+        while (worker.token_buffer->pop(token)) {
+            any_activity = true;
 
-            ipc::SharedToken token;
-            while (worker.token_buffer->pop(token)) {
-                any_activity = true;
-
-                std::string task_id(token.task_id);
-
-                // Update stats
-                {
-                    std::lock_guard<std::mutex> lock(stats_mutex_);
-                    stats_.tokens_consumed++;
-                }
-
-                // Find callback for this task
-                std::function<void(const domain::StreamingChunkResponse&, bool)> callback;
-                {
-                    std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                    auto it = stream_callbacks_.find(task_id);
-                    if (it != stream_callbacks_.end()) {
-                        callback = it->second;
-                        if (token.is_final()) {
-                            stream_callbacks_.erase(it);
-                        }
-                    }
-                }
-
-                if (callback) {
-                    // Build response
-                    domain::StreamingChunkResponse response;
-                    response.id = "cmpl-" + task_id;
-                    response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::system_clock::now().time_since_epoch()
-                    ).count();
-
-                    domain::CompletionChoice choice;
-                    choice.text = token.text;
-                    choice.index = token.token_index;
+            // Find callback for this task
+            std::function<void(const domain::StreamingChunkResponse&, bool)> callback;
+            {
+                std::lock_guard<std::mutex> lock(callbacks_mutex_);
+                auto it = stream_callbacks_.find(token.task_id);
+                if (it != stream_callbacks_.end()) {
+                    callback = it->second;
                     if (token.is_final()) {
-                        choice.finish_reason = "stop";
+                        stream_callbacks_.erase(it);
                     }
-                    response.choices.push_back(choice);
-
-                    // Call the callback
-                    callback(response, token.is_final());
                 }
+            }
 
-                // Handle non-streaming completion
-                if (token.is_final() && (token.flags & ipc::SharedToken::FLAG_DONE)) {
-                    std::lock_guard<std::mutex> lock(promises_mutex_);
-                    auto it = result_promises_.find(task_id);
-                    if (it != result_promises_.end()) {
-                        domain::CompletionResponse response;
-                        response.id = "cmpl-" + task_id;
-                        it->second->set_value(response);
-                        result_promises_.erase(it);
-                    }
+            if (callback) {
+                // Build response
+                domain::StreamingChunkResponse response;
+                response.id = "cmpl-" + std::string(token.task_id);
+                response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
 
-                    std::lock_guard<std::mutex> slock(stats_mutex_);
-                    stats_.tasks_completed++;
+                domain::CompletionChoice choice;
+                choice.text = token.text;
+                choice.index = token.token_index;
+                if (token.is_final()) {
+                    choice.finish_reason = "stop";
+                }
+                response.choices.push_back(std::move(choice));
+
+                // Call the callback
+                callback(response, token.is_final());
+            }
+
+            // Handle non-streaming completion
+            if (token.is_final() && (token.flags & ipc::SharedToken::FLAG_DONE)) {
+                std::lock_guard<std::mutex> lock(promises_mutex_);
+                auto it = result_promises_.find(std::string(token.task_id));
+                if (it != result_promises_.end()) {
+                    domain::CompletionResponse response;
+                    response.id = "cmpl-" + std::string(token.task_id);
+                    it->second->set_value(response);
+                    result_promises_.erase(it);
                 }
             }
         }
 
         if (!any_activity) {
-            // No tokens available, brief sleep
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            // No tokens available, yield to avoid busy-spinning but minimize latency
+            std::this_thread::yield();
         }
     }
 
-    std::cout << "[Consumer] Stopped\n" << std::flush;
+    std::cout << "[Consumer-" << worker_idx << "] Stopped\n" << std::flush;
 }
 
 void MultiprocessScheduler::dispatch_task(ProcessTask task) {

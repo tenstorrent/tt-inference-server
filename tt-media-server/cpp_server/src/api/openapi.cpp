@@ -19,7 +19,7 @@ public:
     METHOD_LIST_END
 
     void getOpenAPISpec(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         auto spec = buildOpenAPISpec();
@@ -29,7 +29,7 @@ public:
     }
 
     void getSwaggerUI(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         std::string html = R"html(
@@ -127,6 +127,9 @@ private:
         // POST /v1/completions
         paths["/v1/completions"]["post"] = buildCompletionsEndpoint();
 
+        // POST /v1/chat/completions
+        paths["/v1/chat/completions"]["post"] = buildChatCompletionsEndpoint();
+
         // GET /health
         paths["/health"]["get"] = buildHealthEndpoint();
 
@@ -135,8 +138,11 @@ private:
 
         spec["paths"] = paths;
 
-        // Components (schemas)
+        // Components (schemas and security schemes)
         spec["components"] = buildComponents();
+
+        // Global security (can be overridden per-endpoint)
+        // Note: Health endpoints don't require security, handled by not adding security to those endpoints
 
         return spec;
     }
@@ -150,6 +156,13 @@ private:
                                   "**Note:** This C++ implementation uses a test runner generating ~120,000 tokens/second "
                                   "for benchmarking purposes.";
         endpoint["operationId"] = "createCompletion";
+
+        // Security requirement - Bearer token
+        Json::Value security(Json::arrayValue);
+        Json::Value bearerAuth;
+        bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+        security.append(bearerAuth);
+        endpoint["security"] = security;
 
         // Request body
         Json::Value requestBody;
@@ -180,7 +193,64 @@ private:
         resp400["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
         responses["400"] = resp400;
 
+        // 401 Unauthorized
+        Json::Value resp401;
+        resp401["description"] = "Missing or invalid authentication token";
+        resp401["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["401"] = resp401;
+
         // 503 Service Unavailable
+        Json::Value resp503;
+        resp503["description"] = "Model not ready";
+        resp503["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["503"] = resp503;
+
+        endpoint["responses"] = responses;
+
+        return endpoint;
+    }
+
+    Json::Value buildChatCompletionsEndpoint() {
+        Json::Value endpoint;
+        endpoint["tags"].append("Completions");
+        endpoint["summary"] = "Create chat completion";
+        endpoint["description"] = "Creates a chat completion for the provided messages. "
+                                  "OpenAI-compatible endpoint. Messages are converted to a prompt internally; "
+                                  "responses use object \"chat.completion\" and choices[].message with role and content.";
+        endpoint["operationId"] = "createChatCompletion";
+
+        // Security requirement - Bearer token
+        Json::Value security(Json::arrayValue);
+        Json::Value bearerAuth;
+        bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+        security.append(bearerAuth);
+        endpoint["security"] = security;
+
+        Json::Value requestBody;
+        requestBody["required"] = true;
+        requestBody["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/ChatCompletionRequest";
+        endpoint["requestBody"] = requestBody;
+
+        Json::Value responses;
+
+        Json::Value resp200;
+        resp200["description"] = "Successful chat completion (JSON) or streaming (text/event-stream)";
+        resp200["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/CompletionResponse";
+        resp200["content"]["text/event-stream"]["schema"]["type"] = "string";
+        resp200["content"]["text/event-stream"]["schema"]["description"] =
+            "SSE stream; object \"chat.completion.chunk\", choices[].delta";
+        responses["200"] = resp200;
+
+        Json::Value resp400;
+        resp400["description"] = "Invalid request (e.g. missing or empty messages)";
+        resp400["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["400"] = resp400;
+
+        Json::Value resp401;
+        resp401["description"] = "Missing or invalid authentication token";
+        resp401["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
+        responses["401"] = resp401;
+
         Json::Value resp503;
         resp503["description"] = "Model not ready";
         resp503["content"]["application/json"]["schema"]["$ref"] = "#/components/schemas/Error";
@@ -238,6 +308,9 @@ private:
         // CompletionRequest schema
         schemas["CompletionRequest"] = buildCompletionRequestSchema();
 
+        // ChatCompletionRequest schema
+        schemas["ChatCompletionRequest"] = buildChatCompletionRequestSchema();
+
         // CompletionResponse schema
         schemas["CompletionResponse"] = buildCompletionResponseSchema();
 
@@ -263,6 +336,18 @@ private:
         schemas["Error"] = buildErrorSchema();
 
         components["schemas"] = schemas;
+
+        // Security schemes
+        Json::Value securitySchemes;
+        Json::Value bearerAuth;
+        bearerAuth["type"] = "http";
+        bearerAuth["scheme"] = "bearer";
+        bearerAuth["bearerFormat"] = "API Key";
+        bearerAuth["description"] = "Bearer token authentication using OPENAI_API_KEY environment variable. "
+                                    "If not set, defaults to 'your-secret-key'.";
+        securitySchemes["BearerAuth"] = bearerAuth;
+        components["securitySchemes"] = securitySchemes;
+
         return components;
     }
 
@@ -331,6 +416,66 @@ private:
 
         props["user"]["type"] = "string";
         props["user"]["description"] = "User identifier for monitoring";
+
+        schema["properties"] = props;
+        return schema;
+    }
+
+    Json::Value buildChatCompletionRequestSchema() {
+        Json::Value schema;
+        schema["type"] = "object";
+        schema["required"].append("messages");
+
+        Json::Value messageSchema;
+        messageSchema["type"] = "object";
+        messageSchema["required"].append("role");
+        messageSchema["required"].append("content");
+        messageSchema["properties"]["role"]["type"] = "string";
+        messageSchema["properties"]["role"]["description"] = "Message role: system, user, or assistant";
+        messageSchema["properties"]["content"]["type"] = "string";
+        messageSchema["properties"]["content"]["description"] = "Message content";
+
+        Json::Value props;
+        props["model"]["type"] = "string";
+        props["model"]["description"] = "Model identifier";
+        props["model"]["example"] = "test-model";
+
+        Json::Value messagesArr;
+        messagesArr["type"] = "array";
+        messagesArr["items"] = messageSchema;
+        messagesArr["description"] = "Conversation messages (required, non-empty)";
+        props["messages"] = messagesArr;
+
+        props["max_tokens"]["type"] = "integer";
+        props["max_tokens"]["default"] = 16;
+        props["max_tokens"]["minimum"] = 1;
+        props["max_tokens"]["description"] = "Maximum number of tokens to generate";
+
+        props["stream"]["type"] = "boolean";
+        props["stream"]["default"] = false;
+        props["stream"]["description"] = "Whether to stream the response as SSE";
+
+        props["stream_options"]["$ref"] = "#/components/schemas/StreamOptions";
+
+        props["temperature"]["type"] = "number";
+        props["temperature"]["minimum"] = 0;
+        props["temperature"]["maximum"] = 2;
+        props["temperature"]["description"] = "Sampling temperature";
+
+        props["top_p"]["type"] = "number";
+        props["top_p"]["minimum"] = 0;
+        props["top_p"]["maximum"] = 1;
+        props["top_p"]["description"] = "Nucleus sampling probability";
+
+        props["stop"]["oneOf"][0]["type"] = "string";
+        props["stop"]["oneOf"][1]["type"] = "array";
+        props["stop"]["oneOf"][1]["items"]["type"] = "string";
+        props["stop"]["description"] = "Stop sequence(s)";
+
+        props["presence_penalty"]["type"] = "number";
+        props["frequency_penalty"]["type"] = "number";
+        props["seed"]["type"] = "integer";
+        props["user"]["type"] = "string";
 
         schema["properties"] = props;
         return schema;
