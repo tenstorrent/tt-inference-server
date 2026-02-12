@@ -42,9 +42,6 @@ public:
      */
     std::string decode(const std::vector<int>& token_ids) const;
 
-    /** Check if tokenizer is loaded and ready. */
-    bool is_loaded() const;
-
 private:
     explicit TokenizerUtil(const std::string& path);
     ~TokenizerUtil() = default;

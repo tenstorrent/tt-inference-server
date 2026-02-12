@@ -16,13 +16,12 @@ TokenizerUtil& TokenizerUtil::instance(const std::string& path) {
 
 TokenizerUtil::TokenizerUtil(const std::string& path) {
     if (path.empty()) {
-        return;
+        throw std::runtime_error("[TokenizerUtil] Cannot initialize with empty path");
     }
 
     std::ifstream f(path, std::ios::binary);
     if (!f) {
-        std::cerr << "[TokenizerUtil] Failed to open: " << path << std::endl;
-        return;
+        throw std::runtime_error("[TokenizerUtil] Failed to open: " + path);
     }
     std::stringstream ss;
     ss << f.rdbuf();
@@ -34,19 +33,14 @@ TokenizerUtil::TokenizerUtil(const std::string& path) {
     } else if (path.size() >= 7 && path.compare(path.size() - 7, 7, ".model") == 0) {
         tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
     } else {
-        std::cerr << "[TokenizerUtil] Unknown extension; use .json or .model: " << path << std::endl;
-        return;
+        throw std::runtime_error("[TokenizerUtil] Unknown extension; use .json or .model: " + path);
     }
 
     if (!tok_) {
-        std::cerr << "[TokenizerUtil] Failed to create tokenizer from: " << path << std::endl;
-    } else {
-        std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
+        throw std::runtime_error("[TokenizerUtil] Failed to create tokenizer from: " + path);
     }
-}
 
-bool TokenizerUtil::is_loaded() const {
-    return tok_ != nullptr;
+    std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
 }
 
 std::vector<int> TokenizerUtil::encode(const std::string& text) const {
