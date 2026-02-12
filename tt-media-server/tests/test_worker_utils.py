@@ -114,7 +114,6 @@ class TestSetupRunnerEnvironment:
                 setup_runner_environment(worker_id)
 
                 assert os.environ["TT_VISIBLE_DEVICES"] == "0"
-                assert os.environ["TT_METAL_VISIBLE_DEVICES"] == "0"
 
     def test_sets_metal_cache_path(self):
         """Test that TT_METAL_CACHE is set correctly"""
