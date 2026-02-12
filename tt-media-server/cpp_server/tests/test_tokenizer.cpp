@@ -22,8 +22,10 @@ protected:
         if (tokenizer_file_path.empty()) {
             GTEST_SKIP() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
         }
-        tokenizer = TokenizerUtil::load(tokenizer_file_path);
-        if (!tokenizer.is_loaded()) {
+        tokenizer = TokenizerUtil(tokenizer_file_path);
+
+        // Check if tokenizer loaded successfully by testing encode
+        if (tokenizer.encode("test").empty()) {
             GTEST_SKIP() << "Failed to load tokenizer from: " << tokenizer_file_path;
         }
     }

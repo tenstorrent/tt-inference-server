@@ -18,31 +18,26 @@ namespace tt::utils {
  */
 class TokenizerUtil {
 public:
-    TokenizerUtil() = default;
+    /**
+     * Load tokenizer from file path.
+     * Supports tokenizer.json (HuggingFace) or tokenizer.model (SentencePiece).
+     * @param path Path to tokenizer file; empty = no-op (no tokenizer loaded).
+     */
+    explicit TokenizerUtil(const std::string& path = "");
     ~TokenizerUtil();
     TokenizerUtil(TokenizerUtil&&) noexcept;
     TokenizerUtil& operator=(TokenizerUtil&&) noexcept;
     TokenizerUtil(const TokenizerUtil&) = delete;
     TokenizerUtil& operator=(const TokenizerUtil&) = delete;
 
-    /**
-     * Load tokenizer from file path.
-     * Supports tokenizer.json (HuggingFace) or tokenizer.model (SentencePiece).
-     * @param path Path to tokenizer file; empty = no-op.
-     * @return New instance with tokenizer loaded, or empty instance on failure.
-     */
-    static TokenizerUtil load(const std::string& path);
-
-    /** True if a tokenizer is loaded and ready. */
-    bool is_loaded() const;
-
-    /** Encode text to token IDs. Returns empty vector if not loaded. */
+    /** Encode text to token IDs. Returns empty vector if tokenizer not loaded. */
     std::vector<int> encode(const std::string& text) const;
 
-    /** Decode token IDs to text. Returns empty string if not loaded. */
+    /** Decode token IDs to text. Returns empty string if tokenizer not loaded. */
     std::string decode(const std::vector<int>& token_ids) const;
 
 private:
+    bool is_loaded() const;
     std::unique_ptr<TokenizerUtilImpl> impl_;
 };
 

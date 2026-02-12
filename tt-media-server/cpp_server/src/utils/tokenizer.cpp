@@ -10,22 +10,15 @@
 
 namespace tt::utils {
 
-TokenizerUtil::~TokenizerUtil() = default;
-
-TokenizerUtil::TokenizerUtil(TokenizerUtil&&) noexcept = default;
-
-TokenizerUtil& TokenizerUtil::operator=(TokenizerUtil&&) noexcept = default;
-
-TokenizerUtil TokenizerUtil::load(const std::string& path) {
-    TokenizerUtil out;
+TokenizerUtil::TokenizerUtil(const std::string& path) {
     if (path.empty()) {
-        return out;
+        return;
     }
 
     std::ifstream f(path, std::ios::binary);
     if (!f) {
         std::cerr << "[TokenizerUtil] Failed to open: " << path << std::endl;
-        return out;
+        return;
     }
     std::stringstream ss;
     ss << f.rdbuf();
@@ -39,19 +32,23 @@ TokenizerUtil TokenizerUtil::load(const std::string& path) {
         tok = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
     } else {
         std::cerr << "[TokenizerUtil] Unknown extension; use .json or .model: " << path << std::endl;
-        return out;
+        return;
     }
 
     if (!tok) {
         std::cerr << "[TokenizerUtil] Failed to create tokenizer from: " << path << std::endl;
-        return out;
+        return;
     }
 
-    out.impl_ = std::make_unique<TokenizerUtilImpl>();
-    out.impl_->tok = std::move(tok);
-
-    return out;
+    impl_ = std::make_unique<TokenizerUtilImpl>();
+    impl_->tok = std::move(tok);
 }
+
+TokenizerUtil::~TokenizerUtil() = default;
+
+TokenizerUtil::TokenizerUtil(TokenizerUtil&&) noexcept = default;
+
+TokenizerUtil& TokenizerUtil::operator=(TokenizerUtil&&) noexcept = default;
 
 bool TokenizerUtil::is_loaded() const {
     return impl_ && impl_->tok;

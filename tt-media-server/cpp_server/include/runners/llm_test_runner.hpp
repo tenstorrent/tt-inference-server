@@ -43,12 +43,9 @@ public:
     explicit LLMTestRunner(const std::string& device_id)
         : BaseDeviceRunner(device_id),
           token_interval_ms_(read_interval_from_env()),
-          tokenizer_(tt::utils::TokenizerUtil::load(tt::config::tokenizer_path())) {
+          tokenizer_(tt::utils::TokenizerUtil(tt::config::tokenizer_path())) {
         TT_LOG_INFO << "LLMTestRunner initialized for device " << device_id
                  << ": token interval " << token_interval_ms_ << " ms";
-        if (!tokenizer_.is_loaded()) {
-            TT_LOG_INFO << "Tokenizer not loaded (place tokenizer.json in tokenizers/ next to executable); returning literal token_0, token_1, ...";
-        }
     }
 
     bool warmup() override {
@@ -70,15 +67,16 @@ public:
             ).count();
             response.model = request.model.value_or("test-model");
 
-            // Generate all tokens as a single response (detokenize when tokenizer loaded)
+            // Generate all tokens as a single response (detokenize when tokenizer available)
             std::ostringstream text;
-            if (tokenizer_.is_loaded()) {
-                std::vector<int> ids;
-                ids.reserve(static_cast<size_t>(request.max_tokens));
-                for (int i = 0; i < request.max_tokens; ++i) {
-                    ids.push_back(i);
-                }
-                text << tokenizer_.decode(ids);
+            std::vector<int> ids;
+            ids.reserve(static_cast<size_t>(request.max_tokens));
+            for (int i = 0; i < request.max_tokens; ++i) {
+                ids.push_back(i);
+            }
+            auto decoded = tokenizer_.decode(ids);
+            if (!decoded.empty()) {
+                text << decoded;
             } else {
                 for (int i = 0; i < request.max_tokens; ++i) {
                     text << "token_" << i << " ";
@@ -115,8 +113,9 @@ public:
 
             domain::StreamingChunkOutput chunk;
             chunk.task_id = request.task_id;
-            if (tokenizer_.is_loaded()) {
-                chunk.chunk.text = tokenizer_.decode({i});
+            auto decoded = tokenizer_.decode({i});
+            if (!decoded.empty()) {
+                chunk.chunk.text = decoded;
             } else {
                 chunk.chunk.text = "token_" + std::to_string(i);
             }

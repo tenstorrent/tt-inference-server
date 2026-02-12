@@ -135,7 +135,7 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark tests/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
