@@ -5,10 +5,13 @@
 #include "config/settings.hpp"
 
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
+#include <rapidjson/istreamwrapper.h>
 #include <fstream>
 #include <vector>
 #include <string>
 #include <cstdlib>
+#include <sstream>
 
 using namespace tt::utils;
 
@@ -113,7 +116,7 @@ TEST_F(TokenizerTest, CompareWithPythonTransformers) {
         if (i < test_prompts.size() - 1) script << ", ";
     }
     script << "]\n";
-    script << "results = [tokenizer.encode(p) for p in prompts]\n";
+    script << "results = [tokenizer.encode(p, add_special_tokens=False) for p in prompts]\n";
     script << "with open('python_tokens.json', 'w') as f:\n";
     script << "    json.dump(results, f)\n";
     script.close();
@@ -130,14 +133,69 @@ TEST_F(TokenizerTest, CompareWithPythonTransformers) {
         GTEST_SKIP() << "Failed to generate Python reference tokens";
     }
 
-    // Simple validation - just check C++ tokenizer produces non-empty results
-    for (const auto& prompt : test_prompts) {
-        auto cpp_tokens = tokenizer.encode(prompt);
-        EXPECT_GT(cpp_tokens.size(), 0) << "Empty tokens for prompt: " << prompt;
+    rapidjson::IStreamWrapper isw(f);
+    rapidjson::Document doc;
+    doc.ParseStream(isw);
+    f.close();
 
-        std::string decoded = tokenizer.decode(cpp_tokens);
-        EXPECT_FALSE(decoded.empty()) << "Empty decode for prompt: " << prompt;
+    if (!doc.IsArray()) {
+        GTEST_SKIP() << "Invalid Python tokens JSON format";
     }
+
+    ASSERT_EQ(doc.Size(), test_prompts.size()) << "Mismatch in number of results";
+
+    // Compare C++ tokenizer with Python transformers
+    size_t total_matches = 0;
+    size_t total_mismatches = 0;
+
+    for (size_t i = 0; i < test_prompts.size(); ++i) {
+        const auto& prompt = test_prompts[i];
+        auto cpp_tokens = tokenizer.encode(prompt);
+
+        ASSERT_TRUE(doc[i].IsArray()) << "Invalid token array at index " << i;
+        const auto& py_array = doc[i].GetArray();
+
+        std::vector<int> py_tokens;
+        for (const auto& token : py_array) {
+            ASSERT_TRUE(token.IsInt()) << "Non-integer token in Python result";
+            py_tokens.push_back(token.GetInt());
+        }
+
+        EXPECT_GT(cpp_tokens.size(), 0) << "Empty C++ tokens for: " << prompt;
+        EXPECT_GT(py_tokens.size(), 0) << "Empty Python tokens for: " << prompt;
+
+        if (cpp_tokens == py_tokens) {
+            ++total_matches;
+        } else {
+            ++total_mismatches;
+
+            std::stringstream cpp_ss, py_ss;
+            cpp_ss << "[";
+            for (size_t j = 0; j < cpp_tokens.size(); ++j) {
+                cpp_ss << cpp_tokens[j];
+                if (j < cpp_tokens.size() - 1) cpp_ss << ", ";
+            }
+            cpp_ss << "]";
+
+            py_ss << "[";
+            for (size_t j = 0; j < py_tokens.size(); ++j) {
+                py_ss << py_tokens[j];
+                if (j < py_tokens.size() - 1) py_ss << ", ";
+            }
+            py_ss << "]";
+
+            EXPECT_EQ(cpp_tokens, py_tokens)
+                << "Token mismatch for prompt: \"" << prompt << "\"\n"
+                << "  C++ tokens:    " << cpp_ss.str() << "\n"
+                << "  Python tokens: " << py_ss.str();
+        }
+    }
+
+    // Summary
+    std::cout << "\nTokenizer Comparison Summary:\n";
+    std::cout << "  Total prompts:  " << test_prompts.size() << "\n";
+    std::cout << "  Matches:        " << total_matches << "\n";
+    std::cout << "  Mismatches:     " << total_mismatches << "\n";
 
     // Cleanup
     std::remove("compare_tokenizer.py");
