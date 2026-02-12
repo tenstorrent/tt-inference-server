@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <string>
 #include <vector>
-
 #include <filesystem>
 
 namespace tt::config {
@@ -102,11 +101,14 @@ RunnerType runner_type() {
 }
 
 std::string tokenizer_path() {
-    std::filesystem::path p = std::filesystem::path("tokenizers") / "tokenizer.json";
     std::error_code ec;
-    std::filesystem::path canonical = std::filesystem::canonical(p, ec);
-    if (!ec && std::filesystem::is_regular_file(canonical))
-        return canonical.string();
+    std::filesystem::path exe_path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        std::filesystem::path tokenizer_file = exe_path.parent_path().parent_path() / "tokenizers" / "tokenizer.json";
+        if (std::filesystem::exists(tokenizer_file)) {
+            return std::filesystem::absolute(tokenizer_file).string();
+        }
+    }
     return "";
 }
 

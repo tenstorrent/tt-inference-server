@@ -150,8 +150,11 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends libboost-de
     && cd / && rm -rf /tmp/drogon \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Build C++ server
+# Build C++ server (requires Rust for tokenizers-cpp)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${TT_METAL_HOME}/server/cpp_server \
     && ./build.sh --ttnn"
 
