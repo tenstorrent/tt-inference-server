@@ -23,7 +23,6 @@ class SSTDataset(BaseDataset):
         split: str = "train",
         collate_fn=None,
     ):
-
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name, padding_side="right", use_fast=True
         )
