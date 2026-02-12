@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "config/settings.hpp"
 
 #include <gtest/gtest.h>
 #include <fstream>
@@ -11,14 +12,16 @@
 
 using namespace tt::utils;
 
-constexpr const char* TOKENIZER_PATH = "tokenizers/tokenizer.json";
-
 class TokenizerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        tokenizer = TokenizerUtil::load(TOKENIZER_PATH);
+        std::string tokenizer_file_path = tt::config::tokenizer_path();
+        if (tokenizer_file_path.empty()) {
+            GTEST_SKIP() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
+        }
+        tokenizer = TokenizerUtil::load(tokenizer_file_path);
         if (!tokenizer.is_loaded()) {
-            GTEST_SKIP() << "Tokenizer not found at: " << TOKENIZER_PATH;
+            GTEST_SKIP() << "Failed to load tokenizer from: " << tokenizer_file_path;
         }
     }
 

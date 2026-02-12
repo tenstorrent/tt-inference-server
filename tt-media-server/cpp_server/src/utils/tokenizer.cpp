@@ -6,10 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
-
-#ifdef ENABLE_TOKENIZER
 #include <tokenizers_cpp.h>
-#endif
 
 namespace tt::utils {
 
@@ -25,7 +22,6 @@ TokenizerUtil TokenizerUtil::load(const std::string& path) {
         return out;
     }
 
-#ifdef ENABLE_TOKENIZER
     std::ifstream f(path, std::ios::binary);
     if (!f) {
         std::cerr << "[TokenizerUtil] Failed to open: " << path << std::endl;
@@ -53,38 +49,25 @@ TokenizerUtil TokenizerUtil::load(const std::string& path) {
 
     out.impl_ = std::make_unique<TokenizerUtilImpl>();
     out.impl_->tok = std::move(tok);
-#endif
 
     return out;
 }
 
 bool TokenizerUtil::is_loaded() const {
-#ifdef ENABLE_TOKENIZER
     return impl_ && impl_->tok;
-#else
-    return impl_ != nullptr;
-#endif
 }
 
 std::vector<int> TokenizerUtil::encode(const std::string& text) const {
-#ifdef ENABLE_TOKENIZER
     if (impl_ && impl_->tok) {
         return impl_->tok->Encode(text);
     }
-#else
-    (void)text;
-#endif
     return {};
 }
 
 std::string TokenizerUtil::decode(const std::vector<int>& token_ids) const {
-#ifdef ENABLE_TOKENIZER
     if (impl_ && impl_->tok) {
         return impl_->tok->Decode(token_ids);
     }
-#else
-    (void)token_ids;
-#endif
     return "";
 }
 

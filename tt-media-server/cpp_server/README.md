@@ -394,25 +394,24 @@ chmod +x build.sh
 ./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
 ```
 
-### Optional: Tokenizer (mlc-ai/tokenizers-cpp)
+### Tokenizer (mlc-ai/tokenizers-cpp)
 
-To enable tokenize/detokenize (vLLM-style: encode in `pre_process`, decode in runner):
+The server includes tokenizer support for encode/decode (vLLM-style: encode in `pre_process`, decode in runner):
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
-2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent (no git submodule). Configure with `-DENABLE_TOKENIZER=ON` and CMake will download it into `build/_deps/`.
-3. Build with tokenizer support:
+2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
+3. Build the server:
    ```bash
-   ./build.sh --tokenizer
+   ./build.sh
    ```
-   or with CMake directly: `-DENABLE_TOKENIZER=ON`.
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable (no env var).
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable.
    To fetch DeepSeek V3 tokenizer from Hugging Face into `tokenizers/`:
    ```bash
    mkdir -p cpp_server/tokenizers
    wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
    ```
 
-When enabled, string prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
+String prompts are tokenized in `LLMService::pre_process` and completion token IDs are detokenized in the runner before returning results.
 
 ## Performance
 

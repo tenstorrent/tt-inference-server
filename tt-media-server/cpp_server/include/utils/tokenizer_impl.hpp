@@ -3,7 +3,6 @@
 
 #pragma once
 
-#ifdef ENABLE_TOKENIZER
 #include <memory>
 #include <tokenizers_cpp.h>
 
@@ -14,4 +13,3 @@ struct TokenizerUtilImpl {
 };
 
 }  // namespace tt::utils
-#endif

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "config/settings.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -118,16 +119,22 @@ void print_result(std::ostream& out, const BenchmarkResult& result) {
 }
 
 int main(int argc, char* argv[]) {
-    std::string tokenizer_path = argc >= 2 ? argv[1] : "tokenizers/tokenizer.json";
+    std::string tokenizer_file_path = argc >= 2 ? argv[1] : tt::config::tokenizer_path();
 
-    std::cout << "Loading tokenizer from: " << tokenizer_path << "\n";
-    TokenizerUtil tokenizer = TokenizerUtil::load(tokenizer_path);
-
-    if (!tokenizer.is_loaded()) {
-        std::cerr << "Failed to load tokenizer from: " << tokenizer_path << "\n";
+    if (tokenizer_file_path.empty()) {
+        std::cerr << "Tokenizer not found at default location (tokenizers/tokenizer.json)\n";
         std::cerr << "Usage: " << argv[0] << " [tokenizer_path]\n";
         std::cerr << "Example: " << argv[0] << " tokenizers/tokenizer.json\n";
-        std::cerr << "Default tokenizer_path: tokenizers/tokenizer.json\n";
+        return 1;
+    }
+
+    std::cout << "Loading tokenizer from: " << tokenizer_file_path << "\n";
+    TokenizerUtil tokenizer = TokenizerUtil::load(tokenizer_file_path);
+
+    if (!tokenizer.is_loaded()) {
+        std::cerr << "Failed to load tokenizer from: " << tokenizer_file_path << "\n";
+        std::cerr << "Usage: " << argv[0] << " [tokenizer_path]\n";
+        std::cerr << "Example: " << argv[0] << " tokenizers/tokenizer.json\n";
         return 1;
     }
 

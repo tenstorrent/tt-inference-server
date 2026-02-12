@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 ENABLE_TTNN="OFF"
-ENABLE_TOKENIZER="OFF"
 
 # Parse arguments
 TEST="OFF"
@@ -21,10 +20,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ttnn)
             ENABLE_TTNN="ON"
-            shift
-            ;;
-        --tokenizer)
-            ENABLE_TOKENIZER="ON"
             shift
             ;;
         --test)
@@ -42,7 +37,6 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --debug    Build in Debug mode (default: Release)"
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
-            echo "  --tokenizer  Enable tokenizer (mlc-ai/tokenizers-cpp; requires Rust)"
             echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --tsan     Build with ThreadSanitizer for data-race detection"
             echo "  --help     Show this help message"
@@ -60,7 +54,6 @@ echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
-echo "  Tokenizer enabled: ${ENABLE_TOKENIZER}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "=============================================="
@@ -123,19 +116,14 @@ cd "${BUILD_DIR}"
 # Configure
 echo ""
 echo "Configuring CMake..."
-CMAKE_EXTRA=()
 # Tokenizer pulls in msgpack with old cmake_minimum_required; CMake 4+ needs this to configure.
-if [ "${ENABLE_TOKENIZER}" = "ON" ]; then
-    CMAKE_EXTRA+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
-fi
 cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
       -DLLM_ENGINE_DEBUG_BUILD=ON \
-      -DENABLE_TOKENIZER="${ENABLE_TOKENIZER}" \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
-      "${CMAKE_EXTRA[@]}" \
       ..
 
 # Build

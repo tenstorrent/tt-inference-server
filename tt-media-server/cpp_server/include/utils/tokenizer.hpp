@@ -7,15 +7,9 @@
 #include <string>
 #include <vector>
 
-#ifdef ENABLE_TOKENIZER
 #include "utils/tokenizer_impl.hpp"
-#endif
 
 namespace tt::utils {
-
-#ifndef ENABLE_TOKENIZER
-struct TokenizerUtilImpl {};
-#endif
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace / SentencePiece).
