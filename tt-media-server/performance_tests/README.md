@@ -63,7 +63,7 @@ Async HTTP client that makes streaming requests and records precise timestamps f
 Collects timing samples and computes:
 - **received_token_count**: Number of tokens received
 - **mean_receive_interval_ms**: Average time between consecutive tokens
-- **calculate_overhead_ms()**: `mean_receive_interval - TEST_RUNNER_FREQUENCY_MS`
+- **calculate_overhead_us()**: `(mean_receive_interval - TEST_RUNNER_FREQUENCY_MS) * 1000` (in microseconds)
 - **throughput_tokens_per_second**: Tokens received per second
 
 ### Test (`test_llm_streaming.py`)
@@ -80,8 +80,8 @@ The main performance test that:
 # Run performance tests
 pytest performance_tests/test_llm_streaming.py -vs -m performance
 
-# With custom threshold (default: 3ms overhead per token)
-TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_MS=5 pytest performance_tests/ -vs -m performance
+# With custom threshold of 5ms (5000us), higher than the default 3ms (3000us)
+TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_US=5000 pytest performance_tests/ -vs -m performance
 ```
 
 ## Failure Conditions
@@ -89,7 +89,7 @@ TEST_RUNNER_MAX_PER_TOKEN_OVERHEAD_MS=5 pytest performance_tests/ -vs -m perform
 | Condition | Threshold | Meaning |
 |-----------|-----------|---------|
 | Token loss | 0 | All requested tokens must be received |
-| Per-token overhead | 3ms | Server adds < 3ms latency per token |
+| Per-token overhead | 3000us (3ms) | Server adds < 3ms latency per token |
 
 ## Example Output
 
@@ -100,5 +100,5 @@ StreamingMetrics(
     mean_receive_interval_ms=20.58,
     throughput_tokens_per_second=48.57,
 )
-Overhead per token: 0.58ms
+Overhead per token: 580.00us
 ```

@@ -51,6 +51,9 @@ class StreamingMetrics:
     def calculate_overhead_ms(self, test_runner_frequency_ms: int) -> float:
         return self.mean_receive_interval_ms - test_runner_frequency_ms
 
+    def calculate_overhead_us(self, test_runner_frequency_ms: int) -> float:
+        return (self.mean_receive_interval_ms - test_runner_frequency_ms) * 1000
+
     @property
     def throughput_tokens_per_second(self) -> Optional[float]:
         streaming_time = self.total_streaming_time_ms
