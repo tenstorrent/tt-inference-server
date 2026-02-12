@@ -9,12 +9,12 @@
 
 namespace tt::utils {
 
-TokenizerUtil& TokenizerUtil::instance(const std::string& path) {
-    static TokenizerUtil instance(path);
+Tokenizer& Tokenizer::instance(const std::string& path) {
+    static Tokenizer instance(path);
     return instance;
 }
 
-TokenizerUtil::TokenizerUtil(const std::string& path) {
+Tokenizer::Tokenizer(const std::string& path) {
     if (path.empty()) {
         throw std::runtime_error("[TokenizerUtil] Cannot initialize with empty path");
     }
@@ -43,18 +43,18 @@ TokenizerUtil::TokenizerUtil(const std::string& path) {
     std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
 }
 
-bool TokenizerUtil::is_loaded() const {
+bool Tokenizer::is_loaded() const {
     return tok_ != nullptr;
 }
 
-std::vector<int> TokenizerUtil::encode(const std::string& text) const {
+std::vector<int> Tokenizer::encode(const std::string& text) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot encode");
     }
     return tok_->Encode(text);
 }
 
-std::string TokenizerUtil::decode(const std::vector<int>& token_ids) const {
+std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }

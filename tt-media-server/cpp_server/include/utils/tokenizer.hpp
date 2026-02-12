@@ -16,19 +16,19 @@ namespace tt::utils {
  * Singleton pattern - loads tokenizer once and reuses it across the application.
  * Thread-safe initialization (C++11 guarantees).
  */
-class TokenizerUtil {
+class Tokenizer {
 public:
     /**
      * Get the singleton instance.
      * @param path Path to tokenizer file (only used on first call).
      * @return Reference to the singleton instance.
      */
-    static TokenizerUtil& instance(const std::string& path = "");
+    static Tokenizer& instance(const std::string& path = "");
 
-    TokenizerUtil(const TokenizerUtil&) = delete;
-    TokenizerUtil& operator=(const TokenizerUtil&) = delete;
-    TokenizerUtil(TokenizerUtil&&) = delete;
-    TokenizerUtil& operator=(TokenizerUtil&&) = delete;
+    Tokenizer(const Tokenizer&) = delete;
+    Tokenizer& operator=(const Tokenizer&) = delete;
+    Tokenizer(Tokenizer&&) = delete;
+    Tokenizer& operator=(Tokenizer&&) = delete;
 
     /**
      * Encode text to token IDs.
@@ -46,8 +46,8 @@ public:
     bool is_loaded() const;
 
 private:
-    explicit TokenizerUtil(const std::string& path);
-    ~TokenizerUtil() = default;
+    explicit Tokenizer(const std::string& path);
+    ~Tokenizer() = default;
 
     std::unique_ptr<tokenizers::Tokenizer> tok_;
 };

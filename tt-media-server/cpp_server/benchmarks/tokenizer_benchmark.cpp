@@ -48,7 +48,7 @@ std::string generate_text_with_tokens(size_t target_tokens) {
     return text;
 }
 
-BenchmarkResult benchmark_encode(const TokenizerUtil& tokenizer, const std::string& text) {
+BenchmarkResult benchmark_encode(const Tokenizer& tokenizer, const std::string& text) {
     for (size_t i = 0; i < NUM_WARMUP_ITERATIONS; ++i) {
         tokenizer.encode(text);
     }
@@ -71,7 +71,7 @@ BenchmarkResult benchmark_encode(const TokenizerUtil& tokenizer, const std::stri
     return {num_tokens, latency_ms, per_token_us, throughput};
 }
 
-BenchmarkResult benchmark_decode(const TokenizerUtil& tokenizer, size_t num_tokens) {
+BenchmarkResult benchmark_decode(const Tokenizer& tokenizer, size_t num_tokens) {
     std::vector<int> tokens;
     for (size_t i = 0; i < num_tokens; ++i) {
         tokens.push_back(100 + (i % 1000));
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loading tokenizer from: " << tokenizer_file_path << "\n";
-    auto& tokenizer = TokenizerUtil::instance(tokenizer_file_path);
+    auto& tokenizer = Tokenizer::instance(tokenizer_file_path);
 
     // Check if tokenizer loaded successfully
     if (!tokenizer.is_loaded()) {

@@ -17,20 +17,22 @@ protected:
     void SetUp() override {
         std::string tokenizer_file_path = tt::config::tokenizer_path();
         if (tokenizer_file_path.empty()) {
-            GTEST_SKIP() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
+            FAIL() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
         }
 
         // Get singleton instance (initialized on first call)
-        auto& tok = TokenizerUtil::instance(tokenizer_file_path);
-
-        // Check if tokenizer loaded successfully
-        if (!tok.is_loaded()) {
-            GTEST_SKIP() << "Failed to load tokenizer from: " << tokenizer_file_path;
+        try {
+            auto& tok = Tokenizer::instance(tokenizer_file_path);
+            if (!tok.is_loaded()) {
+                FAIL() << "Failed to load tokenizer from: " << tokenizer_file_path;
+            }
+        } catch (const std::runtime_error& e) {
+            FAIL() << "Exception loading tokenizer: " << e.what();
         }
     }
 
-    TokenizerUtil& tokenizer() {
-        return TokenizerUtil::instance();
+    Tokenizer& tokenizer() {
+        return Tokenizer::instance();
     }
 };
 
