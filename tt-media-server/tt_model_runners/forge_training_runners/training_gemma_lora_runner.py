@@ -223,7 +223,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             del self.eval_dataloader
             self.logger.info(f"Device {self.device_id}: Training completed - memory cleaned up")
         
-        return model_path
+        return [model_path]
 
     def run_validation(self):
         self.logger.info("\n=== Starting Validation ===")

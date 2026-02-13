@@ -256,7 +256,8 @@ class JobManager:
                                 f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}"
                             )
 
-                    task = self._cleanup_job(job)
+                    # force the job to be cancelled without waiting for the runner to handle it, since we are shutting down the server
+                    task = self._cleanup_job(job, force=True)
                     if task:
                         running_tasks.append(task)
 
@@ -422,11 +423,11 @@ class JobManager:
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
             )
 
-    def _cleanup_job(self, job: Job):
+    def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            if job._cancel_event:
+            if job._cancel_event and not force:
                 # runner handles cancellation
                 job._cancel_event.set()
                 running_task = job._task
