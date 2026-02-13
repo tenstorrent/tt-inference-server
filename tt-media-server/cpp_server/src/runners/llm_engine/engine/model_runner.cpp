@@ -1,5 +1,6 @@
 #include "llm_engine/engine/model_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
+#include "llm_engine/engine/host_interface.hpp"
 #include <cstring>
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
@@ -9,7 +10,9 @@
 namespace llm_engine {
 
 constexpr uint32_t kFifoSize = 2048;
-constexpr uint32_t kNumIterations = 64;
+constexpr uint32_t kNumIterationsStreaming = 65536;
+const char* kLoopbackKernelPath =
+    "tests/tt_metal/tt_metal/test_kernels/misc/socket/pcie_socket_loopback.cpp";
 
 void DecodeQueue::push(const DecodeResult& result) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -76,6 +79,11 @@ ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
         }
         std::cout << "[host_io] D2HSocket done" << std::endl;
 
+        std::cout << "[host_io] running loopback kernel..." << std::endl;
+        host_io_ = std::make_unique<HostInterface>();
+        host_io_->run(h2d_socket_.get(), d2h_socket_.get(), mesh_device_.get(), kNumIterationsStreaming);
+        std::cout << "[host_io] running loopback kernel done" << std::endl;
+
         std::cout << "[host_io] starting reader thread..." << std::endl;
         reader_thread_ = std::thread([this] { reader_loop(); });
         std::cout << "[host_io] ModelRunnerStub ready" << std::endl;
@@ -129,9 +137,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 void ModelRunnerStub::exit() {
   if (stop_.exchange(true)) return;
   if (reader_thread_.joinable()) reader_thread_.join();
-  if (mesh_device_) {
-    mesh_device_->mesh_command_queue().finish();
-  }
+  host_io_->terminate();
   LLM_ENGINE_LOG("model_runner") << "exit" << std::endl;
 }
 
