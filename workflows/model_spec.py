@@ -1129,8 +1129,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="a9b09e0",
-        vllm_commit="a186bf4",
+        tt_metal_commit="65718bb",
+        vllm_commit="409b1cd",
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1397,8 +1397,8 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="a9b09e0",
-        vllm_commit="a186bf4",
+        tt_metal_commit="65718bb",
+        vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1799,8 +1799,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="a9b09e0",
-        vllm_commit="a186bf4",
+        tt_metal_commit="65718bb",
+        vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2185,7 +2185,7 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="65718bb",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2210,7 +2210,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="65718bb",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2245,7 +2245,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="a9b09e0",
+        tt_metal_commit="65718bb",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2438,7 +2438,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="a9b09e0",
+        tt_metal_commit="65718bb",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2498,7 +2498,7 @@ audio_tts_templates = [
 embedding_templates = [
     ModelSpecTemplate(
         weights=["BAAI/bge-large-en-v1.5"],
-        tt_metal_commit="2496be4",
+        tt_metal_commit="65718bb",
         impl=tt_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2570,7 +2570,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-8B"],
-        tt_metal_commit="2496be4",
+        tt_metal_commit="65718bb",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2704,6 +2704,78 @@ embedding_templates = [
 # cnn_templates
 # =============================================================================
 cnn_templates = [
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-4B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=8,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.LLM,
+        display_name="Qwen3-4B",
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
+                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
+                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.2-3B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=8,
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        model_type=ModelType.LLM,
+        display_name="Llama-3.2-3B",
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
+                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=2048,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
+                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+        ],
+    ),
     ModelSpecTemplate(
         weights=["resnet-50"],
         tt_metal_commit="2496be4",

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = True
+    download_weights_from_service: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -219,6 +219,11 @@ class Settings(BaseSettings):
             for key, value in matching_config.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
+        if any(
+            self.model_runner == r.value
+            for r in MODEL_SERVICE_RUNNER_MAP[ModelServices.LLM]
+        ):
+            self.vllm.model = SupportedModels[model_name_enum.name].value
 
 
 settings = Settings()
