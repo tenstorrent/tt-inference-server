@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
-#include "util/mock_tokenizer.hpp"
+#include "utils/tokenizer.hpp"
 
 #include <random>
 #include <sstream>
@@ -37,8 +37,12 @@ LLMController::LLMController() {
 
 void LLMController::tokenize_prompt_if_needed(domain::CompletionRequest& request) {
     if (std::holds_alternative<std::string>(request.prompt)) {
+        std::string path = tt::config::tokenizer_path();
+        if (path.empty()) {
+            throw std::runtime_error("Tokenizer not configured (tokenizer_path empty)");
+        }
         std::string text = std::get<std::string>(request.prompt);
-        request.prompt = util::MockTokenizer::tokenize(text);
+        request.prompt = tt::utils::Tokenizer::instance(path).encode(text);
     }
 }
 
@@ -87,7 +91,15 @@ void LLMController::completions(
         return;
     }
 
-    // Check if model is ready
+    if (!service_) {
+        Json::Value error;
+        error["error"]["message"] = "LLM service not enabled (TT_MODEL_SERVICE != llm)";
+        error["error"]["type"] = "service_unavailable";
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
     if (!service_->is_model_ready()) {
         Json::Value error;
         error["error"]["message"] = "Model is not ready";
@@ -98,7 +110,17 @@ void LLMController::completions(
         return;
     }
 
-    tokenize_prompt_if_needed(request);
+    try {
+        tokenize_prompt_if_needed(request);
+    } catch (const std::exception& e) {
+        Json::Value error;
+        error["error"]["message"] = std::string("Tokenization failed: ") + e.what();
+        error["error"]["type"] = "invalid_request_error";
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
 
     // Handle streaming or non-streaming (move request into streaming path to avoid copy)
     if (request.stream) {
@@ -152,6 +174,13 @@ void LLMController::chat_completions(
         return;
     }
 
+    if (!service_) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json("LLM service not enabled (TT_MODEL_SERVICE != llm)", "service_unavailable"));
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
     if (!service_->is_model_ready()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             chat_error_json("Model is not ready", "service_unavailable"));
@@ -161,7 +190,15 @@ void LLMController::chat_completions(
     }
 
     domain::CompletionRequest request = chat_req.to_completion_request();
-    tokenize_prompt_if_needed(request);
+    try {
+        tokenize_prompt_if_needed(request);
+    } catch (const std::exception& e) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            chat_error_json(std::string("Tokenization failed: ") + e.what(), "invalid_request_error"));
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
 
     if (request.stream) {
         handle_chat_streaming(std::move(request), req, std::move(callback));
@@ -525,6 +562,18 @@ void LLMController::ready(
     const drogon::HttpRequestPtr& /* req */,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
+    if (!service_) {
+        Json::Value response;
+        response["model_ready"] = false;
+        response["queue_size"] = 0;
+        response["max_queue_size"] = 0;
+        response["device"] = "";
+        response["workers"] = Json::Value(Json::arrayValue);
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
     auto status = service_->get_system_status();
 
     Json::Value response;

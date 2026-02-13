@@ -237,7 +237,7 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
             }
 
             if (callback) {
-                // Build response
+                // Build response (post-process: decode token_id to text when decoder is set)
                 domain::StreamingChunkResponse response;
                 response.id = "cmpl-" + std::string(token.task_id);
                 response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -245,7 +245,11 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
                 ).count();
 
                 domain::CompletionChoice choice;
-                choice.text = std::to_string(token.token_id);
+                if (token_decoder_) {
+                    choice.text = token_decoder_(token.token_id);
+                } else {
+                    choice.text = std::to_string(token.token_id);
+                }
                 choice.index = token.token_index;
                 if (token.is_final()) {
                     choice.finish_reason = "stop";

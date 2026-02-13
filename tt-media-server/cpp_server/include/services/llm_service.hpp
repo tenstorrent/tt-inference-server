@@ -19,6 +19,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace tt::scheduler {
+class MultiprocessScheduler;
+}
+
 namespace tt::services {
 
 /**
@@ -170,6 +174,9 @@ private:
     // Service-level configuration
     size_t max_queue_size_ = 10000;
     std::string device_ = "cpu";
+
+    /** Delegates to multiprocess scheduler when non-null. */
+    std::unique_ptr<scheduler::MultiprocessScheduler> scheduler_;
 };
 
 } // namespace tt::services

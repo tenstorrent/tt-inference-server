@@ -112,6 +112,15 @@ public:
     }
 
     /**
+     * Set optional post-process decoder: token_id -> text.
+     * When set, each token from the result queue is decoded before being passed to callbacks.
+     * When not set, choice.text is the string representation of the token ID.
+     */
+    void set_token_decoder(std::function<std::string(uint64_t token_id)> decoder) {
+        token_decoder_ = std::move(decoder);
+    }
+
+    /**
      * Get statistics.
      */
     struct Stats {
@@ -171,6 +180,9 @@ private:
 
     // Runner factory (for worker processes)
     std::function<std::unique_ptr<runners::BaseDeviceRunner>(const std::string&)> runner_factory_;
+
+    // Optional: decode token_id to text when building chunk response
+    std::function<std::string(uint64_t)> token_decoder_;
 
     std::atomic<bool> is_ready_{false};
     std::atomic<bool> running_{false};

@@ -161,7 +161,6 @@ set(SOURCES
     src/config/settings.cpp
     src/filters/security_filter.cpp
     src/scheduler/multiprocess_scheduler.cpp
-    src/services/base_service.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
 )
