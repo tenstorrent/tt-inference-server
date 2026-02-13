@@ -87,7 +87,7 @@ def register_service_routes() -> None:
         )
         logger.info(f"Registered: {route.v1_prefix} [{route.tags[0]}]")
 
-        if route.legacy_prefix != route.v1_prefix:
+        if route.legacy_prefix:
             api_router.include_router(
                 route.router,
                 prefix=route.legacy_prefix,
