@@ -199,6 +199,7 @@ class JobManager:
                     return job.result_path if job.is_completed() else None
                 else:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
+            return None
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""
@@ -286,7 +287,7 @@ class JobManager:
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
-            # jobs with a start event need to be marked as in_progress by the runner
+            # jobs with a start_event need to be marked as in_progress by the runner
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             result_path = await task_function(request)
