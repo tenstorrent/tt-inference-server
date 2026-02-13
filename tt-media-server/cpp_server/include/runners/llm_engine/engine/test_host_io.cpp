@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Tests for HostInterface H2D/D2H socket loopback.
- * Mirrors tt-metal models/demos/deepseek_v3_b1/tests/unit_tests/test_host_io.py
+ * Tests for HostInterface H2D/D2H socket loopback using pcie_socket_loopback kernel.
  */
 
 #include "runners/llm_engine/engine/host_interface.hpp"
@@ -22,10 +21,9 @@
 #include <tt-metalium/distributed.hpp>
 
 namespace llm_engine {
-namespace {
 
 constexpr uint32_t kPageSize = 64;
-constexpr uint32_t kFifoSize = 1024*1024;
+constexpr uint32_t kFifoSize = 2048;
 constexpr uint32_t kNumIterations = 64;
 
 void ensure_tt_metal_runtime_root() {
@@ -38,8 +36,6 @@ void ensure_tt_metal_runtime_root() {
         }
     }
 }
-
-}  // namespace
 
 void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
     std::cout << "[host_io] create_unit_mesh..." << std::endl;
@@ -68,34 +64,28 @@ void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
 
     std::cout << "[host_io] host_io.run()..." << std::endl;
     HostInterface host_io;
-    host_io.run(h2d_socket.get(), d2h_socket.get(), mesh_device.get());
+    host_io.run(h2d_socket.get(), d2h_socket.get(), mesh_device.get(), kNumIterations);
     std::cout << "[host_io] host_io.run() done" << std::endl;
 
     std::vector<uint32_t> input(kPageSize / sizeof(uint32_t));
     std::vector<uint32_t> output(kPageSize / sizeof(uint32_t));
 
-    std::cout << "[host_io] starting loopback iterations" << std::endl;
-    for (uint32_t i = 0; i < 2; ++i) {
-        if (i < 3 || i == kNumIterations - 1) {
-            std::cout << "[host_io] iteration " << i << " write..." << std::endl;
-        }
+    std::cout << "[host_io] starting " << kNumIterations << " loopback iterations" << std::endl;
+    for (uint32_t i = 0; i < kNumIterations; ++i) {
+        std::cout << "[host_io] iteration " << i << " write..." << std::endl;
         for (size_t j = 0; j < input.size(); ++j) {
             input[j] = static_cast<uint32_t>(i * input.size() + j);
         }
         std::memset(output.data(), 0, output.size() * sizeof(uint32_t));
 
         host_io.write(h2d_socket.get(), input.data(), 1);
-        if (i < 3 || i == kNumIterations - 1) {
-            std::cout << "[host_io] iteration " << i << " write done, read..." << std::endl;
-        }
+        std::cout << "[host_io] iteration " << i << " write done, read..." << std::endl;
         host_io.read(d2h_socket.get(), output.data(), 1);
-        if (i < 3 || i == kNumIterations - 1) {
-            std::cout << "[host_io] iteration " << i << " read done" << std::endl;
-        }
+        std::cout << "[host_io] iteration " << i << " read done" << std::endl;
 
         for (size_t j = 0; j < input.size(); ++j) {
             ASSERT_EQ(input[j], output[j])
-                << "H2D → D2H loopback data mismatch at iteration " << i << ", element " << j;
+                << "H2D -> D2H loopback data mismatch at iteration " << i << ", element " << j;
         }
     }
 
@@ -105,10 +95,6 @@ void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
 }
 
 TEST(HostIOLoopback, LoopbackHOST_PUSH) {
-    if (std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr ||
-        std::string(std::getenv("TT_METAL_SLOW_DISPATCH_MODE")) != "1") {
-        GTEST_SKIP() << "Host IO loopback requires TT_METAL_SLOW_DISPATCH_MODE=1 (see Python test_host_io.py)";
-    }
     ensure_tt_metal_runtime_root();
     if (tt::tt_metal::GetNumAvailableDevices() == 0) {
         GTEST_SKIP() << "No devices available; skipping HostIO loopback test";
@@ -117,10 +103,6 @@ TEST(HostIOLoopback, LoopbackHOST_PUSH) {
 }
 
 TEST(HostIOLoopback, LoopbackDEVICE_PULL) {
-    if (std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr ||
-        std::string(std::getenv("TT_METAL_SLOW_DISPATCH_MODE")) != "1") {
-        GTEST_SKIP() << "Host IO loopback requires TT_METAL_SLOW_DISPATCH_MODE=1 (see Python test_host_io.py)";
-    }
     ensure_tt_metal_runtime_root();
     if (tt::tt_metal::GetNumAvailableDevices() == 0) {
         GTEST_SKIP() << "No devices available; skipping HostIO loopback test";

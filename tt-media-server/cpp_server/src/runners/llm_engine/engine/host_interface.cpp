@@ -4,34 +4,20 @@
 
 #include "runners/llm_engine/engine/host_interface.hpp"
 
-#include <cstdlib>
 #include <iostream>
-#include <map>
 #include <stdexcept>
-#include <string>
-#include <vector>
 
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
-#include <tt-metalium/circular_buffer_config.hpp>
-#include <tt-metalium/global_semaphore.hpp>
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/distributed.hpp>
-#include <tt-metalium/kernel_types.hpp>
 
 namespace llm_engine {
 
 namespace {
 
-constexpr uint32_t kIntermedCbIndex = 0;
-
-std::string get_kernel_path(const std::string& name) {
-    const char* base = std::getenv("TT_METAL_HOME");
-    if (base) {
-        return std::string{base} + "/models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/" + name;
-    }
-    return "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/" + name;
-}
+const char* kLoopbackKernelPath =
+    "tests/tt_metal/tt_metal/test_kernels/misc/socket/pcie_socket_loopback.cpp";
 
 }  // namespace
 
@@ -44,7 +30,8 @@ HostInterface::~HostInterface() {
 void HostInterface::run(
     tt::tt_metal::distributed::H2DSocket* h2d_socket,
     tt::tt_metal::distributed::D2HSocket* d2h_socket,
-    tt::tt_metal::distributed::MeshDevice* mesh_device) {
+    tt::tt_metal::distributed::MeshDevice* mesh_device,
+    uint32_t num_iterations) {
     if (!h2d_socket || !d2h_socket || !mesh_device) {
         throw std::invalid_argument("HostInterface::run: h2d_socket, d2h_socket, mesh_device must be non-null");
     }
@@ -55,61 +42,33 @@ void HostInterface::run(
     }
     const auto& mesh_core_coord = core_coords[0];
     const auto core_coord = mesh_core_coord.core_coord;
-    const auto core_range = tt::tt_metal::CoreRange{core_coord, core_coord};
-    const tt::tt_metal::CoreRangeSet core_range_set{core_range};
 
     const uint32_t page_size = h2d_socket->get_page_size();
-    const uint32_t loopback_cb_size = 1024;
     const bool pull_from_host =
         (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
 
-    std::cout << "[host_interface] CreateGlobalSemaphore..." << std::endl;
-    auto termination_semaphore =
-        tt::tt_metal::CreateGlobalSemaphore(mesh_device, core_range_set, 0, tt::tt_metal::BufferType::L1);
-    std::cout << "[host_interface] CreateGlobalSemaphore done" << std::endl;
-    termination_semaphore_ = new tt::tt_metal::GlobalSemaphore{std::move(termination_semaphore)};
     mesh_device_ = mesh_device;
     initialized_ = true;
 
-    const uint32_t term_sem_addr =
-        static_cast<uint32_t>(static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_)->address());
-
     auto program = tt::tt_metal::CreateProgram();
 
-    std::map<uint8_t, tt::DataFormat> cb_format{{kIntermedCbIndex, tt::DataFormat::UInt32}};
-    tt::tt_metal::CircularBufferConfig cb_config{loopback_cb_size, cb_format};
-    cb_config.set_page_size(kIntermedCbIndex, page_size);
-    tt::tt_metal::CreateCircularBuffer(program, core_range_set, cb_config);
-
-    std::cout << "[host_interface] CreateKernel h2d_receiver..." << std::endl;
-    std::vector<uint32_t> h2d_ct_args = {
-        h2d_socket->get_config_buffer_address(),
-        term_sem_addr,
-        page_size,
-        static_cast<uint32_t>(pull_from_host),
-        static_cast<uint32_t>(true),
-        kIntermedCbIndex,
-    };
+    std::cout << "[host_interface] CreateKernel pcie_socket_loopback..." << std::endl;
     tt::tt_metal::CreateKernel(
         program,
-        get_kernel_path("h2d_receiver.cpp"),
+        kLoopbackKernelPath,
         core_coord,
-        tt::tt_metal::WriterDataMovementConfig{h2d_ct_args});
-    std::cout << "[host_interface] CreateKernel d2h_sender..." << std::endl;
-
-    std::vector<uint32_t> d2h_ct_args = {
-        d2h_socket->get_config_buffer_address(),
-        term_sem_addr,
-        page_size,
-        static_cast<uint32_t>(true),
-        kIntermedCbIndex,
-    };
-    tt::tt_metal::CreateKernel(
-        program,
-        get_kernel_path("d2h_sender.cpp"),
-        core_coord,
-        tt::tt_metal::ReaderDataMovementConfig{d2h_ct_args});
-    std::cout << "[host_interface] EnqueueMeshWorkload..." << std::endl;
+        tt::tt_metal::DataMovementConfig{
+            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+            .noc = tt::tt_metal::NOC::RISCV_0_default,
+            .compile_args = {
+                static_cast<uint32_t>(h2d_socket->get_config_buffer_address()),
+                static_cast<uint32_t>(d2h_socket->get_config_buffer_address()),
+                page_size,
+                page_size,
+                num_iterations,
+                static_cast<uint32_t>(pull_from_host),
+            }});
+    std::cout << "[host_interface] CreateKernel done" << std::endl;
 
     const auto device_coord = mesh_core_coord.device_coord;
     tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};
@@ -117,6 +76,7 @@ void HostInterface::run(
     mesh_workload.add_program(
         tt::tt_metal::distributed::MeshCoordinateRange{mesh_coord}, std::move(program));
 
+    std::cout << "[host_interface] EnqueueMeshWorkload..." << std::endl;
     tt::tt_metal::distributed::EnqueueMeshWorkload(
         mesh_device->mesh_command_queue(), mesh_workload, false);
     std::cout << "[host_interface] EnqueueMeshWorkload done" << std::endl;
@@ -125,16 +85,12 @@ void HostInterface::run(
 void HostInterface::terminate() {
     if (!initialized_) return;
 
-    auto* sem = static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_);
-    if (sem) {
-        sem->reset_semaphore_value(1);
-    }
     if (mesh_device_) {
-        tt::tt_metal::distributed::Synchronize(
-            static_cast<tt::tt_metal::distributed::MeshDevice*>(mesh_device_), std::nullopt, {});
+        auto* dev = static_cast<tt::tt_metal::distributed::MeshDevice*>(mesh_device_);
+        std::cout << "[host_interface] Finish..." << std::endl;
+        tt::tt_metal::distributed::Finish(dev->mesh_command_queue());
+        std::cout << "[host_interface] Finish done" << std::endl;
     }
-    delete static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_);
-    termination_semaphore_ = nullptr;
     mesh_device_ = nullptr;
     initialized_ = false;
 }
