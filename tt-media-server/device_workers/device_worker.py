@@ -53,32 +53,14 @@ def device_worker(
         requests: list[object] = task_queue.get_many(
             max_messages_to_get=settings.max_batch_size,
             block=True,
-            timeout=0.5,  # 500ms timeout for non-LLM batching
+            timeout=0.2,  # 1 second timeout - the batch queue will handle optimal batching
         )
         if requests is None or len(requests) == 0:
             continue
 
-        start_time = time.time()
-        while (
-            len(requests) < settings.max_batch_size and (time.time() - start_time) < 0.5
-        ):
-            # do not wait if queue is empty
-            if (task_queue.qsize() == 0):
-                break
-            needed = settings.max_batch_size - len(requests)
-            more = task_queue.get_many(
-                max_messages_to_get=needed, block=False
-            )
-            if more:
-                requests.extend(more)
-            else:
-                # Sleep briefly to avoid busy-waiting
-                time.sleep(0.005)
-
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
-            loop.close()
             break
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
