@@ -61,4 +61,45 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     return tok_->Decode(token_ids);
 }
 
+namespace {
+
+const char* USER_TAG = "<｜User｜>";
+const char* ASSISTANT_TAG = "<｜Assistant｜>";
+
+}  // namespace
+
+std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
+    bool add_generation_prompt) {
+    static TokenizerConfig cfg = get_tokenizer_config();
+
+    const std::string& bos = cfg.bos_token;
+    const std::string& eos = cfg.eos_token;
+
+    std::ostringstream out;
+    std::string system_prompt;
+    bool first_system = true;
+    for (const auto& m : messages) {
+        if (m.role != "system") continue;
+        if (!first_system) system_prompt += "\n\n";
+        system_prompt += m.content;
+        first_system = false;
+    }
+    if (cfg.add_bos_token) out << bos;
+    out << system_prompt;
+    for (const auto& m : messages) {
+        std::string role = m.role.empty() ? "user" : m.role;
+        if (role == "system") continue;
+        if (role == "user") {
+            out << USER_TAG << m.content;
+        } else if (role == "assistant") {
+            out << ASSISTANT_TAG << m.content;
+            if (cfg.add_eos_token) out << eos;
+        }
+    }
+    if (add_generation_prompt) {
+        out << ASSISTANT_TAG;
+    }
+    return out.str();
+}
+
 }  // namespace tt::utils
