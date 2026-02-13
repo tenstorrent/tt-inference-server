@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import traceback
 from abc import abstractmethod
 
 import ttnn
@@ -24,6 +25,15 @@ from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+
+
+def _log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:
+    """Log exception with full stack trace and cause chain (stdlib only)."""
+    full = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__, chain=True)
+    )
+    logger.error(f"Device {device_id}: {context}\n{full}")
+
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -58,8 +68,11 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             )
             return fabric_config
         except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Fabric configuration failed: {e}"
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Fabric configuration failed",
+                e,
             )
             raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
@@ -98,8 +111,11 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Exception during model loading: {e}"
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Exception during model loading",
+                e,
             )
             raise
 
@@ -154,10 +170,19 @@ class TTSD35Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return StableDiffusion3Pipeline.create_pipeline(
-            mesh_device=self.ttnn_device,
-            checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
-        )
+        try:
+            return StableDiffusion3Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "SD3.5 pipeline creation failed",
+                e,
+            )
+            raise
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 25000000}
@@ -169,10 +194,19 @@ class TTFlux1Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return Flux1Pipeline.create_pipeline(
-            checkpoint_name=self.settings.model_weights_path,
-            mesh_device=self.ttnn_device,
-        )
+        try:
+            return Flux1Pipeline.create_pipeline(
+                checkpoint_name=self.settings.model_weights_path,
+                mesh_device=self.ttnn_device,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Flux1 pipeline creation failed",
+                e,
+            )
+            raise
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 50000000}
@@ -183,10 +217,19 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return MotifPipeline.create_pipeline(
-            mesh_device=self.ttnn_device,
-            checkpoint_name=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
-        )
+        try:
+            return MotifPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Motif pipeline creation failed",
+                e,
+            )
+            raise
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 31000000}
@@ -198,10 +241,19 @@ class TTQwenImageRunner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return QwenImagePipeline.create_pipeline(
-            mesh_device=self.ttnn_device,
-            checkpoint_name=self.settings.model_weights_path,
-        )
+        try:
+            return QwenImagePipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Qwen-Image pipeline creation failed",
+                e,
+            )
+            raise
 
     def get_pipeline_device_params(self):
         return {"trace_region_size": 47000000}
@@ -214,10 +266,19 @@ class TTMochi1Runner(TTDiTRunner):
         os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
-        return MochiPipeline.create_pipeline(
-            mesh_device=self.ttnn_device,
-            checkpoint_name=SupportedModels.MOCHI_1.value,
-        )
+        try:
+            return MochiPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=SupportedModels.MOCHI_1.value,
+            )
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Mochi pipeline creation failed",
+                e,
+            )
+            raise
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
@@ -246,7 +307,16 @@ class TTWan22Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
-        return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+        try:
+            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+        except Exception as e:
+            _log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Wan pipeline creation failed",
+                e,
+            )
+            raise
 
     def load_weights(self):
         return False
