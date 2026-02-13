@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from config.constants import ResponseFormat
+from config.settings import settings
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
@@ -66,3 +67,11 @@ class AudioProcessingRequest(BaseRequest):
         raise ValueError(
             "Invalid temperatures format. Use comma-separated floats.",
         )
+
+    @field_validator("stream", mode="before")
+    @classmethod
+    def validate_stream_for_batching(cls, stream, values):
+        # If settings.max_batch_size > 1, force stream to False
+        if settings.max_batch_size > 1:
+            return False
+        return stream

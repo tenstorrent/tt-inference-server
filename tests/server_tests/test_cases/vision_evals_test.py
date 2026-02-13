@@ -38,6 +38,7 @@ ACCURACY_FILE_BY_MODE = {
     "cpu": "cpu_accuracy.json",
     "device": "device_accuracy.json",
 }
+ACCURACY_THRESHOLD = 0.05  # device accuracy must be within 5% of cpu accuracy
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,12 @@ class VisionEvalsTest(BaseTest):
 
             # Step 4: Compare results
             logger.info("Step 4: Comparing CPU vs device results")
-            self._compare_results()
+            accuracy_status = self._compare_results()
+
+            # Add status to eval_results for each model
+            for model, status in accuracy_status.items():
+                if model in self.eval_results:
+                    self.eval_results[model]["accuracy_status"] = status
 
             return {
                 "success": True,
@@ -315,7 +321,7 @@ class VisionEvalsTest(BaseTest):
             raise ValueError("Sample count must be positive.")
 
         ds = load_dataset(
-            "imagenet-1k",
+            "ILSVRC/imagenet-1k",
             split="validation",
             streaming=True,
             download_config=DownloadConfig(num_proc=1),
@@ -368,23 +374,65 @@ class VisionEvalsTest(BaseTest):
         )
         time.sleep(5)  # Workaround for streaming dataset cleanup issues
 
-    def _compare_results(self) -> None:
-        """Compare CPU and device accuracy results and print a summary."""
+    def _get_accuracy_status(
+        self,
+        cpu_accuracy: float | None,
+        device_accuracy: float | None,
+        threshold: float = ACCURACY_THRESHOLD,
+    ) -> tuple[int, float | None]:
+        """Evaluate device accuracy against CPU accuracy.
+
+        Args:
+            cpu_accuracy: CPU accuracy as a ratio (0.0 to 1.0).
+            device_accuracy: Device accuracy as a ratio (0.0 to 1.0).
+            threshold: Maximum allowed relative difference (default 0.05 = 5%).
+
+        Returns:
+            (status, min_acceptable):
+                status: 0=undefined, 2=pass, 3=fail
+                min_acceptable: CPU * (1 - threshold), or None when undefined
+
+        Example:
+            CPU = 40%, threshold = 5%
+            Minimum acceptable device accuracy = 40% * 0.95 = 38%
+            If device < 38% -> Fail (return (3, 0.38))
+            If device >= 38% -> Pass (return (2, 0.38))
+        """
+        if cpu_accuracy is None or device_accuracy is None:
+            return (0, None)
+
+        min_acceptable = cpu_accuracy * (1 - threshold)
+        if device_accuracy < min_acceptable:
+            return (3, min_acceptable)
+
+        return (2, min_acceptable)
+
+    def _compare_results(self) -> dict[str, int]:
+        """Compare CPU and device accuracy results and print a summary.
+
+        Returns:
+            Dictionary mapping model names to accuracy status codes:
+                0: Undefined (missing data)
+                2: Pass - within threshold
+                3: Fail - device accuracy too low
+        """
         logger.info("Comparing results CPU and device accuracy.")
         dataset_path = Path(DATASET_DIR)
         cpu_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["cpu"]
         device_accuracy_path = dataset_path / ACCURACY_FILE_BY_MODE["device"]
 
+        accuracy_status: dict[str, int] = {}
+
         if not cpu_accuracy_path.exists():
             logger.warning("CPU accuracy file not found: %s", cpu_accuracy_path)
             logger.info("Run CPU accuracy measurement with --measure_cpu_accuracy")
-            return
+            return accuracy_status
         if not device_accuracy_path.exists():
             logger.warning("Device accuracy file not found: %s", device_accuracy_path)
             logger.info(
                 "Run device accuracy measurement with --measure_device_accuracy"
             )
-            return
+            return accuracy_status
 
         with cpu_accuracy_path.open("r", encoding="utf-8") as f:
             cpu_accuracy = json.load(f)
@@ -393,9 +441,9 @@ class VisionEvalsTest(BaseTest):
 
         logger.info("Accuracy Comparison (CPU vs Device):")
         logger.info(
-            f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18}"
+            f"{'Model':30} {'CPU Accuracy (%)':>18} {'Device Accuracy (%)':>20} {'Difference (%)':>18} {'Status':>8}"
         )
-        logger.info("-" * 90)
+        logger.info("-" * 100)
 
         unacceptable: list[str] = []
 
@@ -403,12 +451,15 @@ class VisionEvalsTest(BaseTest):
             cpu_value = cpu_accuracy.get(model)
             device_value = device_accuracy.get(model)
 
+            status, min_acceptable = self._get_accuracy_status(cpu_value, device_value)
+            accuracy_status[model] = status
+
             cpu_pct = cpu_value * 100.0 if cpu_value is not None else None
             device_pct = device_value * 100.0 if device_value is not None else None
 
             if cpu_pct is not None and device_pct is not None:
                 diff = device_pct - cpu_pct
-                if diff < -5.0:
+                if status == 3:
                     unacceptable.append(model)
                 diff_display = f"{diff:18.2f}"
             else:
@@ -418,10 +469,27 @@ class VisionEvalsTest(BaseTest):
             device_display = (
                 f"{device_pct:20.2f}" if device_pct is not None else f"{'N/A':>20}"
             )
+            status_display = "✅" if status == 2 else "❌" if status == 3 else "N/A"
 
             logger.info(
-                "%s %s %s %s", f"{model:30}", cpu_display, device_display, diff_display
+                "%s %s %s %s %s",
+                f"{model:30}",
+                cpu_display,
+                device_display,
+                diff_display,
+                f"{status_display:>8}",
             )
+
+            if status == 2 and min_acceptable is not None:
+                logger.info(
+                    f"Device accuracy {device_value} is above minimum acceptable {min_acceptable} ✅"
+                )
+            elif status == 3 and min_acceptable is not None:
+                logger.info(
+                    f"Device accuracy {device_value} is below minimum acceptable {min_acceptable} ❌"
+                )
+            elif status == 0:
+                logger.info("Undefined accuracy ❌")
 
         if unacceptable:
             formatted = ", ".join(unacceptable)
@@ -430,6 +498,8 @@ class VisionEvalsTest(BaseTest):
                 formatted,
             )
             sys.exit(1)
+
+        return accuracy_status
 
     def _measure_accuracy(
         self,

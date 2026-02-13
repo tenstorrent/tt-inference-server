@@ -25,17 +25,21 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.benchmark_config import (
+    BENCHMARK_CONFIGS,
+    expand_concurrency_sweep_params,
+    powers_of_two_up_to,
+)
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -54,6 +58,7 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.CNN,
     ModelType.AUDIO,
     ModelType.EMBEDDING,
+    ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]
 
@@ -100,6 +105,11 @@ def parse_args():
         help="HF_TOKEN",
         default=os.getenv("HF_TOKEN", ""),
     )
+    parser.add_argument(
+        "--concurrency-sweeps",
+        action="store_true",
+        help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
+    )
     ret_args = parser.parse_args()
     return ret_args
 
@@ -118,26 +128,33 @@ def build_benchmark_command(
     osl = params.osl
     max_concurrency = params.max_concurrency
     num_prompts = params.num_prompts
-    if params.task_type == "image":
+
+    # VLM models: use isl/osl + image dimensions
+    if params.task_type == "vlm":
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}_images-{params.images_per_prompt}_height-{params.image_height}_width-{params.image_width}.json"
         )
+    # Text models: standard isl/osl
     else:
         result_filename = (
             Path(output_path)
             / f"benchmark_{model_spec.model_id}_{run_timestamp}_isl-{isl}_osl-{osl}_maxcon-{max_concurrency}_n-{num_prompts}.json"
         )
 
+    # VLM models need multimodal dataset; text models use standard dataset
+    dataset_name = "random-mm" if params.task_type == "vlm" else "random"
+    backend = "vllm" if params.task_type == "text" else "openai-chat"
+
     # fmt: off
     cmd = [
         str(benchmark_script),
         "bench",
         "serve",
-        "--backend", ("vllm" if params.task_type == "text" else "openai-chat"),
+        "--backend", backend,
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
-        "--dataset-name", "random",
+        "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
         "--random-input-len", str(isl),
@@ -147,13 +164,11 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
-    # Add multimodal parameters if the model supports it
-    if params.task_type == "image":
+    if params.task_type == "vlm":
         if params.image_height and params.image_width:
             cmd.extend([
-                "--random-images-per-prompt", str(params.images_per_prompt),
-                "--random-image-height", str(params.image_height),
-                "--random-image-width", str(params.image_width),
+                "--random-mm-base-items-per-request", str(params.images_per_prompt),
+                "--random-mm-bucket-config", str({(params.image_height, params.image_width, 1): 1.0}),
                 "--endpoint", "/v1/chat/completions"
             ])
     # fmt: on
@@ -234,7 +249,14 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    # copy env vars to pass to subprocesses
+    if (
+        model_spec.inference_engine == InferenceEngine.MEDIA.value
+        or model_spec.inference_engine == InferenceEngine.FORGE.value
+    ):
+        os.environ["OPENAI_API_KEY"] = "your-secret-key"
+        os.environ["VLLM_API_KEY"] = "your-secret-key"
+        logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
+
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
@@ -243,6 +265,26 @@ def main():
             f"No benchmark tasks defined for model: {model_spec.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
+
+    # CLI arg takes precedence, fallback to model spec cli_args
+    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
+        "concurrency_sweeps", False
+    )
+    if concurrency_sweeps:
+        max_context = model_spec.device_model_spec.max_context
+        model_max_concurrency = model_spec.device_model_spec.max_concurrency
+        candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
+        # TODO: get the number of perf targets from the model config instead of 1
+        for task in benchmark_config.tasks[1:]:
+            if device not in task.param_map:
+                continue
+            task.param_map[device] = expand_concurrency_sweep_params(
+                task.param_map[device],
+                max_context=max_context,
+                model_max_concurrency=model_max_concurrency,
+                model_name=model_spec.model_name,
+                candidate_concurrencies=candidate_concurrencies,
+            )
 
     # check for any benchmarks to run for model on given device
     all_params = [
@@ -266,11 +308,11 @@ def main():
         if param.task_type == "text":
             log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.num_prompts:<12}\n"
     if "image" in model_spec.supported_modalities:
-        log_str += "Running image benchmarks for:\n"
+        log_str += "Running VLM benchmarks for:\n"
         log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'images_per_prompt':<12} {'image_height':<12} {'image_width':<12} {'num_prompts':<12}\n"
         log_str += f"  {'-' * 3:<3} {'-' * 10:<10} {'-' * 10:<10} {'-' * 15:<15} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12} {'-' * 12:<12}\n"
         for i, param in enumerate(all_params, 1):
-            if param.task_type == "image":
+            if param.task_type == "vlm":
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
@@ -281,6 +323,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 

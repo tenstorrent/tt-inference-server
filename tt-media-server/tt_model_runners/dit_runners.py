@@ -11,16 +11,16 @@ from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
-from models.experimental.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.experimental.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
-from models.experimental.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
-from models.experimental.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
-    StableDiffusion3Pipeline,
-)
-from models.experimental.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
+from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
 )
-from models.experimental.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
+    StableDiffusion3Pipeline,
+)
+from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
@@ -38,8 +38,8 @@ dit_runner_log_map = {
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.pipeline = None
 
     def _configure_fabric(self, updated_device_params):
@@ -150,8 +150,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
 
 class TTSD35Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return StableDiffusion3Pipeline.create_pipeline(
@@ -165,8 +165,8 @@ class TTSD35Runner(TTDiTRunner):
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -179,8 +179,8 @@ class TTFlux1Runner(TTDiTRunner):
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return MotifPipeline.create_pipeline(
@@ -194,8 +194,8 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
 class TTQwenImageRunner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return QwenImagePipeline.create_pipeline(
@@ -208,8 +208,10 @@ class TTQwenImageRunner(TTDiTRunner):
 
 
 class TTMochi1Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # setup environment for Mochi runner
+        os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
         return MochiPipeline.create_pipeline(
@@ -240,11 +242,14 @@ class TTMochi1Runner(TTDiTRunner):
 
 
 class TTWan22Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+
+    def load_weights(self):
+        return False
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):

@@ -331,6 +331,7 @@ The logs have the following structure:
 
 # Additional Documentation
 
+- [Workflows](../workflows/README.md)
 - [Development](development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)

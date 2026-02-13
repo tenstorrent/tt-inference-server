@@ -43,7 +43,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
         self.num_calls = 1000
         self.dimensions = 1000
-        self.concurrency = self.model_spec.device_model_spec.max_concurrency
+        self.concurrency = int(
+            self.model_spec.device_model_spec.env_vars.get("VLLM__MAX_NUM_SEQS", 1)
+        )
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""

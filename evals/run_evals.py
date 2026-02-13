@@ -29,12 +29,17 @@ from evals.eval_config import EVAL_CONFIGS, EvalTask
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes, EvalLimitMode, WorkflowVenvType
+from workflows.workflow_types import (
+    DeviceTypes,
+    EvalLimitMode,
+    ModelType,
+    WorkflowVenvType,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -53,6 +58,7 @@ EVAL_TASK_TYPES = [
     ModelType.CNN,
     ModelType.AUDIO,
     ModelType.EMBEDDING,
+    ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]
 
@@ -202,6 +208,8 @@ def build_eval_command(
         WorkflowVenvType.EVALS_AUDIO,
     ]:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+    elif task.workflow_venv_type == WorkflowVenvType.EVALS_GPT_OSS:
+        lm_eval_exec = f"{task_venv_config.venv_python} -m gpt_oss.evals"
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
@@ -250,6 +258,17 @@ def build_eval_command(
             "--batch_size", str(task.batch_size),
             "--output_path", str(output_dir_path),
             "--log_samples",
+        ]
+    elif task.workflow_venv_type == WorkflowVenvType.EVALS_GPT_OSS:
+        cmd = [
+            *(str(lm_eval_exec).split(" ")),
+            "--model", model_spec.hf_model_repo,
+            "--reasoning-effort", task.gen_kwargs["reasoning_effort"],
+            "--sampler", "chat_completions" if task.use_chat_api else "responses",
+            "--base-url", base_url,
+            "--eval", task.task_name,
+            "--n-threads", task.max_concurrent,
+            "--output-path", str(output_dir_path),
         ]
     else:
         cmd = [

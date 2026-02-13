@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
-DEFAULT_VIDEO_TIMEOUT_SECONDS = 600
+DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
+INFERENCE_STEPS = {"mochi-1-preview": 50, "Wan2.2-T2V-A14B-Diffusers": 40}
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -29,8 +30,6 @@ class VideoClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
@@ -44,10 +43,8 @@ class VideoClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            # Get num_calls from benchmark parameters
-            num_calls = get_num_calls(self)
-            status_list = self._run_video_generation_benchmark(num_calls)
-
+            # Run video generation eval using VideoGenerationEvalsTest
+            eval_result = self._run_video_generation_eval()
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -64,14 +61,43 @@ class VideoClientStrategy(BaseMediaStrategy):
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
+        # Extract metrics from eval result
+        if eval_result:
+            logger.info(
+                "Adding eval results from video generation test to benchmark data"
+            )
+            benchmark_data["num_prompts"] = eval_result.get("num_prompts", 0)
+            benchmark_data["num_inference_steps"] = eval_result.get(
+                "num_inference_steps", 0
+            )
+
+            clip_results = eval_result.get("clip_results", {})
+            benchmark_data["average_clip"] = clip_results.get("average_clip", 0.0)
+            benchmark_data["min_clip"] = clip_results.get("min_clip", 0.0)
+            benchmark_data["max_clip"] = clip_results.get("max_clip", 0.0)
+            benchmark_data["clip_standard_deviation"] = clip_results.get(
+                "clip_standard_deviation", 0.0
+            )
+            benchmark_data["accuracy_check"] = eval_result.get("accuracy_check", 0)
+        else:
+            logger.warning("No eval results from video generation test")
+
+        benchmark_data["fvd"] = None
+        benchmark_data["fvmd"] = None
+        try:
+            # Run video FVD and FVMD eval
+            fvd_and_fvmd_result = self._run_video_fvd_and_fvmd_eval()
+
+            # Add FVD and FVMD results to eval data
+            if fvd_and_fvmd_result:
+                benchmark_data["fvd"] = fvd_and_fvmd_result.get("fvd", 0)
+                benchmark_data["fvmd"] = fvd_and_fvmd_result.get("fvmd", 0)
+        except Exception as e:
+            logger.error(f"Error running video FVD and FVMD eval: {e}")
 
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
-        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
@@ -125,24 +151,25 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info("Running video generation benchmark.")
         status_list = []
 
+        inference_steps = INFERENCE_STEPS[self.model_spec.model_name]
+        logger.info(f"Inference steps: {inference_steps}")
+
         for i in range(num_calls):
             logger.info(f"Generating video {i + 1}/{num_calls}...")
             status, elapsed, job_id, video_path = self._generate_video(
-                prompt=f"Test video generation {i + 1}"
+                prompt=f"Test video generation {i + 1}",
+                num_inference_steps=inference_steps,
             )
             logger.info(f"Generated video in {elapsed:.2f} seconds.")
 
             # Calculate inference steps per second if num_inference_steps is available
-            num_inference_steps = 20  # Default value
-            inference_steps_per_second = (
-                num_inference_steps / elapsed if elapsed > 0 else 0
-            )
+            inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
 
             status_list.append(
                 VideoGenerationTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    num_inference_steps=num_inference_steps,
+                    num_inference_steps=inference_steps,
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,
@@ -259,7 +286,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         logger.info(f"Downloading video for job: {job_id}")
 
         try:
-            output_dir = Path(self.output_path) / "videos"
+            output_dir = Path("/tmp/videos")
             output_dir.mkdir(parents=True, exist_ok=True)
 
             video_path = output_dir / f"{job_id}.mp4"
@@ -335,3 +362,175 @@ class VideoClientStrategy(BaseMediaStrategy):
             if status_list
             else 0
         )
+
+    def _run_video_generation_eval(self) -> dict:
+        """Run video generation eval using VideoGenerationEvalsTest.
+
+        Returns:
+            dict: eval_results with structure:
+                {
+                    "model": str,
+                    "num_prompts": int,
+                    "num_inference_steps": int,
+                    "clip_results": {
+                        "average_clip": float,
+                        "min_clip": float,
+                        "max_clip": float,
+                        "clip_standard_deviation": float,
+                        "num_videos": int
+                    },
+                    "accuracy_check": int
+                }
+        """
+        # Lazy import to avoid loading dependencies at module import time
+        from tests.server_tests.test_cases.video_generation_eval_test import (
+            VideoGenerationEvalsTest,
+            VideoGenerationEvalsTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
+        logger.info("Running video generation eval.")
+
+        # Get parameters from eval configuration with defaults
+        # Use default values similar to metal team's approach
+        num_prompts = 5  # Default for video evaluation
+        num_inference_steps = 40  # Default for video models
+        start_from = 0
+        frame_sample_rate = 8  # Sample every 8th frame
+
+        request = VideoGenerationEvalsTestRequest(
+            model_name=self.model_spec.model_name,
+            num_prompts=num_prompts,
+            start_from=start_from,
+            num_inference_steps=num_inference_steps,
+            server_url=self.base_url,
+            frame_sample_rate=frame_sample_rate,
+        )
+        logger.info(f"Running VideoGenerationEvalsTest with request: {request}")
+
+        config = TestConfig.create_default()
+        targets = {"request": request}
+        test = VideoGenerationEvalsTest(config, targets)
+
+        logger.info("Starting VideoGenerationEvalsTest")
+        result = test.run_tests()
+
+        # Extract eval_results from result
+        eval_results = result.get("result", {}).get("eval_results", {})
+        logger.info(f"VideoGenerationEvalsTest eval_results: {eval_results}")
+
+        return eval_results
+
+    def _run_video_fvd_and_fvmd_eval(self) -> dict:
+        """Run video FVD and FVMD eval.
+
+        Flow:
+        1. Download reference videos from FineVideo (shared dataset dir).
+        2. Run FVD test (compute_fvd) with reference vs generated videos.
+        3. Run FVMD test (compute_fvmd) with same paths.
+        4. Combine FVD and FVMD scores into a single dict.
+
+        Reference videos: tests/server_tests/datasets/video_fvd_subset/videos
+        Generated videos: tests/server_tests/datasets/videos (same as
+        video_generation_eval_test) or /tmp/videos (video_client downloads).
+
+        Returns:
+            dict: Combined eval results, e.g.:
+                {
+                    "fvd": float,
+                    "fvmd": float,
+                    "reference_videos_path": str,
+                    "generated_videos_path": str,
+                }
+        """
+        from pathlib import Path
+
+        from tests.server_tests.test_cases.video_fvd_eval_test import (
+            DATASET_DIR as FVD_DATASET_DIR,
+        )
+        from tests.server_tests.test_cases.video_fvd_eval_test import (
+            VideoFVDTest,
+            VideoFVDTestRequest,
+        )
+        from tests.server_tests.test_cases.video_fvmd_eval_test import (
+            VideoFVMDTest,
+            VideoFVMDTestRequest,
+        )
+        from tests.server_tests.test_classes import TestConfig
+
+        logger.info("Running video FVD and FVMD eval.")
+
+        reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
+        # Generated videos: same dir as video_generation_eval_test, or /tmp/videos
+        generated_videos_path = str(
+            Path("tests/server_tests/datasets/videos").resolve()
+        )
+        if not Path(generated_videos_path).exists():
+            generated_videos_path = "/tmp/videos"
+        logger.info(
+            f"Reference path: {reference_videos_path}, "
+            f"generated path: {generated_videos_path}"
+        )
+
+        config = TestConfig.create_default()
+        combined_results = {
+            "reference_videos_path": reference_videos_path,
+            "generated_videos_path": generated_videos_path,
+        }
+
+        # Step 1: Download reference videos (shared for FVD and FVMD)
+        download_request = VideoFVDTestRequest(
+            action="download",
+            download_count=2,
+            category="Sports",
+        )
+        download_test = VideoFVDTest(config, {"request": download_request})
+        download_result = download_test.run_tests()
+        if not download_result.get("success") or not download_result.get(
+            "result", {}
+        ).get("success"):
+            logger.warning(
+                "Reference video download failed: %s. "
+                "FVD/FVMD may fail if reference dir is empty.",
+                download_result,
+            )
+        else:
+            logger.info("Reference videos downloaded successfully.")
+
+        # Step 2: Run FVD (compute_fvd)
+        fvd_request = VideoFVDTestRequest(
+            action="compute_fvd",
+            reference_videos_path=reference_videos_path,
+            generated_videos_path=generated_videos_path,
+        )
+        fvd_test = VideoFVDTest(config, {"request": fvd_request})
+        fvd_result = fvd_test.run_tests()
+        fvd_ok = fvd_result.get("success") and fvd_result.get("result", {}).get(
+            "success"
+        )
+        if fvd_ok:
+            combined_results["fvd"] = fvd_result["result"].get("fvd_score")
+            logger.info("FVD score: %s", combined_results["fvd"])
+        else:
+            combined_results["fvd"] = None
+            logger.warning("FVD test failed or did not return score: %s", fvd_result)
+
+        # Step 3: Run FVMD (compute_fvmd)
+        fvmd_request = VideoFVMDTestRequest(
+            action="compute_fvmd",
+            reference_videos_path=reference_videos_path,
+            generated_videos_path=generated_videos_path,
+        )
+        fvmd_test = VideoFVMDTest(config, {"request": fvmd_request})
+        fvmd_result = fvmd_test.run_tests()
+        fvmd_ok = fvmd_result.get("success") and fvmd_result.get("result", {}).get(
+            "success"
+        )
+        if fvmd_ok:
+            combined_results["fvmd"] = fvmd_result["result"].get("fvmd_score")
+            logger.info("FVMD score: %s", combined_results["fvmd"])
+        else:
+            combined_results["fvmd"] = None
+            logger.warning("FVMD test failed or did not return score: %s", fvmd_result)
+
+        return combined_results

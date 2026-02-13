@@ -32,10 +32,10 @@ def pytest_addoption(parser):
         help="Name of the model being tested",
     )
     parser.addoption(
-        "--model-backend",
+        "--model-impl",
         action="store",
-        default="unknown-backend",
-        help="Backend serving the model (e.g., vLLM, TGI, Pytorch)",
+        default="unknown-impl",
+        help="Implementation serving the model (e.g., tt-transformers)",
     )
 
 
@@ -60,9 +60,8 @@ def results_report(request, output_path):
     report_data = {
         "endpoint_url": request.config.getoption("--endpoint-url"),
         "model_name": request.config.getoption("--model-name"),
-        "model_backend": request.config.getoption("--model-backend"),
-        "test_run_timestamp_utc": datetime.utcnow().isoformat(),
-        "parameter_support": {},
+        "model_impl": request.config.getoption("--model-impl"),
+        "results": {},
     }
     yield report_data
 
@@ -143,7 +142,9 @@ def report_test(results_report, request):
         - Captures exception traceback
         - Integrates cleanly with pytest
     """
+    test_start_ts = datetime.now().isoformat()
     yield  # Run the test
+    test_end_ts = datetime.now().isoformat()
 
     # Get the report object we stored in the hook
     report = getattr(request.node, "rep_call", None)
@@ -160,8 +161,7 @@ def report_test(results_report, request):
         else:
             tb = f"\nTraceback:\n{report.longrepr}"
 
-    timestamp = datetime.now().isoformat()
-    message = f"{timestamp} – {tb}"
+    message = tb.strip() if tb else ""
 
     # --- Add the test outcome to the report ---
 
@@ -170,11 +170,14 @@ def report_test(results_report, request):
     # Use the full node name (e.g., "test_n[2]") for specific context
     test_node_name = request.node.name
 
-    if test_func_name not in results_report["parameter_support"]:
-        results_report["parameter_support"][test_func_name] = []
+    if test_func_name not in results_report["results"]:
+        results_report["results"][test_func_name] = []
 
-    results_report["parameter_support"][test_func_name].append(
+    results_report["results"][test_func_name].append(
         {
+            "test_start_ts": test_start_ts,
+            "test_end_ts": test_end_ts,
+            "test_id": request.node.nodeid,
             "status": outcome,
             "message": message,
             "test_node_name": test_node_name,

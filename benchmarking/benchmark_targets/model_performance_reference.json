@@ -6,7 +6,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -24,7 +24,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -42,7 +42,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -62,7 +62,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -80,7 +80,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -98,7 +98,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -118,7 +118,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -138,7 +138,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -157,7 +157,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -323,9 +323,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 21.0,
-                        "tput_user": 84.0,
-                        "tput": 5230.0
+                        "ttft_ms": 29.0,
+                        "tput_user": 73.0,
+                        "tput": 4483.0
                     }
                 }
             }
@@ -399,9 +399,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 11.0,
-                        "tput_user": 605.0,
-                        "tput": 20919.0
+                        "ttft_ms": 29.0,
+                        "tput_user": 73.0,
+                        "tput": 17932.0
                     }
                 }
             }
@@ -4421,7 +4421,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4440,7 +4440,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4459,7 +4459,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4478,7 +4478,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4497,7 +4497,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4518,7 +4518,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4537,7 +4537,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4558,7 +4558,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4577,7 +4577,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4596,7 +4596,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4632,7 +4632,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4651,7 +4651,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4670,7 +4670,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4691,7 +4691,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4710,7 +4710,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 896,
                 "image_width": 896,
                 "images_per_prompt": 1,
@@ -4817,7 +4817,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4837,7 +4837,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -4855,7 +4855,7 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "image",
+                "task_type": "vlm",
                 "image_height": 512,
                 "image_width": 512,
                 "images_per_prompt": 1,
@@ -5268,6 +5268,220 @@
             }
         ]
     },
+    "FLUX.1-dev": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "qbge": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
+    "FLUX.1-schnell": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "qbge": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
+    "Motif-Image-6B-Preview": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ]
+    },
     "whisper-large-v3": {
         "n150": [
             {
@@ -5372,7 +5586,7 @@
         "t3k": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 50,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
@@ -5385,7 +5599,7 @@
         "galaxy": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 50,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
@@ -5396,16 +5610,18 @@
             }
         ]
     },
-    "wan2.2-t2v-a14b-diffusers": {
+    "Wan2.2-T2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 40,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 540000,
-                        "tput_user": 0.0019
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
                     }
                 }
             }
@@ -5413,12 +5629,14 @@
         "galaxy": [
             {
                 "max_concurrency": 1,
-                "num_inference_steps": 1,
+                "num_inference_steps": 40,
                 "task_type": "video",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 330000,
-                        "tput_user": 0.003
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
                     }
                 }
             }
@@ -5543,9 +5761,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5556,9 +5774,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5569,9 +5787,9 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
                     }
                 }
             }
@@ -5582,9 +5800,63 @@
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32000,
-                        "tput_prefill": 32000,
-                        "e2el_ms": 7000
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3-Embedding-8B": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 3000,
+                        "tput_prefill": 3000,
+                        "e2el_ms": 152000
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 3000,
+                        "tput_prefill": 3000,
+                        "e2el_ms": 152000
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 3000,
+                        "tput_prefill": 3000,
+                        "e2el_ms": 152000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 3000,
+                        "tput_prefill": 3000,
+                        "e2el_ms": 152000
                     }
                 }
             }
@@ -5723,6 +5995,34 @@
                     "theoretical": {
                         "ttft_ms": 50,
                         "tput_user": 20
+                    }
+                }
+            }
+        ]
+    },
+    "speecht5_tts": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2000,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text_to_speech",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
                     }
                 }
             }

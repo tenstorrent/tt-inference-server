@@ -1,336 +1,169 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """
-Integration tests for SpeechT5 TTS API endpoint on N150 hardware.
+Integration tests for TTS API - focuses on error handling and input validation.
 
-These tests verify:
-1. Server startup and health check
-2. TS generation
-3. Error handling for invalid inputs
-4. Audio output validation (WAV format, sample rate, duration)
-5. API authentication
+Tests verify:
+1. Error handling for invalid inputs (empty text, missing fields, invalid JSON)
+2. Input validation (very long text exceeds max_tts_text_length)
 
-To run these tests:
-    cd tt-inference-server/tt-media-server
-    export ARCH_NAME=wormhole_b0
-    export TT_METAL_HOME=/path/to/tt-metal
-    export PYTHONPATH=/path/to/tt-metal
-    export MODEL_RUNNER=tt-speecht5-tts
-    export DEVICE_IDS="(0)"
-    export IS_GALAXY=False
-
-    # Start server in background
-    uvicorn main:app --lifespan on --port 8000 &
-
-    # Wait for server to be ready
-    sleep 60
-
-    # Run tests
-    pytest tests/server_tests/test_cases/tts_integration_test.py -v
+Note: Basic TTS functionality is covered by speecht5_tts_test.py
+      Quality testing (WER) is covered by tts_quality_test.py
+      Load testing is covered by tts_load_test.py
 """
 
-import io
+import logging
 import time
-import wave
 
-import pytest
-import requests
+import aiohttp
+from server_tests.base_test import BaseTest
 
-from tests.server_tests.base_test import BaseTest
+logger = logging.getLogger(__name__)
 
-# Test configuration
-BASE_URL = "http://localhost:8000"
-API_KEY = "your-secret-key"
-HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-
-# Expected audio properties for SpeechT5 TTS
-EXPECTED_SAMPLE_RATE = 16000
-EXPECTED_CHANNELS = 1
-EXPECTED_BIT_DEPTH = 16
+HEADERS = {
+    "accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": "Bearer your-secret-key",
+}
 
 
-class TestTTSServerHealth(BaseTest):
-    """Test server health and availability"""
+class TTSIntegrationTest(BaseTest):
+    """Integration test for TTS API - error handling and input validation.
 
-    def test_server_is_running(self):
-        """Verify server is accessible"""
-        try:
-            response = requests.get(
-                f"{BASE_URL}/tt-liveness", headers=HEADERS, timeout=5
-            )
-            assert response.status_code == 200, (
-                f"Server not accessible: {response.status_code}"
-            )
-        except requests.exceptions.ConnectionError:
-            pytest.fail(
-                "Server is not running. Start it with: uvicorn main:app --lifespan on --port 8000"
-            )
+    This test focuses on edge cases and error scenarios that are not covered
+    by other TTS tests (speecht5_tts_test, tts_quality_test, tts_load_test).
+    """
 
-    def test_metrics_endpoint(self):
-        """Verify Prometheus metrics endpoint"""
-        response = requests.get(f"{BASE_URL}/metrics", timeout=5)
-        assert response.status_code == 200
-        assert "python_info" in response.text
+    async def _run_specific_test_async(self):
+        """Run integration tests for TTS API."""
+        test_start_time = time.time()
+        self.url = f"http://localhost:{self.service_port}/audio/speech"
 
-
-class TestTTSAuthentication(BaseTest):
-    """Test API authentication"""
-
-    def test_missing_auth_token(self):
-        """Request without auth token should fail"""
-        response = requests.post(f"{BASE_URL}/tts/tts", json={"text": "Test"})
-        assert response.status_code == 401 or response.status_code == 403
-
-    def test_invalid_auth_token(self):
-        """Request with invalid auth token should fail"""
-        headers = {
-            "Authorization": "Bearer invalid-token",
-            "Content-Type": "application/json",
+        results = {
+            "empty_text": None,
+            "missing_text_field": None,
+            "invalid_json": None,
+            "very_long_text": None,
         }
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=headers,
-            json={"text": "Test"},
-        )
-        assert response.status_code == 401 or response.status_code == 403
 
-    def test_valid_auth_token(self):
-        """Request with valid auth token should succeed"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": "Test"},
-        )
-        # Should get 200 or a processing error, not auth error
-        assert response.status_code not in [401, 403]
+        session_timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=session_timeout) as session:
+            logger.info("Testing empty text handling...")
+            results["empty_text"] = await self._test_empty_text(session)
 
+            logger.info("Testing missing text field handling...")
+            results["missing_text_field"] = await self._test_missing_text_field(session)
 
-class TestTTS(BaseTest):
-    """Test TTS generation"""
+            logger.info("Testing invalid JSON handling...")
+            results["invalid_json"] = await self._test_invalid_json(session)
 
-    def test_simple_text_generation(self):
-        """Generate speech from simple text"""
-        text = "Hello world"
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=30,
+            logger.info("Testing very long text handling...")
+            results["very_long_text"] = await self._test_very_long_text(session)
+
+        passed_tests = sum(1 for v in results.values() if v and v.get("passed"))
+        total_tests = len(results)
+        all_passed = passed_tests == total_tests
+
+        total_duration = time.time() - test_start_time
+        logger.info(
+            f"TTS Integration Test completed: {passed_tests}/{total_tests} passed, "
+            f"duration={total_duration:.1f}s"
         )
 
-        assert response.status_code == 200, (
-            f"Failed with status {response.status_code}: {response.text}"
-        )
-        assert response.headers.get("content-type") == "audio/wav"
+        return {
+            "success": all_passed,
+            "passed_tests": passed_tests,
+            "total_tests": total_tests,
+            "results": results,
+            "duration": round(total_duration, 2),
+        }
 
-        # Validate WAV format
-        audio_data = response.content
-        assert len(audio_data) > 0, "Empty audio response"
+    async def _test_empty_text(self, session: aiohttp.ClientSession) -> dict:
+        """Empty text should return validation error (400 or 422)."""
+        try:
+            async with session.post(
+                self.url, json={"text": ""}, headers=HEADERS
+            ) as response:
+                status = response.status
+                # Empty text should fail validation
+                passed = status in [400, 422]
+                return {
+                    "passed": passed,
+                    "status": status,
+                    "expected": "400 or 422",
+                    "message": "Empty text correctly rejected"
+                    if passed
+                    else f"Expected 400/422, got {status}",
+                }
+        except Exception as e:
+            logger.error(f"Empty text test failed: {e}")
+            return {"passed": False, "error": str(e)}
 
-        with wave.open(io.BytesIO(audio_data)) as wav:
-            assert wav.getframerate() == EXPECTED_SAMPLE_RATE, (
-                f"Expected {EXPECTED_SAMPLE_RATE}Hz, got {wav.getframerate()}Hz"
-            )
-            assert wav.getnchannels() == EXPECTED_CHANNELS, (
-                f"Expected {EXPECTED_CHANNELS} channel(s), got {wav.getnchannels()}"
-            )
-            assert wav.getsampwidth() == EXPECTED_BIT_DEPTH // 8, (
-                f"Expected {EXPECTED_BIT_DEPTH}-bit, got {wav.getsampwidth() * 8}-bit"
-            )
+    async def _test_missing_text_field(self, session: aiohttp.ClientSession) -> dict:
+        """Missing text field should return validation error (400 or 422)."""
+        try:
+            async with session.post(self.url, json={}, headers=HEADERS) as response:
+                status = response.status
+                # Missing required field should fail validation
+                passed = status in [400, 422]
+                return {
+                    "passed": passed,
+                    "status": status,
+                    "expected": "400 or 422",
+                    "message": "Missing text field correctly rejected"
+                    if passed
+                    else f"Expected 400/422, got {status}",
+                }
+        except Exception as e:
+            logger.error(f"Missing text field test failed: {e}")
+            return {"passed": False, "error": str(e)}
 
-            # Verify audio has reasonable duration (at least 0.1 seconds)
-            duration = wav.getnframes() / wav.getframerate()
-            assert duration > 0.1, f"Audio too short: {duration}s"
-            assert duration < 10.0, f"Audio unexpectedly long: {duration}s"
+    async def _test_invalid_json(self, session: aiohttp.ClientSession) -> dict:
+        """Invalid JSON should return error (400 or 422)."""
+        try:
+            async with session.post(
+                self.url,
+                data="this is not valid json",
+                headers={**HEADERS, "Content-Type": "application/json"},
+            ) as response:
+                status = response.status
+                # Invalid JSON should fail
+                passed = status in [400, 422]
+                return {
+                    "passed": passed,
+                    "status": status,
+                    "expected": "400 or 422",
+                    "message": "Invalid JSON correctly rejected"
+                    if passed
+                    else f"Expected 400/422, got {status}",
+                }
+        except Exception as e:
+            logger.error(f"Invalid JSON test failed: {e}")
+            return {"passed": False, "error": str(e)}
 
-    def test_longer_text_generation(self):
-        """Generate speech from longer text"""
-        text = "The quick brown fox jumps over the lazy dog. This is a longer sentence to test TTS generation."
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=60,
-        )
-
-        assert response.status_code == 200
-        assert len(response.content) > 1000  # Should be substantial audio
-
-        # Validate it's proper WAV
-        with wave.open(io.BytesIO(response.content)) as wav:
-            duration = wav.getnframes() / wav.getframerate()
-            # Longer text should produce longer audio (rough estimate)
-            assert duration > 1.0, f"Audio too short for input text: {duration}s"
-
-    def test_punctuation_handling(self):
-        """Test text with various punctuation"""
-        text = "Hello! How are you? I'm fine, thank you. Great to meet you."
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=30,
-        )
-
-        assert response.status_code == 200
-        assert response.headers.get("content-type") == "audio/wav"
-
-    def test_different_speaker_ids(self):
-        """Test with different speaker embeddings"""
-        text = "Testing different speakers"
-
-        for speaker_id in [0, 100, 1000]:
-            response = requests.post(
-                f"{BASE_URL}/tts/tts",
+    async def _test_very_long_text(self, session: aiohttp.ClientSession) -> dict:
+        """Very long text should be rejected with 422 (exceeds max_tts_text_length)."""
+        try:
+            # Generate text longer than max_tts_text_length (default 600 chars)
+            long_text = "word " * 200  # ~1000 characters
+            async with session.post(
+                self.url,
+                json={"text": long_text, "response_format": "verbose_json"},
                 headers=HEADERS,
-                json={"text": text, "speaker_id": speaker_id},
-                timeout=30,
-            )
-
-            assert response.status_code == 200, f"Failed for speaker_id {speaker_id}"
-            assert len(response.content) > 0
-
-
-class TestTTSErrorHandling(BaseTest):
-    """Test error handling for invalid inputs"""
-
-    def test_empty_text(self):
-        """Empty text should return error"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, json={"text": ""}
-        )
-        # Should fail validation
-        assert response.status_code in [400, 422]
-
-    def test_missing_text_field(self):
-        """Missing required text field should return error"""
-        response = requests.post(f"{BASE_URL}/tts/tts", headers=HEADERS, json={})
-        assert response.status_code in [400, 422]
-
-    def test_invalid_json(self):
-        """Invalid JSON should return error"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts", headers=HEADERS, data="invalid json"
-        )
-        assert response.status_code in [400, 422]
-
-    def test_very_long_text(self):
-        """Very long text should either work or return clear error"""
-        text = "word " * 1000  # Very long text
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=120,
-        )
-        # Should either succeed or return clear error (not timeout/crash)
-        assert response.status_code in [200, 400, 413, 422]
-
-    def test_invalid_speaker_id(self):
-        """Invalid speaker ID should handle gracefully"""
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": "Test", "speaker_id": -1},
-        )
-        # Should either accept and use default or return validation error
-        assert response.status_code in [200, 400, 422]
-
-
-class TestTTSPerformance(BaseTest):
-    """Test performance characteristics"""
-
-    def test_generation_latency(self):
-        """Test that generation completes in reasonable time"""
-        text = "Performance test"
-
-        start_time = time.time()
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=30,
-        )
-        end_time = time.time()
-
-        assert response.status_code == 200
-
-        latency = end_time - start_time
-        # Should complete within reasonable time (adjust based on hardware)
-        assert latency < 10.0, f"Generation too slow: {latency}s"
-
-    def test_concurrent_requests(self):
-        """Test handling of concurrent requests"""
-        text = "Concurrent test"
-
-        # Send multiple requests concurrently (simulated with quick succession)
-        responses = []
-        for i in range(3):
-            response = requests.post(
-                f"{BASE_URL}/tts/tts",
-                headers=HEADERS,
-                json={"text": f"{text} {i}"},
-                timeout=60,
-            )
-            responses.append(response)
-
-        # All should eventually succeed
-        for response in responses:
-            assert response.status_code == 200
-
-
-class TestTTSAudioQuality(BaseTest):
-    """Test audio output quality characteristics"""
-
-    def test_audio_not_silent(self):
-        """Verify generated audio is not silent"""
-        text = "Audio quality test"
-        response = requests.post(
-            f"{BASE_URL}/tts/tts",
-            headers=HEADERS,
-            json={"text": text},
-            timeout=30,
-        )
-
-        assert response.status_code == 200
-
-        with wave.open(io.BytesIO(response.content)) as wav:
-            # Read audio samples
-            frames = wav.readframes(wav.getnframes())
-            samples = list(frames)
-
-            # Check that audio is not all zeros (silent)
-            non_zero = sum(1 for s in samples if s != 0)
-            silence_ratio = 1.0 - (non_zero / len(samples))
-
-            assert silence_ratio < 0.9, (
-                f"Audio appears to be {silence_ratio * 100}% silent"
-            )
-
-    def test_consistent_format_across_requests(self):
-        """Verify format consistency across multiple generations"""
-        formats = []
-
-        for i in range(3):
-            response = requests.post(
-                f"{BASE_URL}/tts/tts",
-                headers=HEADERS,
-                json={"text": f"Test {i}"},
-                timeout=30,
-            )
-
-            assert response.status_code == 200
-
-            with wave.open(io.BytesIO(response.content)) as wav:
-                formats.append(
-                    {
-                        "rate": wav.getframerate(),
-                        "channels": wav.getnchannels(),
-                        "width": wav.getsampwidth(),
-                    }
-                )
-
-        # All formats should be identical
-        assert all(f == formats[0] for f in formats), "Inconsistent audio formats"
+            ) as response:
+                status = response.status
+                # Should return 422 validation error for text too long
+                passed = status == 422
+                return {
+                    "passed": passed,
+                    "status": status,
+                    "expected": "422",
+                    "message": "Long text correctly rejected with validation error"
+                    if passed
+                    else f"Expected 422, got {status}",
+                }
+        except Exception as e:
+            logger.error(f"Very long text test failed: {e}")
+            return {"passed": False, "error": str(e)}

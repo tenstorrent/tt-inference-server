@@ -156,7 +156,7 @@ class TestDownloadVideoContent:
 
         try:
             mock_service = MagicMock()
-            mock_service.get_job_result = MagicMock(return_value=tmp_path)
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
 
             mock_request = MagicMock()
 
@@ -175,7 +175,7 @@ class TestDownloadVideoContent:
 
                 assert response.path == tmp_path
                 assert response.media_type == "video/mp4"
-                mock_service.get_job_result.assert_called_once_with("job_123")
+                mock_service.get_job_result_path.assert_called_once_with("job_123")
         finally:
             os.unlink(tmp_path)
 
@@ -187,7 +187,7 @@ class TestDownloadVideoContent:
 
         try:
             mock_service = MagicMock()
-            mock_service.get_job_result = MagicMock(return_value=tmp_path)
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
 
             mock_request = MagicMock()
 
@@ -211,7 +211,7 @@ class TestDownloadVideoContent:
     def test_download_video_content_not_found(self):
         """Test video download when job result not found"""
         mock_service = MagicMock()
-        mock_service.get_job_result = MagicMock(return_value=None)
+        mock_service.get_job_result_path = MagicMock(return_value=None)
 
         mock_request = MagicMock()
 
@@ -229,7 +229,9 @@ class TestDownloadVideoContent:
     def test_download_video_content_file_not_exists(self):
         """Test video download when file path doesn't exist"""
         mock_service = MagicMock()
-        mock_service.get_job_result = MagicMock(return_value="/nonexistent/path.mp4")
+        mock_service.get_job_result_path = MagicMock(
+            return_value="/nonexistent/path.mp4"
+        )
 
         mock_request = MagicMock()
 
@@ -247,7 +249,9 @@ class TestDownloadVideoContent:
     def test_download_video_content_invalid_type(self):
         """Test video download when result is not a string"""
         mock_service = MagicMock()
-        mock_service.get_job_result = MagicMock(return_value={"error": "not a path"})
+        mock_service.get_job_result_path = MagicMock(
+            return_value={"error": "not a path"}
+        )
 
         mock_request = MagicMock()
 
@@ -269,7 +273,14 @@ class TestCancelVideoJob:
     def test_cancel_video_job_success(self):
         """Test successful video job cancellation"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=True)
+        mock_service.cancel_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "object": JobTypes.VIDEO.value,
+                "status": "cancelling",
+                "created_at": 1000,
+            }
+        )
 
         response = cancel_video_job(
             job_id="job_123",
@@ -283,7 +294,7 @@ class TestCancelVideoJob:
     def test_cancel_video_job_not_found(self):
         """Test video job cancellation when job not found"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=False)
+        mock_service.cancel_job = MagicMock(return_value=None)
 
         with pytest.raises(Exception) as exc_info:
             cancel_video_job(
@@ -324,7 +335,14 @@ class TestResponseContent:
     def test_cancel_response_structure(self):
         """Test that cancel response has correct structure"""
         mock_service = MagicMock()
-        mock_service.cancel_job = MagicMock(return_value=True)
+        mock_service.cancel_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "object": JobTypes.VIDEO.value,
+                "status": "cancelling",
+                "created_at": 1000,
+            }
+        )
 
         response = cancel_video_job(
             job_id="job_123",
@@ -339,7 +357,7 @@ class TestResponseContent:
 
         assert content["id"] == "job_123"
         assert content["object"] == JobTypes.VIDEO.value
-        assert content["deleted"] is True
+        assert content["status"] == "cancelling"
 
 
 if __name__ == "__main__":
