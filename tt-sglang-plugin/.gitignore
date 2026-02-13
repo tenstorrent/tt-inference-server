@@ -6,6 +6,15 @@ __pycache__/
 *.egg-info/
 *.egg
 
+# Scripts
+activate_sglang_tt.sh
+
+# Repos
+sglang/
+
+# Virtual environments
+sglang-venv/
+
 # Build artifacts
 dist/
 build/

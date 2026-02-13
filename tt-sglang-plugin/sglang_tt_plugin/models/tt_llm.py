@@ -97,18 +97,19 @@ class TTModels(nn.Module):
 
             # Use extend_seq_lens (NEW token lengths) for prompt_lens, not seq_lens (TOTAL length)
             # seq_lens includes cached prefix tokens, but padded_tokens only contains NEW tokens
-            prompt_lens = (
+            prompt_lens_tensor = (
                 forward_batch.extend_seq_lens
                 if forward_batch.extend_seq_lens is not None
                 else forward_batch.seq_lens
             )
+            
+            prompt_lens = prompt_lens_tensor.tolist()
 
             logits = self.tt_model.prefill_forward(
-                tokens=padded_tokens,
+                tokens=padded_tokens.to(torch.int32),
                 page_table=page_table,
                 kv_cache=self.kv_caches,
                 prompt_lens=prompt_lens,
-                enable_trace=True,
             )
             logger.debug("tt_model.prefill_forward executed")
             # returns scores for every possible next word and sglang picks the most likely one ( it will become the next token )
@@ -117,8 +118,8 @@ class TTModels(nn.Module):
         elif forward_batch.forward_mode.is_decode():  # decode mode
             tokens = input_ids.unsqueeze(
                 1
-            )  # make it batch_size x seq_len dimensions (in decode mode seq_len = 1 )
-            start_pos = positions  # at which position is each request starting
+            ).to(torch.int32)  # make it batch_size x seq_len dimensions (in decode mode seq_len = 1 ), cast to int32
+            start_pos = positions.to(torch.int32)  # at which position is each request starting, cast to int32
             actual_bsz = tokens.shape[
                 0
             ]  # number of requests in current batch (needed later to slice output)
@@ -231,10 +232,14 @@ class TTModels(nn.Module):
         batch_req_tokens = req_to_token_pool.req_to_token[
             req_pool_indices
         ]  # get tokens used in current batch
-        block_size = get_global_server_args().page_size  # get block size
+        server_args = get_global_server_args()
+        block_size = server_args.page_size  # get block size
         page_table = (
             batch_req_tokens[:, ::block_size] // block_size
         )  # convert token indices to block IDs
+        # Truncate to exact number of blocks the model expects (context_length // block_size)
+        max_blocks = server_args.context_length // block_size
+        page_table = page_table[:, :max_blocks]
         return page_table.to(torch.int32)
 
     def _flatten_to_padded(
@@ -261,7 +266,7 @@ class TTModels(nn.Module):
         )  # length of the longest NEW token chunk
 
         padded_tokens = torch.zeros(
-            (batch_size, max_len), dtype=torch.long, device=input_ids.device
+            (batch_size, max_len), dtype=torch.int32, device=input_ids.device
         )
         # sglang gives us flattened input_ids (new tokens only) and their lengths
         # we need to reconstruct batch structure to (batch, max_len)

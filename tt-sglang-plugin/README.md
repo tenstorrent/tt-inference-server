@@ -1,4 +1,4 @@
- # SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
@@ -39,21 +39,19 @@ The script will:
 source activate_sglang_tt.sh
 ```
 
-### 3. Run Server
+### 3. Run Server (example)
 
 ```bash
 sglang-tt-server --model-path meta-llama/Llama-3.1-8B-Instruct \
-    --tt-visible-devices "(0,1),(2,3)" \
+    --tt-visible-devices "(0),(1),(2),(3)" \
     --mesh-shape "1,2" \
     --page-size 128
 ```
 
-## Requirements
+Potential improvements:
 
-- Python 3.10+
-- TT-Metal installed and configured
-- Tenstorrent hardware (N150, N300, T3K, or TG)
-
-## License
-
-Apache-2.0
+1. sglang plugin was not tested on galaxy ( currently only on n150, n300, t3k (with dp1,dp2,dp4)) so opening 
+    of galaxy devices may be insufficient
+2. code regarding opening device in tt_utils.py is vey similar to media server's device runners so at some 
+    point could be integrated
+3. more examination of sglang's optimisations like radixattention and seeing if we can get better perfs
