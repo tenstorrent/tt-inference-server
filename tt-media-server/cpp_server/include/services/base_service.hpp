@@ -4,7 +4,6 @@
 #pragma once
 
 #include <functional>
-#include <future>
 #include <string>
 #include <vector>
 
@@ -57,23 +56,9 @@ public:
         std::vector<WorkerInfo> worker_info;
     };
 
-    /**
-     * Get system status for monitoring.
-     */
     virtual SystemStatus get_system_status() const = 0;
 
-    /**
-     * Process a non-streaming request.
-     */
-    virtual std::future<domain::CompletionResponse> process_request(domain::CompletionRequest request) = 0;
-
-    /**
-     * Process a streaming request.
-     * @param request The completion request
-     * @param chunk_callback Called for each streaming chunk
-     * @param done_callback Called when streaming is complete
-     */
-    virtual void process_streaming_request(
+    virtual void process_request(
         domain::CompletionRequest request,
         std::function<void(const domain::StreamingChunkResponse&)> chunk_callback,
         std::function<void()> done_callback
@@ -81,20 +66,9 @@ public:
 
 protected:
     /**
-     * Pre-process the request before inference.
-     * Override in subclass for custom pre-processing.
+     * Pre-process request before dispatching (e.g. tokenize string prompt).
      */
-    virtual domain::CompletionRequest pre_process(domain::CompletionRequest request) {
-        return request;
-    }
-
-    /**
-     * Post-process the response after inference.
-     * Override in subclass for custom post-processing.
-     */
-    virtual domain::CompletionResponse post_process(domain::CompletionResponse response) {
-        return response;
-    }
+    virtual void pre_process(domain::CompletionRequest& request) = 0;
 };
 
 } // namespace tt::services

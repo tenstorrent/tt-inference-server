@@ -3,11 +3,41 @@
 
 #pragma once
 
+#include <cstdio>
 #include <string>
 #include <optional>
 #include <json/json.h>
 
 namespace tt::domain {
+
+/**
+ * Escape a string for safe embedding inside a JSON string literal.
+ * Handles: \, ", and control characters U+0000–U+001F.
+ */
+inline std::string json_escape(const std::string& s) {
+    std::string result;
+    result.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':  result.append("\\\""); break;
+            case '\\': result.append("\\\\"); break;
+            case '\b': result.append("\\b");  break;
+            case '\f': result.append("\\f");  break;
+            case '\n': result.append("\\n");  break;
+            case '\r': result.append("\\r");  break;
+            case '\t': result.append("\\t");  break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    result.append(buf);
+                } else {
+                    result.push_back(static_cast<char>(c));
+                }
+        }
+    }
+    return result;
+}
 
 /**
  * Represents a single streaming chunk from the completion.
@@ -183,7 +213,7 @@ struct StreamingChunkResponse {
         for (size_t i = 0; i < choices.size(); ++i) {
             if (i > 0) result.append(",");
             result.append("{\"text\":\"");
-            result.append(choices[i].text);
+            result.append(json_escape(choices[i].text));
             result.append("\",\"index\":");
             result.append(std::to_string(choices[i].index));
             result.append(",\"logprobs\":null,\"finish_reason\":");

@@ -71,6 +71,23 @@ echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "=============================================="
 
+# Ensure cargo (Rust) is in PATH for tokenizers-cpp
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -f "${HOME}/.cargo/env" ]; then
+        echo "Sourcing Rust environment (cargo not in PATH)..."
+        # shellcheck source=/dev/null
+        . "${HOME}/.cargo/env"
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo ""
+        echo "ERROR: cargo (Rust) not found. tokenizers-cpp requires Rust."
+        echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        echo "  Then: source ~/.cargo/env  (or start a new terminal)"
+        echo ""
+        exit 1
+    fi
+fi
+
 # If TTNN is enabled, ensure we have the right Python
 if [ "${ENABLE_TTNN}" = "ON" ]; then
     if [ -z "${VIRTUAL_ENV}" ]; then

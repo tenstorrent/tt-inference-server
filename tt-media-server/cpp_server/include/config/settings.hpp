@@ -4,7 +4,6 @@
 #pragma once
 
 #include "config/constants.hpp"
-
 #include <cstddef>
 #include <string>
 
@@ -49,5 +48,7 @@ std::string tokenizer_path();
  * matching the Python scheduler flow in model_services/scheduler.py.
  */
 std::string visible_devices_for_worker(size_t worker_index);
+
+llm_engine::Config llm_engine_config();
 
 }  // namespace tt::config

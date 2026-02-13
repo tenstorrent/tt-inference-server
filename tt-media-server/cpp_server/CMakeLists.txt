@@ -156,13 +156,12 @@ target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp)
 set(SOURCES
     src/main.cpp
     src/api/llm_controller.cpp
-    src/util/mock_tokenizer.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
-    src/services/base_service.cpp
     src/utils/tokenizer.cpp
+    src/worker/llm_worker.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES

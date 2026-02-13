@@ -118,4 +118,8 @@ std::string visible_devices_for_worker(size_t worker_index) {
     return "";
 }
 
+llm_engine::Config llm_engine_config() {
+    return defaults::DEFAULT_LLM_ENGINE_CONFIG;
+}
+
 }  // namespace tt::config

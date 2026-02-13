@@ -594,6 +594,7 @@ struct EmbeddingService::Impl {
         auto t5 = std::chrono::steady_clock::now();
 
         // Log timing breakdown
+        double check_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         double build_json_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
         double write_pipe_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
         double wait_worker_ms = std::chrono::duration<double, std::milli>(t4 - t3).count();
