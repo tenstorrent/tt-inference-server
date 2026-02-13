@@ -59,6 +59,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         # Get the first request
         request = training_requests[0]
 
+        if request._start_event:
+            request._start_event.set()
+            self.logger.info(f"Device {self.device_id}: Training started")
+
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
             model_name=self.model_name,
@@ -192,7 +196,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         )
                         break
 
-                    if do_validation and global_step > 0:
+                    if do_validation: # and global_step > 0:
                         avg_val_loss = self.run_validation()
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"

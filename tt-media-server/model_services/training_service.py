@@ -22,8 +22,8 @@ class TrainingService(BaseJobService):
         request._output_model_path = f"models_save/{request._task_id}.pt"
         self.logger.info(f"Generated output path: {request._output_model_path}")
 
-        cancel_event = self._manager.Event()
-        request._cancel_event = cancel_event
+        request._start_event = self._manager.Event()
+        request._cancel_event = self._manager.Event()
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -32,5 +32,6 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
-            cancel_event=cancel_event,
+            start_event=request._start_event,
+            cancel_event=request._cancel_event,
         )

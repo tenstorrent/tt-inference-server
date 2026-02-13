@@ -39,6 +39,7 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
+    _start_event: Optional[Event] = None 
     _cancel_event: Optional[Event] = None # multiprocessing.Event for cooperative cancellation
 
     def __post_init__(self):
@@ -123,6 +124,7 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
+        start_event: Optional[Event] = None,
         cancel_event: Optional[Event] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
@@ -138,6 +140,8 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
+            if start_event:
+                job._start_event = start_event
             if cancel_event:
                 job._cancel_event = cancel_event
 
@@ -263,16 +267,23 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
+    async def _mark_job_in_progress(self, job: Job):
+        if job._start_event:
+            while not job._start_event.is_set():
+                await asyncio.sleep(0.5)
+
+        job.mark_in_progress()
+        if self.db:
+            try:
+                self.db.update_job_status(job.id, job.status.value)
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
+                )
+
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
-            job.mark_in_progress()
-            if self.db:
-                try:
-                    self.db.update_job_status(job.id, job.status.value)
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
-                    )
+            progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             result_path = await task_function(request)
 
@@ -284,6 +295,20 @@ class JobManager:
                 self._logger.info(
                     f"Job {job.id} result path updated on job completion: {job.result_path} -> {result_path}"
                 )
+            
+            if job.status == JobStatus.CANCELLING:
+                self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
+                job.mark_cancelled()
+                if self.db:
+                    try:
+                        self.db.update_job_status(
+                            job.id, job.status.value, completed_at=job.completed_at, result_path=job.result_path,
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
+                        )
+                return  # we return here to avoid marking the job as completed
 
             job.mark_completed(result_path=result_path)
             if self.db:
@@ -328,6 +353,8 @@ class JobManager:
                         f"Failed to sync 'failed' to DB for {job.id}: {e}"
                     )
         finally:
+            if not progress_monitor.done():
+                progress_monitor.cancel()
             job._task = None
 
     def _start_cleanup_task(self):
@@ -399,9 +426,13 @@ class JobManager:
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
             if job._cancel_event:
+                # runner handles cancellation
                 job._cancel_event.set()
-            job._task.cancel()
-            running_task = job._task
+                running_task = job._task
+            else:
+                # runner does not handle cancellation, so we cancel the task ourselves
+                job._task.cancel()
+                running_task = job._task
 
         return running_task
 
