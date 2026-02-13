@@ -84,8 +84,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 
-        model_path = request._output_model_path
-
         lora_config = LoraConfig(
             r=request.lora_r,
             lora_alpha=request.lora_alpha,
@@ -103,9 +101,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 delattr(self.hf_model, "peft_config")
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
-
+        
         self._peft_model.to(eval(request.dtype))
         self._peft_model.to(self.device)
+
+        model_path = request._output_model_path
 
         # use torch compile
         self.model = torch.compile(
