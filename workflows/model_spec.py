@@ -1389,7 +1389,7 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="b56aa1c8fc",
+        tt_metal_commit="7665133",
         vllm_commit="e25b4d7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1398,6 +1398,9 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_METAL_DEVICE_IDS": "0,1,2,3",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
