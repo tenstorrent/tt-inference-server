@@ -70,7 +70,7 @@ class Img2ImgGenerationParamTest(BaseTest):
     """
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/image/image-to-image"
+        self.url = f"http://localhost:{self.service_port}/v1/images/image-to-image"
         logger.info(f"Testing endpoint: {self.url}")
         logger.info(f"Test targets: {self.targets}")
 

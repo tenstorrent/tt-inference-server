@@ -201,7 +201,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         start_time = time.time()
         try:
             response = requests.post(
-                f"{self.base_url}/v1/video/generations",
+                f"{self.base_url}/v1/videos/generations",
                 json=payload,
                 headers=headers,
                 timeout=90,
@@ -248,7 +248,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(
-                    f"{self.base_url}/v1/video/generations/{job_id}",
+                    f"{self.base_url}/v1/videos/generations/{job_id}",
                     headers=headers,
                     timeout=30,
                 )
@@ -292,7 +292,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             video_path = output_dir / f"{job_id}.mp4"
 
             response = requests.get(
-                f"{self.base_url}/v1/video/generations/{job_id}/download",
+                f"{self.base_url}/v1/videos/generations/{job_id}/download",
                 headers=headers,
                 timeout=300,
                 stream=True,

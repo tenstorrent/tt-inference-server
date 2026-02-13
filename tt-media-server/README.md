@@ -38,10 +38,10 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 
 | Primary (use this)             | Legacy (deprecated)        |
 |--------------------------------|----------------------------|
-| `/v1/image/generations`        | `/image/generations`       |
+| `/v1/images/generations`        | `/image/generations`       |
 | `/v1/audio/transcriptions`     | `/audio/transcriptions`    |
 | `/v1/audio/speech`             | `/audio/speech`            |
-| `/v1/video/generations`        | `/video/generations`       |
+| `/v1/videos/generations`        | `/video/generations`       |
 | `/v1/cnn/search-image`         | `/cnn/search-image`        |
 | `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
 | `/v1/completions`              | `/completions`             |
@@ -55,7 +55,7 @@ Requests to legacy paths return three extra HTTP headers per RFC 8594 and RFC 82
 ```
 Deprecation: true
 Sunset: 2026-06-30
-Link: </v1/image/generations>; rel="successor-version"
+Link: </v1/images/generations>; rel="successor-version"
 ```
 
 - **`Deprecation: true`** -- signals the endpoint is deprecated.
@@ -232,7 +232,7 @@ If server is running in development mode (ENVIRONMENT=development), OpenAPI endp
 Sample for calling the endpoint for image generation via curl:
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/v1/image/generations' \
+  'http://127.0.0.1:8000/v1/images/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -442,7 +442,7 @@ curl -X POST "http://localhost:8000/v1/cnn/search-image" \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/v1/video/generations' \
+  'http://127.0.0.1:8000/v1/videos/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -470,18 +470,18 @@ Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/v1/video/generations/{video_id}' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
 
 ## Download generated video
 
-The `/v1/video/generations/{video_id}/download` endpoint for downloading a video file
+The `/v1/videos/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/v1/video/generations/{video_id}/download' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}/download' \
   -H 'Authorization: Bearer your-secret-key' \
   -o output.mp4
 ```
@@ -490,7 +490,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/v1/video/generations/{video_id}/cancel' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```

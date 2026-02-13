@@ -356,7 +356,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/v1/image/generations",
+                f"{self.base_url}/v1/images/generations",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -469,7 +469,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/v1/image/image-to-image",
+                f"{self.base_url}/v1/images/image-to-image",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -596,7 +596,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/v1/image/edits",
+                f"{self.base_url}/v1/images/edits",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -804,7 +804,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/v1/image/generations",
+            f"{self.base_url}/v1/images/generations",
             json=payload,
             headers=headers,
             timeout=90,
@@ -883,7 +883,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/v1/image/image-to-image",
+            f"{self.base_url}/v1/images/image-to-image",
             json=payload,
             headers=headers,
             timeout=90,
@@ -967,7 +967,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/v1/image/edits",
+            f"{self.base_url}/v1/images/edits",
             json=payload,
             headers=headers,
             timeout=90,

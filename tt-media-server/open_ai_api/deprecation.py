@@ -22,6 +22,12 @@ EXCLUDED_PREFIXES = (
     "/ready",
 )
 
+# Legacy prefix → v1 prefix where the path changed (singular → plural)
+LEGACY_TO_V1_PREFIX = {
+    "/image": "/v1/images",
+    "/video": "/v1/videos",
+}
+
 
 class DeprecatedPathMiddleware(BaseHTTPMiddleware):
     """Middleware that adds deprecation headers to responses for non-/v1 API paths.
@@ -50,12 +56,21 @@ class DeprecatedPathMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         if is_deprecated:
+            v1_path = self._resolve_v1_path(path)
             response.headers["Deprecation"] = "true"
             response.headers["Sunset"] = self.sunset_date
-            response.headers["Link"] = f'</v1{path}>; rel="successor-version"'
-            self._log_deprecation_warning(path)
+            response.headers["Link"] = f'<{v1_path}>; rel="successor-version"'
+            self._log_deprecated_path(path, v1_path)
 
         return response
+
+    @staticmethod
+    def _resolve_v1_path(path: str) -> str:
+        """Map a legacy path to its /v1 equivalent using known prefix mappings."""
+        for legacy_prefix, v1_prefix in LEGACY_TO_V1_PREFIX.items():
+            if path.startswith(legacy_prefix):
+                return v1_prefix + path[len(legacy_prefix) :]
+        return f"/v1{path}"
 
     def _is_deprecated_path(self, path: str) -> bool:
         """Check if a path is a deprecated non-/v1 API path."""
@@ -63,13 +78,10 @@ class DeprecatedPathMiddleware(BaseHTTPMiddleware):
             return False
         return path != "/" and not path.startswith("/v1")
 
-    def _log_deprecation_warning(self, path: str) -> None:
+    def _log_deprecated_path(self, path: str, v1_path: str) -> None:
         """Log a warning for deprecated path usage (once per unique path)."""
         if path not in self._warned_paths:
             self._warned_paths.add(path)
             logger.warning(
-                "Deprecated API path accessed: %s. Migrate to /v1%s before %s.",
-                path,
-                path,
-                self.sunset_date,
+                f"Deprecated API path accessed: {path}. Migrate to {v1_path} before {self.sunset_date}."
             )

@@ -40,7 +40,7 @@ class ServiceRoute:
 # OpenAI-compatible: /v1/... (primary), /... (deprecated)
 SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ModelServices.IMAGE.value: [
-        ServiceRoute(image.router, "/v1/image", "/image", ["Image processing"]),
+        ServiceRoute(image.router, "/v1/images", "/image", ["Image processing"]),
     ],
     ModelServices.LLM.value: [
         ServiceRoute(tokenizer.router, "/v1", "", ["Tokenizer"]),
@@ -58,7 +58,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
         ),
     ],
     ModelServices.VIDEO.value: [
-        ServiceRoute(video.router, "/v1/video", "/video", ["Video processing"]),
+        ServiceRoute(video.router, "/v1/videos", "/video", ["Video processing"]),
     ],
     ModelServices.TRAINING.value: [
         ServiceRoute(

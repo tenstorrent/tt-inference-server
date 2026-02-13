@@ -7,7 +7,11 @@
 import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
-from open_ai_api.deprecation import EXCLUDED_PREFIXES, DeprecatedPathMiddleware
+from open_ai_api.deprecation import (
+    EXCLUDED_PREFIXES,
+    LEGACY_TO_V1_PREFIX,
+    DeprecatedPathMiddleware,
+)
 
 SUNSET_DATE = "2026-06-30"
 
@@ -24,6 +28,16 @@ def _create_test_app():
     # Register under /v1 (primary) and / (legacy deprecated)
     app.include_router(router, prefix="/v1")
     app.include_router(router, prefix="")
+
+    # Image-style routes: /v1/images (primary) and /image (legacy)
+    image_router = APIRouter()
+
+    @image_router.post("/generations")
+    def generate_image():
+        return {"images": []}
+
+    app.include_router(image_router, prefix="/v1/images")
+    app.include_router(image_router, prefix="/image")
 
     # Maintenance-style endpoint (should not get deprecation headers)
     maintenance_router = APIRouter()
@@ -66,6 +80,21 @@ class TestDeprecatedPathMiddleware:
         legacy_response = client.get("/endpoint")
         assert v1_response.json() == legacy_response.json()
 
+    def test_legacy_image_path_link_header_points_to_plural(self, client):
+        """Legacy /image/generations should link to /v1/images/generations."""
+        response = client.post("/image/generations")
+        assert response.status_code == 200
+        assert response.headers["Deprecation"] == "true"
+        assert (
+            response.headers["Link"]
+            == '</v1/images/generations>; rel="successor-version"'
+        )
+
+    def test_v1_images_path_has_no_deprecation_headers(self, client):
+        response = client.post("/v1/images/generations")
+        assert response.status_code == 200
+        assert "Deprecation" not in response.headers
+
     def test_maintenance_endpoint_no_deprecation_headers(self, client):
         response = client.get("/tt-liveness")
         assert response.status_code == 200
@@ -106,6 +135,8 @@ class TestDeprecatedPathDetection:
     def test_v1_path_not_deprecated(self):
         middleware = DeprecatedPathMiddleware(app=None, sunset_date=SUNSET_DATE)
         assert middleware._is_deprecated_path("/v1/completions") is False
+        assert middleware._is_deprecated_path("/v1/images/generations") is False
+        assert middleware._is_deprecated_path("/v1/videos/generations") is False
 
     def test_legacy_api_path_is_deprecated(self):
         middleware = DeprecatedPathMiddleware(app=None, sunset_date=SUNSET_DATE)
@@ -137,3 +168,37 @@ class TestDeprecatedPathDetection:
     def test_root_not_deprecated(self):
         middleware = DeprecatedPathMiddleware(app=None, sunset_date=SUNSET_DATE)
         assert middleware._is_deprecated_path("/") is False
+
+
+class TestResolveV1Path:
+    """Unit tests for _resolve_v1_path mapping."""
+
+    def test_mapped_prefix_resolves_to_plural(self):
+        assert (
+            DeprecatedPathMiddleware._resolve_v1_path("/image/generations")
+            == "/v1/images/generations"
+        )
+        assert (
+            DeprecatedPathMiddleware._resolve_v1_path("/video/generations")
+            == "/v1/videos/generations"
+        )
+        assert (
+            DeprecatedPathMiddleware._resolve_v1_path("/video/jobs")
+            == "/v1/videos/jobs"
+        )
+
+    def test_unmapped_prefix_falls_back_to_v1_prepend(self):
+        assert (
+            DeprecatedPathMiddleware._resolve_v1_path("/audio/speech")
+            == "/v1/audio/speech"
+        )
+        assert (
+            DeprecatedPathMiddleware._resolve_v1_path("/completions")
+            == "/v1/completions"
+        )
+
+    def test_legacy_to_v1_prefix_matches_known_mappings(self):
+        assert "/image" in LEGACY_TO_V1_PREFIX
+        assert "/video" in LEGACY_TO_V1_PREFIX
+        assert LEGACY_TO_V1_PREFIX["/image"] == "/v1/images"
+        assert LEGACY_TO_V1_PREFIX["/video"] == "/v1/videos"
