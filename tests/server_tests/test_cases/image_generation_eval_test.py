@@ -301,9 +301,9 @@ class ImageGenerationEvalsTest(BaseTest):
                     elapsed_total = now - total_start
                     completion_counter["last_time"] = now
                     logger.info(
-                        "%s. image generated request-%s in %.2fs | elapsed %.2fs",
+                        "✅ %s/%s image generated in %.2fs | elapsed %.2fs",
                         order,
-                        idx,
+                        total,
                         since_last,
                         elapsed_total,
                     )
