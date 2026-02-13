@@ -160,6 +160,7 @@ set(SOURCES
     src/config/settings.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/utils/service_fabric.cpp
     src/utils/tokenizer.cpp
     src/worker/llm_worker.cpp
 )

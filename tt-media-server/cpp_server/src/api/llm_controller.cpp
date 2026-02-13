@@ -6,12 +6,14 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 
+#include <memory>
 #include <random>
 #include <sstream>
 #include <chrono>
 #include <iostream>
 #include <mutex>
 
+#include "utils/service_fabric.hpp"
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
@@ -23,9 +25,14 @@ LLMController::LLMController() {
         return;
     }
 
-    service_ = std::make_shared<services::LLMService>();
-    service_->start();
-    std::cout << "[LLMController] Initialized and service started" << std::endl;
+    service_ = std::dynamic_pointer_cast<services::LLMService>(
+        tt::utils::service_fabric::get_service("llm")
+    );
+    if (!service_) {
+        throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
+                                 "Ensure register_services() is called before Drogon starts.");
+    }
+    std::cout << "[LLMController] Initialized (service already started)" << std::endl;
 }
 
 std::string LLMController::generate_completion_id() {
