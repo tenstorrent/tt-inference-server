@@ -16,6 +16,7 @@
 #include <tt-metalium/global_semaphore.hpp>
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/distributed.hpp>
+#include <tt-metalium/kernel_types.hpp>
 
 namespace llm_engine {
 
@@ -61,9 +62,8 @@ void HostInterface::run(
     const bool pull_from_host =
         (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
 
-    tt::tt_metal::IDevice* device = mesh_device->get_device(mesh_core_coord.device_coord);
     auto termination_semaphore =
-        tt::tt_metal::CreateGlobalSemaphore(device, core_range_set, 0, tt::tt_metal::BufferType::L1);
+        tt::tt_metal::CreateGlobalSemaphore(mesh_device, core_range_set, 0, tt::tt_metal::BufferType::L1);
     termination_semaphore_ = new tt::tt_metal::GlobalSemaphore{std::move(termination_semaphore)};
     mesh_device_ = mesh_device;
     initialized_ = true;
@@ -90,11 +90,7 @@ void HostInterface::run(
         program,
         get_kernel_path("h2d_receiver.cpp"),
         core_coord,
-        tt::tt_metal::DataMovementConfig{
-            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
-            .noc = tt::tt_metal::NOC::RISCV_0_default,
-            .compile_args = h2d_ct_args,
-        });
+        tt::tt_metal::WriterDataMovementConfig{h2d_ct_args});
 
     std::vector<uint32_t> d2h_ct_args = {
         d2h_socket->get_config_buffer_address(),
@@ -107,11 +103,7 @@ void HostInterface::run(
         program,
         get_kernel_path("d2h_sender.cpp"),
         core_coord,
-        tt::tt_metal::DataMovementConfig{
-            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
-            .noc = tt::tt_metal::NOC::RISCV_0_default,
-            .compile_args = d2h_ct_args,
-        });
+        tt::tt_metal::ReaderDataMovementConfig{d2h_ct_args});
 
     const auto device_coord = mesh_core_coord.device_coord;
     tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};

@@ -174,6 +174,25 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# host_io_test: requires tt-metal libraries. Enable with -DENABLE_HOST_IO_TEST=ON when tt-metal is built.
+option(ENABLE_HOST_IO_TEST "Build host_io_test (requires tt-metal libs from TT_METAL_HOME/build_Release)" OFF)
+if(TT_METAL_API_FOUND AND ENABLE_HOST_IO_TEST)
+    set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
+    if(EXISTS "${_tt_metal_lib_dir}/libtt_metal.so")
+        add_executable(host_io_test include/runners/llm_engine/engine/test_host_io.cpp)
+        target_link_libraries(host_io_test PRIVATE llm_engine GTest::gtest_main)
+        target_include_directories(host_io_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${TT_METAL_INCLUDE_DIRS}
+        )
+        target_link_directories(host_io_test PRIVATE "${_tt_metal_lib_dir}")
+        target_link_libraries(host_io_test PRIVATE tt_metal tt_stl)
+    else()
+        message(STATUS "host_io_test: skipped (libtt_metal.so not found at ${_tt_metal_lib_dir})")
+    endif()
+endif()
+
 # Tokenizer test
 add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
@@ -186,6 +205,9 @@ gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(test_tokenizer)
+if(TARGET host_io_test)
+gtest_discover_tests(host_io_test)
+endif()
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
