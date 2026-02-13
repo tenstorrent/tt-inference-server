@@ -13,6 +13,7 @@
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
 #include <tt-metalium/circular_buffer_config.hpp>
+#include <tt-metalium/global_semaphore.hpp>
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/distributed.hpp>
 
