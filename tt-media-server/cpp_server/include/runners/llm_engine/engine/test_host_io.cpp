@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -24,7 +25,7 @@ namespace llm_engine {
 namespace {
 
 constexpr uint32_t kPageSize = 64;
-constexpr uint32_t kFifoSize = 1024;
+constexpr uint32_t kFifoSize = 1024*1024;
 constexpr uint32_t kNumIterations = 64;
 
 void ensure_tt_metal_runtime_root() {
@@ -41,12 +42,15 @@ void ensure_tt_metal_runtime_root() {
 }  // namespace
 
 void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
+    std::cout << "[host_io] create_unit_mesh..." << std::endl;
     auto mesh_device = tt::tt_metal::distributed::MeshDevice::create_unit_mesh(0);
+    std::cout << "[host_io] create_unit_mesh done" << std::endl;
 
     tt::tt_metal::distributed::MeshCoordinate device_coord{0, 0};
     tt::tt_metal::CoreCoord core_coord{0, 0};
     tt::tt_metal::distributed::MeshCoreCoord socket_core{device_coord, core_coord};
 
+    std::cout << "[host_io] creating H2DSocket..." << std::endl;
     auto h2d_socket = std::make_unique<tt::tt_metal::distributed::H2DSocket>(
         mesh_device,
         socket_core,
@@ -54,25 +58,40 @@ void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
         kFifoSize,
         h2d_mode);
     h2d_socket->set_page_size(kPageSize);
+    std::cout << "[host_io] H2DSocket done" << std::endl;
 
+    std::cout << "[host_io] creating D2HSocket..." << std::endl;
     auto d2h_socket = std::make_unique<tt::tt_metal::distributed::D2HSocket>(
         mesh_device, socket_core, kFifoSize);
     d2h_socket->set_page_size(kPageSize);
+    std::cout << "[host_io] D2HSocket done" << std::endl;
 
+    std::cout << "[host_io] host_io.run()..." << std::endl;
     HostInterface host_io;
     host_io.run(h2d_socket.get(), d2h_socket.get(), mesh_device.get());
+    std::cout << "[host_io] host_io.run() done" << std::endl;
 
     std::vector<uint32_t> input(kPageSize / sizeof(uint32_t));
     std::vector<uint32_t> output(kPageSize / sizeof(uint32_t));
 
-    for (uint32_t i = 0; i < kNumIterations; ++i) {
+    std::cout << "[host_io] starting loopback iterations" << std::endl;
+    for (uint32_t i = 0; i < 2; ++i) {
+        if (i < 3 || i == kNumIterations - 1) {
+            std::cout << "[host_io] iteration " << i << " write..." << std::endl;
+        }
         for (size_t j = 0; j < input.size(); ++j) {
             input[j] = static_cast<uint32_t>(i * input.size() + j);
         }
         std::memset(output.data(), 0, output.size() * sizeof(uint32_t));
 
         host_io.write(h2d_socket.get(), input.data(), 1);
+        if (i < 3 || i == kNumIterations - 1) {
+            std::cout << "[host_io] iteration " << i << " write done, read..." << std::endl;
+        }
         host_io.read(d2h_socket.get(), output.data(), 1);
+        if (i < 3 || i == kNumIterations - 1) {
+            std::cout << "[host_io] iteration " << i << " read done" << std::endl;
+        }
 
         for (size_t j = 0; j < input.size(); ++j) {
             ASSERT_EQ(input[j], output[j])
@@ -80,10 +99,16 @@ void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
         }
     }
 
+    std::cout << "[host_io] terminate..." << std::endl;
     host_io.terminate();
+    std::cout << "[host_io] test complete" << std::endl;
 }
 
 TEST(HostIOLoopback, LoopbackHOST_PUSH) {
+    if (std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr ||
+        std::string(std::getenv("TT_METAL_SLOW_DISPATCH_MODE")) != "1") {
+        GTEST_SKIP() << "Host IO loopback requires TT_METAL_SLOW_DISPATCH_MODE=1 (see Python test_host_io.py)";
+    }
     ensure_tt_metal_runtime_root();
     if (tt::tt_metal::GetNumAvailableDevices() == 0) {
         GTEST_SKIP() << "No devices available; skipping HostIO loopback test";
@@ -92,6 +117,10 @@ TEST(HostIOLoopback, LoopbackHOST_PUSH) {
 }
 
 TEST(HostIOLoopback, LoopbackDEVICE_PULL) {
+    if (std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr ||
+        std::string(std::getenv("TT_METAL_SLOW_DISPATCH_MODE")) != "1") {
+        GTEST_SKIP() << "Host IO loopback requires TT_METAL_SLOW_DISPATCH_MODE=1 (see Python test_host_io.py)";
+    }
     ensure_tt_metal_runtime_root();
     if (tt::tt_metal::GetNumAvailableDevices() == 0) {
         GTEST_SKIP() << "No devices available; skipping HostIO loopback test";

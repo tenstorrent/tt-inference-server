@@ -5,6 +5,7 @@
 #include "runners/llm_engine/engine/host_interface.hpp"
 
 #include <cstdlib>
+#include <iostream>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -62,8 +63,10 @@ void HostInterface::run(
     const bool pull_from_host =
         (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
 
+    std::cout << "[host_interface] CreateGlobalSemaphore..." << std::endl;
     auto termination_semaphore =
         tt::tt_metal::CreateGlobalSemaphore(mesh_device, core_range_set, 0, tt::tt_metal::BufferType::L1);
+    std::cout << "[host_interface] CreateGlobalSemaphore done" << std::endl;
     termination_semaphore_ = new tt::tt_metal::GlobalSemaphore{std::move(termination_semaphore)};
     mesh_device_ = mesh_device;
     initialized_ = true;
@@ -78,6 +81,7 @@ void HostInterface::run(
     cb_config.set_page_size(kIntermedCbIndex, page_size);
     tt::tt_metal::CreateCircularBuffer(program, core_range_set, cb_config);
 
+    std::cout << "[host_interface] CreateKernel h2d_receiver..." << std::endl;
     std::vector<uint32_t> h2d_ct_args = {
         h2d_socket->get_config_buffer_address(),
         term_sem_addr,
@@ -91,6 +95,7 @@ void HostInterface::run(
         get_kernel_path("h2d_receiver.cpp"),
         core_coord,
         tt::tt_metal::WriterDataMovementConfig{h2d_ct_args});
+    std::cout << "[host_interface] CreateKernel d2h_sender..." << std::endl;
 
     std::vector<uint32_t> d2h_ct_args = {
         d2h_socket->get_config_buffer_address(),
@@ -104,6 +109,7 @@ void HostInterface::run(
         get_kernel_path("d2h_sender.cpp"),
         core_coord,
         tt::tt_metal::ReaderDataMovementConfig{d2h_ct_args});
+    std::cout << "[host_interface] EnqueueMeshWorkload..." << std::endl;
 
     const auto device_coord = mesh_core_coord.device_coord;
     tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};
@@ -113,6 +119,7 @@ void HostInterface::run(
 
     tt::tt_metal::distributed::EnqueueMeshWorkload(
         mesh_device->mesh_command_queue(), mesh_workload, false);
+    std::cout << "[host_interface] EnqueueMeshWorkload done" << std::endl;
 }
 
 void HostInterface::terminate() {
