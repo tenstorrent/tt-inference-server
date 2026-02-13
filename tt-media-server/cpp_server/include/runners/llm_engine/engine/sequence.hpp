@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -20,6 +22,8 @@
 namespace llm_engine {
   
 struct SequenceID {
+  static constexpr size_t kSerializedSize = 36;
+
   SequenceID() {
     auto uuid = boost::uuids::random_generator()();
     id = boost::uuids::to_string(uuid);
@@ -31,13 +35,15 @@ struct SequenceID {
   }
 
   std::vector<char> serialize() const {
-    return std::vector<char>(id.begin(), id.end());
+    std::vector<char> buf(kSerializedSize, '\0');
+    std::copy_n(id.begin(), std::min(id.size(), kSerializedSize), buf.begin());
+    return buf;
   }
 
-  static SequenceID deserialize(const std::vector<char>& data) {
-    SequenceID id;
-    id.id = std::string(data.begin(), data.end());
-    return id;
+  static SequenceID deserialize(const char* data, size_t len) {
+    SequenceID sid;
+    sid.id = std::string(data, len);
+    return sid;
   }
 };
 
@@ -78,27 +84,27 @@ class Sequence {
            static_cast<int>(num_blocks() - 1) * block_size;
   }
 
+  static constexpr size_t h2d_payload_size() {
+    return SequenceID::kSerializedSize + sizeof(int64_t);
+  }
+
+  static uint32_t page_size() {
+    return align(h2d_payload_size(), 64);
+  }
+
   std::vector<char> to_h2d_input() const {
-    std::vector<char> input(seq_id.serialize().size() + sizeof(last_token));
-    std::copy(seq_id.serialize().begin(), seq_id.serialize().end(), input.begin());
-    std::copy(reinterpret_cast<const char*>(&last_token), reinterpret_cast<const char*>(&last_token) + sizeof(last_token), input.begin() + seq_id.serialize().size());
+    std::vector<char> input(page_size(), 0);
+    auto id_bytes = seq_id.serialize();
+    std::copy(id_bytes.begin(), id_bytes.end(), input.begin());
+    std::memcpy(input.data() + SequenceID::kSerializedSize, &last_token, sizeof(last_token));
     return input;
   }
 
   static Sequence* from_h2d_input(const std::vector<char>& input) {
     Sequence* seq = new Sequence(std::vector<int64_t>{});
-    seq->seq_id = SequenceID::deserialize(std::vector<char>(input.begin(), input.begin() + input.size() / 2));
-    seq->last_token = *reinterpret_cast<const int64_t*>(input.data() + input.size() / 2);
+    seq->seq_id = SequenceID::deserialize(input.data(), SequenceID::kSerializedSize);
+    seq->last_token = *reinterpret_cast<const int64_t*>(input.data() + SequenceID::kSerializedSize);
     return seq;
-  }
-
-  static size_t h2d_size() {
-    return sizeof(SequenceID) + sizeof(int64_t);
-  }
-
-  static uint32_t page_size() {
-    // needs to be multiply of 64 bytes
-    return align(h2d_size(), 64);
   }
 
   std::vector<int64_t> block(size_t i) const;

@@ -1,5 +1,6 @@
 #include "llm_engine/engine/model_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
+#include <cstring>
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
 #include <tt-metalium/host_api.hpp>
@@ -87,11 +88,15 @@ ModelRunnerStub::~ModelRunnerStub() {
 void ModelRunnerStub::reader_loop() {
   std::cout << "[host_io] reader_loop started" << std::endl;
   try {
-    std::vector<char> output(Sequence::h2d_size());
+    std::vector<char> output(Sequence::page_size(), 0);
     while (!stop_.load(std::memory_order_relaxed)) {
+      std::cerr << "[host_io] reading from d2h_socket" << std::endl;
       d2h_socket_->read(output.data(), 1);
-      Sequence* seq = Sequence::from_h2d_input(output);
-      decode_callback_(DecodeResult{seq->seq_id, seq->last_token});
+      std::cerr << "[host_io] reading from d2h_socket done" << std::endl;
+      SequenceID seq_id = SequenceID::deserialize(output.data(), SequenceID::kSerializedSize);
+      int64_t last_token;
+      std::memcpy(&last_token, output.data() + SequenceID::kSerializedSize, sizeof(last_token));
+      decode_callback_(DecodeResult{seq_id, last_token});
     }
   } catch (const std::exception& e) {
     std::cerr << "[host_io] reader_loop failed: " << e.what() << std::endl;
@@ -115,7 +120,9 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       std::lock_guard<std::mutex> lock(batch_mutex_);
       batch_queue_.push_back(seqs);
     }
+    std::cerr << "[host_io] writing to h2d_socket" << std::endl;
     h2d_socket_->write(seqs[0]->to_h2d_input().data(), 1);
+    std::cerr << "[host_io] writing to h2d_socket done" << std::endl;
   }
 }
 
