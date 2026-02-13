@@ -57,12 +57,12 @@ class ModelRunnerStub : public IModelRunner {
   std::mutex work_mutex_;
   std::vector<DecodeResult> work_queue_;
   std::atomic<bool> stop_{false};
-  std::thread reader_thread_;  // must be last: uses all members above
   std::shared_ptr<tt::tt_metal::distributed::MeshDevice> mesh_device_;
   std::unique_ptr<tt::tt_metal::distributed::H2DSocket> h2d_socket_;
   std::unique_ptr<tt::tt_metal::distributed::D2HSocket> d2h_socket_;
   std::mutex batch_mutex_;
   std::vector<std::vector<Sequence*>> batch_queue_;
+  std::thread reader_thread_;  // must be last: started after all members above are ready
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,

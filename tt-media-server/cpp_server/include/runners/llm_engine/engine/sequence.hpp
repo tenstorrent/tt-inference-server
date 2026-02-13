@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include "api/alignment.h"
 #include "llm_engine/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -94,7 +95,12 @@ class Sequence {
   static size_t h2d_size() {
     return sizeof(SequenceID) + sizeof(int64_t);
   }
-  
+
+  static uint32_t page_size() {
+    // needs to be multiply of 64 bytes
+    return align(h2d_size(), 64);
+  }
+
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completion_token_ids() const;
 
