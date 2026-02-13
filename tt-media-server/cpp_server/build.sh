@@ -160,21 +160,41 @@ if [ ! -f "${TOKENIZER_PATH}" ]; then
     echo ""
 fi
 
+# TT_METAL_HOME: enables Metal C++ API includes and intellisense
+if [ -n "${TT_METAL_HOME}" ]; then
+    if [ -d "${TT_METAL_HOME}/tt_metal/api" ]; then
+        echo "TT_METAL_HOME: ${TT_METAL_HOME} (Metal C++ API enabled)"
+    else
+        echo "WARNING: TT_METAL_HOME set but tt_metal/api not found at ${TT_METAL_HOME}/tt_metal/api"
+    fi
+else
+    echo "TT_METAL_HOME not set - Metal C++ API includes disabled (set for intellisense)"
+fi
+
 # Create build directory
 mkdir -p "${BUILD_DIR}"
 
 # Configure (use -B/-S for explicit paths to avoid ambiguity)
+CMAKE_ARGS=(
+    -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    -DENABLE_TTNN="${ENABLE_TTNN}"
+    -DLLM_ENGINE_DEBUG_BUILD=OFF
+    -DTEST="${TEST}"
+    -DSANITIZE_THREAD="${SANITIZE_THREAD}"
+    -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
+)
+[ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
+
 echo ""
 echo "Configuring CMake..."
-cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" \
-      -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-      -DENABLE_TTNN="${ENABLE_TTNN}" \
-      -DLLM_ENGINE_DEBUG_BUILD=OFF \
-      -DTEST="${TEST}" \
-      -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
-      -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+
+# Symlink compile_commands.json to project root for intellisense (clangd, VSCode C++)
+if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
+    ln -sf "${BUILD_DIR}/compile_commands.json" "${SCRIPT_DIR}/compile_commands.json"
+fi
 
 # Build (cmake --build works with any generator: Makefiles or Ninja)
 echo ""
