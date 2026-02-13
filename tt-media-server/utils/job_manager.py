@@ -39,8 +39,10 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
-    _start_event: Optional[Event] = None 
-    _cancel_event: Optional[Event] = None # multiprocessing.Event for cooperative cancellation
+    _start_event: Optional[Event] = None
+    _cancel_event: Optional[Event] = (
+        None  # multiprocessing.Event for cooperative cancellation
+    )
 
     def __post_init__(self):
         if self.created_at is None:
@@ -297,14 +299,17 @@ class JobManager:
                 raise ValueError(
                     f"The initially set result_path differs from the path returned by the task function ({job.result_path} != {result_path})."
                 )
-            
+
             if job.status == JobStatus.CANCELLING:
                 self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
                 job.mark_cancelled()
                 if self.db:
                     try:
                         self.db.update_job_status(
-                            job.id, job.status.value, completed_at=job.completed_at, result_path=job.result_path,
+                            job.id,
+                            job.status.value,
+                            completed_at=job.completed_at,
+                            result_path=job.result_path,
                         )
                     except Exception as e:
                         self._logger.error(
@@ -403,7 +408,9 @@ class JobManager:
                 try:
                     if os.path.exists(job.result_path):
                         os.remove(job.result_path)
-                        self._logger.debug(f"Deleted file for job {job.id}: {job.result_path}")
+                        self._logger.debug(
+                            f"Deleted file for job {job.id}: {job.result_path}"
+                        )
                 except Exception as e:
                     self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 

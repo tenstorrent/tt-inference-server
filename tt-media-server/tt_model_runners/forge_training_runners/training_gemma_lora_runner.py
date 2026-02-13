@@ -94,11 +94,13 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         )
 
         # If we call run multiple times, we need to unload the model from the previous lora adapter
-        if hasattr(self, '_peft_model') and isinstance(self._peft_model, PeftModel):
-            self.logger.info(f"Device {self.device_id}: Unloading previous lora adapter")
+        if hasattr(self, "_peft_model") and isinstance(self._peft_model, PeftModel):
+            self.logger.info(
+                f"Device {self.device_id}: Unloading previous lora adapter"
+            )
             self.hf_model = self._peft_model.unload()
-            if hasattr(self.hf_model, 'peft_config'):
-                delattr(self.hf_model, 'peft_config')
+            if hasattr(self.hf_model, "peft_config"):
+                delattr(self.hf_model, "peft_config")
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
@@ -107,7 +109,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         # use torch compile
         self.model = torch.compile(
-            self._peft_model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False}
+            self._peft_model,
+            backend="tt",
+            options={"tt_enable_torch_fx_fusion_pass": False},
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -187,7 +191,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info("Model checkpoint saved.")
-                    
+
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
@@ -196,7 +200,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         )
                         break
 
-                    if do_validation: # and global_step > 0:
+                    if do_validation:
                         avg_val_loss = self.run_validation()
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
@@ -221,8 +225,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             del self.eval_dataset
             del self.train_dataloader
             del self.eval_dataloader
-            self.logger.info(f"Device {self.device_id}: Training completed - memory cleaned up")
-        
+            self.logger.info(
+                f"Device {self.device_id}: Training completed - memory cleaned up"
+            )
+
         return [model_path]
 
     def run_validation(self):

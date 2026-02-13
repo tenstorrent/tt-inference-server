@@ -1029,7 +1029,7 @@ class TestJobManager:
             job = job_manager._jobs.get("job-123")
             assert job is not None
             assert job._task is None  # Should be cleared
-        
+
     @pytest.mark.asyncio
     async def test_cooperative_cancel_via_cancel_event(self, job_manager, mock_request):
         """Test cooperative cancellation where task checks cancel_event and returns normally."""
@@ -1082,7 +1082,9 @@ class TestJobManager:
             assert db_job3["completed_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_shutdown_force_cancels_cooperative_job(self, job_manager, mock_request):
+    async def test_shutdown_force_cancels_cooperative_job(
+        self, job_manager, mock_request
+    ):
         """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
         cancel_event = Event()
         start_event = Event()
@@ -1111,7 +1113,9 @@ class TestJobManager:
         assert not cancel_event.is_set()  # force=True skips the event
 
     @pytest.mark.asyncio
-    async def test_queued_job_starts_after_in_progress_job_cancelled(self, job_manager, mock_request):
+    async def test_queued_job_starts_after_in_progress_job_cancelled(
+        self, job_manager, mock_request
+    ):
         """When a running job is cancelled, the next queued job should start processing."""
 
         start_event_1 = Event()
