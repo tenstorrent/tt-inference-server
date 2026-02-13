@@ -283,6 +283,7 @@ class JobManager:
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
+            # jobs with a start event need to be marked as in_progress by the runner
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             result_path = await task_function(request)
@@ -290,10 +291,10 @@ class JobManager:
             # enforcing result_path to be a string
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
-            # for training job types, the path is set on job creation, so we log here in case the final path differs
+            # for training job types, the path is set on job creation, and needs to be the same as the path returned by the task function
             if job.result_path and job.result_path != result_path:
-                self._logger.info(
-                    f"Job {job.id} result path updated on job completion: {job.result_path} -> {result_path}"
+                raise ValueError(
+                    f"The initially set result_path differs from the path returned by the task function ({job.result_path} != {result_path})."
                 )
             
             if job.status == JobStatus.CANCELLING:
