@@ -73,10 +73,20 @@ void LLMService::pre_process(domain::CompletionRequest& request) {
 
 void LLMService::start_workers() {
     auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
+        std::unordered_map<std::string, std::string> env_vars = {
+            {"TT_VISIBLE_DEVICES", tt::config::visible_devices_for_worker(worker_id)}
+        };
+        const char* rt_root = std::getenv("TT_METAL_RUNTIME_ROOT");
+        if (rt_root && rt_root[0] != '\0') {
+            env_vars["TT_METAL_RUNTIME_ROOT"] = rt_root;
+        } else {
+            const char* home = std::getenv("TT_METAL_HOME");
+            if (home && home[0] != '\0') {
+                env_vars["TT_METAL_RUNTIME_ROOT"] = home;
+            }
+        }
         return {
-            .env_vars = {
-                {"TT_VISIBLE_DEVICES", tt::config::visible_devices_for_worker(worker_id)}
-            },
+            .env_vars = std::move(env_vars),
             .task_queue = queue_manager_->task_queue,
             .result_queue = queue_manager_->result_queues[worker_id],
             .worker_id = worker_id

@@ -59,19 +59,28 @@ void LLMEngine::step() {
 void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
-    assert(seq);
-    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
+    if (!seq) {
+      std::cerr << "[llm_engine] drain: seq_id=" << dr.seq_id
+                << " (len=" << dr.seq_id.id.size() << ")"
+                << " not found, skipping" << std::endl;
+      continue;
+    }
+    if (seq->status_ != SequenceStatus::IN_FLIGHT) {
+      std::cerr << "[llm_engine] drain: seq_id=" << dr.seq_id
+                << " unexpected status=" << static_cast<int>(seq->status_)
+                << ", skipping" << std::endl;
+      continue;
+    }
 
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> token_ids = {dr.token_id};
     scheduler_->postprocess(seqs, token_ids);
 
-    bool finished = seq->is_finished();
+    bool finished = (scheduler_->find_sequence(dr.seq_id) == nullptr);
     on_token_(dr.seq_id, dr.token_id, finished);
 
     if (finished) {
-      LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq->seq_id
-                                   << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
+      std::cerr << "[llm_engine] finished seq_id=" << dr.seq_id << std::endl;
     }
   }
 }

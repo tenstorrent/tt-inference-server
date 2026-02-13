@@ -42,7 +42,8 @@ struct SequenceID {
 
   static SequenceID deserialize(const char* data, size_t len) {
     SequenceID sid;
-    sid.id = std::string(data, len);
+    size_t actual_len = strnlen(data, len);
+    sid.id = std::string(data, actual_len);
     return sid;
   }
 };
