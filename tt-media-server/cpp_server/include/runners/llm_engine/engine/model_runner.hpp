@@ -10,6 +10,9 @@
 
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/sequence.hpp"
+#include <tt-metalium/experimental/sockets/h2d_socket.hpp>
+#include <tt-metalium/experimental/sockets/d2h_socket.hpp>
+#include <tt-metalium/distributed.hpp>
 
 namespace llm_engine {
 
@@ -55,6 +58,11 @@ class ModelRunnerStub : public IModelRunner {
   std::vector<DecodeResult> work_queue_;
   std::atomic<bool> stop_{false};
   std::thread reader_thread_;  // must be last: uses all members above
+  std::shared_ptr<tt::tt_metal::distributed::MeshDevice> mesh_device_;
+  std::unique_ptr<tt::tt_metal::distributed::H2DSocket> h2d_socket_;
+  std::unique_ptr<tt::tt_metal::distributed::D2HSocket> d2h_socket_;
+  std::mutex batch_mutex_;
+  std::vector<std::vector<Sequence*>> batch_queue_;
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,

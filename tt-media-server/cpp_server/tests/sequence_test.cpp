@@ -5,6 +5,7 @@
 #include "llm_engine/sampling_params.hpp"
 
 #include <gtest/gtest.h>
+#include <limits>
 #include <sstream>
 
 namespace llm_engine {
@@ -74,6 +75,64 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   EXPECT_EQ(restored->last_token, 40);
   EXPECT_EQ(restored->num_prompt_tokens_, 2u);
   EXPECT_EQ(restored->num_cached_tokens_, 256u);
+}
+
+TEST(SequenceTest, ToH2DInput_FromH2DInput_RoundTrip_PreservesSeqIdAndLastToken) {
+  Sequence orig({1, 2, 3}, SamplingParams{.max_tokens = 10});
+  orig.last_token = 42;
+
+  std::vector<char> h2d_data = orig.to_h2d_input();
+  std::unique_ptr<Sequence> restored(Sequence::from_h2d_input(h2d_data));
+
+  ASSERT_NE(restored.get(), nullptr);
+  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->last_token, orig.last_token);
+}
+
+TEST(SequenceTest, ToH2DInput_FromH2DInput_WithZeroLastToken) {
+  Sequence orig({}, SamplingParams{.max_tokens = 5});
+  orig.last_token = 0;
+
+  std::vector<char> h2d_data = orig.to_h2d_input();
+  std::unique_ptr<Sequence> restored(Sequence::from_h2d_input(h2d_data));
+
+  ASSERT_NE(restored.get(), nullptr);
+  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->last_token, 0);
+}
+
+TEST(SequenceTest, ToH2DInput_FromH2DInput_WithLargeLastToken) {
+  Sequence orig({100, 200}, SamplingParams{.max_tokens = 20});
+  orig.last_token = std::numeric_limits<int64_t>::max();
+
+  std::vector<char> h2d_data = orig.to_h2d_input();
+  std::unique_ptr<Sequence> restored(Sequence::from_h2d_input(h2d_data));
+
+  ASSERT_NE(restored.get(), nullptr);
+  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->last_token, std::numeric_limits<int64_t>::max());
+}
+
+TEST(SequenceTest, ToH2DInput_FromH2DInput_WithNegativeLastToken) {
+  Sequence orig({}, SamplingParams{.max_tokens = 10});
+  orig.last_token = -1;
+
+  std::vector<char> h2d_data = orig.to_h2d_input();
+  std::unique_ptr<Sequence> restored(Sequence::from_h2d_input(h2d_data));
+
+  ASSERT_NE(restored.get(), nullptr);
+  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->last_token, -1);
+}
+
+TEST(SequenceTest, ToH2DInput_ContainsCorrectSize) {
+  Sequence seq({1, 2, 3}, SamplingParams{.max_tokens = 10});
+  seq.last_token = 123;
+
+  std::vector<char> h2d_data = seq.to_h2d_input();
+  size_t expected_size = seq.seq_id.serialize().size() + sizeof(int64_t);
+
+  EXPECT_EQ(h2d_data.size(), expected_size);
 }
 
 }  // namespace

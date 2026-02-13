@@ -28,6 +28,16 @@ struct SequenceID {
   bool operator==(const SequenceID& other) const {
     return id == other.id;
   }
+
+  std::vector<char> serialize() const {
+    return std::vector<char>(id.begin(), id.end());
+  }
+
+  static SequenceID deserialize(const std::vector<char>& data) {
+    SequenceID id;
+    id.id = std::string(data.begin(), data.end());
+    return id;
+  }
 };
 
 inline std::ostream& operator<<(std::ostream& os, const SequenceID& sid) {
@@ -67,6 +77,24 @@ class Sequence {
            static_cast<int>(num_blocks() - 1) * block_size;
   }
 
+  std::vector<char> to_h2d_input() const {
+    std::vector<char> input(seq_id.serialize().size() + sizeof(last_token));
+    std::copy(seq_id.serialize().begin(), seq_id.serialize().end(), input.begin());
+    std::copy(reinterpret_cast<const char*>(&last_token), reinterpret_cast<const char*>(&last_token) + sizeof(last_token), input.begin() + seq_id.serialize().size());
+    return input;
+  }
+
+  static Sequence* from_h2d_input(const std::vector<char>& input) {
+    Sequence* seq = new Sequence(std::vector<int64_t>{});
+    seq->seq_id = SequenceID::deserialize(std::vector<char>(input.begin(), input.begin() + input.size() / 2));
+    seq->last_token = *reinterpret_cast<const int64_t*>(input.data() + input.size() / 2);
+    return seq;
+  }
+
+  static size_t h2d_size() {
+    return sizeof(SequenceID) + sizeof(int64_t);
+  }
+  
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completion_token_ids() const;
 
