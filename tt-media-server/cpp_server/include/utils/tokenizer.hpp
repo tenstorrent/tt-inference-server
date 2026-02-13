@@ -15,7 +15,7 @@ namespace tt::utils {
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
- * Token fields may be plain strings or AddedToken {"content": "..."}; load_tokenizer_config normalizes to strings.
+ * Token fields may be plain strings or AddedToken {"content": "..."}; parsing normalizes to strings.
  */
 struct TokenizerConfig {
     std::string bos_token;
@@ -28,12 +28,11 @@ struct TokenizerConfig {
 };
 
 /**
- * Load and parse tokenizer_config.json from path (e.g. tokenizers/tokenizer_config.json).
- * Extracts bos_token, eos_token, pad_token, unk_token (from AddedToken or string), chat_template,
- * add_bos_token and add_eos_token.
- * @return true if file was read and parsed, false if file missing or invalid (out left unchanged on false).
+ * Load tokenizer config from the path given by config::tokenizer_config_path(), validate
+ * add_bos_token/add_eos_token vs bos_token/eos_token, and return the config.
+ * @throws std::runtime_error if config path is empty, file cannot be loaded, or tokens are missing when flags are set.
  */
-bool load_tokenizer_config(const std::string& path, TokenizerConfig& out);
+TokenizerConfig get_tokenizer_config();
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace / SentencePiece).

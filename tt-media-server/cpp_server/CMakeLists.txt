@@ -113,7 +113,7 @@ target_include_directories(sequence_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config.cpp src/config/settings.cpp)
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -135,7 +135,7 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -151,7 +151,7 @@ set(SOURCES
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
     src/utils/tokenizer.cpp
-    src/utils/tokenizer_config.cpp
+    src/utils/tokenizer_config_loader.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES

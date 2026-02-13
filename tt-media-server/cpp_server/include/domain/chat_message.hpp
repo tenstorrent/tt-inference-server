@@ -23,8 +23,10 @@ struct ChatMessage {
                 msg.content = c.asString();
             else if (c.isArray())
                 for (const auto& part : c)
-                    if (part.isObject() && part.isMember("type") && part["type"].asString() == "text" && part.isMember("text"))
+                    if (part.isObject() && part.isMember("type") && part["type"].asString() == "text" && part.isMember("text")) {
+                        if (!msg.content.empty()) msg.content += ' ';
                         msg.content += part["text"].asString();
+                    }
         }
         return msg;
     }

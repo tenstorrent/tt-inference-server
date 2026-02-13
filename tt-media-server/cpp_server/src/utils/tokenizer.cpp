@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
-#include "config/settings.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -64,30 +63,14 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
 
 namespace {
 
-const char* USER_TAG = "<<|User|>>";
-const char* ASSISTANT_TAG = "<<|Assistant|>>";
+const char* USER_TAG = "<｜User｜>";
+const char* ASSISTANT_TAG = "<｜Assistant｜>";
 
 }  // namespace
 
 std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
     bool add_generation_prompt) {
-    static TokenizerConfig cfg = []() {
-        TokenizerConfig c;
-        std::string config_path = tt::config::tokenizer_config_path();
-        if (config_path.empty()) {
-            throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
-        }
-        if (!load_tokenizer_config(config_path, c)) {
-            throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + config_path);
-        }
-        if (c.add_bos_token && c.bos_token.empty()) {
-            throw std::runtime_error("[TokenizerUtil] add_bos_token is true but bos_token is missing in tokenizer_config.json");
-        }
-        if (c.add_eos_token && c.eos_token.empty()) {
-            throw std::runtime_error("[TokenizerUtil] add_eos_token is true but eos_token is missing in tokenizer_config.json");
-        }
-        return c;
-    }();
+    static TokenizerConfig cfg = get_tokenizer_config();
 
     const std::string& bos = cfg.bos_token;
     const std::string& eos = cfg.eos_token;
