@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import traceback
 from abc import abstractmethod
 
 import ttnn
@@ -25,15 +24,7 @@ from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
-
-
-def _log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:
-    """Log exception with full stack trace and cause chain (stdlib only)."""
-    full = "".join(
-        traceback.format_exception(type(exc), exc, exc.__traceback__, chain=True)
-    )
-    logger.error(f"Device {device_id}: {context}\n{full}")
-
+from utils.logger import log_exception_chain
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -68,7 +59,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             )
             return fabric_config
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Fabric configuration failed",
@@ -111,7 +102,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Exception during model loading",
@@ -176,7 +167,7 @@ class TTSD35Runner(TTDiTRunner):
                 checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
             )
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "SD3.5 pipeline creation failed",
@@ -200,7 +191,7 @@ class TTFlux1Runner(TTDiTRunner):
                 mesh_device=self.ttnn_device,
             )
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Flux1 pipeline creation failed",
@@ -223,7 +214,7 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
                 checkpoint_name=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
             )
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Motif pipeline creation failed",
@@ -247,7 +238,7 @@ class TTQwenImageRunner(TTDiTRunner):
                 checkpoint_name=self.settings.model_weights_path,
             )
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Qwen-Image pipeline creation failed",
@@ -272,7 +263,7 @@ class TTMochi1Runner(TTDiTRunner):
                 checkpoint_name=SupportedModels.MOCHI_1.value,
             )
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Mochi pipeline creation failed",
@@ -310,7 +301,7 @@ class TTWan22Runner(TTDiTRunner):
         try:
             return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Wan pipeline creation failed",

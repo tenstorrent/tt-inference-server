@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import traceback
 from abc import abstractmethod
 
 import ttnn
@@ -20,14 +19,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
-
-
-def _log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:
-    """Log exception with full stack trace and cause chain (stdlib only)."""
-    full = "".join(
-        traceback.format_exception(type(exc), exc, exc.__traceback__, chain=True)
-    )
-    logger.error(f"Device {device_id}: {context}\n{full}")
+from utils.logger import log_exception_chain
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
@@ -54,7 +46,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
                 ttnn.set_fabric_config(fabric_config)
             return None
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Fabric configuration failed",
@@ -66,7 +58,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         try:
             self._load_pipeline()
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Exception during pipeline load",
@@ -88,7 +80,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         try:
             self._load_pipeline()
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Exception during pipeline load",
@@ -114,7 +106,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Exception during model loading",
@@ -137,7 +129,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            _log_exception_chain(
+            log_exception_chain(
                 self.logger,
                 self.device_id,
                 "Exception during warmup inference",
