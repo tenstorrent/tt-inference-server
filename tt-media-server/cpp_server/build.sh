@@ -144,18 +144,35 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     fi
 fi
 
-# Download tokenizer if not present
-TOKENIZER_PATH="${SCRIPT_DIR}/tokenizers/tokenizer.json"
-if [ ! -f "${TOKENIZER_PATH}" ]; then
+# Download tokenizer and tokenizer_config if not present
+TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
+TOKENIZER_JSON="${TOKENIZER_DIR}/tokenizer.json"
+TOKENIZER_CONFIG_JSON="${TOKENIZER_DIR}/tokenizer_config.json"
+HF_DEEPSEEK_REPO="https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main"
+
+mkdir -p "${TOKENIZER_DIR}"
+
+if [ ! -f "${TOKENIZER_JSON}" ]; then
     echo ""
     echo "Tokenizer not found. Downloading DeepSeek V3 tokenizer..."
-    mkdir -p "${SCRIPT_DIR}/tokenizers"
-    if wget -q -O "${TOKENIZER_PATH}" https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json; then
-        echo "Tokenizer downloaded successfully to ${TOKENIZER_PATH}"
+    if wget -q -O "${TOKENIZER_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer.json"; then
+        echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
     else
         echo "Warning: Failed to download tokenizer. You can manually download it later:"
         echo "  mkdir -p cpp_server/tokenizers"
-        echo "  wget -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json"
+        echo "  wget -O cpp_server/tokenizers/tokenizer.json ${HF_DEEPSEEK_REPO}/tokenizer.json"
+    fi
+    echo ""
+fi
+
+if [ ! -f "${TOKENIZER_CONFIG_JSON}" ]; then
+    echo ""
+    echo "Tokenizer config not found. Downloading tokenizer_config.json..."
+    if wget -q -O "${TOKENIZER_CONFIG_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer_config.json"; then
+        echo "Tokenizer config downloaded successfully to ${TOKENIZER_CONFIG_JSON}"
+    else
+        echo "Warning: Failed to download tokenizer_config.json. Chat template may use defaults."
+        echo "  wget -O cpp_server/tokenizers/tokenizer_config.json ${HF_DEEPSEEK_REPO}/tokenizer_config.json"
     fi
     echo ""
 fi
