@@ -102,7 +102,7 @@ class TTModels(nn.Module):
                 if forward_batch.extend_seq_lens is not None
                 else forward_batch.seq_lens
             )
-            
+
             prompt_lens = prompt_lens_tensor.tolist()
 
             logits = self.tt_model.prefill_forward(
@@ -118,8 +118,12 @@ class TTModels(nn.Module):
         elif forward_batch.forward_mode.is_decode():  # decode mode
             tokens = input_ids.unsqueeze(
                 1
-            ).to(torch.int32)  # make it batch_size x seq_len dimensions (in decode mode seq_len = 1 ), cast to int32
-            start_pos = positions.to(torch.int32)  # at which position is each request starting, cast to int32
+            ).to(
+                torch.int32
+            )  # make it batch_size x seq_len dimensions (in decode mode seq_len = 1 ), cast to int32
+            start_pos = positions.to(
+                torch.int32
+            )  # at which position is each request starting, cast to int32
             actual_bsz = tokens.shape[
                 0
             ]  # number of requests in current batch (needed later to slice output)
