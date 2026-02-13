@@ -75,6 +75,23 @@ if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/tt_metal/api")
         "${TT_METAL_HOME}/tt_metal/third_party/tracy/public"
         "${TT_METAL_HOME}/tt_stl"
     )
+    if(EXISTS "${TT_METAL_HOME}/build_Release/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build_Release/include"
+            "${TT_METAL_HOME}/build_Release/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build/include"
+            "${TT_METAL_HOME}/build/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+    elseif(EXISTS "${TT_METAL_HOME}/.cpmcache/enchantum")
+        file(GLOB _enchantum_dirs "${TT_METAL_HOME}/.cpmcache/enchantum/*/enchantum/include")
+        if(_enchantum_dirs)
+            list(GET _enchantum_dirs 0 _enchantum_include)
+            list(APPEND TT_METAL_INCLUDE_DIRS "${_enchantum_include}")
+        endif()
+    endif()
     message(STATUS "TT Metal C++ API: ${TT_METAL_HOME} (includes + intellisense)")
 else()
     set(TT_METAL_API_FOUND OFF)
@@ -101,11 +118,14 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL)
+endif()
 target_link_libraries(llm_engine PUBLIC Boost::boost)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
-target_compile_features(llm_engine PUBLIC cxx_std_17)
+target_compile_features(llm_engine PUBLIC cxx_std_20)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
 if(LLM_ENGINE_DEBUG_BUILD)

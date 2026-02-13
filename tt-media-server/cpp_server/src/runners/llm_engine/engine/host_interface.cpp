@@ -4,26 +4,17 @@
 
 #include "runners/llm_engine/engine/host_interface.hpp"
 
-#include <tt-metalium/experimental/sockets/h2d_socket.hpp>
-#include <tt-metalium/experimental/sockets/d2h_socket.hpp>
-#include <tt-metalium/program_descriptors.hpp>
-#include <tt-metalium/experimental/mesh_program_descriptor.hpp>
-#include <tt-metalium/core_coord.hpp>
-#include <tt-metalium/mesh_coord.hpp>
-#include <tt-metalium/tt_backend_api_types.hpp>
-#include <tt-metalium/experimental/tensor/spec/tensor_spec.hpp>
-#include <tt-metalium/experimental/tensor/spec/layout/tensor_layout.hpp>
-#include <tt-metalium/experimental/tensor/spec/layout/page_config.hpp>
-#include <ttnn/operations/generic/generic_op.hpp>
-#include <ttnn/global_semaphore.hpp>
-#include <ttnn/tensor/tensor_ops.hpp>
-#include <ttnn/tensor/types.hpp>
-#include <ttnn/tensor/shape/shape.hpp>
-#include <tt-metalium/distributed.hpp>
-
 #include <cstdlib>
+#include <map>
 #include <stdexcept>
 #include <string>
+#include <vector>
+
+#include <tt-metalium/experimental/sockets/d2h_socket.hpp>
+#include <tt-metalium/experimental/sockets/h2d_socket.hpp>
+#include <tt-metalium/circular_buffer_config.hpp>
+#include <tt-metalium/host_api.hpp>
+#include <tt-metalium/distributed.hpp>
 
 namespace llm_engine {
 
@@ -31,12 +22,12 @@ namespace {
 
 constexpr uint32_t kIntermedCbIndex = 0;
 
-std::string get_kernel_base_path() {
+std::string get_kernel_path(const std::string& name) {
     const char* base = std::getenv("TT_METAL_HOME");
     if (base) {
-        return std::string{base} + "/models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/";
+        return std::string{base} + "/models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/" + name;
     }
-    return "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/";
+    return "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/" + name;
 }
 
 }  // namespace
@@ -60,25 +51,33 @@ void HostInterface::run(
         throw std::runtime_error("HostInterface: H2D socket has no active cores");
     }
     const auto& mesh_core_coord = core_coords[0];
-    const auto core_range = tt::tt_metal::CoreRange{mesh_core_coord.core_coord, mesh_core_coord.core_coord};
+    const auto core_coord = mesh_core_coord.core_coord;
+    const auto core_range = tt::tt_metal::CoreRange{core_coord, core_coord};
     const tt::tt_metal::CoreRangeSet core_range_set{core_range};
 
     const uint32_t page_size = h2d_socket->get_page_size();
     const uint32_t loopback_cb_size = 1024;
-    const bool pull_from_host = (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
+    const bool pull_from_host =
+        (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
 
-    auto termination_semaphore = ttnn::global_semaphore::create_global_semaphore(
-        mesh_device, core_range_set, 0, tt::tt_metal::BufferType::L1);
+    tt::tt_metal::IDevice* device = mesh_device->get_device(mesh_core_coord.device_coord);
+    auto termination_semaphore =
+        tt::tt_metal::CreateGlobalSemaphore(device, core_range_set, 0, tt::tt_metal::BufferType::L1);
     termination_semaphore_ = new tt::tt_metal::GlobalSemaphore{std::move(termination_semaphore)};
     mesh_device_ = mesh_device;
     initialized_ = true;
 
-    const uint32_t term_sem_addr = ttnn::global_semaphore::get_global_semaphore_address(
-        *static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_));
+    const uint32_t term_sem_addr =
+        static_cast<uint32_t>(static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_)->address());
 
-    const std::string kernel_base = get_kernel_base_path();
+    auto program = tt::tt_metal::CreateProgram();
 
-    tt::tt_metal::KernelDescriptor::CompileTimeArgs h2d_ct_args = {
+    std::map<uint8_t, tt::DataFormat> cb_format{{kIntermedCbIndex, tt::DataFormat::UInt32}};
+    tt::tt_metal::CircularBufferConfig cb_config{loopback_cb_size, cb_format};
+    cb_config.set_page_size(kIntermedCbIndex, page_size);
+    tt::tt_metal::CreateCircularBuffer(program, core_range_set, cb_config);
+
+    std::vector<uint32_t> h2d_ct_args = {
         h2d_socket->get_config_buffer_address(),
         term_sem_addr,
         page_size,
@@ -86,65 +85,41 @@ void HostInterface::run(
         static_cast<uint32_t>(true),
         kIntermedCbIndex,
     };
+    tt::tt_metal::CreateKernel(
+        program,
+        get_kernel_path("h2d_receiver.cpp"),
+        core_coord,
+        tt::tt_metal::DataMovementConfig{
+            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+            .noc = tt::tt_metal::NOC::RISCV_0_default,
+            .compile_args = h2d_ct_args,
+        });
 
-    tt::tt_metal::KernelDescriptor h2d_kernel{
-        .kernel_source = kernel_base + "h2d_receiver.cpp",
-        .source_type = tt::tt_metal::KernelDescriptor::SourceType::FILE_PATH,
-        .core_ranges = core_range_set,
-        .compile_time_args = h2d_ct_args,
-        .config = tt::tt_metal::WriterConfigDescriptor{},
-    };
-
-    tt::tt_metal::KernelDescriptor::CompileTimeArgs d2h_ct_args = {
+    std::vector<uint32_t> d2h_ct_args = {
         d2h_socket->get_config_buffer_address(),
         term_sem_addr,
         page_size,
         static_cast<uint32_t>(true),
         kIntermedCbIndex,
     };
-
-    tt::tt_metal::KernelDescriptor d2h_kernel{
-        .kernel_source = kernel_base + "d2h_sender.cpp",
-        .source_type = tt::tt_metal::KernelDescriptor::SourceType::FILE_PATH,
-        .core_ranges = core_range_set,
-        .compile_time_args = d2h_ct_args,
-        .config = tt::tt_metal::ReaderConfigDescriptor{},
-    };
-
-    tt::tt_metal::CBDescriptor intermed_cb{
-        .total_size = loopback_cb_size,
-        .core_ranges = core_range_set,
-        .format_descriptors = {tt::tt_metal::CBFormatDescriptor{
-            .buffer_index = kIntermedCbIndex,
-            .data_format = tt::DataFormat::UInt32,
-            .page_size = page_size,
-        }},
-    };
-
-    tt::tt_metal::ProgramDescriptor program_descriptor{
-        .kernels = {h2d_kernel, d2h_kernel},
-        .semaphores = {},
-        .cbs = {intermed_cb},
-    };
+    tt::tt_metal::CreateKernel(
+        program,
+        get_kernel_path("d2h_sender.cpp"),
+        core_coord,
+        tt::tt_metal::DataMovementConfig{
+            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+            .noc = tt::tt_metal::NOC::RISCV_0_default,
+            .compile_args = d2h_ct_args,
+        });
 
     const auto device_coord = mesh_core_coord.device_coord;
     tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};
-    tt::tt_metal::experimental::MeshProgramDescriptor mesh_program_desc;
-    mesh_program_desc.mesh_programs.push_back({
-        tt::tt_metal::distributed::MeshCoordinateRange{mesh_coord},
-        program_descriptor,
-    });
+    tt::tt_metal::distributed::MeshWorkload mesh_workload;
+    mesh_workload.add_program(
+        tt::tt_metal::distributed::MeshCoordinateRange{mesh_coord}, std::move(program));
 
-    auto dummy_spec = tt::tt_metal::TensorSpec(
-        tt::tt_metal::Shape{0, 0, 0, 0},
-        tt::tt_metal::TensorLayout{
-            tt::DataType::UInt32,
-            tt::tt_metal::PageConfig{tt::tt_metal::Layout::ROW_MAJOR},
-            tt::tt_metal::MemoryConfig{}});
-    auto dummy_tensor = tt::tt_metal::create_device_tensor(dummy_spec, mesh_device);
-
-    std::vector<tt::tt_metal::Tensor> io_tensors = {dummy_tensor, dummy_tensor};
-    ttnn::generic_op(io_tensors, mesh_program_desc);
+    tt::tt_metal::distributed::EnqueueMeshWorkload(
+        mesh_device->mesh_command_queue(), mesh_workload, false);
 }
 
 void HostInterface::terminate() {
@@ -152,7 +127,7 @@ void HostInterface::terminate() {
 
     auto* sem = static_cast<tt::tt_metal::GlobalSemaphore*>(termination_semaphore_);
     if (sem) {
-        ttnn::global_semaphore::reset_global_semaphore_value(*sem, 1);
+        sem->reset_semaphore_value(1);
     }
     if (mesh_device_) {
         tt::tt_metal::distributed::Synchronize(
