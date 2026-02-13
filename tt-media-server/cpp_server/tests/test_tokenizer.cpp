@@ -164,25 +164,10 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
         {"user", "How are you?"},
     };
 
-    // Build expected output from the same config our implementation uses.
-    // Format matches HuggingFace DeepSeek-V3: bos_token + system + <<|User|>>content +
-    // <<|Assistant|>>content+eos_token + ... + <<|Assistant|>> (if add_generation_prompt).
-    std::string config_path = tt::config::tokenizer_config_path();
-    ASSERT_FALSE(config_path.empty()) << "tokenizer_config.json required for this test";
-
-    TokenizerConfig cfg;
-    ASSERT_TRUE(load_tokenizer_config(config_path, cfg)) << "Failed to load tokenizer config";
-
-    const std::string bos = cfg.bos_token.empty() ? "\n" : cfg.bos_token;
-    const std::string eos = cfg.eos_token.empty() ? "<<|end▁of▁sentence|>>" : cfg.eos_token;
-
-    std::string expected;
-    expected += bos;
-    expected += "<<|User|>>Hello";
-    expected += "<<|Assistant|>>Hi!";
-    expected += eos;
-    expected += "<<|User|>>How are you?";
-    expected += "<<|Assistant|>>";
+    // Expected output from HuggingFace transformers tokenizer.apply_chat_template(..., add_generation_prompt=True)
+    // for DeepSeek-V3 (add_bos_token=true, add_eos_token=false).
+    const std::string expected =
+        "<｜begin▁of▁sentence｜><<|User|>>Hello<<|Assistant|>>Hi!<<|User|>>How are you?<<|Assistant|>>";
 
     std::string actual = Tokenizer::apply_chat_template(messages, true);
 

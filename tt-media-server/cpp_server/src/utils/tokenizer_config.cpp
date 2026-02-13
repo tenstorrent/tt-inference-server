@@ -44,6 +44,12 @@ bool load_tokenizer_config(const std::string& path, TokenizerConfig& out) {
     if (root.isMember("chat_template") && root["chat_template"].isString()) {
         out.chat_template = root["chat_template"].asString();
     }
+    if (root.isMember("add_bos_token") && root["add_bos_token"].isBool()) {
+        out.add_bos_token = root["add_bos_token"].asBool();
+    }
+    if (root.isMember("add_eos_token") && root["add_eos_token"].isBool()) {
+        out.add_eos_token = root["add_eos_token"].asBool();
+    }
     return true;
 }
 

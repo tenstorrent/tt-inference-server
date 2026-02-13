@@ -27,7 +27,6 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-/** Chat completion request: messages (role/content) converted to prompt via messages_to_prompt. */
 struct ChatCompletionRequest {
     std::string task_id;
     std::optional<std::string> model;

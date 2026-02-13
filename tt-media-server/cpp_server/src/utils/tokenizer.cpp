@@ -64,23 +64,33 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
 
 namespace {
 
-const char* DEFAULT_BOS = "\n";
 const char* USER_TAG = "<<|User|>>";
 const char* ASSISTANT_TAG = "<<|Assistant|>>";
-const char* DEFAULT_EOS = "<<|end▁of▁sentence|>>";
 
 }  // namespace
 
 std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
     bool add_generation_prompt) {
-    TokenizerConfig cfg;
-    std::string config_path = tt::config::tokenizer_config_path();
-    if (config_path.empty()) {
-        throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
-    }
-    load_tokenizer_config(config_path, cfg);
-    std::string bos = cfg.bos_token.empty() ? DEFAULT_BOS : cfg.bos_token;
-    std::string eos = cfg.eos_token.empty() ? std::string(DEFAULT_EOS) : cfg.eos_token;
+    static TokenizerConfig cfg = []() {
+        TokenizerConfig c;
+        std::string config_path = tt::config::tokenizer_config_path();
+        if (config_path.empty()) {
+            throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
+        }
+        if (!load_tokenizer_config(config_path, c)) {
+            throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + config_path);
+        }
+        if (c.add_bos_token && c.bos_token.empty()) {
+            throw std::runtime_error("[TokenizerUtil] add_bos_token is true but bos_token is missing in tokenizer_config.json");
+        }
+        if (c.add_eos_token && c.eos_token.empty()) {
+            throw std::runtime_error("[TokenizerUtil] add_eos_token is true but eos_token is missing in tokenizer_config.json");
+        }
+        return c;
+    }();
+
+    const std::string& bos = cfg.bos_token;
+    const std::string& eos = cfg.eos_token;
 
     std::ostringstream out;
     std::string system_prompt;
@@ -91,14 +101,16 @@ std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMes
         system_prompt += m.content;
         first_system = false;
     }
-    out << bos << system_prompt;
+    if (cfg.add_bos_token) out << bos;
+    out << system_prompt;
     for (const auto& m : messages) {
         std::string role = m.role.empty() ? "user" : m.role;
         if (role == "system") continue;
         if (role == "user") {
             out << USER_TAG << m.content;
         } else if (role == "assistant") {
-            out << ASSISTANT_TAG << m.content << eos;
+            out << ASSISTANT_TAG << m.content;
+            if (cfg.add_eos_token) out << eos;
         }
     }
     if (add_generation_prompt) {
