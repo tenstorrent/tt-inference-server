@@ -1230,7 +1230,7 @@ llm_templates = [
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto",
                 },
