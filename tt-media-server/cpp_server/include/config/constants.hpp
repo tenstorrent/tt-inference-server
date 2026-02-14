@@ -71,8 +71,8 @@ namespace defaults {
     constexpr llm_engine::Config DEFAULT_LLM_ENGINE_CONFIG = {
         .max_num_batched_tokens = 16384,
         .eos = 0,
-        .kvcache_block_size = 256,
-        .num_kvcache_blocks = 128,
+        .kvcache_block_size = 128,
+        .num_kvcache_blocks = 4000,
     };
 }
 

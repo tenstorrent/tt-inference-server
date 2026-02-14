@@ -9,8 +9,8 @@
 
 namespace llm_engine {
 
-constexpr uint32_t kFifoSize = 2048;
-constexpr uint32_t kNumIterationsStreaming = 65536;
+constexpr uint32_t kFifoSize = 64*64*2;
+constexpr uint32_t kNumIterationsStreaming = 10000000;
 const char* kLoopbackKernelPath =
     "tests/tt_metal/tt_metal/test_kernels/misc/socket/pcie_socket_loopback.cpp";
 
@@ -100,8 +100,8 @@ void ModelRunnerStub::reader_loop() {
     while (!stop_.load(std::memory_order_relaxed)) {
       std::cerr << "[host_io] reading from d2h_socket" << std::endl;
       d2h_socket_->read(output.data(), 1);
-      std::cerr << "[host_io] reading from d2h_socket done" << std::endl;
       SequenceID seq_id = SequenceID::deserialize(output.data(), SequenceID::kSerializedSize);
+      std::cerr << "[host_io] reading from d2h_socket done ID=" << seq_id << std::endl;
       int64_t last_token;
       std::memcpy(&last_token, output.data() + SequenceID::kSerializedSize, sizeof(last_token));
       decode_callback_(DecodeResult{seq_id, last_token});
@@ -124,11 +124,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->seq_id, seq->last_token + 1});
     }
   } else {
-    {
-      std::lock_guard<std::mutex> lock(batch_mutex_);
-      batch_queue_.push_back(seqs);
-    }
-    std::cerr << "[host_io] writing to h2d_socket" << std::endl;
+    std::cerr << "[host_io] writing to h2d_socket ID=" << seqs[0]->seq_id << std::endl;
     h2d_socket_->write(seqs[0]->to_h2d_input().data(), 1);
     std::cerr << "[host_io] writing to h2d_socket done" << std::endl;
   }
