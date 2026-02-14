@@ -108,13 +108,13 @@ void LLMService::start_workers() {
             try {
                 worker->start();
             } catch (const std::exception& e) {
-                std::cerr << "[LLMService] Worker " << i << " failed: " << e.what() << "\n" << std::flush;
+                std::cerr << "[LLMService] Worker " << i << " failed: " << e.what() << ", exiting process\n" << std::flush;
             }
             _exit(1);
         }
         // Parent process
         worker->pid = pid;
-        std::cout << "[LLMService] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
+        std::cout << "[LLMService] Worker " << i << " started (PID " << pid << ")\n" << std::flush;
     }
 }
 

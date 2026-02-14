@@ -9,10 +9,7 @@
 
 namespace llm_engine {
 
-constexpr uint32_t kFifoSize = 64*64*2;
-constexpr uint32_t kNumIterationsStreaming = 10000000;
-const char* kLoopbackKernelPath =
-    "tests/tt_metal/tt_metal/test_kernels/misc/socket/pcie_socket_loopback.cpp";
+constexpr uint32_t kFifoSize = 1024*1024;
 
 void DecodeQueue::push(const DecodeResult& result) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -68,7 +65,7 @@ ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
         }
 
         host_io_ = std::make_unique<HostInterface>();
-        host_io_->run(h2d_socket_.get(), d2h_socket_.get(), mesh_device_.get(), kNumIterationsStreaming);
+        host_io_->run(h2d_socket_.get(), d2h_socket_.get(), mesh_device_.get());
 
         reader_thread_ = std::thread([this] { reader_loop(); });
       }

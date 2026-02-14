@@ -64,7 +64,7 @@ void run_host_io_loopback(tt::tt_metal::distributed::H2DMode h2d_mode) {
 
     std::cout << "[host_io] host_io.run()..." << std::endl;
     HostInterface host_io;
-    host_io.run(h2d_socket.get(), d2h_socket.get(), mesh_device.get(), kNumIterations);
+    host_io.run(h2d_socket.get(), d2h_socket.get(), mesh_device.get());
     std::cout << "[host_io] host_io.run() done" << std::endl;
 
     std::vector<uint32_t> input(kPageSize / sizeof(uint32_t));

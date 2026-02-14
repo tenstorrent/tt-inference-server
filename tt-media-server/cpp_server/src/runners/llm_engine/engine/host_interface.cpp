@@ -4,20 +4,28 @@
 
 #include "runners/llm_engine/engine/host_interface.hpp"
 
-#include <iostream>
 #include <stdexcept>
 
+#include <tt-metalium/circular_buffer_config.hpp>
 #include <tt-metalium/experimental/sockets/d2h_socket.hpp>
 #include <tt-metalium/experimental/sockets/h2d_socket.hpp>
+#include <tt-metalium/global_semaphore.hpp>
 #include <tt-metalium/host_api.hpp>
+#include <tt-metalium/kernel_types.hpp>
 #include <tt-metalium/distributed.hpp>
+#include <tt-metalium/core_coord.hpp>
+#include <tt-metalium/tt_backend_api_types.hpp>
 
 namespace llm_engine {
 
 namespace {
 
-const char* kLoopbackKernelPath =
-    "tests/tt_metal/tt_metal/test_kernels/misc/socket/pcie_socket_loopback.cpp";
+constexpr uint32_t kLoopbackCbSize = 1024;
+const char* kH2dReceiverKernelPath =
+    "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/h2d_receiver.cpp";
+const char* kD2hSenderKernelPath =
+    "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/d2h_sender.cpp";
+constexpr uint8_t kIntermedCbIndex = 0;
 
 }  // namespace
 
@@ -30,8 +38,7 @@ HostInterface::~HostInterface() {
 void HostInterface::run(
     tt::tt_metal::distributed::H2DSocket* h2d_socket,
     tt::tt_metal::distributed::D2HSocket* d2h_socket,
-    tt::tt_metal::distributed::MeshDevice* mesh_device,
-    uint32_t num_iterations) {
+    tt::tt_metal::distributed::MeshDevice* mesh_device) {
     if (!h2d_socket || !d2h_socket || !mesh_device) {
         throw std::invalid_argument("HostInterface::run: h2d_socket, d2h_socket, mesh_device must be non-null");
     }
@@ -47,32 +54,59 @@ void HostInterface::run(
     const bool pull_from_host =
         (h2d_socket->get_h2d_mode() == tt::tt_metal::distributed::H2DMode::DEVICE_PULL);
 
+    tt::tt_metal::CoreRangeSet core_range_set{tt::tt_metal::CoreRange{core_coord, core_coord}};
+    // GlobalSemaphore must get MeshDevice* (as IDevice*) so AnyBuffer::create builds a MeshBuffer;
+    // get_device(coord) can return a non-MeshDevice and would create a plain Buffer, then
+    // reset_semaphore_value would dereference null in mesh_buffer->device().
+    termination_semaphore_.emplace(
+        static_cast<tt::tt_metal::IDevice*>(mesh_device),
+        core_range_set,
+        0,
+        tt::tt_metal::BufferType::L1);
+    const uint32_t semaphore_addr = static_cast<uint32_t>(termination_semaphore_->address());
+
     mesh_device_ = mesh_device;
     initialized_ = true;
 
     auto program = tt::tt_metal::CreateProgram();
 
+    tt::tt_metal::CircularBufferConfig cb_config{kLoopbackCbSize};
+    cb_config.index(kIntermedCbIndex)
+        .set_page_size(page_size)
+        .set_data_format(tt::DataFormat::UInt32);
+    tt::tt_metal::CreateCircularBuffer(program, core_coord, cb_config);
+
+    std::vector<uint32_t> h2d_compile_args = {
+        h2d_socket->get_config_buffer_address(),
+        semaphore_addr,
+        page_size,
+        static_cast<uint32_t>(pull_from_host),
+        static_cast<uint32_t>(true),   // loopback_mode
+        kIntermedCbIndex,
+    };
     tt::tt_metal::CreateKernel(
         program,
-        kLoopbackKernelPath,
+        kH2dReceiverKernelPath,
         core_coord,
-        tt::tt_metal::DataMovementConfig{
-            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
-            .noc = tt::tt_metal::NOC::RISCV_0_default,
-            .compile_args = {
-                static_cast<uint32_t>(h2d_socket->get_config_buffer_address()),
-                static_cast<uint32_t>(d2h_socket->get_config_buffer_address()),
-                page_size,
-                page_size,
-                num_iterations,
-                static_cast<uint32_t>(pull_from_host),
-            }});
+        tt::tt_metal::WriterDataMovementConfig{h2d_compile_args});
 
-    const auto device_coord = mesh_core_coord.device_coord;
-    tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};
+    std::vector<uint32_t> d2h_compile_args = {
+        d2h_socket->get_config_buffer_address(),
+        semaphore_addr,
+        page_size,
+        static_cast<uint32_t>(true),   // loopback_mode
+        kIntermedCbIndex,
+    };
+    tt::tt_metal::CreateKernel(
+        program,
+        kD2hSenderKernelPath,
+        core_coord,
+        tt::tt_metal::ReaderDataMovementConfig{d2h_compile_args});
+
     tt::tt_metal::distributed::MeshWorkload mesh_workload;
     mesh_workload.add_program(
-        tt::tt_metal::distributed::MeshCoordinateRange{mesh_coord}, std::move(program));
+        tt::tt_metal::distributed::MeshCoordinateRange{mesh_core_coord.device_coord},
+        std::move(program));
 
     tt::tt_metal::distributed::EnqueueMeshWorkload(
         mesh_device->mesh_command_queue(), mesh_workload, false);
@@ -81,11 +115,15 @@ void HostInterface::run(
 void HostInterface::terminate() {
     if (!initialized_) return;
 
+    if (termination_semaphore_) {
+        termination_semaphore_->reset_semaphore_value(1);
+    }
     if (mesh_device_) {
         auto* dev = static_cast<tt::tt_metal::distributed::MeshDevice*>(mesh_device_);
         tt::tt_metal::distributed::Finish(dev->mesh_command_queue());
     }
     mesh_device_ = nullptr;
+    termination_semaphore_.reset();
     initialized_ = false;
 }
 
