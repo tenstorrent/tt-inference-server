@@ -30,24 +30,19 @@ ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
     : config_(config),
       dummy_token_((config.eos == 0) ? 1 : 0),
       decode_callback_(std::move(callback)) {
-        std::cout << "[host_io] create_unit_mesh..." << std::endl;
 
         try {
             mesh_device_ = tt::tt_metal::distributed::MeshDevice::create_unit_mesh(0);
         } catch (const std::exception& e) {
-            std::cerr << "[host_io] create_unit_mesh failed: " << e.what() << std::endl;
             throw;
         } catch (...) {
-            std::cerr << "[host_io] create_unit_mesh failed with unknown exception" << std::endl;
             throw;
         }
-        std::cout << "[host_io] create_unit_mesh done" << std::endl;
 
         tt::tt_metal::distributed::MeshCoordinate device_coord{0, 0};
         tt::tt_metal::CoreCoord core_coord{0, 0};
         tt::tt_metal::distributed::MeshCoreCoord socket_core{device_coord, core_coord};
 
-        std::cout << "[host_io] creating H2DSocket..." << std::endl;
         try {
             h2d_socket_ = std::make_unique<tt::tt_metal::distributed::H2DSocket>(
                 mesh_device_,
@@ -57,36 +52,25 @@ ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
                 tt::tt_metal::distributed::H2DMode::HOST_PUSH);
             h2d_socket_->set_page_size(Sequence::page_size());
         } catch (const std::exception& e) {
-            std::cerr << "[host_io] H2DSocket creation failed: " << e.what() << std::endl;
             throw;
         } catch (...) {
-            std::cerr << "[host_io] H2DSocket creation failed with unknown exception" << std::endl;
             throw;
         }
-        std::cout << "[host_io] H2DSocket done" << std::endl;
 
-        std::cout << "[host_io] creating D2HSocket..." << std::endl;
         try {
             d2h_socket_ = std::make_unique<tt::tt_metal::distributed::D2HSocket>(
                 mesh_device_, socket_core, kFifoSize);
             d2h_socket_->set_page_size(Sequence::page_size());
         } catch (const std::exception& e) {
-            std::cerr << "[host_io] D2HSocket creation failed: " << e.what() << std::endl;
             throw;
         } catch (...) {
-            std::cerr << "[host_io] D2HSocket creation failed with unknown exception" << std::endl;
             throw;
         }
-        std::cout << "[host_io] D2HSocket done" << std::endl;
 
-        std::cout << "[host_io] running loopback kernel..." << std::endl;
         host_io_ = std::make_unique<HostInterface>();
         host_io_->run(h2d_socket_.get(), d2h_socket_.get(), mesh_device_.get(), kNumIterationsStreaming);
-        std::cout << "[host_io] running loopback kernel done" << std::endl;
 
-        std::cout << "[host_io] starting reader thread..." << std::endl;
         reader_thread_ = std::thread([this] { reader_loop(); });
-        std::cout << "[host_io] ModelRunnerStub ready" << std::endl;
       }
 
 ModelRunnerStub::~ModelRunnerStub() {
@@ -94,24 +78,18 @@ ModelRunnerStub::~ModelRunnerStub() {
 }
 
 void ModelRunnerStub::reader_loop() {
-  std::cout << "[host_io] reader_loop started" << std::endl;
   try {
     std::vector<char> output(Sequence::page_size(), 0);
     while (!stop_.load(std::memory_order_relaxed)) {
-      std::cerr << "[host_io] reading from d2h_socket" << std::endl;
       d2h_socket_->read(output.data(), 1);
       SequenceID seq_id = SequenceID::deserialize(output.data(), SequenceID::kSerializedSize);
-      std::cerr << "[host_io] reading from d2h_socket done ID=" << seq_id << std::endl;
       int64_t last_token;
       std::memcpy(&last_token, output.data() + SequenceID::kSerializedSize, sizeof(last_token));
       decode_callback_(DecodeResult{seq_id, last_token});
     }
   } catch (const std::exception& e) {
-    std::cerr << "[host_io] reader_loop failed: " << e.what() << std::endl;
   } catch (...) {
-    std::cerr << "[host_io] reader_loop failed with unknown exception" << std::endl;
-  }
-  std::cout << "[host_io] reader_loop exiting" << std::endl;
+  } 
 }
 
 void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
@@ -124,9 +102,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->seq_id, seq->last_token + 1});
     }
   } else {
-    std::cerr << "[host_io] writing to h2d_socket ID=" << seqs[0]->seq_id << std::endl;
     h2d_socket_->write(seqs[0]->to_h2d_input().data(), 1);
-    std::cerr << "[host_io] writing to h2d_socket done" << std::endl;
   }
 }
 

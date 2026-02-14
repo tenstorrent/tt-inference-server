@@ -52,7 +52,6 @@ void HostInterface::run(
 
     auto program = tt::tt_metal::CreateProgram();
 
-    std::cout << "[host_interface] CreateKernel pcie_socket_loopback..." << std::endl;
     tt::tt_metal::CreateKernel(
         program,
         kLoopbackKernelPath,
@@ -68,7 +67,6 @@ void HostInterface::run(
                 num_iterations,
                 static_cast<uint32_t>(pull_from_host),
             }});
-    std::cout << "[host_interface] CreateKernel done" << std::endl;
 
     const auto device_coord = mesh_core_coord.device_coord;
     tt::tt_metal::distributed::MeshCoordinate mesh_coord{device_coord[0], device_coord[1]};
@@ -76,10 +74,8 @@ void HostInterface::run(
     mesh_workload.add_program(
         tt::tt_metal::distributed::MeshCoordinateRange{mesh_coord}, std::move(program));
 
-    std::cout << "[host_interface] EnqueueMeshWorkload..." << std::endl;
     tt::tt_metal::distributed::EnqueueMeshWorkload(
         mesh_device->mesh_command_queue(), mesh_workload, false);
-    std::cout << "[host_interface] EnqueueMeshWorkload done" << std::endl;
 }
 
 void HostInterface::terminate() {
@@ -87,9 +83,7 @@ void HostInterface::terminate() {
 
     if (mesh_device_) {
         auto* dev = static_cast<tt::tt_metal::distributed::MeshDevice*>(mesh_device_);
-        std::cout << "[host_interface] Finish..." << std::endl;
         tt::tt_metal::distributed::Finish(dev->mesh_command_queue());
-        std::cout << "[host_interface] Finish done" << std::endl;
     }
     mesh_device_ = nullptr;
     initialized_ = false;

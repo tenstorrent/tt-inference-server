@@ -60,15 +60,9 @@ void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
     if (!seq) {
-      std::cerr << "[llm_engine] drain: seq_id=" << dr.seq_id
-                << " (len=" << dr.seq_id.id.size() << ")"
-                << " not found, skipping" << std::endl;
       continue;
     }
     if (seq->status_ != SequenceStatus::IN_FLIGHT) {
-      std::cerr << "[llm_engine] drain: seq_id=" << dr.seq_id
-                << " unexpected status=" << static_cast<int>(seq->status_)
-                << ", skipping" << std::endl;
       continue;
     }
 
@@ -78,10 +72,6 @@ void LLMEngine::drain_decode_results() {
 
     bool finished = (scheduler_->find_sequence(dr.seq_id) == nullptr);
     on_token_(dr.seq_id, dr.token_id, finished);
-
-    if (finished) {
-      std::cerr << "[llm_engine] finished seq_id=" << dr.seq_id << std::endl;
-    }
   }
 }
 
