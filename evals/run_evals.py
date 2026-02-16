@@ -469,6 +469,28 @@ def main():
                 cli_args.get("service_port"),
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
+
+            # Retry once if the task failed
+            if return_code != 0:
+                logger.warning(
+                    f"Task {task.task_name} failed with return code {return_code}. "
+                    f"Waiting for server to recover before retrying..."
+                )
+                if prompt_client.wait_for_healthy(timeout=300):
+                    logger.info(f"Server recovered. Retrying task {task.task_name} ...")
+                    return_code = run_command(command=cmd, logger=logger, env=env_vars)
+                    if return_code != 0:
+                        logger.error(
+                            f"Task {task.task_name} failed again with return code {return_code} after retry."
+                        )
+                    else:
+                        logger.info(f"Task {task.task_name} succeeded on retry.")
+                else:
+                    logger.error(
+                        f"Server did not recover within timeout. "
+                        f"Skipping retry for task {task.task_name}."
+                    )
+
             return_codes.append(return_code)
 
         if all(return_code == 0 for return_code in return_codes):
