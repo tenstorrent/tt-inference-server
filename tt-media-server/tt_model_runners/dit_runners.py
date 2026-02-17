@@ -105,7 +105,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
-        # we use model construct to create the request without validation
+        # we use model_construct to create the request without validation
+        # (warmup uses 2 inference steps which is below the normal minimum)
         if self.settings.model_service == ModelServices.IMAGE.value:
             self.run(
                 [
@@ -114,7 +115,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
             self.run(
@@ -124,7 +125,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
             )
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
