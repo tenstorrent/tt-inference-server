@@ -1593,6 +1593,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 52000000,
+                },
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto",
                 },
