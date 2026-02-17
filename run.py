@@ -209,6 +209,17 @@ def parse_arguments():
         action="store_true",
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
+    parser.add_argument(
+        "--hang-detection",
+        action="store_true",
+        help="Enable hang detection: automatically runs tt-triage on dispatch timeout",
+    )
+    parser.add_argument(
+        "--hang-detection-timeout",
+        type=float,
+        default=30.0,
+        help="Hang detection timeout in seconds (default: 30.0)",
+    )
 
     args = parser.parse_args()
 

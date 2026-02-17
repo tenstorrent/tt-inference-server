@@ -209,16 +209,26 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # CNN, IMAGE, and TTS models all use base environment variables only
         docker_env_vars.update(get_base_docker_env_vars(model_spec, args))
 
-    # Forward hang detection environment variables from host to container (opt-in)
-    hang_detection_env_vars = [
-        "TT_METAL_OPERATION_TIMEOUT_SECONDS",
-        "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE",
-    ]
-    for env_var in hang_detection_env_vars:
-        env_value = os.getenv(env_var)
-        if env_value:
-            docker_env_vars[env_var] = env_value
-            logger.info(f"Forwarding hang detection env var: {env_var}={env_value}")
+    # Hang detection: set container env vars from CLI flag or host env vars
+    if getattr(args, "hang_detection", False):
+        timeout = getattr(args, "hang_detection_timeout", 30.0)
+        docker_env_vars["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = str(timeout)
+        docker_env_vars["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = (
+            "/home/container_app_user/tt-metal/python_env/bin/python3"
+            " /home/container_app_user/tt-metal/tools/tt-triage.py"
+            " --disable-progress 1>&2"
+        )
+        logger.info(f"Hang detection enabled: timeout={timeout}s")
+    else:
+        # Fallback: forward host env vars if set (Solution A compatibility)
+        for env_var in [
+            "TT_METAL_OPERATION_TIMEOUT_SECONDS",
+            "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE",
+        ]:
+            env_value = os.getenv(env_var)
+            if env_value:
+                docker_env_vars[env_var] = env_value
+                logger.info(f"Forwarding hang detection env var: {env_var}={env_value}")
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
