@@ -1222,7 +1222,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="0a1e750",
+        tt_metal_commit="ecc3ca4",
         vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1547,7 +1547,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="0a1e750",
+        tt_metal_commit="ecc3ca4",
         vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1584,7 +1584,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="0a1e750",
+        tt_metal_commit="ecc3ca4",
         vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1766,7 +1766,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="0a1e750",
+        tt_metal_commit="ecc3ca4",
         vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1797,7 +1797,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="0a1e750",
+        tt_metal_commit="ecc3ca4",
         vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
