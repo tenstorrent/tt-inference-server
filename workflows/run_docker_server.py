@@ -148,6 +148,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     if getattr(args, "hang_detection", False):
         timeout = getattr(args, "hang_detection_timeout", 30.0)
         docker_env_vars["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = str(timeout)
+        docker_env_vars["TT_METAL_LOGS_PATH"] = str(setup_config.container_tt_metal_logs_dir)
         docker_env_vars["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = (
             "/home/container_app_user/tt-metal/python_env/bin/python3"
             " /home/container_app_user/tt-metal/tools/tt-triage.py"
@@ -164,6 +165,10 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             if env_value:
                 docker_env_vars[env_var] = env_value
                 logger.info(f"Forwarding hang detection env var: {env_var}={env_value}")
+        # Always ensure TT_METAL_LOGS_PATH is set for hang detection
+        if "TT_METAL_OPERATION_TIMEOUT_SECONDS" in docker_env_vars or "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" in docker_env_vars:
+            if "TT_METAL_LOGS_PATH" not in docker_env_vars:
+                docker_env_vars["TT_METAL_LOGS_PATH"] = str(setup_config.container_tt_metal_logs_dir)
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
