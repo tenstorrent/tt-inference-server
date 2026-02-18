@@ -13,10 +13,9 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
+#include "utils/concurrent_map.hpp"
 #include <vector>
 
 namespace tt::services {
@@ -61,21 +60,16 @@ public:
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
 
-    void process_request(
-        domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&)> chunk_callback,
-        std::function<void()> done_callback
-    ) override;
 
 protected:
-    void pre_process(domain::CompletionRequest& request) override;
+    void pre_process(domain::CompletionRequest& request) const override;
+    void post_process(domain::CompletionRequest& request) const override;
 
+    void process_request(
+        domain::CompletionRequest request,
+        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+    ) override;
 private:
-    struct ProcessTask {
-        domain::CompletionRequest request;
-        std::string task_id;
-    };
-
     void start_workers();
     void start_consumers();
 
@@ -83,21 +77,12 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    void dispatch_task(ProcessTask task);
-
-    void submit_request(
-        domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
-    );
-
     std::vector<std::unique_ptr<worker::BaseWorker>> workers_;
     size_t num_workers_;
 
     std::vector<std::thread> consumer_threads_;
 
-    mutable std::mutex callbacks_mutex_;
-    std::unordered_map<std::string,
-        std::function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
+    ConcurrentMap<std::string, std::function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
 
     std::atomic<uint64_t> next_worker_{0};
 

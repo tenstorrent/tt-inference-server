@@ -19,7 +19,7 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const Config& config, std::shared_ptr<ITaskQueue> task_queue);
+  explicit Scheduler(const Config& config, ITaskQueue* task_queue);
 
   /** @return true if there are no waiting, running, or in-flight sequences. */
   bool is_finished() const;
@@ -31,8 +31,8 @@ class Scheduler {
   /** Enqueues an externally-owned sequence for prefill (waiting queue). */
   void add(Sequence& seq);
 
-  /** Looks up a sequence by seq_id. Returns nullptr if not found. */
-  Sequence* find_sequence(SequenceID seq_id);
+  /** Looks up a sequence by task_id. Returns nullptr if not found. */
+  Sequence* find_sequence(TaskID task_id);
 
   /**
    * Produces the next batch to run.
@@ -61,8 +61,8 @@ class Scheduler {
   int max_num_batched_tokens_;
   int eos_;
   BlockManager block_manager_;
-  std::shared_ptr<ITaskQueue> waiting_;
-  std::unordered_map<SequenceID, std::unique_ptr<Sequence>> sequences_;
+  ITaskQueue* waiting_;
+  std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> running_;
   int in_flight_count_ = 0;
 };

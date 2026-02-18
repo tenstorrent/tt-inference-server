@@ -13,7 +13,7 @@
 #include <iostream>
 #include <mutex>
 
-#include "utils/service_fabric.hpp"
+#include "utils/service_factory.hpp"
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
@@ -26,7 +26,7 @@ LLMController::LLMController() {
     }
 
     service_ = std::dynamic_pointer_cast<services::LLMService>(
-        tt::utils::service_fabric::get_service("llm")
+        tt::utils::service_factory::get_service("llm")
     );
     if (!service_) {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
@@ -63,7 +63,7 @@ Json::Value LLMController::error_json(const std::string& message, const std::str
 
 void LLMController::completions(
     const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     auto json = req->getJsonObject();
     if (!json) {
@@ -107,7 +107,7 @@ void LLMController::completions(
 
 void LLMController::chat_completions(
     const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     auto json = req->getJsonObject();
     if (!json) {
@@ -161,8 +161,8 @@ void LLMController::chat_completions(
 }
 
 void LLMController::handle_streaming(
-    domain::CompletionRequest request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    const domain::CompletionRequest& request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     const std::string completion_id = "cmpl-" + request.task_id;
     const std::string model = request.model.value_or("default");
@@ -178,38 +178,37 @@ void LLMController::handle_streaming(
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
 
-            service_->process_request(
+            service_->submit_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created](
-                    const domain::StreamingChunkResponse& chunk) {
-                    if (done->load() || !*stream_ptr || chunk.choices.empty()) {
+                    const domain::StreamingChunkResponse& chunk, bool is_final) {
+                    if (done->load() || !*stream_ptr) {
                         return;
                     }
-                    // Skip final empty-text chunk (client counts content tokens only)
-                    if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
-                        return;
-                    }
-
-                    // Build properly-formatted response using domain type
-                    domain::StreamingChunkResponse out;
-                    out.id = completion_id;
-                    out.object = "text_completion";
-                    out.model = model;
-                    out.created = created;
-                    out.choices = chunk.choices;
-                    std::string sse = out.toSSE();
-
-                    loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                        if (*stream_ptr) (*stream_ptr)->send(sse);
-                    });
-                },
-                [loop, stream_ptr, done]() {
-                    loop->queueInLoop([stream_ptr, done]() {
-                        if (!done->exchange(true) && *stream_ptr) {
-                            (*stream_ptr)->send("data: [DONE]\n\n");
-                            (*stream_ptr)->close();
+                    if (!chunk.choices.empty()) {
+                        // Skip final empty-text chunk (client counts content tokens only)
+                        if (!chunk.choices[0].text.empty() ||
+                            !chunk.choices[0].finish_reason.has_value()) {
+                            domain::StreamingChunkResponse out;
+                            out.id = completion_id;
+                            out.object = "text_completion";
+                            out.model = model;
+                            out.created = created;
+                            out.choices = chunk.choices;
+                            std::string sse = out.toSSE();
+                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                                if (*stream_ptr) (*stream_ptr)->send(sse);
+                            });
                         }
-                    });
+                    }
+                    if (is_final) {
+                        loop->queueInLoop([stream_ptr, done]() {
+                            if (!done->exchange(true) && *stream_ptr) {
+                                (*stream_ptr)->send("data: [DONE]\n\n");
+                                (*stream_ptr)->close();
+                            }
+                        });
+                    }
                 });
         });
 
@@ -222,8 +221,8 @@ void LLMController::handle_streaming(
 }
 
 void LLMController::handle_chat_streaming(
-    domain::CompletionRequest request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    const domain::CompletionRequest& request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     const int64_t created = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
@@ -257,48 +256,45 @@ void LLMController::handle_chat_streaming(
                 if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
             }
 
-            service_->process_request(
+            service_->submit_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
-                 completion_tokens, continuous_usage](
-                    const domain::StreamingChunkResponse& chunk) {
-                    if (done->load() || !*stream_ptr || chunk.choices.empty()) {
+                 completion_tokens, continuous_usage, include_usage](
+                    const domain::StreamingChunkResponse& chunk, bool is_final) {
+                    if (done->load() || !*stream_ptr) {
                         return;
                     }
-                    completion_tokens->fetch_add(1);
-
-                    std::optional<domain::CompletionUsage> usage;
-                    if (continuous_usage) {
-                        int tokens = completion_tokens->load();
-                        usage = domain::CompletionUsage{0, tokens, tokens};
-                    }
-
-                    auto chat_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-                        completion_id, model, created, chunk.choices[0], usage);
-
-                    std::string sse = chat_chunk.toSSE();
-                    loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                        if (*stream_ptr) (*stream_ptr)->send(sse);
-                    });
-                },
-                [loop, stream_ptr, done, include_usage,
-                 completion_id, model, created, completion_tokens]() {
-                    loop->queueInLoop(
-                        [stream_ptr, done, include_usage,
-                         completion_id, model, created, completion_tokens]() {
-                        if (!done->exchange(true) && *stream_ptr) {
-                            if (include_usage) {
-                                int tokens = completion_tokens->load();
-                                domain::CompletionUsage usage{0, tokens, tokens};
-                                auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                    completion_id, model, created, usage);
-                                (*stream_ptr)->send(usage_chunk.toSSE());
-                            }
-
-                            (*stream_ptr)->send("data: [DONE]\n\n");
-                            (*stream_ptr)->close();
+                    if (!chunk.choices.empty()) {
+                        completion_tokens->fetch_add(1);
+                        std::optional<domain::CompletionUsage> usage;
+                        if (continuous_usage) {
+                            int tokens = completion_tokens->load();
+                            usage = domain::CompletionUsage{0, tokens, tokens};
                         }
-                    });
+                        auto chat_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+                            completion_id, model, created, chunk.choices[0], usage);
+                        std::string sse = chat_chunk.toSSE();
+                        loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                            if (*stream_ptr) (*stream_ptr)->send(sse);
+                        });
+                    }
+                    if (is_final) {
+                        loop->queueInLoop(
+                            [stream_ptr, done, include_usage,
+                             completion_id, model, created, completion_tokens]() {
+                                if (!done->exchange(true) && *stream_ptr) {
+                                    if (include_usage) {
+                                        int tokens = completion_tokens->load();
+                                        domain::CompletionUsage usage{0, tokens, tokens};
+                                        auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                            completion_id, model, created, usage);
+                                        (*stream_ptr)->send(usage_chunk.toSSE());
+                                    }
+                                    (*stream_ptr)->send("data: [DONE]\n\n");
+                                    (*stream_ptr)->close();
+                                }
+                            });
+                    }
                 });
         });
 
@@ -312,7 +308,7 @@ void LLMController::handle_chat_streaming(
 
 void LLMController::health(
     const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     Json::Value response;
     response["status"] = "healthy";
@@ -328,7 +324,7 @@ void LLMController::health(
 
 void LLMController::ready(
     const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
     auto status = service_->get_system_status();
 

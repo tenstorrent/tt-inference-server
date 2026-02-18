@@ -3,6 +3,7 @@
 
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
+#include "domain/completion_request.hpp"
 #include "worker/llm_worker.hpp"
 
 #include <chrono>
@@ -10,7 +11,6 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "utils/tokenizer.hpp"
@@ -39,7 +39,7 @@ void LLMService::start() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     is_ready_ = true;
-    std::cout << "[LLMService] All workers started\n" << std::flush;
+    std::cout << "[LLMService] Service started\n" << std::flush;
 }
 
 bool LLMService::is_model_ready() const {
@@ -63,7 +63,7 @@ LLMService::SystemStatus LLMService::get_system_status() const {
     return status;
 }
 
-void LLMService::pre_process(domain::CompletionRequest& request) {
+void LLMService::pre_process(domain::CompletionRequest& request) const {
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
         request.prompt = tt::utils::Tokenizer::instance(tt::config::tokenizer_path()).encode(text);
@@ -200,35 +200,30 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         while (worker->result_queue->pop(token)) {
             any_activity = true;
 
-            std::function<void(const domain::StreamingChunkResponse&, bool)> callback;
-            {
-                std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                auto it = stream_callbacks_.find(token.task_id);
-                if (it != stream_callbacks_.end()) {
-                    callback = it->second;
-                    if (token.is_final()) {
-                        stream_callbacks_.erase(it);
-                    }
-                }
+            auto val = stream_callbacks_.get(token.task_id);
+            if (!val.has_value()) {
+                throw std::runtime_error("callback not found for task_id: " + std::string(token.task_id));
+            }
+            auto callback = val.value();
+            if (token.is_final()) {
+                stream_callbacks_.erase(token.task_id);
             }
 
-            if (callback) {
-                domain::StreamingChunkResponse response;
-                response.id = std::string(token.task_id);
-                response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now().time_since_epoch()
-                ).count();
+            domain::StreamingChunkResponse response;
+            response.id = std::string(token.task_id);
+            response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
 
-                domain::CompletionChoice choice;
-                choice.text = tt::utils::Tokenizer::instance(tt::config::tokenizer_path()).decode({static_cast<int>(token.token_id)});
-                choice.index = token.token_index;
-                if (token.is_final()) {
-                    choice.finish_reason = "stop";
-                }
-                response.choices.push_back(std::move(choice));
-
-                callback(response, token.is_final());
+            domain::CompletionChoice choice;
+            choice.text = tt::utils::Tokenizer::instance(tt::config::tokenizer_path()).decode({static_cast<int>(token.token_id)});
+            choice.index = token.token_index;
+            if (token.is_final()) {
+                choice.finish_reason = "stop";
             }
+            response.choices.push_back(std::move(choice));
+
+            callback(response, token.is_final());
         }
 
         if (!any_activity) {
@@ -239,19 +234,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     std::cout << "[Consumer-" << worker_idx << "] Stopped\n" << std::flush;
 }
 
-void LLMService::dispatch_task(ProcessTask task) {
-    auto prompt = std::get<std::vector<int>>(task.request.prompt);
-    std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
-    auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
-    sequence->seq_id.id = task.task_id;
-    sequence->num_prompt_tokens_ = prompt.size();
-    sequence->temperature = task.request.temperature.value_or(1.0f);
-    sequence->max_tokens = task.request.max_tokens;
-    sequence->ignore_eos = task.request.ignore_eos;
-    queue_manager_->task_queue->push(*std::move(sequence));
-}
-
-void LLMService::submit_request(
+void LLMService::process_request(
     domain::CompletionRequest request,
     std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
 
@@ -262,41 +245,27 @@ void LLMService::submit_request(
 
     pending_tasks_.fetch_add(1);
 
-    {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
-        stream_callbacks_[task_id] = [this, cb = std::move(callback)](
-            const domain::StreamingChunkResponse& chunk, bool is_final) {
-            cb(chunk, is_final);
-            if (is_final) {
-                pending_tasks_.fetch_sub(1);
-            }
-        };
-    }
+    stream_callbacks_.insert(task_id, [this, cb = std::move(callback)](
+        const domain::StreamingChunkResponse& chunk, bool is_final) {
+        cb(chunk, is_final);
+        if (is_final) {
+            pending_tasks_.fetch_sub(1);
+        }
+    });
 
-    ProcessTask task;
-    task.request = std::move(request);
-    task.task_id = task_id;
-
-    dispatch_task(std::move(task));
+    auto prompt = std::get<std::vector<int>>(request.prompt);
+    std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
+    auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
+    sequence->task_id.id = task_id;
+    sequence->num_prompt_tokens_ = prompt.size();
+    sequence->temperature = request.temperature.value_or(1.0f);
+    sequence->max_tokens = request.max_tokens;
+    sequence->ignore_eos = request.ignore_eos;
+    queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::process_request(
-    domain::CompletionRequest request,
-    std::function<void(const domain::StreamingChunkResponse&)> chunk_callback,
-    std::function<void()> done_callback) {
-
-    pre_process(request);
-
-    submit_request(
-        std::move(request),
-        [chunk_callback = std::move(chunk_callback), done_callback = std::move(done_callback)](
-            const domain::StreamingChunkResponse& chunk, bool is_final) {
-            chunk_callback(chunk);
-            if (is_final) {
-                done_callback();
-            }
-        }
-    );
+void LLMService::post_process(domain::CompletionRequest&) const {
+    return; // no-op
 }
 
 }

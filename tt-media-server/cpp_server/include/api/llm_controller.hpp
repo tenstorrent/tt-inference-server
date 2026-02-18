@@ -32,7 +32,7 @@ public:
      */
     void completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 
     /**
@@ -41,7 +41,7 @@ public:
      */
     void chat_completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /health
@@ -49,7 +49,7 @@ public:
      */
     void health(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /ready
@@ -57,7 +57,7 @@ public:
      */
     void ready(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 private:
     std::shared_ptr<services::LLMService> service_;
@@ -66,15 +66,15 @@ private:
      * Handle streaming text completion request (SSE).
      */
     void handle_streaming(
-        domain::CompletionRequest request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        const domain::CompletionRequest& request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * Handle streaming chat completion request (SSE).
      */
     void handle_chat_streaming(
-        domain::CompletionRequest request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        const domain::CompletionRequest& request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * Generate a unique completion ID (hex string).

@@ -57,18 +57,26 @@ public:
     };
 
     virtual SystemStatus get_system_status() const = 0;
-
-    virtual void process_request(
+    
+    void submit_request(
         domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&)> chunk_callback,
-        std::function<void()> done_callback
-    ) = 0;
+        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+    ) {
+        pre_process(request);
+        process_request(request, callback);
+        post_process(request);
+    }
+
 
 protected:
-    /**
-     * Pre-process request before dispatching (e.g. tokenize string prompt).
-     */
-    virtual void pre_process(domain::CompletionRequest& request) = 0;
+    virtual void process_request(
+        domain::CompletionRequest request,
+        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+    ) = 0;
+
+    virtual void pre_process(domain::CompletionRequest& request) const = 0;
+
+    virtual void post_process(domain::CompletionRequest& request) const = 0;
 };
 
 } // namespace tt::services

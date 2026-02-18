@@ -1,18 +1,17 @@
 #include "llm_engine/engine/scheduler.hpp"
 #include "llm_engine/engine/debug.hpp"
 
-#include <algorithm>
 #include <cassert>
 
 
 namespace llm_engine {
 
-Scheduler::Scheduler(const Config& config, std::shared_ptr<ITaskQueue> task_queue)
+Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
     : max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       eos_(config.eos),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      waiting_(std::move(task_queue)) {}
+      waiting_(task_queue) {}
 
 bool Scheduler::is_finished() const {
   return waiting_->empty() && running_.empty() && in_flight_count_ == 0;
@@ -22,19 +21,19 @@ Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(prompt), params);
   Sequence& ref = *seq;
-  auto id = seq->seq_id;
+  auto id = seq->task_id;
   add(ref);
   sequences_[id] = std::move(seq);
   return *sequences_[id].get();
 }
 
 void Scheduler::add(Sequence& seq) {
-  LLM_ENGINE_LOG("scheduler") << "add seq_id=" << seq.seq_id << " len=" << seq.size() << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "add task_id=" << seq.task_id << " len=" << seq.size() << std::endl;
   waiting_->push(seq);
 }
 
-Sequence* Scheduler::find_sequence(SequenceID seq_id) {
-  auto it = sequences_.find(seq_id);
+Sequence* Scheduler::find_sequence(TaskID task_id) {
+  auto it = sequences_.find(task_id);
   return it != sequences_.end() ? it->second.get() : nullptr;
 }
 
@@ -65,7 +64,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
         static_cast<int>(seq->size() - seq->num_cached_tokens_);
     seq->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
-    auto id = seq->seq_id;
+    auto id = seq->task_id;
     sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
     scheduled_seqs.push_back(sequences_[id].get());
     delete seq;
@@ -103,14 +102,14 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
-                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? "none" : scheduled_seqs[0]->seq_id.id)
+                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? "none" : scheduled_seqs[0]->task_id.id)
                              << " in_flight=" << in_flight_count_ << std::endl;
 
   return {scheduled_seqs, false};
 }
 
 void Scheduler::preempt(Sequence& seq) {
-  LLM_ENGINE_LOG("scheduler") << "preempt seq_id=" << seq.seq_id << std::endl;
+  LLM_ENGINE_LOG("scheduler") << "preempt task_id=" << seq.task_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   waiting_->push(seq);
@@ -130,13 +129,13 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
         seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens);
 
     if (finished) {
-      LLM_ENGINE_LOG("scheduler") << "postprocess seq_id=" << seq->seq_id << " finished"
+      LLM_ENGINE_LOG("scheduler") << "postprocess task_id=" << seq->task_id << " finished"
           << " (eos=" << (token_id == eos_) << " max_tokens="
           << (seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;
-      sequences_.erase(seq->seq_id);
+      sequences_.erase(seq->task_id);
     } else {
       seq->status_ = SequenceStatus::RUNNING;
       running_.push_back(seq);

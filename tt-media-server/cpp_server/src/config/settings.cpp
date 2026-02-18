@@ -96,9 +96,6 @@ std::string python_path() {
     return env_string("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
 }
 
-RunnerType runner_type() {
-    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
-}
 
 static std::filesystem::path tokenizers_dir() {
     std::error_code ec;
@@ -135,7 +132,7 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
-    return defaults::DEFAULT_LLM_ENGINE_CONFIG;
+    return llm_engine::Config();
 }
 
 }  // namespace tt::config

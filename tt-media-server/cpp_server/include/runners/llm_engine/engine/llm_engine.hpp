@@ -12,7 +12,7 @@
 namespace llm_engine {
 
 using TokenCallback =
-    std::function<void(SequenceID seq_id, int64_t token_id, bool finished)>;
+    std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
 class LLMEngine {
  public:

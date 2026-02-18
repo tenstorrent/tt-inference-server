@@ -48,9 +48,9 @@ int main() {
 
 
   std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());
-  seq1.seq_id.id = seq1_id;
+  seq1.task_id.id = seq1_id;
   std::string seq2_id = boost::uuids::to_string(boost::uuids::random_generator()());
-  seq2.seq_id.id = seq2_id;
+  seq2.task_id.id = seq2_id;
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {
@@ -59,9 +59,9 @@ int main() {
     producer.push(seq2);
   }
 
-  std::cout << "[parent] pushed seq_id=" << seq1_id
+  std::cout << "[parent] pushed task_id=" << seq1_id
             << " tokens=[1,2,3,4] max_tokens=10\n";
-  std::cout << "[parent] pushed seq_id=" << seq2_id
+  std::cout << "[parent] pushed task_id=" << seq2_id
             << " tokens=[10,20,30] max_tokens=5 temperature=0.7\n";
 
   // --- Fork ---
@@ -81,7 +81,7 @@ int main() {
     config.eos = 0;
 
     auto queue = std::make_unique<BoostIpcTaskQueue>(QUEUE_NAME);
-    Scheduler sched(config, std::move(queue));
+    Scheduler sched(config, queue.get());
 
     auto [batch, is_prefill] = sched.schedule();
 
@@ -89,7 +89,7 @@ int main() {
               << " sequences, is_prefill=" << is_prefill << "\n";
 
     for (auto* s : batch) {
-      std::cout << "[child]    seq_id=" << s->seq_id
+      std::cout << "[child]    task_id=" << s->task_id
                 << " size=" << s->size()
                 << " max_tokens=" << s->max_tokens
                 << " temperature=" << s->temperature
@@ -112,7 +112,7 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->seq_id.id != seq1_id) fail("seq1 seq_id mismatch");
+      if (batch[0]->task_id.id != seq1_id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
       if (batch[0]->max_tokens != 10) fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 ||

@@ -8,7 +8,7 @@
 
 #include "services/base_service.hpp"
 
-namespace tt::utils::service_fabric {
+namespace tt::utils::service_factory {
 
 /**
  * Create and start all services determined by the current configuration.
@@ -23,4 +23,4 @@ void register_services();
  */
 std::shared_ptr<services::BaseService> get_service(const std::string& name);
 
-} // namespace tt::utils::service_fabric
+} // namespace tt::utils::service_factory

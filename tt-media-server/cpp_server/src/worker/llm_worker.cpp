@@ -3,7 +3,7 @@
 namespace tt::worker {
 
 LLMWorker::LLMWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config): BaseWorker(cfg), llm_engine_config_(llm_engine_config) {
-    on_token_ = [this](llm_engine::SequenceID seq_id, uint64_t token_id, bool finished) {
+    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished) {
             auto token = ipc::SharedToken{
                 .token_index = 0,
                 .flags = static_cast<uint32_t>(finished ? 1 : 0),
@@ -11,7 +11,7 @@ LLMWorker::LLMWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_con
                 .task_id = {},
                 .padding = {},
             };
-            std::strncpy(token.task_id, seq_id.id.c_str(), sizeof(token.task_id) - 1);
+            std::strncpy(token.task_id, task_id.id.c_str(), sizeof(token.task_id) - 1);
             token.task_id[sizeof(token.task_id) - 1] = '\0';
             result_queue->push(token);
         };
@@ -28,7 +28,7 @@ void LLMWorker::start() {
     }
 
     auto scheduler = std::make_unique<llm_engine::Scheduler>(
-        llm_engine_config_, cfg_.task_queue
+        llm_engine_config_, cfg_.task_queue.get()
     );
     llm_engine_ = std::make_unique<llm_engine::LLMEngine>(
         llm_engine_config_,
