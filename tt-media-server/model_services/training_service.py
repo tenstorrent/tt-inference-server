@@ -23,6 +23,7 @@ class TrainingService(BaseJobService):
 
         request._start_event = self._manager.Event()
         request._cancel_event = self._manager.Event()
+        request._training_metrics_queue = self._manager.Queue()
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -33,4 +34,23 @@ class TrainingService(BaseJobService):
             result_path=request._output_model_path,
             start_event=request._start_event,
             cancel_event=request._cancel_event,
+            training_metrics_queue=request._training_metrics_queue,
         )
+    
+    async def stream_job_metrics(self, job_id: str):
+        metrics_queue = self._job_manager.get_job_metrics_queue(job_id)
+        if not metrics_queue:
+            return
+
+        while True:
+            try:
+                metric = await asyncio.get_event_loop().run_in_executor(
+                    None, metrics_queue.get, True, 1.0
+                )
+                if metric is None:  # sentinel
+                    return
+                yield metric
+            except queue.Empty:
+                job_data = self._job_manager.get_job_metadata(job_id)
+                if job_data and job_data["status"] in ("completed", "failed", "cancelled"):
+                    return

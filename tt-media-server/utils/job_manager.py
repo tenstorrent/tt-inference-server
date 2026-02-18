@@ -10,7 +10,7 @@ from enum import Enum
 from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
-from multiprocessing import Event
+from multiprocessing import Event, Queue
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -43,7 +43,8 @@ class Job:
     _cancel_event: Optional[Event] = (
         None  # multiprocessing.Event for cooperative cancellation
     )
-
+    _training_metrics_queue: Optional[Queue] = None
+    
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
@@ -128,6 +129,7 @@ class JobManager:
         result_path: Optional[str] = None,
         start_event: Optional[Event] = None,
         cancel_event: Optional[Event] = None,
+        training_metrics_queue: Optional[Queue] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -146,7 +148,9 @@ class JobManager:
                 job._start_event = start_event
             if cancel_event:
                 job._cancel_event = cancel_event
-
+            if training_metrics_queue:
+                job._training_metrics_queue = training_metrics_queue
+            
             if self.db:
                 try:
                     self.db.insert_job(
@@ -200,6 +204,13 @@ class JobManager:
                 else:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
+    
+    def get_training_metrics_queue(self, job_id: str):
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job._training_metrics_queue
+        return None
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""

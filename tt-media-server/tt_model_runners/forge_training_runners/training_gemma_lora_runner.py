@@ -4,6 +4,7 @@
 
 import os
 import traceback
+import time
 
 from transformers import AutoModelForCausalLM
 import torch
@@ -187,6 +188,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Step {global_step} | train/loss: {avg_loss:.4f}"
                         )
+                        # send training metrics to the queue
+                        if request._training_metrics_queue:
+                            request._training_metrics_queue.put({
+                                "step": global_step,
+                                "epoch": epoch,
+                                "train_loss": round(avg_loss, 4),
+                                "timestamp": time.time(),
+                            })
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
@@ -205,6 +214,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
+                        # send validation metrics to the queue
+                        if request._training_metrics_queue:
+                            request._training_metrics_queue.put({
+                                "step": global_step,
+                                "epoch": epoch,
+                                "val_loss": round(avg_val_loss, 4),
+                                "timestamp": time.time(),
+                            })
                         self.model.train()
 
                     global_step += 1
