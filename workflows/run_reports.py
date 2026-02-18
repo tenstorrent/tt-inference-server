@@ -1620,6 +1620,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
@@ -1670,6 +1671,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_cnn_md = get_markdown_table(vllm_cnn_display)
             cnn_sections.append(
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
         if vllm_video:

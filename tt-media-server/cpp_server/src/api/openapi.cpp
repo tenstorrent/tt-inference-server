@@ -19,7 +19,7 @@ public:
     METHOD_LIST_END
 
     void getOpenAPISpec(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         auto spec = buildOpenAPISpec();
@@ -29,7 +29,7 @@ public:
     }
 
     void getSwaggerUI(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         std::string html = R"html(

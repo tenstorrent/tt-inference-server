@@ -16,7 +16,7 @@ using TokenCallback =
 
 class LLMEngine {
  public:
-  LLMEngine(const Config& config, TokenCallback on_token);
+  LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler);
   ~LLMEngine();
 
   Scheduler& scheduler() { return *scheduler_; }

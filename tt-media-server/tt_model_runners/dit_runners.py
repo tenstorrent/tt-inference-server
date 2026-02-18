@@ -38,8 +38,8 @@ dit_runner_log_map = {
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.pipeline = None
 
     def _configure_fabric(self, updated_device_params):
@@ -105,7 +105,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
-        # we use model construct to create the request without validation
+        # we use model_construct to create the request without validation
+        # (warmup uses 2 inference steps which is below the normal minimum)
         if self.settings.model_service == ModelServices.IMAGE.value:
             self.run(
                 [
@@ -114,7 +115,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
             self.run(
@@ -124,7 +125,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                         negative_prompt="",
                         num_inference_steps=2,
                     )
-                ]
+                ],
             )
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
@@ -150,8 +151,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
 
 class TTSD35Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return StableDiffusion3Pipeline.create_pipeline(
@@ -165,8 +166,8 @@ class TTSD35Runner(TTDiTRunner):
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return Flux1Pipeline.create_pipeline(
@@ -179,8 +180,8 @@ class TTFlux1Runner(TTDiTRunner):
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return MotifPipeline.create_pipeline(
@@ -194,8 +195,8 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
 class TTQwenImageRunner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return QwenImagePipeline.create_pipeline(
@@ -208,8 +209,8 @@ class TTQwenImageRunner(TTDiTRunner):
 
 
 class TTMochi1Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         # setup environment for Mochi runner
         os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
@@ -242,8 +243,8 @@ class TTMochi1Runner(TTDiTRunner):
 
 
 class TTWan22Runner(TTDiTRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def create_pipeline(self):
         return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)

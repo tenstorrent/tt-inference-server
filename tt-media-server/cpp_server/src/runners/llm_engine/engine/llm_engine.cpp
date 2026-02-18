@@ -4,14 +4,13 @@
 
 namespace llm_engine {
 
-LLMEngine::LLMEngine(const Config& config, TokenCallback on_token)
-    : config_(config), on_token_(std::move(on_token)) {
+LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler)
+    : config_(config), on_token_(std::move(on_token)), scheduler_(std::move(scheduler)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   auto decode_cb = [this](const DecodeResult& result) {
     decode_queue_.push(result);
   };
   model_runner_ = make_model_runner(config_, std::move(decode_cb));
-  scheduler_ = std::make_unique<Scheduler>(config_);
   if (config_.eos < 0) {
     config_.eos = 0;
   }
@@ -39,6 +38,8 @@ void LLMEngine::run() {
 void LLMEngine::stop() {
   stopped_.store(true, std::memory_order_relaxed);
 }
+
+
 
 void LLMEngine::step() {
   drain_decode_results();

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 namespace tt::config {
 
@@ -97,6 +98,34 @@ std::string python_path() {
 
 RunnerType runner_type() {
     return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
+}
+
+static std::filesystem::path tokenizers_dir() {
+    std::error_code ec;
+    std::filesystem::path exe_path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        std::filesystem::path dir = exe_path.parent_path().parent_path() / "tokenizers";
+        if (std::filesystem::is_directory(dir)) {
+            return dir;
+        }
+    }
+    return {};
+}
+
+std::string tokenizer_path() {
+    std::filesystem::path p = tokenizers_dir() / "tokenizer.json";
+    if (std::filesystem::exists(p)) {
+        return std::filesystem::absolute(p).string();
+    }
+    return "";
+}
+
+std::string tokenizer_config_path() {
+    std::filesystem::path p = tokenizers_dir() / "tokenizer_config.json";
+    if (std::filesystem::exists(p)) {
+        return std::filesystem::absolute(p).string();
+    }
+    return "";
 }
 
 std::string visible_devices_for_worker(size_t worker_index) {
