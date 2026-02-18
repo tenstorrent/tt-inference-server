@@ -72,19 +72,17 @@ void LLMService::pre_process(domain::CompletionRequest& request) {
 
 
 void LLMService::start_workers() {
-    auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
+    const char* rt_root = std::getenv("TT_METAL_RUNTIME_ROOT");
+    if (!rt_root || rt_root[0] == '\0') {
+        throw std::runtime_error(
+            "TT_METAL_RUNTIME_ROOT is not set. Set it to the tt-metal runtime root (e.g. TT_METAL_HOME or the path to your built tt-metal tree) before starting the LLM service.");
+    }
+
+    auto create_worker_config = [this, rt_root](int worker_id) -> tt::worker::WorkerConfig {
         std::unordered_map<std::string, std::string> env_vars = {
-            {"TT_VISIBLE_DEVICES", tt::config::visible_devices_for_worker(worker_id)}
+            {"TT_VISIBLE_DEVICES", tt::config::visible_devices_for_worker(worker_id)},
+            {"TT_METAL_RUNTIME_ROOT", rt_root}
         };
-        const char* rt_root = std::getenv("TT_METAL_RUNTIME_ROOT");
-        if (rt_root && rt_root[0] != '\0') {
-            env_vars["TT_METAL_RUNTIME_ROOT"] = rt_root;
-        } else {
-            const char* home = std::getenv("TT_METAL_HOME");
-            if (home && home[0] != '\0') {
-                env_vars["TT_METAL_RUNTIME_ROOT"] = home;
-            }
-        }
         return {
             .env_vars = std::move(env_vars),
             .task_queue = queue_manager_->task_queue,
