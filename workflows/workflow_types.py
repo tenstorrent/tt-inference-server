@@ -68,8 +68,10 @@ class DeviceTypes(IntEnum):
     T3K = auto()
     P100 = auto()
     P150 = auto()
-    P150X4 = auto()
-    P150X8 = auto()
+    P150X4 = auto()  # 4x P150 cards (1,4 mesh)
+    P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
+    P300 = auto()  # Single P300 card (2 dies)
+    P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -91,6 +93,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150: "P150",
             DeviceTypes.P150X4: "P150x4",
             DeviceTypes.P150X8: "P150x8",
+            DeviceTypes.P300: "P300",
+            DeviceTypes.P300X2: "P300x2",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -110,8 +114,10 @@ class DeviceTypes(IntEnum):
             DeviceTypes.N150: "n150",
             DeviceTypes.P100: "p100",
             DeviceTypes.P150: "p150",
-            DeviceTypes.P150X4: "BH QuietBox",
+            DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
+            DeviceTypes.P300: "BH P300",
+            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -154,8 +160,10 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150,
             DeviceTypes.P150X4,
             DeviceTypes.P150X8,
+            DeviceTypes.P300,
+            DeviceTypes.P300X2,
         )
-        return True if self in blackhole_devices else False
+        return self in blackhole_devices
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {

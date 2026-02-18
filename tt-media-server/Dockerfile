@@ -72,14 +72,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
+    # Drogon dependencies
+    libjsoncpp-dev \
+    uuid-dev \
+    zlib1g-dev \
+    libboost-all-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.2/cmake-3.29.2-linux-x86_64.sh -o cmake.sh && \
-    chmod +x cmake.sh && \
-    ./cmake.sh --skip-license --prefix=/usr/local && \
-    rm cmake.sh && \
-    cmake --version
+# Install CMake 3.26.4 to ensure compatibility with CMP0169
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh \
+    && chmod +x cmake.sh \
+    && ./cmake.sh --skip-license --prefix=/usr/local \
+    && rm cmake.sh \
+    && /usr/local/bin/cmake --version
 
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
@@ -132,6 +139,29 @@ COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
+
+# Install Drogon from GitHub
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libboost-dev \
+    && git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
+    && cd /tmp/drogon \
+    && mkdir build && cd build \
+    && cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
+    && make -j$(nproc) \
+    && make install \
+    && cd / && rm -rf /tmp/drogon \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Build C++ server (requires Rust for tokenizers-cpp)
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
+    && cd ${TT_METAL_HOME}/server/cpp_server \
+    && ./build.sh --ttnn"
+
+# Add script for running C++ server
+COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
+RUN chmod +x ${TT_METAL_HOME}/server/run_cpp.sh
 
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
@@ -192,6 +222,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
+    libjsoncpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user
@@ -223,7 +254,10 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 USER root
 COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
 RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
+RUN chmod +x ${TT_METAL_HOME}/server/run_uvicorn.sh
 
 EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && source ./run_uvicorn.sh"]
+# Default to uvicorn
+ENV SERVER_MODE=uvicorn
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]

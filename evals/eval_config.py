@@ -2092,6 +2092,90 @@ _eval_config_list = [
                     },
                 ),
             ),
+            EvalTask(
+                task_name="longbench_code_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=48.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=63.34,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=20.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=22.22,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.09,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=14.86,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
         ],
     ),
     EvalConfig(
@@ -2147,6 +2231,57 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="black-forest-labs/FLUX.1-dev",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="black-forest-labs/FLUX.1-schnell",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Motif-Technologies/Motif-Image-6B-Preview",
         tasks=[
             EvalTask(
                 task_name="load_image",

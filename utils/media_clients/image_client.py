@@ -43,6 +43,8 @@ NEGATIVE_PROMPT = (
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
+FLUX_MOTIF_INFERENCE_STEPS = 28  # FLUX.1-dev, Motif
+FLUX_1_SCHNELL_INFERENCE_STEPS = 4  # FLUX.1-schnell
 
 # IMG2IMG specific constants
 SDXL_IMG2IMG_INFERENCE_STEPS = 30
@@ -68,6 +70,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             "tt-sdxl-image-to-image": self._run_img2img_generation_benchmark,
             "tt-sdxl-edit": self._run_inpainting_generation_benchmark,
             "tt-sd3.5": self._run_image_generation_benchmark,
+            "tt-flux.1-dev": self._run_flux_1_dev_benchmark,
+            "tt-flux.1-schnell": self._run_flux_1_schnell_benchmark,
+            "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_benchmark,
         }
 
         # Map runners to their eval methods (for future use)
@@ -76,6 +81,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             "tt-sdxl-image-to-image": self._run_img2img_generation_eval,
             "tt-sdxl-edit": self._run_inpainting_generation_eval,
             "tt-sd3.5": self._run_image_generation_eval,
+            "tt-flux.1-dev": self._run_flux_1_dev_schnell_eval_async,
+            "tt-flux.1-schnell": self._run_flux_1_dev_schnell_eval_async,
+            "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_eval_async,
         }
 
     def run_eval(self) -> None:
@@ -94,10 +102,11 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Route to appropriate eval method using dispatch map
             eval_method = self.eval_methods.get(
-                runner_in_use, self._run_image_generation_eval
+                self.runner_in_use, self._run_image_generation_eval
             )
             status_list, total_time = asyncio.run(eval_method())
         except Exception as e:
@@ -185,13 +194,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
-                runner_in_use, self._run_image_generation_benchmark
+                self.runner_in_use, self._run_image_generation_benchmark
             )
             status_list = benchmark_method(num_calls)
 
@@ -322,9 +332,12 @@ class ImageClientStrategy(BaseMediaStrategy):
         return status_list, total_time
 
     async def _generate_image_eval_async(
-        self, session: aiohttp.ClientSession, prompt: str
+        self,
+        session: aiohttp.ClientSession,
+        prompt: str,
+        num_inference_steps: int = NUM_INFERENCE_STEPS,
     ) -> tuple[bool, float, Optional[str]]:
-        """Generate image using SDXL model with shared session. This is specific for evals workflow."""
+        """Generate image with shared session. This is specific for evals workflow."""
         logger.info(f"🌅 Generating image for prompt: {prompt}")
         headers = {
             "accept": "application/json",
@@ -334,7 +347,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         payload = {
             "prompt": prompt,
             "negative_prompt": NEGATIVE_PROMPT,
-            "num_inference_steps": NUM_INFERENCE_STEPS,
+            "num_inference_steps": num_inference_steps,
             "seed": 0,
             "guidance_scale": GUIDANCE_SCALE,
             "image_return_format": IMAGE_FORMAT_FOR_EVALS,
@@ -613,6 +626,145 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"❌ Inpainting generation for eval failed: {e}")
             return False, elapsed, None
 
+    async def _run_flux_1_dev_schnell_eval_async(
+        self,
+    ) -> tuple[list[ImageGenerationTestStatus], float]:
+        """Run Flux 1 Dev/Schnell eval via /generations endpoint."""
+        logger.info("Running Flux 1 Dev/Schnell eval.")
+
+        num_prompts = is_sdxl_num_prompts_enabled(self)
+        logger.info(f"Number of prompts set to: {num_prompts}")
+
+        prompts = sdxl_get_prompts(0, num_prompts)
+        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
+
+        inference_steps = (
+            FLUX_MOTIF_INFERENCE_STEPS
+            if self.runner_in_use == "tt-flux.1-dev"
+            else FLUX_1_SCHNELL_INFERENCE_STEPS
+        )
+        logger.info(f"Inference steps set to: {inference_steps}")
+
+        async with aiohttp.ClientSession() as session:
+            total_start_time = time.time()
+            tasks = [
+                self._generate_image_eval_async(session, prompt, inference_steps)
+                for prompt in prompts
+            ]
+            results = await asyncio.gather(*tasks)
+            total_time = time.time() - total_start_time
+
+        logger.info(
+            f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds"
+        )
+
+        status_list = []
+        failed_count = 0
+
+        for i, (status, elapsed, base64image) in enumerate(results):
+            prompt = prompts[i]
+
+            if not status or base64image is None:
+                failed_count += 1
+                logger.warning(
+                    f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'"
+                )
+                continue
+
+            inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
+            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
+
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=status,
+                    elapsed=elapsed,
+                    num_inference_steps=inference_steps,
+                    inference_steps_per_second=inference_steps_per_second,
+                    base64image=base64image,
+                    prompt=prompt,
+                )
+            )
+
+        logger.info(f"Total image generations attempted: {num_prompts}")
+        logger.info(f"Total failed image generations: {failed_count}")
+        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
+
+        if failed_count:
+            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
+            raise RuntimeError(
+                f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
+            )
+
+        return status_list, total_time
+
+    async def _run_motif_image_6b_preview_eval_async(
+        self,
+    ) -> tuple[list[ImageGenerationTestStatus], float]:
+        """Run Motif Image 6B Preview eval via /generations endpoint."""
+        logger.info("Running Motif Image 6B Preview eval.")
+
+        num_prompts = is_sdxl_num_prompts_enabled(self)
+        logger.info(f"Number of prompts set to: {num_prompts}")
+
+        prompts = sdxl_get_prompts(0, num_prompts)
+        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
+
+        async with aiohttp.ClientSession() as session:
+            total_start_time = time.time()
+            tasks = [
+                self._generate_image_eval_async(
+                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
+                )
+                for prompt in prompts
+            ]
+            results = await asyncio.gather(*tasks)
+            total_time = time.time() - total_start_time
+
+        logger.info(
+            f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds"
+        )
+
+        status_list = []
+        failed_count = 0
+
+        for i, (status, elapsed, base64image) in enumerate(results):
+            prompt = prompts[i]
+
+            if not status or base64image is None:
+                failed_count += 1
+                logger.warning(
+                    f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'"
+                )
+                continue
+
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
+
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=status,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                    base64image=base64image,
+                    prompt=prompt,
+                )
+            )
+
+        logger.info(f"Total image generations attempted: {num_prompts}")
+        logger.info(f"Total failed image generations: {failed_count}")
+        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
+
+        if failed_count:
+            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
+            raise RuntimeError(
+                f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
+            )
+
+        return status_list, total_time
+
     def _run_image_generation_benchmark(
         self, num_calls: int
     ) -> list[ImageGenerationTestStatus]:
@@ -844,3 +996,88 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         logger.info(f"✅ Inpainting generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
+
+    def _run_flux_1_dev_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Flux 1 Dev or Schnell benchmark."""
+        logger.info("Running Flux 1 Dev or Schnell benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_flux_1_dev_schnell()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _run_flux_1_schnell_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Flux 1 Dev or Schnell benchmark."""
+        logger.info("Running Flux 1 Dev or Schnell benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_flux_1_dev_schnell(
+                FLUX_1_SCHNELL_INFERENCE_STEPS
+            )
+            inference_steps_per_second = (
+                FLUX_1_SCHNELL_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_1_SCHNELL_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _generate_image_flux_1_dev_schnell(
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
+    ) -> tuple[bool, float]:
+        """Generate image using Flux 1 Dev or Schnell model."""
+        logger.info("🌅 Generating image with Flux 1 Dev schnell")
+        return self._generate_image(num_inference_steps)
+
+    def _run_motif_image_6b_preview_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Motif Image 6B Preview benchmark."""
+        logger.info("Running Motif Image 6B Preview benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Motif benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_motif_image_6b_preview()
+            inference_steps_per_second = (
+                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _generate_image_motif_image_6b_preview(
+        self, num_inference_steps: int = FLUX_MOTIF_INFERENCE_STEPS
+    ) -> tuple[bool, float]:
+        """Generate image using Motif Image 6B Preview model."""
+        logger.info("🌅 Generating image with Motif Image 6B Preview")
+        return self._generate_image(num_inference_steps)
