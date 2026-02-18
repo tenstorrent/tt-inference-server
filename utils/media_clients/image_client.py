@@ -651,9 +651,10 @@ class ImageClientStrategy(BaseMediaStrategy):
         Returns the eval result dict from ImageGenerationEvalsTest.
         """
         num_prompts = is_sdxl_num_prompts_enabled(self)
+        runner = getattr(self, "runner_in_use", None)
         inference_steps = (
             FLUX_1_SCHNELL_INFERENCE_STEPS
-            if self.runner_in_use == "tt-flux.1-schnell"
+            if runner == "tt-flux.1-schnell"
             else FLUX_MOTIF_INFERENCE_STEPS
         )
         logger.info(
