@@ -103,18 +103,23 @@ else()
 endif()
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
     src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
     src/runners/llm_engine/engine/device_backend.cpp
     src/runners/llm_engine/engine/mock_device_backend.cpp
-    src/runners/llm_engine/engine/sockets_device_backend.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
     src/runners/llm_engine/engine/scheduler.cpp
     src/runners/llm_engine/engine/sequence.cpp
 )
+if(TT_METAL_API_FOUND)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/sockets_device_backend.cpp)
+else()
+    message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
+endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
@@ -122,7 +127,7 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL)
+    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL USE_METAL_CPP_LIB)
     # Find tt_metal library directory
     set(_tt_metal_lib_dir "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")

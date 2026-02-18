@@ -226,7 +226,7 @@ if [ -n "${TT_METAL_HOME}" ]; then
         echo "WARNING: TT_METAL_HOME set but tt_metal/api not found at ${TT_METAL_HOME}/tt_metal/api"
     fi
 else
-    echo "TT_METAL_HOME not set - Metal C++ API includes disabled (set for intellisense)"
+    echo "TT_METAL_HOME not set - building without tt-metal (mock device backend only)"
 fi
 
 # Create build directory
