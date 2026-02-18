@@ -66,7 +66,7 @@ void ModelRunnerStub::exit() {
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback) {
-  auto backend = make_device_backend(config, config.use_real_device);
+  auto backend = make_device_backend(config);
   return std::make_unique<ModelRunnerStub>(config, std::move(callback), std::move(backend));
 }
 

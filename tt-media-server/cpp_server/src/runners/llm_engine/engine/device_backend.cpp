@@ -3,12 +3,12 @@
 
 namespace llm_engine {
 
-std::unique_ptr<IDeviceBackend> make_device_backend_real(const Config& config);
+std::unique_ptr<IDeviceBackend> make_device_backend_sockets(const Config& config);
 std::unique_ptr<IDeviceBackend> make_device_backend_mock(const Config& config);
 
-std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config, bool use_real_device) {
-  if (use_real_device) {
-    return make_device_backend_real(config);
+std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config) {
+  if (config.device == DeviceBackend::Sockets) {
+    return make_device_backend_sockets(config);
   }
   return make_device_backend_mock(config);
 }

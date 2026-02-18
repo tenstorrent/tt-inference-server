@@ -13,7 +13,6 @@ ENABLE_TTNN="OFF"
 TEST="OFF"
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
-ENABLE_HOST_IO_TEST="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 while [[ $# -gt 0 ]]; do
@@ -48,10 +47,6 @@ while [[ $# -gt 0 ]]; do
             CXX_COMPILER_PATH="$2"
             shift 2
             ;;
-        --host-io-test)
-            ENABLE_HOST_IO_TEST="ON"
-            shift
-            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -63,7 +58,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
-            echo "  --host-io-test       Build host_io_test (requires tt-metal built at TT_METAL_HOME/build_Release)"
             echo "  --help               Show this help message"
             exit 0
             ;;
@@ -231,7 +225,6 @@ CMAKE_ARGS=(
     -DTEST="${TEST}"
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
-    -DENABLE_HOST_IO_TEST="${ENABLE_HOST_IO_TEST}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 

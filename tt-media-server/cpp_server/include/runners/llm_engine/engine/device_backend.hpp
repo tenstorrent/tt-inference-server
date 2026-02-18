@@ -22,6 +22,6 @@ class IDeviceBackend {
   virtual void terminate() = 0;
 };
 
-std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config, bool use_real_device);
+std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config);
 
 }  // namespace llm_engine

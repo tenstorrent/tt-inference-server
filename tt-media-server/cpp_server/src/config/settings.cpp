@@ -120,9 +120,14 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     auto cfg = defaults::DEFAULT_LLM_ENGINE_CONFIG;
-    const char* v = std::getenv("LLM_USE_REAL_DEVICE");
-    if (v && (std::string(v) == "1" || std::string(v) == "true" || std::string(v) == "yes")) {
-        cfg.use_real_device = true;
+    const char* v = std::getenv("LLM_DEVICE_BACKEND");
+    if (v) {
+        std::string s(v);
+        if (s == "sockets") {
+            cfg.device = llm_engine::DeviceBackend::Sockets;
+        } else {
+            cfg.device = llm_engine::DeviceBackend::Mock;
+        }
     }
     return cfg;
 }

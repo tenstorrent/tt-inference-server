@@ -109,7 +109,6 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/device_backend_mock.cpp
     src/runners/llm_engine/engine/device_backend_real.cpp
     src/runners/llm_engine/engine/hash.cpp
-    src/runners/llm_engine/engine/host_interface.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
     src/runners/llm_engine/engine/scheduler.cpp
@@ -188,30 +187,6 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# host_io_test: requires tt-metal libraries. Enable with -DENABLE_HOST_IO_TEST=ON when tt-metal is built.
-option(ENABLE_HOST_IO_TEST "Build host_io_test (requires tt-metal libs from TT_METAL_HOME/build_Release)" OFF)
-if(TT_METAL_API_FOUND AND ENABLE_HOST_IO_TEST)
-    set(_host_io_tt_metal_lib_dir "")
-    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
-        set(_host_io_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
-    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
-        set(_host_io_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
-    endif()
-    if(_host_io_tt_metal_lib_dir)
-        add_executable(host_io_test include/runners/llm_engine/engine/test_host_io.cpp)
-        target_link_libraries(host_io_test PRIVATE llm_engine GTest::gtest_main)
-        target_include_directories(host_io_test PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${TT_METAL_INCLUDE_DIRS}
-        )
-        target_link_directories(host_io_test PRIVATE "${_host_io_tt_metal_lib_dir}")
-        target_link_libraries(host_io_test PRIVATE tt_metal tt_stl)
-    else()
-        message(STATUS "host_io_test: skipped (libtt_metal.so not found)")
-    endif()
-endif()
-
 # Tokenizer test
 add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
@@ -224,9 +199,6 @@ gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_engine_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(test_tokenizer)
-if(TARGET host_io_test)
-gtest_discover_tests(host_io_test)
-endif()
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
