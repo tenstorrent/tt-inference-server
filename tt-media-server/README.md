@@ -44,9 +44,15 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 | `/v1/videos/generations`        | `/video/generations`       |
 | `/v1/cnn/search-image`         | `/cnn/search-image`        |
 | `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
-| `/v1/completions`              | `/completions`             |
-| `/v1/embeddings`               | `/embeddings`              |
 | `/v1/tokenize`                 | `/tokenize`                |
+
+The following endpoints were already on `/v1` and have no legacy path:
+
+| Endpoint                       |
+|--------------------------------|
+| `/v1/completions`              |
+| `/v1/chat/completions`         |
+| `/v1/embeddings`               |
 
 ## Deprecation headers
 
