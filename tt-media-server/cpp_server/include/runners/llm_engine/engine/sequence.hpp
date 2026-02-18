@@ -27,14 +27,24 @@ struct TaskID {
   bool operator==(const TaskID& other) const {
     return id == other.id;
   }
+
+  std::vector<char> serialize() const {
+    std::vector<char> buf(id.size() + 1);
+    std::strncpy(buf.data(), id.c_str(), id.size());
+    buf[id.size()] = '\0';
+    return buf;
+  }
+
+  static TaskID deserialize(const char* data, size_t size) {
+    TaskID tid;
+    tid.id = std::string(data, size);
+    return tid;
+  }
 };
 
 inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
   return os << tid.id;
 }
-
-
-  
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
