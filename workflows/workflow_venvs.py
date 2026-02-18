@@ -87,15 +87,15 @@ class VenvConfig:
 
 def setup_evals_common(
     venv_config: VenvConfig,
-    model_spec: "ModelSpec",
+    model_spec: "ModelSpec", # noqa: F821
 ) -> bool:
     logger.warning("this might take 5 to 15+ minutes to install on first run ...")
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
-        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@patch-longbench-max-token-len#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]",
-        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0", 
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@patch-longbench-max-token-len#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
+        "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
     setup_succeeded = return_code == 0
