@@ -59,19 +59,20 @@ void LLMEngine::step() {
 void LLMEngine::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.seq_id);
-    if (!seq) {
-      continue;
-    }
-    if (seq->status_ != SequenceStatus::IN_FLIGHT) {
-      continue;
-    }
+    assert(seq);
+    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> token_ids = {dr.token_id};
     scheduler_->postprocess(seqs, token_ids);
 
-    bool finished = (scheduler_->find_sequence(dr.seq_id) == nullptr);
+    bool finished = seq->is_finished();
     on_token_(dr.seq_id, dr.token_id, finished);
+
+    if (finished) {
+      LLM_ENGINE_LOG("llm_engine") << "finished seq_id=" << seq->seq_id
+                                   << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
+    }
   }
 }
 

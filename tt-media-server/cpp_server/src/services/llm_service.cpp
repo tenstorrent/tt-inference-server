@@ -5,7 +5,6 @@
 #include "config/settings.hpp"
 #include "worker/llm_worker.hpp"
 
-#include <chrono>
 #include <cstring>
 #include <csignal>
 #include <iostream>
