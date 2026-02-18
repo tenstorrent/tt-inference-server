@@ -32,7 +32,7 @@ class ServiceRoute:
 
     router: APIRouter
     v1_prefix: str
-    legacy_prefix: str
+    legacy_prefix: str | None
     tags: list[str]
 
 
@@ -44,7 +44,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.LLM.value: [
         ServiceRoute(tokenizer.router, "/v1", "", ["Tokenizer"]),
-        ServiceRoute(llm.router, "/v1", "", ["Text processing"]),
+        ServiceRoute(llm.router, "/v1", None, ["Text processing"]),
     ],
     ModelServices.CNN.value: [
         ServiceRoute(cnn.router, "/v1/cnn", "/cnn", ["CNN processing"]),
@@ -66,7 +66,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
         ),
     ],
     ModelServices.EMBEDDING.value: [
-        ServiceRoute(embedding.router, "/v1", "", ["Embeddings"]),
+        ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
     ],
 }
 
@@ -87,7 +87,7 @@ def register_service_routes() -> None:
         )
         logger.info(f"Registered: {route.v1_prefix} [{route.tags[0]}]")
 
-        if route.legacy_prefix:
+        if route.legacy_prefix is not None:
             api_router.include_router(
                 route.router,
                 prefix=route.legacy_prefix,
