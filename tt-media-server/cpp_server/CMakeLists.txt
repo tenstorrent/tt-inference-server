@@ -9,8 +9,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
-# Find Drogon
+# Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
+find_package(jsoncpp REQUIRED)
 
 # Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
 option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
@@ -112,8 +113,8 @@ target_include_directories(sequence_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
-target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp)
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -134,11 +135,11 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp)
+target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
 # Source files
 set(SOURCES
@@ -150,6 +151,7 @@ set(SOURCES
     src/scheduler/multiprocess_scheduler.cpp
     src/services/base_service.cpp
     src/utils/tokenizer.cpp
+    src/utils/tokenizer_config_loader.cpp
 )
 if(NOT TEST)
     list(APPEND SOURCES
@@ -187,8 +189,8 @@ if(ENABLE_TTNN)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
 endif()
 
-# Tokenizer (requires Rust)
-target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp)
+# Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE

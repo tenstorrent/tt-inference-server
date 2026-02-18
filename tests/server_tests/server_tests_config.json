@@ -1739,7 +1739,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -1757,7 +1757,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -1775,7 +1775,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -1830,7 +1830,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 11
                 }
@@ -1848,7 +1848,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 15
                 }
@@ -1866,7 +1866,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 25
                 }
@@ -1921,7 +1921,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -1939,7 +1939,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -1957,7 +1957,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -2012,7 +2012,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 11
                 }
@@ -2030,7 +2030,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 15
                 }
@@ -2048,7 +2048,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 25
                 }
@@ -2103,7 +2103,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -2121,7 +2121,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -2139,7 +2139,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -2194,7 +2194,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 11
                 }
@@ -2212,7 +2212,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 15
                 }
@@ -2230,7 +2230,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 25
                 }
@@ -2527,7 +2527,7 @@
         "weights": [
             "FLUX.1-dev"
         ],
-        "device": "p300x2",
+        "device": "qbge",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2891,7 +2891,7 @@
         "weights": [
             "FLUX.1-schnell"
         ],
-        "device": "p300x2",
+        "device": "qbge",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -3013,7 +3013,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3031,7 +3031,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3049,7 +3049,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -3104,7 +3104,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3122,7 +3122,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3140,7 +3140,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }

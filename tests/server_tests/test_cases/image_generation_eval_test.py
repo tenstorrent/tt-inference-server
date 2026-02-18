@@ -236,11 +236,19 @@ class ImageGenerationEvalsTest(BaseTest):
             request_timeout_sec=timeout_sec,
         )
 
+        completion_counter = {"count": 0, "last_time": 0.0}
         total_start = time.perf_counter()
+        completion_counter["last_time"] = total_start
         async with aiohttp.ClientSession() as session:
             tasks = [
                 self._generate_single_image_async(
-                    session, ctx, prompt, idx, len(prompts)
+                    session,
+                    ctx,
+                    prompt,
+                    idx,
+                    len(prompts),
+                    total_start,
+                    completion_counter,
                 )
                 for idx, prompt in enumerate(prompts, start=1)
             ]
@@ -259,6 +267,8 @@ class ImageGenerationEvalsTest(BaseTest):
         prompt: str,
         idx: int,
         total: int,
+        total_start: float,
+        completion_counter: dict,
     ) -> Optional[ImageGenerationTestStatus]:
         """Generate a single image asynchronously."""
         logger.info("🌅 Generating image %s/%s: %.50s...", idx, total, prompt)
@@ -279,12 +289,24 @@ class ImageGenerationEvalsTest(BaseTest):
                 headers=ctx.headers,
                 timeout=aiohttp.ClientTimeout(total=ctx.request_timeout_sec),
             ) as response:
-                elapsed = time.perf_counter() - start
+                now = time.perf_counter()
+                elapsed = now - start
                 result = await self._parse_image_response_async(
                     response, elapsed, prompt, idx
                 )
                 if result is not None:
-                    logger.info("Image %s/%s generated in %.2fs", idx, total, elapsed)
+                    completion_counter["count"] += 1
+                    order = completion_counter["count"]
+                    since_last = now - completion_counter["last_time"]
+                    elapsed_total = now - total_start
+                    completion_counter["last_time"] = now
+                    logger.info(
+                        "✅ %s/%s image generated in %.2fs | elapsed %.2fs",
+                        order,
+                        total,
+                        since_last,
+                        elapsed_total,
+                    )
                 return result
 
         except asyncio.TimeoutError:
