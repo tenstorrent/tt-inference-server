@@ -14,11 +14,6 @@
 
 namespace llm_engine {
 
-struct DecodeResult {
-  SequenceID seq_id;
-  int64_t token_id;
-};
-
 // Invoked from the device-to-host reader thread when a token is generated.
 using DecodeCallback = std::function<void(const DecodeResult&)>;
 

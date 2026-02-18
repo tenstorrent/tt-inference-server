@@ -2,7 +2,6 @@
 #include "llm_engine/engine/sequence.hpp"
 
 #include <condition_variable>
-#include <cstring>
 #include <mutex>
 #include <queue>
 
@@ -10,59 +9,40 @@ namespace llm_engine {
 
 namespace {
 
-struct DecodeResultPage {
-  std::vector<char> data;
-};
-
 class MockDeviceBackend : public IDeviceBackend {
  public:
   explicit MockDeviceBackend(const Config&) {}
 
   void init() override {}
 
-  void write(const void* data, uint32_t num_pages) override {
-    if (num_pages == 0) return;
-    const char* p = static_cast<const char*>(data);
-    size_t page_sz = Sequence::page_size();
-    DecodeResultPage page;
-    page.data.resize(page_sz);
-    std::memcpy(page.data.data(), p, page_sz);
-    int64_t* token_ptr = reinterpret_cast<int64_t*>(page.data.data() + SequenceID::kSerializedSize);
-    *token_ptr += 1;
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      queue_.push(std::move(page));
-    }
+  void write(const Sequence& seq) override {
+    std::lock_guard<std::mutex> lock(work_mutex_);
+    work_queue_.push(DecodeResult{seq.seq_id, seq.last_token + 1});
     cv_.notify_one();
   }
 
-  bool read(void* data, uint32_t num_pages) override {
-    if (num_pages == 0) return false;
-    std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
-    if (stop_ && queue_.empty()) return false;
-    if (!queue_.empty()) {
-      DecodeResultPage page = std::move(queue_.front());
-      queue_.pop();
-      lock.unlock();
-      std::memcpy(data, page.data.data(), page.data.size());
+  bool read(DecodeResult* result) override {
+    std::unique_lock<std::mutex> lock(work_mutex_);
+    cv_.wait(lock, [this] { return stop_ || !work_queue_.empty(); });
+    if (stop_ && work_queue_.empty()) return false;
+    if (!work_queue_.empty()) {
+      *result = std::move(work_queue_.front());
+      work_queue_.pop();
       return true;
     }
     return false;
   }
 
   void terminate() override {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      stop_ = true;
-    }
+    std::lock_guard<std::mutex> lock(work_mutex_);
+    stop_ = true;
     cv_.notify_all();
   }
 
  private:
-  std::mutex mutex_;
+  std::mutex work_mutex_;
+  std::queue<DecodeResult> work_queue_;
   std::condition_variable cv_;
-  std::queue<DecodeResultPage> queue_;
   bool stop_ = false;
 };
 

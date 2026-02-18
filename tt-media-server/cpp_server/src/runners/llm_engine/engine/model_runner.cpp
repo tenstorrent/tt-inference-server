@@ -2,8 +2,6 @@
 #include "llm_engine/engine/debug.hpp"
 #include "llm_engine/engine/device_backend.hpp"
 
-#include <cstring>
-
 namespace llm_engine {
 
 void DecodeQueue::push(const DecodeResult& result) {
@@ -32,14 +30,11 @@ ModelRunnerStub::~ModelRunnerStub() {
 }
 
 void ModelRunnerStub::reader_loop() {
-  std::vector<char> output(Sequence::page_size(), 0);
+  DecodeResult result;
   while (!stop_.load(std::memory_order_relaxed)) {
-    if (!backend_->read(output.data(), 1)) break;
+    if (!backend_->read(&result)) break;
     if (stop_.load(std::memory_order_relaxed)) break;
-    SequenceID seq_id = SequenceID::deserialize(output.data(), SequenceID::kSerializedSize);
-    int64_t last_token;
-    std::memcpy(&last_token, output.data() + SequenceID::kSerializedSize, sizeof(last_token));
-    decode_callback_(DecodeResult{seq_id, last_token});
+    decode_callback_(result);
   }
 }
 
@@ -53,7 +48,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->seq_id, seq->last_token + 1});
     }
   } else {
-    backend_->write(seqs[0]->to_h2d_input().data(), 1);
+    backend_->write(*seqs[0]);
   }
 }
 

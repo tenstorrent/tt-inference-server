@@ -112,12 +112,16 @@ class SocketsDeviceBackend : public IDeviceBackend {
     initialized_ = true;
   }
 
-  void write(const void* data, uint32_t num_pages) override {
-    h2d_socket_->write(const_cast<void*>(data), num_pages);
+  void write(const Sequence& seq) override {
+    auto page = seq.to_h2d_input();
+    h2d_socket_->write(page.data(), 1);
   }
 
-  bool read(void* data, uint32_t num_pages) override {
-    d2h_socket_->read(data, num_pages);
+  bool read(DecodeResult* result) override {
+    std::vector<char> buf(Sequence::page_size(), 0);
+    d2h_socket_->read(buf.data(), 1);
+    result->seq_id = SequenceID::deserialize(buf.data(), SequenceID::kSerializedSize);
+    std::memcpy(&result->token_id, buf.data() + SequenceID::kSerializedSize, sizeof(result->token_id));
     return true;
   }
 

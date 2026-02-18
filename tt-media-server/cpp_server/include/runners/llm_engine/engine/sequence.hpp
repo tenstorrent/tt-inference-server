@@ -52,8 +52,10 @@ inline std::ostream& operator<<(std::ostream& os, const SequenceID& sid) {
   return os << sid.id;
 }
 
-
-  
+struct DecodeResult {
+  SequenceID seq_id;
+  int64_t token_id;
+};
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
@@ -99,13 +101,6 @@ class Sequence {
     std::copy(id_bytes.begin(), id_bytes.end(), input.begin());
     std::memcpy(input.data() + SequenceID::kSerializedSize, &last_token, sizeof(last_token));
     return input;
-  }
-
-  static Sequence* from_h2d_input(const std::vector<char>& input) {
-    Sequence* seq = new Sequence(std::vector<int64_t>{});
-    seq->seq_id = SequenceID::deserialize(input.data(), SequenceID::kSerializedSize);
-    seq->last_token = *reinterpret_cast<const int64_t*>(input.data() + SequenceID::kSerializedSize);
-    return seq;
   }
 
   std::vector<int64_t> block(size_t i) const;
