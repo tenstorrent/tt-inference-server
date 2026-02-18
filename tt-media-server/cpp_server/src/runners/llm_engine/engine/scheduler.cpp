@@ -135,7 +135,6 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;
-      sequences_.erase(seq->task_id);
     } else {
       seq->status_ = SequenceStatus::RUNNING;
       running_.push_back(seq);
