@@ -2745,9 +2745,13 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", row.get("isl", NOT_MEASURED_STR))
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("output_sequence_length", row.get("osl", NOT_MEASURED_STR))
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -2892,9 +2896,13 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("input_sequence_length", row.get("isl", NOT_MEASURED_STR))
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("output_sequence_length", row.get("osl", NOT_MEASURED_STR))
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
