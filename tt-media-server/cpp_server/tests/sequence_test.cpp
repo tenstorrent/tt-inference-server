@@ -5,11 +5,20 @@
 #include "llm_engine/sampling_params.hpp"
 
 #include <gtest/gtest.h>
-#include <limits>
 #include <sstream>
 
 namespace llm_engine {
 namespace {
+
+TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
+  SequenceID orig;
+
+  std::vector<char> buf = orig.serialize();
+  ASSERT_EQ(buf.size(), SequenceID::kSerializedSize);
+
+  SequenceID restored = SequenceID::deserialize(buf.data(), buf.size());
+  EXPECT_EQ(restored.id, orig.id);
+}
 
 TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   Sequence orig({1, 2, 3, 4, 5}, SamplingParams{.temperature = 0.7f, .max_tokens = 20, .ignore_eos = true});
@@ -75,16 +84,6 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   EXPECT_EQ(restored->last_token, 40);
   EXPECT_EQ(restored->num_prompt_tokens_, 2u);
   EXPECT_EQ(restored->num_cached_tokens_, 256u);
-}
-
-TEST(SequenceTest, ToH2DInput_ContainsCorrectSize) {
-  Sequence seq({1, 2, 3}, SamplingParams{.max_tokens = 10});
-  seq.last_token = 123;
-
-  std::vector<char> h2d_data = seq.to_h2d_input();
-  size_t expected_size = seq.seq_id.serialize().size() + sizeof(int64_t);
-
-  EXPECT_EQ(h2d_data.size(), expected_size);
 }
 
 }  // namespace

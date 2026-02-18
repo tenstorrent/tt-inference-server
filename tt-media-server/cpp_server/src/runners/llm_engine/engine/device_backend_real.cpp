@@ -1,6 +1,7 @@
 #include "llm_engine/engine/device_backend.hpp"
 #include "llm_engine/engine/sequence.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -19,6 +20,16 @@ namespace llm_engine {
 namespace {
 
 constexpr uint32_t kFifoSize = 1024 * 1024;
+constexpr uint32_t kSocketPageSizeInBytes = 64;
+
+static std::vector<char> sequence_to_h2d_page(const Sequence& seq) {
+  std::vector<char> input(kSocketPageSizeInBytes, 0);
+  auto id_bytes = seq.seq_id.serialize();
+  std::copy(id_bytes.begin(), id_bytes.end(), input.begin());
+  std::memcpy(input.data() + SequenceID::kSerializedSize, &seq.last_token, sizeof(seq.last_token));
+  return input;
+}
+
 constexpr uint32_t kLoopbackCbSize = 1024;
 const char* kH2dReceiverKernelPath =
     "models/demos/deepseek_v3_b1/micro_ops/host_io/kernels/h2d_receiver.cpp";
@@ -40,11 +51,11 @@ class SocketsDeviceBackend : public IDeviceBackend {
         tt::tt_metal::BufferType::L1,
         kFifoSize,
         tt::tt_metal::distributed::H2DMode::HOST_PUSH);
-    h2d_socket_->set_page_size(Sequence::page_size());
+    h2d_socket_->set_page_size(kSocketPageSizeInBytes);
 
     d2h_socket_ = std::make_unique<tt::tt_metal::distributed::D2HSocket>(
         mesh_device_, socket_core, kFifoSize);
-    d2h_socket_->set_page_size(Sequence::page_size());
+    d2h_socket_->set_page_size(kSocketPageSizeInBytes);
   }
 
   void init() override {
@@ -113,12 +124,12 @@ class SocketsDeviceBackend : public IDeviceBackend {
   }
 
   void write(const Sequence& seq) override {
-    auto page = seq.to_h2d_input();
+    auto page = sequence_to_h2d_page(seq);
     h2d_socket_->write(page.data(), 1);
   }
 
   bool read(DecodeResult* result) override {
-    std::vector<char> buf(Sequence::page_size(), 0);
+    std::vector<char> buf(kSocketPageSizeInBytes, 0);
     d2h_socket_->read(buf.data(), 1);
     result->seq_id = SequenceID::deserialize(buf.data(), SequenceID::kSerializedSize);
     std::memcpy(&result->token_id, buf.data() + SequenceID::kSerializedSize, sizeof(result->token_id));

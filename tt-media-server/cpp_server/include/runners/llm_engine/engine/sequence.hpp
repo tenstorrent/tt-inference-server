@@ -8,7 +8,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include "api/alignment.h"
 #include "llm_engine/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -85,22 +84,6 @@ class Sequence {
   int last_block_num_tokens() const {
     return static_cast<int>(token_ids_.size()) -
            static_cast<int>(num_blocks() - 1) * block_size;
-  }
-
-  static constexpr size_t h2d_payload_size() {
-    return SequenceID::kSerializedSize + sizeof(int64_t);
-  }
-
-  static uint32_t page_size() {
-    return align(h2d_payload_size(), 64);
-  }
-
-  std::vector<char> to_h2d_input() const {
-    std::vector<char> input(page_size(), 0);
-    auto id_bytes = seq_id.serialize();
-    std::copy(id_bytes.begin(), id_bytes.end(), input.begin());
-    std::memcpy(input.data() + SequenceID::kSerializedSize, &last_token, sizeof(last_token));
-    return input;
   }
 
   std::vector<int64_t> block(size_t i) const;
