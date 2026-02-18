@@ -22,6 +22,7 @@ def test_expand_concurrency_sweeps_text_includes_powers_of_two_and_allowed_max()
     expanded = expand_concurrency_sweep_params(
         params,
         max_context=4096,
+        max_num_batched_tokens=4096,
         model_max_concurrency=32,
         model_name="Qwen3-8B",
         candidate_concurrencies=[1, 2, 4, 8, 16, 32],
@@ -44,6 +45,7 @@ def test_expand_concurrency_sweeps_text_includes_non_power_of_two_allowed_max():
     expanded = expand_concurrency_sweep_params(
         params,
         max_context=5000,
+        max_num_batched_tokens=5000,
         model_max_concurrency=32,
         model_name="Qwen3-8B",
         candidate_concurrencies=[1, 2, 4, 8, 16, 32],
@@ -51,6 +53,30 @@ def test_expand_concurrency_sweeps_text_includes_non_power_of_two_allowed_max():
     got = sorted(p.max_concurrency for p in expanded if p.isl == 128 and p.osl == 128)
     # powers-of-2 <= 19 plus allowed_max itself
     assert got == [1, 2, 4, 8, 16, 19]
+
+
+def test_expand_concurrency_sweeps_text_includes_power_of_two_with_increased_max_num_batched_tokens():
+    # allowed_max by total token budget: 8192 // 256 = 32, not max_context=5000 // 256 = 19
+    params = [
+        BenchmarkTaskParams(
+            isl=128,
+            osl=128,
+            max_concurrency=1,
+            num_prompts=8,
+            task_type="text",
+        )
+    ]
+    expanded = expand_concurrency_sweep_params(
+        params,
+        max_context=5000,
+        max_num_batched_tokens=8192,
+        model_max_concurrency=32,
+        model_name="Qwen3-8B",
+        candidate_concurrencies=[1, 2, 4, 8, 16, 32],
+    )
+    got = sorted(p.max_concurrency for p in expanded if p.isl == 128 and p.osl == 128)
+    # powers-of-2 can be accommodated with 8192 total token budget
+    assert got == [1, 2, 4, 8, 16, 32]
 
 
 def test_expand_concurrency_sweeps_image_accounts_for_vision_tokens():
@@ -72,6 +98,7 @@ def test_expand_concurrency_sweeps_image_accounts_for_vision_tokens():
     expanded = expand_concurrency_sweep_params(
         params,
         max_context=4096,
+        max_num_batched_tokens=4096,
         model_max_concurrency=32,
         model_name="google/gemma-3-4b-it",
         candidate_concurrencies=[1, 2, 4, 8, 16, 32],

@@ -265,6 +265,7 @@ def main():
     )
     if concurrency_sweeps:
         max_context = model_spec.device_model_spec.max_context
+        max_num_batched_tokens = model_spec.device_model_spec.max_num_batched_tokens
         model_max_concurrency = model_spec.device_model_spec.max_concurrency
         candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
         # TODO: get the number of perf targets from the model config instead of 1
@@ -274,6 +275,7 @@ def main():
             task.param_map[device] = expand_concurrency_sweep_params(
                 task.param_map[device],
                 max_context=max_context,
+                max_num_batched_tokens=max_num_batched_tokens,
                 model_max_concurrency=model_max_concurrency,
                 model_name=model_spec.model_name,
                 candidate_concurrencies=candidate_concurrencies,
@@ -312,6 +314,7 @@ def main():
     assert all_params, (
         f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
     )
+    breakpoint()
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()

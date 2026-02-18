@@ -303,10 +303,14 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        max_num_batched_tokens = self.max_context
         max_concurrency = self.max_concurrency
         if data_parallel_size := self.vllm_args.get("data_parallel_size"):
             assert isinstance(data_parallel_size, int)
             max_concurrency = max_concurrency // data_parallel_size
+            max_num_batched_tokens = max_num_batched_tokens * data_parallel_size
+        object.__setattr__(self, "max_num_batched_tokens", max_num_batched_tokens)
+        # NOTE: DO NOT INFER MAX_NUM_BATCHED_TOKENS LIKE THIS, GET FROM MODEL_SPEC
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
@@ -1139,16 +1143,18 @@ llm_templates = [
         impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="65718bb",
         vllm_commit="409b1cd",
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=128 * 1024,  # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
                 default_impl=True,
+                env_vars={"VLLM_USE_V1": 1},
+                vllm_args={
+                    "data_parallel_size": 4,
+                    "num_scheduler_steps": 1,
+                },
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
