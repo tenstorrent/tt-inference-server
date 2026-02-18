@@ -24,9 +24,9 @@ constexpr uint32_t kSocketPageSizeInBytes = 64;
 
 static std::vector<char> sequence_to_h2d_page(const Sequence& seq) {
   std::vector<char> input(kSocketPageSizeInBytes, 0);
-  auto id_bytes = seq.seq_id.serialize();
+  auto id_bytes = seq.task_id.serialize();
   std::copy(id_bytes.begin(), id_bytes.end(), input.begin());
-  std::memcpy(input.data() + SequenceID::kSerializedSize, &seq.last_token, sizeof(seq.last_token));
+  std::memcpy(input.data() + seq.task_id.id.size() + 1, &seq.last_token, sizeof(seq.last_token));
   return input;
 }
 
@@ -131,8 +131,8 @@ class SocketsDeviceBackend : public IDeviceBackend {
   bool read(DecodeResult* result) override {
     std::vector<char> buf(kSocketPageSizeInBytes, 0);
     d2h_socket_->read(buf.data(), 1);
-    result->seq_id = SequenceID::deserialize(buf.data(), SequenceID::kSerializedSize);
-    std::memcpy(&result->token_id, buf.data() + SequenceID::kSerializedSize, sizeof(result->token_id));
+    result->task_id = TaskID::deserialize(buf.data(), TaskID::kSerializedSize);
+    std::memcpy(&result->token_id, buf.data() + TaskID::kSerializedSize, sizeof(result->token_id));
     return true;
   }
 

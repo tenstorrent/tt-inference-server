@@ -17,7 +17,7 @@ class MockDeviceBackend : public IDeviceBackend {
 
   void write(const Sequence& seq) override {
     std::lock_guard<std::mutex> lock(work_mutex_);
-    work_queue_.push(DecodeResult{seq.seq_id, seq.last_token + 1});
+    work_queue_.push(DecodeResult{seq.task_id, seq.last_token + 1});
     cv_.notify_one();
   }
 

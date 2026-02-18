@@ -1,6 +1,7 @@
 #include "llm_engine/engine/model_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
 #include "llm_engine/engine/device_backend.hpp"
+#include "llm_engine/engine/sequence.hpp"
 
 namespace llm_engine {
 

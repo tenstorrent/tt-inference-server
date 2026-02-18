@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <string>
-#include "runners/llm_engine/config.hpp"
 
 namespace tt::config {
 
@@ -67,13 +66,6 @@ namespace defaults {
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
-    constexpr llm_engine::Config DEFAULT_LLM_ENGINE_CONFIG = {
-        .max_num_batched_tokens = 16384,
-        .eos = 0,
-        .kvcache_block_size = 128,
-        .num_kvcache_blocks = 4000,
-        .device = llm_engine::DeviceBackend::Mock,
-    };
 }
 
 }  // namespace tt::config

@@ -18,6 +18,7 @@
 namespace llm_engine {
   
 struct TaskID {
+  static constexpr size_t kSerializedSize = 36;
   TaskID() {
     auto uuid = boost::uuids::random_generator()();
     id = boost::uuids::to_string(uuid);
@@ -29,15 +30,15 @@ struct TaskID {
   }
 
   std::vector<char> serialize() const {
-    std::vector<char> buf(id.size() + 1);
-    std::strncpy(buf.data(), id.c_str(), id.size());
-    buf[id.size()] = '\0';
+    std::vector<char> buf(kSerializedSize, '\0');
+    std::copy_n(id.begin(), std::min(id.size(), kSerializedSize), buf.begin());
     return buf;
   }
 
-  static TaskID deserialize(const char* data, size_t size) {
+  static TaskID deserialize(const char* data, size_t len) {
     TaskID tid;
-    tid.id = std::string(data, size);
+    size_t actual_len = strnlen(data, len);
+    tid.id = std::string(data, actual_len);
     return tid;
   }
 };
@@ -47,6 +48,11 @@ inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
 }
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
+
+struct DecodeResult {
+  TaskID task_id;
+  int64_t token_id;
+};
 
 class Sequence {
  public:
