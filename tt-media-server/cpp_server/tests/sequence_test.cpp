@@ -11,12 +11,12 @@ namespace llm_engine {
 namespace {
 
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  SequenceID orig;
+  TaskID orig;
 
   std::vector<char> buf = orig.serialize();
-  ASSERT_EQ(buf.size(), SequenceID::kSerializedSize);
+  ASSERT_EQ(buf.size(), 36);
 
-  SequenceID restored = SequenceID::deserialize(buf.data(), buf.size());
+  TaskID restored = TaskID::deserialize(buf.data(), buf.size());
   EXPECT_EQ(restored.id, orig.id);
 }
 
@@ -35,7 +35,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
   ASSERT_NE(restored.get(), nullptr);
 
-  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->task_id, orig.task_id);
   EXPECT_EQ(restored->last_token, orig.last_token);
   EXPECT_EQ(restored->num_prompt_tokens_, orig.num_prompt_tokens_);
   EXPECT_EQ(restored->num_cached_tokens_, orig.num_cached_tokens_);
@@ -49,7 +49,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   Sequence orig({}, SamplingParams{.max_tokens = 10});
-  orig.seq_id = SequenceID();
+  orig.task_id = TaskID();
   orig.last_token = 0;
 
   std::ostringstream os;
@@ -58,7 +58,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 
   std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
   ASSERT_NE(restored.get(), nullptr);
-  EXPECT_EQ(restored->seq_id, orig.seq_id);
+  EXPECT_EQ(restored->task_id, orig.task_id);
   EXPECT_TRUE(restored->token_ids_.empty());
   EXPECT_EQ(restored->num_prompt_tokens_, 0u);
   EXPECT_EQ(restored->last_token, 0);

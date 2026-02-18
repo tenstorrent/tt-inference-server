@@ -66,7 +66,6 @@ namespace defaults {
     constexpr const char* MODEL_SERVICE = "llm";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
-    constexpr const char* MODEL_RUNNER = "llm_test";
     constexpr const char* TT_PYTHON_PATH = "..";
     constexpr llm_engine::Config DEFAULT_LLM_ENGINE_CONFIG = {
         .max_num_batched_tokens = 16384,

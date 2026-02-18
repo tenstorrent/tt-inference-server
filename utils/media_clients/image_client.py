@@ -21,6 +21,10 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from tests.server_tests.test_cases.image_generation_eval_test import (
+    ImageGenerationEvalsTest,
+)
+from tests.server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,
@@ -43,7 +47,8 @@ NEGATIVE_PROMPT = (
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
-FLUX_MOTIF_INFERENCE_STEPS = 40  # FLUX.1-dev, FLUX.1-schnell, Motif
+FLUX_MOTIF_INFERENCE_STEPS = 28  # FLUX.1-dev, Motif
+FLUX_1_SCHNELL_INFERENCE_STEPS = 4  # FLUX.1-schnell
 
 # IMG2IMG specific constants
 SDXL_IMG2IMG_INFERENCE_STEPS = 30
@@ -69,26 +74,24 @@ class ImageClientStrategy(BaseMediaStrategy):
             "tt-sdxl-image-to-image": self._run_img2img_generation_benchmark,
             "tt-sdxl-edit": self._run_inpainting_generation_benchmark,
             "tt-sd3.5": self._run_image_generation_benchmark,
-            "tt-flux.1-dev": self._run_flux_1_dev_schnell_benchmark,
-            "tt-flux.1-schnell": self._run_flux_1_dev_schnell_benchmark,
+            "tt-flux.1-dev": self._run_flux_1_dev_benchmark,
+            "tt-flux.1-schnell": self._run_flux_1_schnell_benchmark,
             "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_benchmark,
         }
 
-        # Map runners to their eval methods (for future use)
+        # Map runners to their eval methods
         self.eval_methods = {
             "tt-sdxl-trace": self._run_image_generation_eval,
             "tt-sdxl-image-to-image": self._run_img2img_generation_eval,
             "tt-sdxl-edit": self._run_inpainting_generation_eval,
             "tt-sd3.5": self._run_image_generation_eval,
-            "tt-flux.1-dev": self._run_flux_1_dev_schnell_eval_async,
-            "tt-flux.1-schnell": self._run_flux_1_dev_schnell_eval_async,
-            "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_eval_async,
+            "tt-flux.1-dev": self._run_image_generation_eval_test,
+            "tt-flux.1-schnell": self._run_image_generation_eval_test,
+            "tt-motif-image-6b-preview": self._run_image_generation_eval_test,
         }
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
@@ -101,23 +104,19 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Route to appropriate eval method using dispatch map
             eval_method = self.eval_methods.get(
-                runner_in_use, self._run_image_generation_eval
+                self.runner_in_use, self._run_image_generation_eval
             )
-            status_list, total_time = asyncio.run(eval_method())
+            eval_result = asyncio.run(eval_method())
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
         benchmark_data = {}
-
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
-
         benchmark_data["model"] = self.model_spec.model_name
         benchmark_data["device"] = self.device.name.lower()
         benchmark_data["timestamp"] = time.strftime(
@@ -129,37 +128,57 @@ class ImageClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score"] = self.all_params.tasks[
             0
         ].score.published_score
-        benchmark_data["score"] = ttft_value
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
 
-        logger.info("Running and calculating accuracy and metrics")
-        fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
-            status_list
-        )
-        accuracy_check = calculate_accuracy_check(
-            fid_score,
-            average_clip_score,
-            len(status_list),
-            self.model_spec.model_name,
-        )
-
-        benchmark_data["fid_score"] = fid_score
-        benchmark_data["average_clip"] = average_clip_score
-        benchmark_data["deviation_clip_score"] = deviation_clip_score
-        benchmark_data["accuracy_check"] = accuracy_check
-
-        # Calculate tput_user for tt-sd models only
-        device_spec = self.model_spec.device_model_spec
-        if device_spec and hasattr(device_spec, "max_concurrency"):
-            tput_user = len(status_list) / (total_time * device_spec.max_concurrency)
-            benchmark_data["tput_user"] = tput_user
-            logger.info(
-                f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {device_spec.max_concurrency})"
+        if isinstance(eval_result, dict):
+            # ImageGenerationEvalsTest result - metrics already computed by the test
+            eval_results = eval_result.get("eval_results", {})
+            benchmark_data["fid_score"] = eval_results.get("fid_score")
+            benchmark_data["average_clip"] = eval_results.get("average_clip")
+            benchmark_data["deviation_clip_score"] = eval_results.get(
+                "deviation_clip_score"
             )
+            benchmark_data["accuracy_check"] = eval_results.get("accuracy_check")
+            benchmark_data["score"] = None  # no TTFT for ImageGenerationEvalsTest
         else:
-            logger.warning(f"No device spec found for device: {self.device}")
+            # Legacy eval methods returning (status_list, total_time)
+            status_list, total_time = eval_result
+
+            # Calculate TTFT
+            ttft_value = self._calculate_ttft_value(status_list)
+            logger.info(f"Extracted TTFT value: {ttft_value}")
+            benchmark_data["score"] = ttft_value
+
+            logger.info("Running and calculating accuracy and metrics")
+            fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
+                status_list
+            )
+            accuracy_check = calculate_accuracy_check(
+                fid_score,
+                average_clip_score,
+                len(status_list),
+                self.model_spec.model_name,
+            )
+
+            benchmark_data["fid_score"] = fid_score
+            benchmark_data["average_clip"] = average_clip_score
+            benchmark_data["deviation_clip_score"] = deviation_clip_score
+            benchmark_data["accuracy_check"] = accuracy_check
+
+            # Calculate tput_user for tt-sd models only
+            device_spec = self.model_spec.device_model_spec
+            if device_spec and hasattr(device_spec, "max_concurrency"):
+                tput_user = len(status_list) / (
+                    total_time * device_spec.max_concurrency
+                )
+                benchmark_data["tput_user"] = tput_user
+                logger.info(
+                    f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {device_spec.max_concurrency})"
+                )
+            else:
+                logger.warning(f"No device spec found for device: {self.device}")
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -192,13 +211,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
-                runner_in_use, self._run_image_generation_benchmark
+                self.runner_in_use, self._run_image_generation_benchmark
             )
             status_list = benchmark_method(num_calls)
 
@@ -623,73 +643,43 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"❌ Inpainting generation for eval failed: {e}")
             return False, elapsed, None
 
-    async def _run_flux_1_dev_schnell_eval_async(
-        self,
-    ) -> tuple[list[ImageGenerationTestStatus], float]:
-        """Run Flux 1 Dev/Schnell eval via /generations endpoint."""
-        logger.info("Running Flux 1 Dev/Schnell eval.")
+    async def _run_image_generation_eval_test(self) -> dict:
+        """Run Flux/Motif eval by calling ImageGenerationEvalsTest directly.
 
+        The test handles the full pipeline: load prompts, generate images,
+        compute FID/CLIP scores, and check accuracy.
+        Returns the eval result dict from ImageGenerationEvalsTest.
+        """
         num_prompts = is_sdxl_num_prompts_enabled(self)
-        logger.info(f"Number of prompts set to: {num_prompts}")
-
-        prompts = sdxl_get_prompts(0, num_prompts)
-        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
-
-        async with aiohttp.ClientSession() as session:
-            total_start_time = time.time()
-            tasks = [
-                self._generate_image_eval_async(
-                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
-                )
-                for prompt in prompts
-            ]
-            results = await asyncio.gather(*tasks)
-            total_time = time.time() - total_start_time
-
+        runner = getattr(self, "runner_in_use", None)
+        inference_steps = (
+            FLUX_1_SCHNELL_INFERENCE_STEPS
+            if runner == "tt-flux.1-schnell"
+            else FLUX_MOTIF_INFERENCE_STEPS
+        )
         logger.info(
-            f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds"
+            f"Running ImageGenerationEvalsTest for {self.model_spec.model_name} "
+            f"with {num_prompts} prompts, {inference_steps} inference steps"
         )
 
-        status_list = []
-        failed_count = 0
+        test_config = ServerTestConfig.create_default(timeout=25000)
+        request_dict = {
+            "model_name": self.model_spec.model_name,
+            "num_prompts": num_prompts,
+            "num_inference_steps": inference_steps,
+            "server_url": self.base_url,
+        }
+        eval_test = ImageGenerationEvalsTest(test_config, {"request": request_dict})
+        eval_test.service_port = self.service_port
 
-        for i, (status, elapsed, base64image) in enumerate(results):
-            prompt = prompts[i]
+        result = await eval_test._run_specific_test_async()
 
-            if not status or base64image is None:
-                failed_count += 1
-                logger.warning(
-                    f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'"
-                )
-                continue
+        if not result.get("success"):
+            error = result.get("error", "ImageGenerationEvalsTest failed")
+            raise RuntimeError(error)
 
-            inference_steps_per_second = (
-                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
-            )
-            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
-
-            status_list.append(
-                ImageGenerationTestStatus(
-                    status=status,
-                    elapsed=elapsed,
-                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
-                    inference_steps_per_second=inference_steps_per_second,
-                    base64image=base64image,
-                    prompt=prompt,
-                )
-            )
-
-        logger.info(f"Total image generations attempted: {num_prompts}")
-        logger.info(f"Total failed image generations: {failed_count}")
-        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
-
-        if failed_count:
-            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
-            raise RuntimeError(
-                f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
-            )
-
-        return status_list, total_time
+        logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")
+        return result
 
     async def _run_motif_image_6b_preview_eval_async(
         self,
@@ -991,7 +981,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         logger.info(f"✅ Inpainting generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
 
-    def _run_flux_1_dev_schnell_benchmark(
+    def _run_flux_1_dev_benchmark(
         self, num_calls: int
     ) -> list[ImageGenerationTestStatus]:
         """Run Flux 1 Dev or Schnell benchmark."""
@@ -1008,6 +998,31 @@ class ImageClientStrategy(BaseMediaStrategy):
                     status=success,
                     elapsed=elapsed,
                     num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _run_flux_1_schnell_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Flux 1 Dev or Schnell benchmark."""
+        logger.info("Running Flux 1 Dev or Schnell benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_flux_1_dev_schnell(
+                FLUX_1_SCHNELL_INFERENCE_STEPS
+            )
+            inference_steps_per_second = (
+                FLUX_1_SCHNELL_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_1_SCHNELL_INFERENCE_STEPS,
                     inference_steps_per_second=inference_steps_per_second,
                 )
             )

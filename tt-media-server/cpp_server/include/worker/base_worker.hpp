@@ -17,9 +17,9 @@ struct WorkerConfig {
 
 class BaseWorker {
 public:
-    BaseWorker(WorkerConfig& cfg): result_queue(cfg.result_queue), cfg_(std::move(cfg)), task_queue(cfg.task_queue) {
+    BaseWorker(WorkerConfig& cfg): cfg(std::move(cfg)) {
         pid = getpid();
-        worker_id = cfg_.worker_id;
+        worker_id = cfg.worker_id;
     }
     virtual ~BaseWorker() = default;
 
@@ -28,11 +28,8 @@ public:
     pid_t pid{-1};
     bool is_ready{false};
     bool is_alive{true};
-    std::shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
     int worker_id{-1};
-    std::shared_ptr<llm_engine::ITaskQueue> task_queue;
-protected:
-    WorkerConfig cfg_;
+    WorkerConfig cfg;
 };
 
 }

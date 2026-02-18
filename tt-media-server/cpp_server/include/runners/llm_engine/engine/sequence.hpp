@@ -1,11 +1,12 @@
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <string>
+#include <vector>
 #include <string>
 #include <vector>
 #include "llm_engine/sampling_params.hpp"
@@ -14,54 +15,32 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-
-
-
-
 namespace llm_engine {
   
-struct SequenceID {
-  static constexpr size_t kSerializedSize = 36;
-
-  SequenceID() {
+struct TaskID {
+  TaskID() {
     auto uuid = boost::uuids::random_generator()();
     id = boost::uuids::to_string(uuid);
   }
   std::string id;
 
-  bool operator==(const SequenceID& other) const {
+  bool operator==(const TaskID& other) const {
     return id == other.id;
   }
-
-  std::vector<char> serialize() const {
-    std::vector<char> buf(kSerializedSize, '\0');
-    std::copy_n(id.begin(), std::min(id.size(), kSerializedSize), buf.begin());
-    return buf;
-  }
-
-  static SequenceID deserialize(const char* data, size_t len) {
-    SequenceID sid;
-    size_t actual_len = strnlen(data, len);
-    sid.id = std::string(data, actual_len);
-    return sid;
-  }
 };
 
-inline std::ostream& operator<<(std::ostream& os, const SequenceID& sid) {
-  return os << sid.id;
+inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
+  return os << tid.id;
 }
 
-struct DecodeResult {
-  SequenceID seq_id;
-  int64_t token_id;
-};
+
+  
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 class Sequence {
  public:
   static constexpr int block_size = 256;
-  static int next_seq_id();
 
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
@@ -91,7 +70,7 @@ class Sequence {
 
   void append_token(int64_t token_id);
 
-  SequenceID seq_id;
+  TaskID task_id;
   SequenceStatus status_ = SequenceStatus::WAITING;
   std::vector<int64_t> token_ids_;
   int64_t last_token = 0;
@@ -111,8 +90,8 @@ class Sequence {
 
 namespace std {
   template <>
-  struct hash<llm_engine::SequenceID> {
-    size_t operator()(const llm_engine::SequenceID& s) const {
+  struct hash<llm_engine::TaskID> {
+    size_t operator()(const llm_engine::TaskID& s) const {
       return hash<string>{}(s.id);
     }
   };

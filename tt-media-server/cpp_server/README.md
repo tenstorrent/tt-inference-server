@@ -368,14 +368,15 @@ Token generation timing:
 1. **CMake** >= 3.16
 2. **Drogon Framework** >= 1.8
 3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
-4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue). On Ubuntu/Debian: `sudo apt-get install libboost-dev`
+4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue).
+5. **JsonCpp** (used for tokenizer_config parsing).
 
 ### Install Drogon (Ubuntu/Debian)
 
 ```bash
 # Install dependencies
 sudo apt install git gcc g++ cmake libjsoncpp-dev uuid-dev \
-     openssl libssl-dev zlib1g-dev libbrotli-dev
+     openssl libssl-dev zlib1g-dev libbrotli-dev libboost-dev
 
 # Clone and build Drogon
 git clone https://github.com/drogonframework/drogon
@@ -427,11 +428,12 @@ The server includes tokenizer support for encode/decode:
    ```bash
    ./build.sh
    ```
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`. The server loads it automatically from that path relative to the executable.
-   To fetch DeepSeek V3 tokenizer from Hugging Face into `tokenizers/`:
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
+   To fetch DeepSeek V3 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
    mkdir -p cpp_server/tokenizers
    wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer_config.json
    ```
 
 ## Performance

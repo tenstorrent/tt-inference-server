@@ -4,14 +4,9 @@
 
 namespace llm_engine {
 
-int Sequence::next_seq_id() {
-  static int counter = 0;
-  return counter++;
-}
-
 Sequence::Sequence(std::vector<int64_t> token_ids,
                    const SamplingParams& sampling_params)
-    : seq_id(SequenceID{}),
+    : task_id(TaskID{}),
       status_(SequenceStatus::WAITING),
       token_ids_(std::move(token_ids)),
       num_prompt_tokens_(token_ids_.size()),
@@ -49,9 +44,9 @@ void Sequence::append_token(int64_t token_id) {
 void Sequence::serialize(std::ostream& os) const {
   size_t token_ids_size = token_ids_.size();
   size_t block_table_size = block_table_.size();
-  size_t id_size = seq_id.id.size();
+  size_t id_size = task_id.id.size();
   os.write(reinterpret_cast<const char*>(&id_size), sizeof(id_size));
-  os.write(seq_id.id.c_str(), id_size);
+  os.write(task_id.id.c_str(), id_size);
   os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
   os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
   os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
@@ -68,10 +63,10 @@ void Sequence::serialize(std::ostream& os) const {
 Sequence* Sequence::deserialize(std::istream& is) {
   Sequence* seq = new Sequence(std::vector<int64_t>{});
 
-  size_t seq_id_size;
-  is.read(reinterpret_cast<char*>(&seq_id_size), sizeof(seq_id_size));
-  seq->seq_id.id.resize(seq_id_size);
-  is.read(reinterpret_cast<char*>(seq->seq_id.id.data()), seq_id_size);
+  size_t task_id_size;
+  is.read(reinterpret_cast<char*>(&task_id_size), sizeof(task_id_size));
+  seq->task_id.id.resize(task_id_size);
+  is.read(reinterpret_cast<char*>(seq->task_id.id.data()), task_id_size);
   is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
   is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
   is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));

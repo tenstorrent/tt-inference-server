@@ -11,7 +11,7 @@
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
-#include "utils/service_fabric.hpp"
+#include "utils/service_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     std::string host = "0.0.0.0";
     uint16_t port = 8000;
     int threads = std::thread::hardware_concurrency();
-    tt::utils::service_fabric::register_services();
+    tt::utils::service_factory::register_services();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -68,10 +68,6 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-    if (model_svc == tt::config::ModelService::LLM) {
-        auto llm_cfg = tt::config::llm_engine_config();
-        std::cout << "  LLM device: " << (llm_cfg.device == llm_engine::DeviceBackend::Sockets ? "sockets" : "mock") << "\n";
-    }
     std::cout << "=================================================\n"
               << std::endl;
 

@@ -45,7 +45,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->seq_id, seq->last_token + 1});
+      decode_callback_({seq->task_id, seq->last_token + 1});
     }
   } else {
     backend_->write(*seqs[0]);
