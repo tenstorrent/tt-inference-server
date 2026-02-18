@@ -14,7 +14,7 @@
 namespace llm_engine {
 
 struct DecodeResult {
-  int seq_id;
+  TaskID task_id;
   int64_t token_id;
 };
 

@@ -13,3 +13,5 @@ CMakeFiles/
 
 # Runtime logs (Drogon setLogPath)
 logs/
+
+**/vllm-venv

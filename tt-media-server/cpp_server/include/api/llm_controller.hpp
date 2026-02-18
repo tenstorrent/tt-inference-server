@@ -32,7 +32,7 @@ public:
      */
     void completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 
     /**
@@ -41,7 +41,7 @@ public:
      */
     void chat_completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /health
@@ -49,7 +49,7 @@ public:
      */
     void health(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /ready
@@ -57,74 +57,35 @@ public:
      */
     void ready(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 private:
     std::shared_ptr<services::LLMService> service_;
 
     /**
-     * Handle non-streaming completion request.
-     */
-    void handle_non_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    /**
-     * Handle streaming completion request (SSE). Takes request by value so caller can move.
+     * Handle streaming text completion request (SSE).
      */
     void handle_streaming(
-        domain::CompletionRequest request,
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    /**
-     * Handle streaming with 32KB write buffering for high-throughput scenarios
-     * where ITL measurement is not needed (e.g. zero-delay runners).
-     */
-    void handle_streaming_buffered(
-        domain::CompletionRequest request,
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    /**
-     * Handle non-streaming chat completion request.
-     */
-    void handle_chat_non_streaming(
         const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
-     * Handle streaming chat completion request (SSE). Takes request by value so caller can move.
+     * Handle streaming chat completion request (SSE).
      */
     void handle_chat_streaming(
-        domain::CompletionRequest request,
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+        const domain::CompletionRequest& request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
-     * Generate a unique completion ID.
+     * Generate a unique completion ID (hex string).
      */
     static std::string generate_completion_id();
 
     /**
-     * Build OpenAI-style error JSON for chat completions (flat object/message/type/param/code).
+     * Build OpenAI-style error JSON (flat object/message/type/param/code).
      */
-    static Json::Value chat_error_json(const std::string& message, const std::string& type,
+    static Json::Value error_json(const std::string& message, const std::string& type,
         const Json::Value& param = Json::nullValue, const Json::Value& code = Json::nullValue);
-
-    /**
-     * Response formatter function type.
-     * Takes a completion response and returns a JSON value.
-     */
-    using ResponseFormatter = std::function<Json::Value(const domain::CompletionResponse&)>;
-
-    /**
-     * Run an asynchronous completion request.
-     */
-    void run_async_completion(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        ResponseFormatter formatter);
 };
 
 } // namespace tt::api
