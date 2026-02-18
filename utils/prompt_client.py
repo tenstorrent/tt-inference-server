@@ -119,19 +119,34 @@ class PromptClient:
 
     def wait_for_healthy(
         self,
-        timeout: float = 1200.0,
+        timeout: Optional[float] = None,
         interval: int = 10,
     ) -> bool:
         """
         Wait for the vLLM service to become healthy with intelligent cache generation detection.
 
         Args:
-            timeout: Base timeout in seconds
+            timeout: Base timeout in seconds. If not provided, reads from the
+                VLLM_HEALTH_TIMEOUT environment variable (seconds) and falls back
+                to 1200.0.
             interval: Health check interval in seconds
 
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
         """
+        if timeout is None:
+            env_timeout = os.environ.get("VLLM_HEALTH_TIMEOUT")
+            if env_timeout is not None:
+                try:
+                    timeout = float(env_timeout)
+                except ValueError:
+                    logger.warning(
+                        f"Invalid VLLM_HEALTH_TIMEOUT={env_timeout!r}; using default 1200.0s"
+                    )
+                    timeout = 1200.0
+            else:
+                timeout = 1200.0
+
         timeout = float(timeout)
         if self.server_ready:
             return True

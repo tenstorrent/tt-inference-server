@@ -301,7 +301,7 @@ class DeviceModelSpec:
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
         default_vllm_args = {
-            "block_size": "64",
+            "block_size": "32",
             "max_model_len": str(self.max_context),
             "max_num_seqs": str(self.max_concurrency),
             "max_num_batched_tokens": str(self.max_context),
