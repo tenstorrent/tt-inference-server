@@ -87,7 +87,6 @@ class TTModels(nn.Module):
         forward_batch: ForwardBatch,
         input_embeds: torch.Tensor = None,
     ) -> LogitsProcessorOutput:
-
         page_table = self._build_page_table(
             forward_batch
         )  # returns block IDs for every user in current batch
