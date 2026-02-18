@@ -9,11 +9,6 @@
 
 namespace tt::utils {
 
-Tokenizer& Tokenizer::instance(const std::string& path) {
-    static Tokenizer instance(path);
-    return instance;
-}
-
 Tokenizer::Tokenizer(const std::string& path) {
     if (path.empty()) {
         throw std::runtime_error("[TokenizerUtil] Cannot initialize with empty path");

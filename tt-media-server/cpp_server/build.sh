@@ -12,6 +12,7 @@ ENABLE_TTNN="OFF"
 # Parse arguments
 TEST="OFF"
 SANITIZE_THREAD="OFF"
+SANITIZE_ADDRESS="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -31,6 +32,11 @@ while [[ $# -gt 0 ]]; do
             BUILD_TYPE="Debug"
             shift
             ;;
+        --asan)
+            SANITIZE_ADDRESS="ON"
+            BUILD_TYPE="Debug"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -39,6 +45,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ttnn     Enable TTNN test runner (requires Python + ttnn)"
             echo "  --test     Build for PR gate: LLM only (no Python required)"
             echo "  --tsan     Build with ThreadSanitizer for data-race detection"
+            echo "  --asan     Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -50,13 +57,36 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [ "${SANITIZE_THREAD}" = "ON" ] && [ "${SANITIZE_ADDRESS}" = "ON" ]; then
+    echo "Error: --tsan and --asan are mutually exclusive."
+    exit 1
+fi
+
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  TTNN enabled: ${ENABLE_TTNN}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
+echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "=============================================="
+
+# Ensure cargo (Rust) is in PATH for tokenizers-cpp
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -f "${HOME}/.cargo/env" ]; then
+        echo "Sourcing Rust environment (cargo not in PATH)..."
+        # shellcheck source=/dev/null
+        . "${HOME}/.cargo/env"
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo ""
+        echo "ERROR: cargo (Rust) not found. tokenizers-cpp requires Rust."
+        echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        echo "  Then: source ~/.cargo/env  (or start a new terminal)"
+        echo ""
+        exit 1
+    fi
+fi
 
 # If TTNN is enabled, ensure we have the right Python
 if [ "${ENABLE_TTNN}" = "ON" ]; then
@@ -79,6 +109,8 @@ elif [ -f "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
 elif [ -f "/usr/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
+elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
+    DROGON_FOUND=1
 fi
 
 if [ "${DROGON_FOUND}" -eq 0 ]; then
@@ -97,9 +129,12 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
               -DBUILD_CTL=OFF \
               -DBUILD_YAML_CONFIG=OFF \
               ..
-        make -j$(nproc)
+        NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+        make -j"${NPROC}"
         sudo make install
-        sudo ldconfig
+        if [ "$(uname -s)" = "Linux" ]; then
+            sudo ldconfig
+        fi
         cd "${SCRIPT_DIR}"
     else
         echo "Please install Drogon framework first:"
@@ -144,26 +179,25 @@ fi
 
 # Create build directory
 mkdir -p "${BUILD_DIR}"
-cd "${BUILD_DIR}"
 
-# Configure
+# Configure (use -B/-S for explicit paths to avoid ambiguity)
 echo ""
 echo "Configuring CMake..."
-# Tokenizer pulls in msgpack with old cmake_minimum_required; CMake 4+ needs this to configure.
-cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" \
+      -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DENABLE_TTNN="${ENABLE_TTNN}" \
-      -DLLM_ENGINE_DEBUG_BUILD=ON \
+      -DLLM_ENGINE_DEBUG_BUILD=OFF \
       -DTEST="${TEST}" \
       -DSANITIZE_THREAD="${SANITIZE_THREAD}" \
-      ..
+      -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 
-# Build
+# Build (cmake --build works with any generator: Makefiles or Ninja)
 echo ""
 echo "Building..."
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
-make -j"${NPROC}"
+cmake --build "${BUILD_DIR}" -j"${NPROC}"
 
 echo ""
 echo "=============================================="
