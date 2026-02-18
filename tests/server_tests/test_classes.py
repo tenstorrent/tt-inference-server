@@ -48,17 +48,17 @@ class TestConfig:
         )
 
     @classmethod
-    def create_default(cls):
-        """Create default test configuration"""
-        return cls(
-            {
-                "timeout": 300,  # 5 minutes
-                "max_retries": 3,  # 3 retry attempts
-                "retry_delay": 5,  # 5 seconds between retries
-                "break_on_failure": True,
-                "retry_attempts": 10,
-            }
-        )
+    def create_default(cls, **overrides):
+        """Create default test configuration with optional overrides."""
+        defaults = {
+            "timeout": 300,  # 5 minutes
+            "max_retries": 3,  # 3 retry attempts
+            "retry_delay": 5,  # 5 seconds between retries
+            "break_on_failure": True,
+            "retry_attempts": 10,
+        }
+        defaults.update(overrides)
+        return cls(defaults)
 
 
 class TestReport:

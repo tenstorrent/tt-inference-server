@@ -71,7 +71,10 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(llm_engine PUBLIC Boost::boost rt)
+target_link_libraries(llm_engine PUBLIC Boost::boost)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(llm_engine PUBLIC rt)
+endif()
 target_compile_features(llm_engine PUBLIC cxx_std_17)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
@@ -80,9 +83,18 @@ if(LLM_ENGINE_DEBUG_BUILD)
 endif()
 
 option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
+option(SANITIZE_ADDRESS "Build with AddressSanitizer (ASan) and LeakSanitizer for memory errors and leak detection" OFF)
+if(SANITIZE_THREAD AND SANITIZE_ADDRESS)
+    message(FATAL_ERROR "SANITIZE_THREAD and SANITIZE_ADDRESS are mutually exclusive; enable only one.")
+endif()
 if(SANITIZE_THREAD)
     target_compile_options(llm_engine PUBLIC -fsanitize=thread -g)
     target_link_options(llm_engine PUBLIC -fsanitize=thread)
+endif()
+if(SANITIZE_ADDRESS)
+    set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
+    target_compile_options(llm_engine PUBLIC ${ASAN_FLAGS})
+    target_link_options(llm_engine PUBLIC -fsanitize=address)
 endif()
 
 add_executable(engine_demo src/runners/llm_engine/demo.cpp)
@@ -148,11 +160,12 @@ set(SOURCES
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
-    src/scheduler/multiprocess_scheduler.cpp
-    src/services/base_service.cpp
+    src/services/llm_service.cpp
+    src/utils/service_factory.cpp
     src/utils/tokenizer.cpp
+    src/worker/llm_worker.cpp
     src/utils/tokenizer_config_loader.cpp
-)
+    )
 if(NOT TEST)
     list(APPEND SOURCES
         src/api/embedding_controller.cpp
@@ -172,11 +185,12 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
 )
 
-# Link Drogon (Python only when embedding is built, i.e. NOT TEST)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+# Link Drogon and llm_engine (used by LLMService)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
 endif()
@@ -202,4 +216,21 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 # Release optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+endif()
+
+# AddressSanitizer for executables (must be after all add_executable calls)
+if(SANITIZE_ADDRESS)
+    set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
+    target_compile_options(${PROJECT_NAME} PRIVATE ${ASAN_FLAGS})
+    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    target_compile_options(engine_demo PRIVATE ${ASAN_FLAGS})
+    target_link_options(engine_demo PRIVATE -fsanitize=address)
+    target_compile_options(scheduler_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(scheduler_test PRIVATE -fsanitize=address)
+    target_compile_options(llm_engine_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(llm_engine_test PRIVATE -fsanitize=address)
+    target_compile_options(sequence_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(sequence_test PRIVATE -fsanitize=address)
+    target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
 endif()

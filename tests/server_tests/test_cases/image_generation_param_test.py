@@ -52,13 +52,16 @@ class ImageGenerationParamTest(BaseTest):
         # Get response data from all requests
         response_data_list = await self.test_concurrent_image_generation(payloads)
 
-        # You can now compare the response data
-        print(f"\n📊 Received {len(response_data_list)} responses")
+        logger.info("Received %s responses", len(response_data_list))
 
-        same_requests = (
-            True if response_data_list[0] == response_data_list[1] else False
-        )
+        same_requests = response_data_list[0] == response_data_list[1]
         guidance_scale_differs = response_data_list[0] != response_data_list[2]
+
+        logger.info(
+            "response[0]==response[1]: %s, response[0]!=response[2]: %s",
+            same_requests,
+            guidance_scale_differs,
+        )
 
         return {
             "num_responses": len(response_data_list),
@@ -79,7 +82,7 @@ class ImageGenerationParamTest(BaseTest):
         """
 
         async def timed_request(session, index, request_payload):
-            print(f"Starting request {index}")
+            logger.info("Starting request %s", index)
             try:
                 start = time.perf_counter()
                 async with session.post(
@@ -90,14 +93,17 @@ class ImageGenerationParamTest(BaseTest):
                     if response.status == 200:
                         data = await response.json()
                     else:
-                        print(f"[{index}] Error: Status {response.status}")
+                        body = await response.text()
+                        logger.error(
+                            "[%s] HTTP %s: %s", index, response.status, body[:500]
+                        )
                         data = {
                             "error": f"Status {response.status}",
                             "status": response.status,
                         }
 
-                    print(
-                        f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
+                    logger.info(
+                        "[%s] Status: %s, Time: %.2fs", index, response.status, duration
                     )
                     return {
                         "index": index,
@@ -108,7 +114,7 @@ class ImageGenerationParamTest(BaseTest):
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                logger.error("[%s] Exception after %.2fs: %s", index, duration, e)
                 return {
                     "index": index,
                     "duration": duration,
@@ -131,7 +137,7 @@ class ImageGenerationParamTest(BaseTest):
                 results = await asyncio.gather(*tasks)
 
                 if iteration == 0:
-                    print("🔥 Warm up run done.")
+                    logger.info("Warmup run done.")
                 else:
                     # Second iteration - collect the actual data
                     response_data_list = results
@@ -139,14 +145,11 @@ class ImageGenerationParamTest(BaseTest):
                     requests_duration = max(durations)
                     avg_duration = sum(durations) / batch_size
 
-                    print(
-                        f"\n🚀 Time taken for individual concurrent requests: {durations}"
-                    )
-                    print(
-                        f"\n🚀 Max time for {batch_size} concurrent requests: {requests_duration:.2f}s"
-                    )
-                    print(
-                        f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+                    logger.info(
+                        "Durations: %s, max=%.2fs, avg=%.2fs",
+                        [f"{d:.2f}s" for d in durations],
+                        requests_duration,
+                        avg_duration,
                     )
 
         # Return list of response data in the same order as input payloads

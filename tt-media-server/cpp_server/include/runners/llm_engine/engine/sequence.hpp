@@ -2,18 +2,46 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <functional>
 #include <iostream>
+#include <string>
+#include <vector>
 #include "llm_engine/sampling_params.hpp"
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
+
+
+
+
 namespace llm_engine {
+  
+struct TaskID {
+  TaskID() {
+    auto uuid = boost::uuids::random_generator()();
+    id = boost::uuids::to_string(uuid);
+  }
+  std::string id;
+
+  bool operator==(const TaskID& other) const {
+    return id == other.id;
+  }
+};
+
+inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
+  return os << tid.id;
+}
+
+
+  
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 class Sequence {
  public:
   static constexpr int block_size = 256;
-  static int next_seq_id();
 
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
@@ -43,7 +71,7 @@ class Sequence {
 
   void append_token(int64_t token_id);
 
-  int seq_id = 0;
+  TaskID task_id;
   SequenceStatus status_ = SequenceStatus::WAITING;
   std::vector<int64_t> token_ids_;
   int64_t last_token = 0;
@@ -60,3 +88,12 @@ class Sequence {
 };
 
 }  // namespace llm_engine
+
+namespace std {
+  template <>
+  struct hash<llm_engine::TaskID> {
+    size_t operator()(const llm_engine::TaskID& s) const {
+      return hash<string>{}(s.id);
+    }
+  };
+  }  // namespace std
