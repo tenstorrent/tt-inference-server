@@ -21,6 +21,10 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from tests.server_tests.test_cases.image_generation_eval_test import (
+    ImageGenerationEvalsTest,
+)
+from tests.server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,
@@ -647,69 +651,34 @@ class ImageClientStrategy(BaseMediaStrategy):
         Returns the eval result dict from ImageGenerationEvalsTest.
         """
         num_prompts = is_sdxl_num_prompts_enabled(self)
-        logger.info(f"Number of prompts set to: {num_prompts}")
-
-        prompts = sdxl_get_prompts(0, num_prompts)
-        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
-
         inference_steps = (
-            FLUX_MOTIF_INFERENCE_STEPS
-            if self.runner_in_use == "tt-flux.1-dev"
-            else FLUX_1_SCHNELL_INFERENCE_STEPS
+            FLUX_1_SCHNELL_INFERENCE_STEPS
+            if self.runner_in_use == "tt-flux.1-schnell"
+            else FLUX_MOTIF_INFERENCE_STEPS
         )
-        logger.info(f"Inference steps set to: {inference_steps}")
-
-        async with aiohttp.ClientSession() as session:
-            total_start_time = time.time()
-            tasks = [
-                self._generate_image_eval_async(session, prompt, inference_steps)
-                for prompt in prompts
-            ]
-            results = await asyncio.gather(*tasks)
-            total_time = time.time() - total_start_time
-
         logger.info(
-            f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds"
+            f"Running ImageGenerationEvalsTest for {self.model_spec.model_name} "
+            f"with {num_prompts} prompts, {inference_steps} inference steps"
         )
 
-        status_list = []
-        failed_count = 0
+        test_config = ServerTestConfig.create_default(timeout=25000)
+        request_dict = {
+            "model_name": self.model_spec.model_name,
+            "num_prompts": num_prompts,
+            "num_inference_steps": inference_steps,
+            "server_url": self.base_url,
+        }
+        eval_test = ImageGenerationEvalsTest(test_config, {"request": request_dict})
+        eval_test.service_port = self.service_port
 
-        for i, (status, elapsed, base64image) in enumerate(results):
-            prompt = prompts[i]
+        result = await eval_test._run_specific_test_async()
 
-            if not status or base64image is None:
-                failed_count += 1
-                logger.warning(
-                    f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'"
-                )
-                continue
+        if not result.get("success"):
+            error = result.get("error", "ImageGenerationEvalsTest failed")
+            raise RuntimeError(error)
 
-            inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
-            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
-
-            status_list.append(
-                ImageGenerationTestStatus(
-                    status=status,
-                    elapsed=elapsed,
-                    num_inference_steps=inference_steps,
-                    inference_steps_per_second=inference_steps_per_second,
-                    base64image=base64image,
-                    prompt=prompt,
-                )
-            )
-
-        logger.info(f"Total image generations attempted: {num_prompts}")
-        logger.info(f"Total failed image generations: {failed_count}")
-        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
-
-        if failed_count:
-            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
-            raise RuntimeError(
-                f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
-            )
-
-        return status_list, total_time
+        logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")
+        return result
 
     async def _run_motif_image_6b_preview_eval_async(
         self,
