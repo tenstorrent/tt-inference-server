@@ -70,6 +70,7 @@ void LLMEngine::drain_decode_results() {
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
                                    << " completion_tokens=" << seq->num_completion_tokens() << std::endl;
+      scheduler_->removeSequence(dr.task_id);
     }
   }
 }

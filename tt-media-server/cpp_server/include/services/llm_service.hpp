@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include "utils/concurrent_map.hpp"
+#include "utils/tokenizer.hpp"
 #include <vector>
 
 namespace tt::services {
@@ -95,6 +96,7 @@ private:
     std::string device_ = "cpu";
 
     std::unique_ptr<QueueManager> queue_manager_;
+    tt::utils::Tokenizer tokenizer_;
 };
 
 }

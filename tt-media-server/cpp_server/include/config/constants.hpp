@@ -62,7 +62,7 @@ inline RunnerType runner_type_from_string(const std::string& v) {
  * Env overrides these when present.
  */
 namespace defaults {
-    constexpr const char* DEVICE_IDS = "(0)";
+    constexpr const char* DEVICE_IDS = "(0),(1),(2),(3)";
     constexpr const char* MODEL_SERVICE = "llm";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;

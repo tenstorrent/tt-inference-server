@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <stdexcept>
 #include <tokenizers_cpp.h>
 
 #include "domain/chat_message.hpp"
@@ -36,22 +35,22 @@ TokenizerConfig get_tokenizer_config();
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace / SentencePiece).
- * Singleton pattern - loads tokenizer once and reuses it across the application.
- * Thread-safe initialization (C++11 guarantees).
+ * Each instance owns its own underlying tokenizer, so separate instances are safe
+ * to use from different threads without synchronization.
  */
 class Tokenizer {
 public:
     /**
-     * Get the singleton instance.
-     * @param path Path to tokenizer file (only used on first call).
-     * @return Reference to the singleton instance.
+     * Construct a tokenizer from a .json (HuggingFace) or .model (SentencePiece) file.
+     * @throws std::runtime_error if path is empty, file is unreadable, or format is unsupported.
      */
-    static Tokenizer& instance(const std::string& path = "");
+    explicit Tokenizer(const std::string& path);
+    ~Tokenizer() = default;
 
     Tokenizer(const Tokenizer&) = delete;
     Tokenizer& operator=(const Tokenizer&) = delete;
-    Tokenizer(Tokenizer&&) = delete;
-    Tokenizer& operator=(Tokenizer&&) = delete;
+    Tokenizer(Tokenizer&&) = default;
+    Tokenizer& operator=(Tokenizer&&) = default;
 
     /**
      * Encode text to token IDs.
@@ -79,9 +78,6 @@ public:
     bool is_loaded() const;
 
 private:
-    explicit Tokenizer(const std::string& path);
-    ~Tokenizer() = default;
-
     std::unique_ptr<tokenizers::Tokenizer> tok_;
 };
 

@@ -15,8 +15,9 @@ std::shared_ptr<ITaskQueue> make_queue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
-std::unique_ptr<Scheduler> make_scheduler(const Config& config) {
-  return std::make_unique<Scheduler>(config, make_queue().get());
+std::unique_ptr<Scheduler> make_scheduler(const Config& config,
+                                           ITaskQueue* task_queue) {
+  return std::make_unique<Scheduler>(config, task_queue);
 }
 
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
@@ -45,7 +46,8 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   int finished_count = 0;
   int total_requests = static_cast<int>(requests.size());
 
-  auto scheduler = make_scheduler(config);
+  auto task_queue = make_queue();
+  auto scheduler = make_scheduler(config, task_queue.get());
 
   LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
       received_tokens[task_id].push_back(token_id);

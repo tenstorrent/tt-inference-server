@@ -6,8 +6,6 @@
 #include "llm_engine/engine/sequence.hpp"
 #include "llm_engine/sampling_params.hpp"
 #include <gtest/gtest.h>
-#include <atomic>
-#include <thread>
 #include <vector>
 #include "llm_engine/engine/in_memory_task_queue.hpp"
 
@@ -304,5 +302,5 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   }
 }
 
-}  // namespace
-}  // namespace llm_engine
+} 
+}

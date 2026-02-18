@@ -13,7 +13,7 @@ LLMWorker::LLMWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_con
             };
             std::strncpy(token.task_id, task_id.id.c_str(), sizeof(token.task_id) - 1);
             token.task_id[sizeof(token.task_id) - 1] = '\0';
-            result_queue->push(token);
+            this->cfg.result_queue->push(token);
         };
     is_ready = true;
 }
@@ -23,12 +23,12 @@ LLMWorker::~LLMWorker() {
 }
 
 void LLMWorker::start() {
-    for (const auto& [key, value] : cfg_.env_vars) {
+    for (const auto& [key, value] : cfg.env_vars) {
         setenv(key.c_str(), value.c_str(), 1);
     }
 
     auto scheduler = std::make_unique<llm_engine::Scheduler>(
-        llm_engine_config_, cfg_.task_queue.get()
+        llm_engine_config_, cfg.task_queue.get()
     );
     llm_engine_ = std::make_unique<llm_engine::LLMEngine>(
         llm_engine_config_,

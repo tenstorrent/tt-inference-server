@@ -13,12 +13,12 @@
 #include <memory>
 #include <sys/wait.h>
 #include <unistd.h>
-#include "utils/tokenizer.hpp"
 
 namespace tt::services {
 
 LLMService::LLMService()
-    : num_workers_(tt::config::num_workers()) {
+    : num_workers_(tt::config::num_workers()),
+      tokenizer_(tt::config::tokenizer_path()) {
     std::cout << "[LLMService] Initialized (" << num_workers_ << " workers)\n" << std::flush;
     queue_manager_ = std::make_unique<QueueManager>(num_workers_);
 }
@@ -66,7 +66,7 @@ LLMService::SystemStatus LLMService::get_system_status() const {
 void LLMService::pre_process(domain::CompletionRequest& request) const {
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
-        request.prompt = tt::utils::Tokenizer::instance(tt::config::tokenizer_path()).encode(text);
+        request.prompt = tokenizer_.encode(text);
     }
 }
 
@@ -183,10 +183,12 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     std::cout << "[Consumer-" << worker_idx << "] Started\n" << std::flush;
 
     auto* worker = workers_[worker_idx].get();
-    if (!worker->result_queue) {
+    if (!worker->cfg.result_queue) {
         std::cout << "[Consumer-" << worker_idx << "] No token buffer, exiting\n" << std::flush;
         return;
     }
+
+    tt::utils::Tokenizer tokenizer(tt::config::tokenizer_path());
 
     while (running_) {
         if (!check_worker_alive(worker_idx)) {
@@ -197,7 +199,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         bool any_activity = false;
 
         ipc::SharedToken token;
-        while (worker->result_queue->pop(token)) {
+        while (worker->cfg.result_queue->pop(token)) {
             any_activity = true;
 
             auto val = stream_callbacks_.get(token.task_id);
@@ -216,7 +218,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             ).count();
 
             domain::CompletionChoice choice;
-            choice.text = tt::utils::Tokenizer::instance(tt::config::tokenizer_path()).decode({static_cast<int>(token.token_id)});
+            choice.text = tokenizer.decode({static_cast<int>(token.token_id)});
             choice.index = token.token_index;
             if (token.is_final()) {
                 choice.finish_reason = "stop";
