@@ -43,7 +43,8 @@ NEGATIVE_PROMPT = (
 )
 GUIDANCE_SCALE = 8
 NUM_INFERENCE_STEPS = 20
-FLUX_MOTIF_INFERENCE_STEPS = 40  # FLUX.1-dev, FLUX.1-schnell, Motif
+FLUX_MOTIF_INFERENCE_STEPS = 28  # FLUX.1-dev, Motif
+FLUX_1_SCHNELL_INFERENCE_STEPS = 4  # FLUX.1-schnell
 
 # IMG2IMG specific constants
 SDXL_IMG2IMG_INFERENCE_STEPS = 30
@@ -69,8 +70,8 @@ class ImageClientStrategy(BaseMediaStrategy):
             "tt-sdxl-image-to-image": self._run_img2img_generation_benchmark,
             "tt-sdxl-edit": self._run_inpainting_generation_benchmark,
             "tt-sd3.5": self._run_image_generation_benchmark,
-            "tt-flux.1-dev": self._run_flux_1_dev_schnell_benchmark,
-            "tt-flux.1-schnell": self._run_flux_1_dev_schnell_benchmark,
+            "tt-flux.1-dev": self._run_flux_1_dev_benchmark,
+            "tt-flux.1-schnell": self._run_flux_1_schnell_benchmark,
             "tt-motif-image-6b-preview": self._run_motif_image_6b_preview_benchmark,
         }
 
@@ -101,10 +102,11 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Route to appropriate eval method using dispatch map
             eval_method = self.eval_methods.get(
-                runner_in_use, self._run_image_generation_eval
+                self.runner_in_use, self._run_image_generation_eval
             )
             status_list, total_time = asyncio.run(eval_method())
         except Exception as e:
@@ -192,13 +194,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 raise
 
             logger.info(f"Runner in use: {runner_in_use}")
+            self.runner_in_use = runner_in_use
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
-                runner_in_use, self._run_image_generation_benchmark
+                self.runner_in_use, self._run_image_generation_benchmark
             )
             status_list = benchmark_method(num_calls)
 
@@ -635,12 +638,17 @@ class ImageClientStrategy(BaseMediaStrategy):
         prompts = sdxl_get_prompts(0, num_prompts)
         logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
 
+        inference_steps = (
+            FLUX_MOTIF_INFERENCE_STEPS
+            if self.runner_in_use == "tt-flux.1-dev"
+            else FLUX_1_SCHNELL_INFERENCE_STEPS
+        )
+        logger.info(f"Inference steps set to: {inference_steps}")
+
         async with aiohttp.ClientSession() as session:
             total_start_time = time.time()
             tasks = [
-                self._generate_image_eval_async(
-                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
-                )
+                self._generate_image_eval_async(session, prompt, inference_steps)
                 for prompt in prompts
             ]
             results = await asyncio.gather(*tasks)
@@ -663,16 +671,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 )
                 continue
 
-            inference_steps_per_second = (
-                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
-            )
+            inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
             logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
 
             status_list.append(
                 ImageGenerationTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    num_inference_steps=inference_steps,
                     inference_steps_per_second=inference_steps_per_second,
                     base64image=base64image,
                     prompt=prompt,
@@ -991,7 +997,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         logger.info(f"✅ Inpainting generation successful in {elapsed:.2f}s")
         return (response.status_code == 200), elapsed
 
-    def _run_flux_1_dev_schnell_benchmark(
+    def _run_flux_1_dev_benchmark(
         self, num_calls: int
     ) -> list[ImageGenerationTestStatus]:
         """Run Flux 1 Dev or Schnell benchmark."""
@@ -1008,6 +1014,31 @@ class ImageClientStrategy(BaseMediaStrategy):
                     status=success,
                     elapsed=elapsed,
                     num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
+                    inference_steps_per_second=inference_steps_per_second,
+                )
+            )
+
+        return status_list
+
+    def _run_flux_1_schnell_benchmark(
+        self, num_calls: int
+    ) -> list[ImageGenerationTestStatus]:
+        """Run Flux 1 Dev or Schnell benchmark."""
+        logger.info("Running Flux 1 Dev or Schnell benchmark.")
+        status_list = []
+        for i in range(num_calls):
+            logger.info(f"🌅 Flux benchmark iteration {i + 1}/{num_calls}")
+            success, elapsed = self._generate_image_flux_1_dev_schnell(
+                FLUX_1_SCHNELL_INFERENCE_STEPS
+            )
+            inference_steps_per_second = (
+                FLUX_1_SCHNELL_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+            )
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=success,
+                    elapsed=elapsed,
+                    num_inference_steps=FLUX_1_SCHNELL_INFERENCE_STEPS,
                     inference_steps_per_second=inference_steps_per_second,
                 )
             )

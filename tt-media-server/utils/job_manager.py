@@ -413,7 +413,6 @@ class JobManager:
         if not jobs_to_remove:
             return
 
-        # Cleanup outside the lock
         for job in jobs_to_remove:
             self._cleanup_job(job)
             if job.result_path and isinstance(job.result_path, str):
@@ -449,11 +448,10 @@ class JobManager:
             if job._cancel_event and not force:
                 # runner handles cancellation
                 job._cancel_event.set()
-                running_task = job._task
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
-                running_task = job._task
+            running_task = job._task
 
         return running_task
 
