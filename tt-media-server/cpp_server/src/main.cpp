@@ -68,7 +68,10 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-
+    if (model_svc == tt::config::ModelService::LLM) {
+        auto llm_cfg = tt::config::llm_engine_config();
+        std::cout << "  LLM device backend: " << (llm_cfg.use_real_device ? "real" : "mock") << "\n";
+    }
     std::cout << "=================================================\n"
               << std::endl;
 

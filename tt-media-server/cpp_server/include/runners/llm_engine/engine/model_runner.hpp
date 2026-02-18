@@ -9,11 +9,8 @@
 #include <vector>
 
 #include "llm_engine/config.hpp"
+#include "llm_engine/engine/device_backend.hpp"
 #include "llm_engine/engine/sequence.hpp"
-#include "llm_engine/engine/host_interface.hpp"
-#include <tt-metalium/experimental/sockets/h2d_socket.hpp>
-#include <tt-metalium/experimental/sockets/d2h_socket.hpp>
-#include <tt-metalium/distributed.hpp>
 
 namespace llm_engine {
 
@@ -44,7 +41,8 @@ class IModelRunner {
 
 class ModelRunnerStub : public IModelRunner {
  public:
-  ModelRunnerStub(const Config& config, DecodeCallback callback);
+  ModelRunnerStub(const Config& config, DecodeCallback callback,
+                  std::unique_ptr<IDeviceBackend> backend);
   ~ModelRunnerStub() override;
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
@@ -53,16 +51,10 @@ class ModelRunnerStub : public IModelRunner {
   void reader_loop();
 
   Config config_;
-  int64_t dummy_token_;
   DecodeCallback decode_callback_;
-  std::mutex work_mutex_;
-  std::vector<DecodeResult> work_queue_;
+  std::unique_ptr<IDeviceBackend> backend_;
   std::atomic<bool> stop_{false};
-  std::shared_ptr<tt::tt_metal::distributed::MeshDevice> mesh_device_;
-  std::unique_ptr<tt::tt_metal::distributed::H2DSocket> h2d_socket_;
-  std::unique_ptr<tt::tt_metal::distributed::D2HSocket> d2h_socket_;
-  std::unique_ptr<HostInterface> host_io_;
-  std::thread reader_thread_;  // must be last: started after all members above are ready
+  std::thread reader_thread_;
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,

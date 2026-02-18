@@ -119,7 +119,12 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
-    return defaults::DEFAULT_LLM_ENGINE_CONFIG;
+    auto cfg = defaults::DEFAULT_LLM_ENGINE_CONFIG;
+    const char* v = std::getenv("LLM_USE_REAL_DEVICE");
+    if (v && (std::string(v) == "1" || std::string(v) == "true" || std::string(v) == "yes")) {
+        cfg.use_real_device = true;
+    }
+    return cfg;
 }
 
 }  // namespace tt::config

@@ -105,6 +105,9 @@ endif()
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
     src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
+    src/runners/llm_engine/engine/device_backend.cpp
+    src/runners/llm_engine/engine/device_backend_mock.cpp
+    src/runners/llm_engine/engine/device_backend_real.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/host_interface.cpp
     src/runners/llm_engine/engine/llm_engine.cpp

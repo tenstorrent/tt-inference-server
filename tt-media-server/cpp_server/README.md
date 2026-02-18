@@ -15,6 +15,8 @@ The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
+**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **real** (TT device, H2D/D2H sockets, loopback kernels) and **mock** (echoes written pages back as read data for tests without hardware). The backend is chosen from `llm_engine::Config::use_real_device`, which is set via `LLM_USE_REAL_DEVICE` (see Environment Variables). Default is mock.
+
 ### Run the demo
 
 ```bash
@@ -92,6 +94,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
+| `LLM_USE_REAL_DEVICE` | Use real TT device backend for LLM (`1`, `true`, or `yes`). If unset or off, the mock backend is used (no hardware). | off |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 
 ## Authentication

@@ -8,6 +8,7 @@ struct Config {
   int eos = -1;
   int kvcache_block_size = 256;
   int num_kvcache_blocks = -1;
+  bool use_real_device = false;
 };
 
 }  // namespace llm_engine

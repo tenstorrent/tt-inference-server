@@ -73,6 +73,7 @@ namespace defaults {
         .eos = 0,
         .kvcache_block_size = 128,
         .num_kvcache_blocks = 4000,
+        .use_real_device = false,
     };
 }
 
