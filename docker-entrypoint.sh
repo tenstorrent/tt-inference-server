@@ -30,12 +30,18 @@ set_group_permissions() {
     
     # Set group if needed
     if [ "$current_group" != "$shared_group" ]; then
-        chown -R :"$shared_group" "$var_dir"
+        if ! chown -R :"$shared_group" "$var_dir" 2>/dev/null; then
+            echo "WARNING: could not chown ${var_dir} to group ${shared_group}"
+            return 0
+        fi
     fi
     
     # Set permissions if needed
     if [ "$current_perms" != "2775" ]; then
-        chmod -R 2775 "$var_dir"
+        if ! chmod -R 2775 "$var_dir" 2>/dev/null; then
+            echo "WARNING: could not chmod ${var_dir} to 2775"
+            return 0
+        fi
     fi
 }
 
@@ -54,8 +60,10 @@ fi
 # Get the created/existing group name
 SHARED_GROUP_NAME=$(getent group "$VOLUME_GROUP" | cut -d: -f1)
 
-# Add container user to the shared group
-usermod -a -G "$SHARED_GROUP_NAME" "${CONTAINER_APP_USERNAME}"
+# Add container user to the shared group (best-effort, may fail in restricted environments)
+if ! usermod -a -G "$SHARED_GROUP_NAME" "${CONTAINER_APP_USERNAME}" 2>/dev/null; then
+    echo "WARNING: could not add ${CONTAINER_APP_USERNAME} to group ${SHARED_GROUP_NAME} (usermod failed, likely restricted security context)"
+fi
 
 # Ensure new files get group write permissions (in current shell)
 umask 0002
