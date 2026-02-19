@@ -6,6 +6,7 @@
 import re
 
 import pytest
+from regex import template
 
 from workflows.model_spec import (
     MODEL_SPECS,
@@ -15,10 +16,12 @@ from workflows.model_spec import (
     InferenceEngine,
     ModelSpec,
     ModelSpecTemplate,
+    VersionRequirement,
     get_model_spec_map,
     spec_templates,
+    SystemRequirements,
 )
-from workflows.workflow_types import DeviceTypes, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, ModelStatusTypes, VersionMode
 
 
 @pytest.fixture
@@ -107,6 +110,125 @@ class TestModelSpecTemplateSystem:
         assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
+
+    def test_system_requirements(self, sample_impl):
+        """Test that SystemRequirements propagate correctly from templates and device specs."""
+
+        # Case 1: SystemRequirements defined at template-level only
+        template1 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            system_requirements=SystemRequirements(
+                firmware=VersionRequirement(
+                    specifier=">=18.6.0",
+                    mode=VersionMode.STRICT,
+                ),
+                kmd=VersionRequirement(
+                    specifier=">=2.1.0",
+                    mode=VersionMode.STRICT,
+                ),
+            ),
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                )
+            ],
+            weights=["test/model-1"],
+        )
+
+        # Expand and verify template-level requirements are used
+        specs1 = template1.expand_to_specs()
+        assert len(specs1) == 1
+        assert specs1[0].system_requirements is not None
+        assert specs1[0].system_requirements.firmware.specifier == ">=18.6.0"
+        assert specs1[0].system_requirements.firmware.mode == VersionMode.STRICT
+        assert specs1[0].system_requirements.kmd.specifier == ">=2.1.0"
+        assert specs1[0].system_requirements.kmd.mode == VersionMode.STRICT
+
+        # Case 2: SystemRequirements defined at device-model-spec-level only
+        template2 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.1.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                    system_requirements=SystemRequirements(
+                        firmware=VersionRequirement(
+                            specifier=">=18.8.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                        kmd=VersionRequirement(
+                            specifier=">=2.2.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                    ),
+                ),
+            ],
+            weights=["test/model-2"],
+        )
+
+        # Expand and verify device-level requirements are used
+        specs2 = template2.expand_to_specs()
+        assert len(specs2) == 1
+        assert specs2[0].system_requirements is not None
+        assert specs2[0].system_requirements.firmware.specifier == ">=18.8.0"
+        assert specs2[0].system_requirements.firmware.mode == VersionMode.SUGGESTED
+        assert specs2[0].system_requirements.kmd.specifier == ">=2.2.0"
+        assert specs2[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
+
+        # Case 3: SystemRequirements defined at both levels - device-level should override
+        template3 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.2.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            system_requirements=SystemRequirements(
+                firmware=VersionRequirement(
+                    specifier=">=18.0.0",
+                    mode=VersionMode.STRICT,
+                ),
+                kmd=VersionRequirement(
+                    specifier=">=2.0.0",
+                    mode=VersionMode.STRICT,
+                ),
+            ),
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                    system_requirements=SystemRequirements(
+                        firmware=VersionRequirement(
+                            specifier=">=18.12.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                        kmd=VersionRequirement(
+                            specifier=">=2.4.1",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                    ),
+                ),
+            ],
+            weights=["test/model-3"],
+        )
+
+        # Expand and verify device-level requirements override template-level
+        specs3 = template3.expand_to_specs()
+        assert len(specs3) == 1
+        assert specs3[0].system_requirements is not None
+        # Should use device-level requirements, not template-level
+        assert specs3[0].system_requirements.firmware.specifier == ">=18.12.0"
+        assert specs3[0].system_requirements.firmware.mode == VersionMode.SUGGESTED
+        assert specs3[0].system_requirements.kmd.specifier == ">=2.4.1"
+        assert specs3[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
 
 
 class TestModelSpecSystem:
