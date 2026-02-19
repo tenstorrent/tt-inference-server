@@ -2550,10 +2550,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)
         results.update(dict_results)
         meta_data.update(dict_meta_data)
-<<<<<<< HEAD
-=======
-    print(f"Results after dict format processing: {results}")
->>>>>>> 357cd27f (revision for comments but didnt find cause for duplicate rows)
     if list_format_files:
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
