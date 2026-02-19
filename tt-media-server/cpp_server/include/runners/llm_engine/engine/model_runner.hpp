@@ -11,6 +11,7 @@
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/device_backend.hpp"
 #include "llm_engine/engine/sequence.hpp"
+#include "profiling/tracy.hpp"
 
 namespace llm_engine {
 
@@ -23,7 +24,7 @@ class DecodeQueue {
   std::vector<DecodeResult> drain();
 
  private:
-  std::mutex mutex_;
+  TracyLockable(std::mutex, mutex_);
   std::vector<DecodeResult> pending_;
 };
 

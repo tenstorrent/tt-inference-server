@@ -1,4 +1,5 @@
 #include "worker/llm_worker.hpp"
+#include "profiling/tracy.hpp"
 #include <csignal>
 #include <sys/wait.h>
 #include <iostream>
@@ -28,18 +29,24 @@ LLMWorker::~LLMWorker() {
 }
 
 void LLMWorker::start() {
+    tracy_config::TracySetThreadName(
+        ("Worker-" + std::to_string(cfg.worker_id)).c_str());
+
     for (const auto& [key, value] : cfg.env_vars) {
         setenv(key.c_str(), value.c_str(), 1);
     }
 
-    auto scheduler = std::make_unique<llm_engine::Scheduler>(
-        llm_engine_config_, cfg.task_queue.get()
-    );
-    llm_engine_ = std::make_unique<llm_engine::LLMEngine>(
-        llm_engine_config_,
-        on_token_,
-        std::move(scheduler)
-    );
+    {
+        ZoneScopedN("Worker::init");
+        auto scheduler = std::make_unique<llm_engine::Scheduler>(
+            llm_engine_config_, cfg.task_queue.get()
+        );
+        llm_engine_ = std::make_unique<llm_engine::LLMEngine>(
+            llm_engine_config_,
+            on_token_,
+            std::move(scheduler)
+        );
+    }
     llm_engine_->run();
 }
 

@@ -97,6 +97,12 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 
+### Tracy profiling (Tracy build only)
+
+When built with Tracy, use the **C++ Server [CodeLLDB + Tracy]** launch config, then connect the Tracy Profiler UI to **localhost:8086** (main) or **localhost:8087**, **8088**, … (workers). Workers are started via fork+exec so each runs in a fresh process and starts its own Tracy listener.
+
+See [TRACY.md](TRACY.md) for building the GUI, remote port forwarding, and launch configs.
+
 ## Authentication
 
 The server uses Bearer token authentication for protected API endpoints. The token is read from the `OPENAI_API_KEY` environment variable at startup. If not set, it defaults to `your-secret-key`.

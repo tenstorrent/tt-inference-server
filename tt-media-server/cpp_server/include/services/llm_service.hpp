@@ -21,6 +21,8 @@
 
 namespace tt::services {
 
+worker::WorkerConfig make_worker_config_for_process(int worker_id);
+
 class LLMService : public BaseService {
 public:
 

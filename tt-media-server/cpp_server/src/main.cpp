@@ -4,6 +4,8 @@
 #include <drogon/drogon.h>
 #include <iostream>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <sys/stat.h>
 
 #ifndef TEST
@@ -11,7 +13,10 @@
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
+#include "profiling/tracy.hpp"
+#include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/llm_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -26,6 +31,15 @@ namespace {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+        int worker_id = std::atoi(argv[2]);
+        tracy_config::TracyStartupWorker(worker_id);
+        tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
+        tt::worker::LLMWorker worker(cfg, tt::config::llm_engine_config());
+        worker.start();
+        _exit(0);
+    }
+
     // Parse command line arguments
     std::string host = "0.0.0.0";
     uint16_t port = 8000;
