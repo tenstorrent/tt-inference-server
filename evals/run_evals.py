@@ -269,6 +269,7 @@ def build_eval_command(
             "--eval", task.task_name,
             "--n-threads", task.max_concurrent,
             "--output-path", str(output_dir_path),
+            "--max-tokens", str(model_spec.device_model_spec.max_context - 4 * 1024),
         ]
     else:
         cmd = [

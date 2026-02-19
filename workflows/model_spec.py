@@ -939,7 +939,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=4 * 1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
@@ -978,7 +978,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=4 * 1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
