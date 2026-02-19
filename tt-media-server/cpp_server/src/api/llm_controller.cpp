@@ -26,9 +26,7 @@ LLMController::LLMController() {
         return;
     }
 
-    service_ = std::dynamic_pointer_cast<services::LLMService>(
-        tt::utils::service_factory::get_service("llm")
-    );
+    service_ = tt::utils::service_factory::get_service<services::LLMService>();
     if (!service_) {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
                                  "Ensure register_services() is called before Drogon starts.");
@@ -182,7 +180,7 @@ void LLMController::handle_streaming(
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
 
-            service_->submit_request(
+            service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created](
                     const domain::StreamingChunkResponse& chunk, bool is_final) {
@@ -260,7 +258,7 @@ void LLMController::handle_chat_streaming(
                 if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
             }
 
-            service_->submit_request(
+            service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
                  completion_tokens, continuous_usage, include_usage](

@@ -3,10 +3,10 @@
 
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
-#include "domain/completion_request.hpp"
 #include "profiling/tracy.hpp"
 #include "worker/llm_worker.hpp"
 
+#include <cassert>
 #include <chrono>
 #include <climits>
 #include <cstring>
@@ -84,7 +84,7 @@ bool LLMService::is_model_ready() const {
     return is_ready_.load();
 }
 
-LLMService::SystemStatus LLMService::get_system_status() const {
+SystemStatus LLMService::get_system_status() const {
     SystemStatus status;
     status.model_ready = is_ready_.load();
     status.queue_size = pending_tasks_.load();
@@ -262,11 +262,16 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     std::cout << "[Consumer-" << worker_idx << "] Stopped\n" << std::flush;
 }
 
-void LLMService::process_request(
+domain::StreamingChunkResponse LLMService::process_request(domain::CompletionRequest) {
+    throw std::runtime_error("Non-streaming completions not implemented");
+}
+
+void LLMService::process_streaming_request(
     domain::CompletionRequest request,
     std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
+    assert(callback != nullptr);
 
-    ZoneScopedN("LLMService::process_request");
+    ZoneScopedN("LLMService::process_streaming_request");
     if (request.task_id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
@@ -294,8 +299,8 @@ void LLMService::process_request(
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::post_process(domain::CompletionRequest&) const {
-    return; // no-op
+void LLMService::post_process(domain::StreamingChunkResponse&) const {
+    // no-op
 }
 
 }

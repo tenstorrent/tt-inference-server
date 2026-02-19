@@ -9,6 +9,8 @@
 #include <variant>
 #include <json/json.h>
 
+#include "domain/base_request.hpp"
+
 namespace tt::domain {
 
 /**
@@ -34,10 +36,7 @@ struct StreamOptions {
  * OpenAI-compatible completion request.
  * Based on OpenAI API specification.
  */
-struct CompletionRequest {
-    // Internal task tracking
-    std::string task_id;
-
+struct CompletionRequest: BaseRequest {
     // Model identifier
     std::optional<std::string> model;
 

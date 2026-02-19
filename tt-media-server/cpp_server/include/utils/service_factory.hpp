@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include <any>
 #include <memory>
-#include <string>
-
-#include "services/base_service.hpp"
+#include <typeindex>
+#include <unordered_map>
 
 namespace tt::utils::service_factory {
 
@@ -17,10 +17,24 @@ namespace tt::utils::service_factory {
  */
 void register_services();
 
-/**
- * Retrieve a previously registered service by name.
- * Returns nullptr if the name is not found.
- */
-std::shared_ptr<services::BaseService> get_service(const std::string& name);
+namespace detail {
+inline std::unordered_map<std::type_index, std::any>& service_map() {
+    static std::unordered_map<std::type_index, std::any> services;
+    return services;
+}
+} // namespace detail
+
+template<typename T>
+void register_service(std::shared_ptr<T> service) {
+    detail::service_map()[std::type_index(typeid(T))] = std::move(service);
+}
+
+template<typename T>
+std::shared_ptr<T> get_service() {
+    auto& map = detail::service_map();
+    auto it = map.find(std::type_index(typeid(T)));
+    if (it == map.end()) return nullptr;
+    return std::any_cast<std::shared_ptr<T>>(it->second);
+}
 
 } // namespace tt::utils::service_factory

@@ -23,7 +23,7 @@ namespace tt::services {
 
 worker::WorkerConfig make_worker_config_for_process(int worker_id);
 
-class LLMService : public BaseService {
+class LLMService : public BaseService<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
 
     LLMService();
@@ -38,15 +38,18 @@ public:
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
 
-
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
-    void post_process(domain::CompletionRequest& request) const override;
+    void post_process(domain::StreamingChunkResponse& response) const override;
 
-    void process_request(
+    domain::StreamingChunkResponse process_request(
+        domain::CompletionRequest request) override;
+
+    void process_streaming_request(
         domain::CompletionRequest request,
         std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
     ) override;
+
 private:
     void start_workers();
     void start_consumers();
