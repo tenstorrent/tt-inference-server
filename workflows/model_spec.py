@@ -3003,7 +3003,6 @@ cnn_templates = [
         min_disk_gb=150,
         min_ram_gb=80,
         model_type=ModelType.LLM,
-        display_name="Llama-3.1-70B",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
