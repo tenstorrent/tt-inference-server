@@ -13,7 +13,7 @@ struct Config {
   int eos = 1;
   int kvcache_block_size = 256;
   int num_kvcache_blocks = 512;
-  DeviceBackend device = DeviceBackend::Sockets;
+  DeviceBackend device = DeviceBackend::Mock;
 };
 
 }  // namespace llm_engine
