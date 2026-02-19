@@ -16,16 +16,17 @@ using namespace tt::domain;
 
 class TokenizerTest : public ::testing::Test {
 protected:
+    std::unique_ptr<Tokenizer> tok_;
+
     void SetUp() override {
         std::string tokenizer_file_path = tt::config::tokenizer_path();
         if (tokenizer_file_path.empty()) {
             FAIL() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
         }
 
-        // Get singleton instance (initialized on first call)
         try {
-            auto& tok = Tokenizer::instance(tokenizer_file_path);
-            if (!tok.is_loaded()) {
+            tok_ = std::make_unique<Tokenizer>(tokenizer_file_path);
+            if (!tok_->is_loaded()) {
                 FAIL() << "Failed to load tokenizer from: " << tokenizer_file_path;
             }
         } catch (const std::runtime_error& e) {
@@ -34,7 +35,7 @@ protected:
     }
 
     Tokenizer& tokenizer() {
-        return Tokenizer::instance();
+        return *tok_;
     }
 };
 

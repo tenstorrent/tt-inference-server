@@ -35,7 +35,7 @@ void ModelRunnerStub::reader_loop() {
       work.swap(work_queue_);
     }
     for (const auto& item : work) {
-      decode_callback_({item.seq_id, item.token_id});
+      decode_callback_({item.task_id, item.token_id});
     }
     if (work.empty()) {
       std::this_thread::sleep_for(std::chrono::microseconds(100));
@@ -50,13 +50,13 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->seq_id, seq->last_token + 1});
+      decode_callback_({seq->task_id, seq->last_token + 1});
     }
   } else {
     // h2d
     std::lock_guard lock(work_mutex_);
     for (Sequence* seq : seqs) {
-      work_queue_.push_back({seq->seq_id, seq->last_token + 1});
+      work_queue_.push_back({seq->task_id, seq->last_token + 1});
     }
   }
 }

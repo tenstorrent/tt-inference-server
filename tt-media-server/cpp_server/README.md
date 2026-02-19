@@ -399,8 +399,28 @@ chmod +x build.sh
 ./build.sh           # Release build
 ./build.sh --debug   # Debug build
 ./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
+./build.sh --asan    # AddressSanitizer + LeakSanitizer (memory/leak detection)
+./build.sh --tsan    # ThreadSanitizer (data-race detection; cannot combine with --asan)
 ```
 
+### Memory leak detection
+
+1. **AddressSanitizer (ASan) + LeakSanitizer (LSan)** — recommended on macOS and Linux:
+   ```bash
+   ./build.sh --asan
+   cd build && ctest --output-on-failure
+   # Or run the server and exit; at exit ASan will report leaks and address errors.
+   ./tt_media_server_cpp -p 8001
+   ```
+   Leak reports appear at process exit. Use `LSAN_OPTIONS=verbosity=1` for more detail.
+
+2. **Valgrind** (Linux only; not supported on current macOS):
+   ```bash
+   valgrind --leak-check=full --show-leak-kinds=all ./build/tt_media_server_cpp -p 8001
+   # Or for unit tests:
+   valgrind --leak-check=full ./build/scheduler_test
+   ```
+   Build a normal (non-ASan) binary; Valgrind instruments at runtime.
 ### Tokenizer (mlc-ai/tokenizers-cpp)
 
 The server includes tokenizer support for encode/decode:

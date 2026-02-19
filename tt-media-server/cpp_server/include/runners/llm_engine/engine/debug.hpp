@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <iostream>
+#include <mutex>
+#include <sstream>
 
 #ifdef LLM_ENGINE_DEBUG
 
@@ -13,11 +15,39 @@ inline double elapsed_ms() {
   return std::chrono::duration<double, std::milli>(now - start).count();
 }
 
+inline std::mutex& log_mutex() {
+  static std::mutex m;
+  return m;
+}
+
+class LogBuf {
+ public:
+  explicit LogBuf(const char* component)
+      : buf_() {
+    buf_ << "[" << elapsed_ms() << " ms llm_engine:" << component << "] ";
+  }
+  ~LogBuf() {
+    std::lock_guard<std::mutex> lock(log_mutex());
+    std::cerr << buf_.str();
+  }
+  template <typename T>
+  LogBuf& operator<<(const T& v) {
+    buf_ << v;
+    return *this;
+  }
+  LogBuf& operator<<(std::ostream& (*manip)(std::ostream&)) {
+    buf_ << manip;
+    return *this;
+  }
+
+ private:
+  std::ostringstream buf_;
+};
+
 }  // namespace llm_engine::detail
 
-#  define LLM_ENGINE_LOG(component)                                 \
-    std::cerr << "[" << llm_engine::detail::elapsed_ms() << " ms " \
-              << "llm_engine:" << (component) << "] "
+#  define LLM_ENGINE_LOG(component) \
+    llm_engine::detail::LogBuf(component)
 #else
 #  define LLM_ENGINE_LOG(component) \
     if (false) std::cerr

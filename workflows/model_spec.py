@@ -974,16 +974,12 @@ llm_templates = [
         tt_metal_commit="60ffb199",
         vllm_commit="3499ffa1",
         inference_engine=InferenceEngine.VLLM.value,
-        min_ram_gb=(
-            120 * 2.5
-        ),  # weights come in bfloat16 container type from HF, add 0.5x overhead buffer
-        # also see memory profiling report https://github.com/tenstorrent/tt-inference-server/pull/2040
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
                 max_context=1024,
-                default_impl=False,
+                default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -2429,6 +2425,12 @@ image_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
@@ -2450,6 +2452,12 @@ image_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,

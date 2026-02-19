@@ -4,7 +4,6 @@
 #pragma once
 
 #include "config/constants.hpp"
-
 #include <cstddef>
 #include <string>
 
@@ -36,9 +35,6 @@ unsigned batch_timeout_ms();
 /** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH. Default: defaults::TT_PYTHON_PATH. */
 std::string python_path();
 
-/** Runner type from MODEL_RUNNER. Default: defaults::MODEL_RUNNER. */
-RunnerType runner_type();
-
 /** Tokenizer path: tokenizers/tokenizer.json relative to executable. Empty if not found. */
 std::string tokenizer_path();
 
@@ -52,5 +48,7 @@ std::string tokenizer_config_path();
  * matching the Python scheduler flow in model_services/scheduler.py.
  */
 std::string visible_devices_for_worker(size_t worker_index);
+
+llm_engine::Config llm_engine_config();
 
 }  // namespace tt::config
