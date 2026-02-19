@@ -55,6 +55,18 @@ class JobDatabase:
                     result_path TEXT
                 );
             """)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS metrics (
+                    job_id TEXT NOT NULL,
+                    step INTEGER NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    value FLOAT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    PRIMARY KEY (job_id, step, metric_name), 
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+            ''')
 
     def insert_job(
         self,
@@ -164,3 +176,39 @@ class JobDatabase:
             jobs.append(job_dict)
 
         return jobs
+
+    # ------------- METRICS -------------
+    def insert_metric(self, job_id: str, step: int, metric_name: str, value: float) -> None:
+        """Insert a new metric into the database."""
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO metrics (job_id, step, metric_name, value) VALUES (?, ?, ?, ?)",
+                (job_id, step, metric_name, value)
+            )
+
+    def get_metrics(self, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Returns FULL history of metrics for graphing.
+        Format:
+        {
+           "training_loss": [ {"step": 1, "value": 0.5, "timestamp": ...}, ... ],
+           "accuracy": [ ... ]
+        }
+        """
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute("SELECT step, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY step ASC", (job_id,))
+            rows = cursor.fetchall()
+            
+            # Organize by metric name
+            history = {}
+            for r in rows:
+                name = r["metric_name"]
+                if name not in history:
+                    history[name] = []
+                
+                history[name].append({
+                    "step": r["step"],
+                    "value": r["value"],
+                    "timestamp": r["timestamp"]
+                })
+            return history
