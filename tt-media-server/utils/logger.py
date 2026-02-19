@@ -4,6 +4,7 @@
 
 import logging
 import os
+import traceback
 
 from colorama import Fore, Style
 from colorama import init as colorama_init
@@ -76,3 +77,11 @@ class TTLogger:
     def logTime(self, start: float, end: float, message: str):
         elapsed = int((end - start) * 1000)  # milliseconds
         self.info(f"{message} {elapsed}ms")
+
+
+def log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:
+    """Log exception with full stack trace and cause chain (stdlib only)."""
+    full_exception = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__, chain=True)
+    )
+    logger.error(f"Device {device_id}: {context}\n{full_exception}")

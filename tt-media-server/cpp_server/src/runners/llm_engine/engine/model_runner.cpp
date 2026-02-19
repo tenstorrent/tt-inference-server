@@ -6,12 +6,12 @@
 namespace llm_engine {
 
 void DecodeQueue::push(const DecodeResult& result) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   pending_.push_back(result);
 }
 
 std::vector<DecodeResult> DecodeQueue::drain() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   std::vector<DecodeResult> out;
   out.swap(pending_);
   return out;

@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
+endif()
 
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
@@ -43,8 +47,17 @@ FetchContent_MakeAvailable(googletest)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
-# Option for TTNN support
-option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+# Option for Tracy support
+option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
+        GIT_TAG master
+    )
+    FetchContent_MakeAvailable(tracy)
+endif()
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -225,13 +238,14 @@ target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCp
 # Source files
 set(SOURCES
     src/main.cpp
+    src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
-    src/worker/llm_worker.cpp
+    src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     )
@@ -241,11 +255,6 @@ if(NOT TEST)
         src/runners/embedding_runner.cpp
         src/services/embedding_service.cpp
     )
-endif()
-
-# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
-if(ENABLE_TTNN)
-    list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
 # Create executable
@@ -261,16 +270,26 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link Drogon and llm_engine (used by LLMService)
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
+if(ENABLE_TRACY)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
+        src/profiling/tracy_alloc.cpp
+    )
+    # TRACY_DELAYED_INIT + TRACY_MANUAL_LIFETIME: init profiler after fork so main/workers
+    # each call StartupProfiler() on their own port (see tracy_config::TracyStartupSchedulerParent etc.).
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        TT_ENABLE_TRACY
+        TRACY_ENABLE
+        TRACY_DELAYED_INIT
+        TRACY_MANUAL_LIFETIME
+    )
+endif()
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
 endif()
 if(NOT TEST)
     target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
-
-# TTNN support (optional)
-if(ENABLE_TTNN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
 endif()
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
