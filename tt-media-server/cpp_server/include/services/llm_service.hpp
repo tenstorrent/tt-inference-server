@@ -20,23 +20,21 @@
 #include <vector>
 
 namespace tt::services {
-
-using namespace std;
     
 constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
     
 constexpr size_t RING_BUFFER_CAPACITY = 65536;
 struct QueueManager {
-    shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
-    vector<shared_ptr<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
+    std::shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
+    std::vector<std::shared_ptr<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
 
     QueueManager(int num_workers) {
         llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        task_queue = make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+        task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
         result_queues.reserve(num_workers);
         for (int i = 0; i < num_workers; i++) {
-            result_queues.emplace_back(make_shared<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-                "/tt_tokens_" + to_string(i), true
+            result_queues.emplace_back(std::make_shared<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
+                "/tt_tokens_" + std::to_string(i), true
             ));
         }
     }
@@ -70,7 +68,7 @@ protected:
 
     void process_request(
         domain::CompletionRequest request,
-        function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
     ) override;
 private:
     void start_workers();
@@ -80,24 +78,24 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    vector<unique_ptr<worker::BaseWorker>> workers_;
+    std::vector<std::unique_ptr<worker::BaseWorker>> workers_;
     size_t num_workers_;
 
-    vector<thread> consumer_threads_;
+    std::vector<std::thread> consumer_threads_;
 
-    ConcurrentMap<string, function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
+    ConcurrentMap<std::string, std::function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
 
-    atomic<uint64_t> next_worker_{0};
+    std::atomic<uint64_t> next_worker_{0};
 
-    atomic<size_t> pending_tasks_{0};
+    std::atomic<size_t> pending_tasks_{0};
 
-    atomic<bool> is_ready_{false};
-    atomic<bool> running_{false};
+    std::atomic<bool> is_ready_{false};
+    std::atomic<bool> running_{false};
 
     size_t max_queue_size_ = 10000;
-    string device_ = "cpu";
+    std::string device_ = "cpu";
 
-    unique_ptr<QueueManager> queue_manager_;
+    std::unique_ptr<QueueManager> queue_manager_;
     tt::utils::Tokenizer tokenizer_;
 };
 

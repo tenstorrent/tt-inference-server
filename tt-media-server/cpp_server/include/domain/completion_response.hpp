@@ -11,15 +11,13 @@
 
 namespace tt::domain {
 
-using namespace std;
-
 /**
  * Represents a single streaming chunk from the completion.
  */
 struct CompletionStreamChunk {
-    string text;
-    optional<int> index;
-    optional<string> finish_reason;
+    std::string text;
+    std::optional<int> index;
+    std::optional<std::string> finish_reason;
 
     Json::Value toJson() const {
         Json::Value json;
@@ -44,7 +42,7 @@ struct CompletionStreamChunk {
 struct StreamingChunkOutput {
     static constexpr const char* TYPE = "streaming_chunk";
     CompletionStreamChunk chunk;
-    string task_id;
+    std::string task_id;
 };
 
 /**
@@ -53,7 +51,7 @@ struct StreamingChunkOutput {
 struct FinalResultOutput {
     static constexpr const char* TYPE = "final_result";
     CompletionStreamChunk result;
-    string task_id;
+    std::string task_id;
     bool return_result;
 };
 
@@ -78,10 +76,10 @@ struct CompletionUsage {
  * A single choice in the completion response.
  */
 struct CompletionChoice {
-    string text;
+    std::string text;
     int index = 0;
-    optional<Json::Value> logprobs;
-    optional<string> finish_reason;
+    std::optional<Json::Value> logprobs;
+    std::optional<std::string> finish_reason;
 
     Json::Value toJson() const {
         Json::Value json;
@@ -101,11 +99,11 @@ struct CompletionChoice {
  * Full OpenAI-compatible completion response.
  */
 struct CompletionResponse {
-    string id;
-    string object = "text_completion";
+    std::string id;
+    std::string object = "text_completion";
     int64_t created;
-    string model;
-    vector<CompletionChoice> choices;
+    std::string model;
+    std::vector<CompletionChoice> choices;
     CompletionUsage usage;
 
     Json::Value toJson() const {
@@ -125,7 +123,7 @@ struct CompletionResponse {
         return json;
     }
 
-    string toJsonString() const {
+    std::string toJsonString() const {
         Json::StreamWriterBuilder writer;
         writer["indentation"] = "";
         return Json::writeString(writer, toJson());
@@ -136,12 +134,12 @@ struct CompletionResponse {
  * Streaming chunk response (SSE format).
  */
 struct StreamingChunkResponse {
-    string id;
-    string object = "text_completion";
+    std::string id;
+    std::string object = "text_completion";
     int64_t created;
-    string model;
-    vector<CompletionChoice> choices;
-    optional<string> error;  // Error message if any
+    std::string model;
+    std::vector<CompletionChoice> choices;
+    std::optional<std::string> error;  // Error message if any
 
     Json::Value toJson() const {
         Json::Value json;
@@ -163,15 +161,15 @@ struct StreamingChunkResponse {
         return json;
     }
 
-    string toJsonString() const {
+    std::string toJsonString() const {
         Json::StreamWriterBuilder writer;
         writer["indentation"] = "";
         return Json::writeString(writer, toJson());
     }
 
     // Fast SSE serialization - avoids Json::Value allocation overhead
-    string toSSE() const {
-        string result;
+    std::string toSSE() const {
+        std::string result;
         result.reserve(256);  // Pre-allocate typical size
 
         result.append("data: {\"id\":\"");
@@ -179,7 +177,7 @@ struct StreamingChunkResponse {
         result.append("\",\"object\":\"");
         result.append(object);
         result.append("\",\"created\":");
-        result.append(to_string(created));
+        result.append(std::to_string(created));
         result.append(",\"model\":\"");
         result.append(model);
         result.append("\",\"choices\":[");

@@ -11,8 +11,6 @@
 
 namespace tt::api {
 
-using namespace std;
-
 /**
  * OpenAI-compatible embedding API controller.
  *
@@ -38,7 +36,7 @@ public:
      */
     void create_embedding(
         const drogon::HttpRequestPtr& req,
-        function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
      * GET /health
@@ -46,7 +44,7 @@ public:
      */
     void health(
         const drogon::HttpRequestPtr& req,
-        function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
     /**
      * GET /ready
@@ -54,13 +52,13 @@ public:
      */
     void ready(
         const drogon::HttpRequestPtr& req,
-        function<void(const drogon::HttpResponsePtr&)>&& callback);
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
 private:
-    shared_ptr<services::EmbeddingService> service_;
-    atomic<uint64_t> request_counter_{0};
+    std::shared_ptr<services::EmbeddingService> service_;
+    std::atomic<uint64_t> request_counter_{0};
 
-    string generate_task_id();
+    std::string generate_task_id();
 };
 
 } // namespace tt::api
