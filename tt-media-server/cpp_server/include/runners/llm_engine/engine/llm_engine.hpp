@@ -14,9 +14,14 @@ namespace llm_engine {
 using TokenCallback =
     std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
+/** Factory: (Config, DecodeCallback) -> unique_ptr<IModelRunner>. If null, engine uses make_model_runner. */
+using ModelRunnerFactory = std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;
+
 class LLMEngine {
  public:
-  LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler);
+  /** When factory is null, uses make_model_runner(config, callback). */
+  LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler,
+            ModelRunnerFactory factory = nullptr);
   ~LLMEngine();
 
   Scheduler& scheduler() { return *scheduler_; }

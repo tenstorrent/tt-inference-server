@@ -51,4 +51,7 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
+/** Runner type from MODEL_RUNNER (llm_test -> stub, ttnn_test -> Python Llama pipe). */
+RunnerType runner_type();
+
 }  // namespace tt::config

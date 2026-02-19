@@ -5,13 +5,18 @@
 
 namespace llm_engine {
 
-LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler)
+LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler,
+                     ModelRunnerFactory factory)
     : config_(config), on_token_(std::move(on_token)), scheduler_(std::move(scheduler)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   auto decode_cb = [this](const DecodeResult& result) {
     decode_queue_.push(result);
   };
-  model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  if (factory) {
+    model_runner_ = factory(config_, std::move(decode_cb));
+  } else {
+    model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  }
   if (config_.eos < 0) {
     config_.eos = 0;
   }

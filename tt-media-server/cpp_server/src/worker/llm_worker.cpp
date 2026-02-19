@@ -1,4 +1,8 @@
 #include "worker/llm_worker.hpp"
+#include "config/settings.hpp"
+#include "config/constants.hpp"
+#include "runners/llm_engine/engine/model_runner.hpp"
+#include "runners/pipe_llama_model_runner.hpp"
 
 namespace tt::worker {
 
@@ -30,10 +34,22 @@ void LLMWorker::start() {
     auto scheduler = std::make_unique<llm_engine::Scheduler>(
         llm_engine_config_, cfg.task_queue.get()
     );
+
+    llm_engine::ModelRunnerFactory factory;
+    if (tt::config::runner_type() == tt::config::RunnerType::TTNN_TEST) {
+        factory = [](const llm_engine::Config& config, llm_engine::DecodeCallback cb) {
+            auto runner = llm_engine::make_pipe_llama_model_runner(config, cb);
+            if (runner) return runner;
+            std::cerr << "[LLMWorker] Pipe Llama runner spawn failed, using stub\n";
+            return llm_engine::make_model_runner(config, std::move(cb));
+        };
+    }
+
     llm_engine_ = std::make_unique<llm_engine::LLMEngine>(
         llm_engine_config_,
         on_token_,
-        std::move(scheduler)
+        std::move(scheduler),
+        std::move(factory)
     );
     llm_engine_->run();
 }

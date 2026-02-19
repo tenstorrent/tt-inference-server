@@ -160,6 +160,7 @@ set(SOURCES
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
+    src/runners/pipe_llama_model_runner.cpp
     src/services/llm_service.cpp
     src/utils/service_factory.cpp
     src/utils/tokenizer.cpp

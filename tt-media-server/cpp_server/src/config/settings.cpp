@@ -132,7 +132,15 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
-    return llm_engine::Config();
+    llm_engine::Config c;
+    if (runner_type() == RunnerType::TTNN_TEST) {
+        c.eos = 128001;  // Llama 3.1 EOS so scheduler stops when pipe runner returns EOS
+    }
+    return c;
+}
+
+RunnerType runner_type() {
+    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
 
 }  // namespace tt::config

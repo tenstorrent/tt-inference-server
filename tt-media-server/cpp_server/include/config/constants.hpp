@@ -64,6 +64,7 @@ inline RunnerType runner_type_from_string(const std::string& v) {
 namespace defaults {
     constexpr const char* DEVICE_IDS = "(0),(1),(2),(3)";
     constexpr const char* MODEL_SERVICE = "llm";
+    constexpr const char* MODEL_RUNNER = "llm_test";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
