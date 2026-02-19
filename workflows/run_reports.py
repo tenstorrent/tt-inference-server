@@ -2267,9 +2267,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     ratio_to_published = "N/A"
 
                 if task.score.gpu_reference_score:
-                    assert task.score.gpu_reference_score > 0, (
-                        "Reference score is not > 0"
-                    )
+                    assert (
+                        task.score.gpu_reference_score > 0
+                    ), "Reference score is not > 0"
                     ratio_to_reference = score / task.score.gpu_reference_score
                     accuracy_check = ReportCheckTypes.from_result(
                         ratio_to_reference >= (1.0 - task.score.tolerance)
