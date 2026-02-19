@@ -1,5 +1,3 @@
-Readme
-
 ## Tracy profiling (C++ server)
 
 We use [Tenstorrent’s Tracy](https://github.com/tenstorrent/tracy) with the Tracy GUI built from the same repo. The GUI version we use is **0.10.0**.

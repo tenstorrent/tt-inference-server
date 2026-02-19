@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 //
 // Global operator new/delete overrides that report allocations to Tracy.
 // Only call TracyFree for pointers we reported with TracyAlloc to avoid
