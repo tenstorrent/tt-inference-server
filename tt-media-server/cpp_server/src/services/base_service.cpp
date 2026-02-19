@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "services/base_service.hpp"
-#include "config/settings.hpp"
 #include "runners/runner_factory.hpp"
 
 #include <iostream>

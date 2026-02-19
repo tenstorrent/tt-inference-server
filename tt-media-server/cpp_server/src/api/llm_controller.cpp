@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
-
+#include "profiling/tracy.hpp"
 
 #include <random>
 #include <sstream>
@@ -52,6 +52,8 @@ std::string LLMController::generate_completion_id() {
 void LLMController::completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    ZoneScopedN("API::completions");
 
     // Parse JSON body
     auto json = req->getJsonObject();
@@ -111,6 +113,8 @@ Json::Value LLMController::chat_error_json(const std::string& message, const std
 void LLMController::chat_completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+
+    ZoneScopedN("API::chat_completions");
 
     auto json = req->getJsonObject();
     if (!json) {

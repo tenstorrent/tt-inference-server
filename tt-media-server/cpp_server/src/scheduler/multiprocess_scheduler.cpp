@@ -8,9 +8,14 @@
 
 #include <iostream>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <sys/eventfd.h>
 #include <poll.h>
+#include <unistd.h>
+#include <limits.h>
+
+#include "profiling/tracy.hpp"
 
 namespace tt::scheduler {
 
@@ -31,6 +36,7 @@ MultiprocessScheduler::~MultiprocessScheduler() {
 }
 
 void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_configs) {
+    ZoneScopedN("Scheduler::start");
     if (running_.exchange(true)) {
         return;  // Already running
     }
@@ -67,21 +73,37 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
         // Set TT_VISIBLE_DEVICES from parsed DEVICE_IDS (content inside Nth bracket pair)
         env_config.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(i);
 
-        // Fork worker process
+        // Fork then exec so the worker is a fresh process and can start its own Tracy (port 8087+).
         pid_t pid = fork();
 
         if (pid < 0) {
             throw std::runtime_error("Failed to fork worker process");
         } else if (pid == 0) {
-            // Child process
-            worker_process_main(static_cast<int>(i), env_config);
-            // Never returns
+            // Child: set env then exec same binary with --worker N (no inherited Tracy state).
+            for (const auto& [key, value] : env_config.env_vars) {
+                setenv(key.c_str(), value.c_str(), 1);
+            }
+            char exe_path[PATH_MAX];
+            ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+            if (n <= 0) {
+                perror("readlink /proc/self/exe");
+                _exit(1);
+            }
+            exe_path[n] = '\0';
+            char id_buf[16];
+            std::snprintf(id_buf, sizeof(id_buf), "%zu", i);
+            char* exec_argv[] = {exe_path, const_cast<char*>("--worker"), id_buf, nullptr};
+            execv(exe_path, exec_argv);
+            perror("execv");
+            _exit(1);
         } else {
             // Parent process
             worker.pid = pid;
             std::cout << "[MultiprocessScheduler] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
         }
     }
+
+    tracy_config::TracyStartupSchedulerParent();
 
     // Start one consumer thread per worker for parallel token processing
     consumer_threads_.reserve(num_workers_);
@@ -99,10 +121,12 @@ void MultiprocessScheduler::start(const std::vector<WorkerEnvConfig>& env_config
     }
 
     is_ready_ = true;
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));  // Initial point so graph appears
     std::cout << "[MultiprocessScheduler] All workers started\n" << std::flush;
 }
 
 void MultiprocessScheduler::stop() {
+    ZoneScopedN("Scheduler::stop");
     if (!running_.exchange(false)) {
         return;
     }
@@ -155,10 +179,11 @@ void MultiprocessScheduler::stop() {
     std::cout << "[MultiprocessScheduler] Stopped\n" << std::flush;
 }
 
-[[noreturn]] void MultiprocessScheduler::worker_process_main(int worker_id, const WorkerEnvConfig& env_config) {
-    // === CHILD PROCESS ===
+[[noreturn]] void MultiprocessScheduler::RunWorkerProcess(int worker_id, const WorkerEnvConfig& env_config) {
+    tracy_config::TracySetThreadName(
+        ("Worker-" + std::to_string(worker_id)).c_str());
 
-    // 1. Set environment variables BEFORE any device library init
+    // 1. Set environment variables BEFORE any device library init (no-op if env already set by exec)
     for (const auto& [key, value] : env_config.env_vars) {
         setenv(key.c_str(), value.c_str(), 1);
     }
@@ -168,17 +193,19 @@ void MultiprocessScheduler::stop() {
         std::cout << "[Worker " << worker_id << "] ENV: " << key << "=" << value << "\n" << std::flush;
     }
 
-    // 2. Attach to shared memory (don't create, just attach)
+    // 2. Attach to shared memory, 3. Create runner and warmup
     std::string token_shm_name = "/tt_tokens_" + std::to_string(worker_id);
     std::string task_shm_name = "/tt_tasks_" + std::to_string(worker_id);
 
     ipc::TokenRingBuffer<RING_BUFFER_CAPACITY> token_buffer(token_shm_name, false);
     ipc::TokenRingBuffer<1024> task_buffer(task_shm_name, false);
 
-    // 3. Create the device runner using factory (reads TT_RUNNER_TYPE from environment)
-    auto runner = runners::RunnerFactory::create("device_" + std::to_string(worker_id));
-    runner->warmup();
-
+    std::unique_ptr<runners::BaseDeviceRunner> runner;
+    {
+        ZoneScopedN("Worker::init");
+        runner = runners::RunnerFactory::create("device_" + std::to_string(worker_id));
+        runner->warmup();
+    }
     std::cout << "[Worker " << worker_id << "] Ready\n" << std::flush;
 
     // 4. Main work loop
@@ -207,8 +234,9 @@ void MultiprocessScheduler::stop() {
         request.max_tokens = max_tokens;
         request.stream = is_streaming;
 
-        if (is_streaming) {
-            // Run streaming inference, push tokens to shared memory
+        {
+            ZoneScopedN("Worker::process_task");
+            if (is_streaming) {
             auto chunk_callback = [&](const domain::StreamingChunkOutput& chunk) {
                 ipc::SharedToken out_token;
                 out_token.worker_id = worker_id;
@@ -248,22 +276,22 @@ void MultiprocessScheduler::stop() {
                 }
             };
 
-            runner->run_streaming(request, chunk_callback, final_callback);
-        } else {
-            // Non-streaming: run and send single result
-            std::vector<domain::CompletionRequest> requests = {request};
-            auto responses = runner->run(requests);
+                runner->run_streaming(request, chunk_callback, final_callback);
+            } else {
+                std::vector<domain::CompletionRequest> requests = {request};
+                auto responses = runner->run(requests);
 
-            // Send response as final token
-            ipc::SharedToken out_token;
-            out_token.worker_id = worker_id;
-            out_token.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_DONE;
-            std::strncpy(out_token.task_id, task_id.c_str(), sizeof(out_token.task_id) - 1);
+                ipc::SharedToken out_token;
+                out_token.worker_id = worker_id;
+                out_token.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_DONE;
+                std::strncpy(out_token.task_id, task_id.c_str(), sizeof(out_token.task_id) - 1);
 
-            while (!token_buffer.push(out_token) && !token_buffer.is_shutdown()) {
-                std::this_thread::yield();
+                while (!token_buffer.push(out_token) && !token_buffer.is_shutdown()) {
+                    std::this_thread::yield();
+                }
             }
         }
+
     }
 
     std::cout << "[Worker " << worker_id << "] Shutting down\n" << std::flush;
@@ -271,6 +299,10 @@ void MultiprocessScheduler::stop() {
 }
 
 void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
+    ZoneScopedN("Scheduler::consumer_loop");
+    tracy_config::TracySetThreadName(
+        ("Consumer-" + std::to_string(worker_idx)).c_str());
+
     std::cout << "[Consumer-" << worker_idx << "] Started\n" << std::flush;
 
     auto& worker = workers_[worker_idx];
@@ -290,7 +322,7 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
             // Find callback for this task
             std::function<void(const domain::StreamingChunkResponse&, bool)> callback;
             {
-                std::lock_guard<std::mutex> lock(callbacks_mutex_);
+                std::lock_guard lock(callbacks_mutex_);
                 auto it = stream_callbacks_.find(token.task_id);
                 if (it != stream_callbacks_.end()) {
                     callback = it->second;
@@ -320,9 +352,8 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
                 callback(response, token.is_final());
             }
 
-            // Handle non-streaming completion
             if (token.is_final() && (token.flags & ipc::SharedToken::FLAG_DONE)) {
-                std::lock_guard<std::mutex> lock(promises_mutex_);
+                std::lock_guard lock(promises_mutex_);
                 auto it = result_promises_.find(std::string(token.task_id));
                 if (it != result_promises_.end()) {
                     domain::CompletionResponse response;
@@ -343,6 +374,7 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
 }
 
 void MultiprocessScheduler::dispatch_task(ProcessTask task) {
+    ZoneScopedN("Scheduler::dispatch_task");
     // Round-robin dispatch
     uint64_t worker_idx = next_worker_.fetch_add(1) % workers_.size();
     auto& worker = workers_[worker_idx];
@@ -356,13 +388,12 @@ void MultiprocessScheduler::dispatch_task(ProcessTask task) {
     std::strncpy(task_token.task_id, task.task_id.c_str(), sizeof(task_token.task_id) - 1);
     task_token.task_id[sizeof(task_token.task_id) - 1] = '\0';
 
-    // Push to worker's task buffer
     while (!worker.task_buffer->push(task_token) && running_) {
         std::this_thread::yield();
     }
 
     {
-        std::lock_guard<std::mutex> lock(stats_mutex_);
+        std::lock_guard lock(stats_mutex_);
         stats_.tasks_submitted++;
     }
 }
@@ -370,20 +401,23 @@ void MultiprocessScheduler::dispatch_task(ProcessTask task) {
 void MultiprocessScheduler::submit_streaming_request(
     domain::CompletionRequest request,
     std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
+    ZoneScopedN("MultiprocessScheduler::submit_streaming_request");
 
     std::string task_id = request.task_id.empty() ? generate_task_id() : request.task_id;
     request.task_id = task_id;
 
     // Track pending tasks
     pending_tasks_.fetch_add(1);
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
     // Register callback (wraps original to decrement pending count)
     {
-        std::lock_guard<std::mutex> lock(callbacks_mutex_);
+        std::lock_guard lock(callbacks_mutex_);
         stream_callbacks_[task_id] = [this, cb = std::move(callback)](const domain::StreamingChunkResponse& chunk, bool is_final) {
             cb(chunk, is_final);
             if (is_final) {
                 pending_tasks_.fetch_sub(1);
+                TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
             }
         };
     }
@@ -398,6 +432,7 @@ void MultiprocessScheduler::submit_streaming_request(
 }
 
 std::future<domain::CompletionResponse> MultiprocessScheduler::submit_request(domain::CompletionRequest request) {
+    ZoneScopedN("MultiprocessScheduler::submit_request");
     std::string task_id = request.task_id.empty() ? generate_task_id() : request.task_id;
     request.task_id = task_id;
 
@@ -405,7 +440,7 @@ std::future<domain::CompletionResponse> MultiprocessScheduler::submit_request(do
     auto future = promise->get_future();
 
     {
-        std::lock_guard<std::mutex> lock(promises_mutex_);
+        std::lock_guard lock(promises_mutex_);
         result_promises_[task_id] = promise;
     }
 
@@ -420,7 +455,7 @@ std::future<domain::CompletionResponse> MultiprocessScheduler::submit_request(do
 }
 
 MultiprocessScheduler::Stats MultiprocessScheduler::get_stats() const {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
+    std::lock_guard lock(stats_mutex_);
     return stats_;
 }
 

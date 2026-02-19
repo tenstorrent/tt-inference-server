@@ -11,9 +11,11 @@
 #include <future>
 #include <variant>
 #include <vector>
+#include <mutex>
 #include <sys/wait.h>
 #include <signal.h>
 
+#include "profiling/tracy.hpp"
 #include "ipc/shared_memory.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
@@ -124,12 +126,13 @@ public:
     };
     Stats get_stats() const;
 
-private:
     /**
-     * Worker process entry point.
-     * Called after fork() in child process.
+     * Standalone worker process entry (used when started via exec with --worker).
+     * Starts Tracy for this process, then runs the worker loop. Does not return.
      */
-    [[noreturn]] void worker_process_main(int worker_id, const WorkerEnvConfig& env_config);
+    [[noreturn]] static void RunWorkerProcess(int worker_id, const WorkerEnvConfig& env_config);
+
+private:
 
     /**
      * Consumer thread for a specific worker - reads tokens and dispatches callbacks.
@@ -157,11 +160,11 @@ private:
     std::vector<std::thread> consumer_threads_;
 
     // Callbacks for streaming tasks
-    mutable std::mutex callbacks_mutex_;
+    mutable TracyLockable(std::mutex, callbacks_mutex_);
     std::unordered_map<std::string, std::function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
 
     // Promises for non-streaming tasks
-    mutable std::mutex promises_mutex_;
+    mutable TracyLockable(std::mutex, promises_mutex_);
     std::unordered_map<std::string, std::shared_ptr<std::promise<domain::CompletionResponse>>> result_promises_;
 
     // Round-robin task distribution
@@ -177,7 +180,7 @@ private:
     std::atomic<bool> running_{false};
 
     // Stats
-    mutable std::mutex stats_mutex_;
+    mutable TracyLockable(std::mutex, stats_mutex_);
     Stats stats_;
 };
 

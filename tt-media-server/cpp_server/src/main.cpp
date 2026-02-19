@@ -4,6 +4,8 @@
 #include <drogon/drogon.h>
 #include <iostream>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <sys/stat.h>
 
 #include "api/llm_controller.hpp"
@@ -13,7 +15,9 @@
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
+#include "profiling/tracy.hpp"
 #include "runners/runner_factory.hpp"
+#include "scheduler/multiprocess_scheduler.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -28,6 +32,19 @@ namespace {
 }
 
 int main(int argc, char* argv[]) {
+    // Standalone worker (started via fork+exec): start Tracy on 8087+ and run worker loop only.
+    if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+        int worker_id = std::atoi(argv[2]);
+        tracy_config::TracyStartupWorker(worker_id);
+        tt::scheduler::MultiprocessScheduler::RunWorkerProcess(worker_id, {});
+    }
+
+    // Set port without allocating (snprintf + stack buffer), then start profiler
+    // before any other allocation so Tracy memory profiling sees matching alloc/free.
+    tracy_config::TracySetPortForMain();
+    tracy_config::TracyStartupProfiler();
+    tracy_config::TracySetThreadName("Main");
+    tracy_config::TracyRegisterPlots();  // Register plot names so graphs show in Tracy UI
     // Parse command line arguments
     std::string host = "0.0.0.0";
     uint16_t port = 8000;
