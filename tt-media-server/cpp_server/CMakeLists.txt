@@ -47,8 +47,7 @@ FetchContent_MakeAvailable(googletest)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
-# Option for TTNN support
-option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+# Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
 if(ENABLE_TRACY)
@@ -246,7 +245,7 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
-    src/worker/llm_worker.cpp
+    src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     )
@@ -256,11 +255,6 @@ if(NOT TEST)
         src/runners/embedding_runner.cpp
         src/services/embedding_service.cpp
     )
-endif()
-
-# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
-if(ENABLE_TTNN)
-    list(APPEND SOURCES src/runners/embedding_runner.cpp)
 endif()
 
 # Create executable
@@ -296,11 +290,6 @@ if(TEST)
 endif()
 if(NOT TEST)
     target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
-
-# TTNN support (optional)
-if(ENABLE_TTNN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
 endif()
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)

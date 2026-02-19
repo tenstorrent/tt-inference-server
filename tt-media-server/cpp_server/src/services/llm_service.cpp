@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/completion_request.hpp"
 #include "profiling/tracy.hpp"
-#include "worker/llm_worker.hpp"
+#include "worker/single_process_worker.hpp"
 
 #include <chrono>
 #include <climits>
@@ -123,7 +123,7 @@ void LLMService::start_workers() {
 
     for (size_t i = 0; i < num_workers_; i++) {
         auto cfg = create_worker_config(static_cast<int>(i));
-        workers_.push_back(std::make_unique<tt::worker::LLMWorker>(cfg));
+        workers_.push_back(std::make_unique<tt::worker::SingleProcessWorker>(cfg));
         auto& worker = workers_[i];
 
         pid_t pid = fork();
