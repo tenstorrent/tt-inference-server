@@ -1851,6 +1851,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         assert (
                             perf_target.ttft_ms > 0
                         ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -1866,6 +1869,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         assert (
                             perf_target.tput_user > 0
                         ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -1878,6 +1884,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
                         assert (
                             perf_target.tput > 0
                         ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
@@ -2005,6 +2014,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         assert (
                             perf_target.ttft_ms > 0
                         ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
+                        assert (
+                            perf_target.ttft_ms > 0
+                        ), f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
                         ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
@@ -2020,6 +2032,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         assert (
                             perf_target.tput_user > 0
                         ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
+                        assert (
+                            perf_target.tput_user > 0
+                        ), f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
                         tput_user_ratio = res["mean_tps"] / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
@@ -2032,6 +2047,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                     # Check for tput metric if defined.
                     if perf_target.tput is not None:
+                        assert (
+                            perf_target.tput > 0
+                        ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
                         assert (
                             perf_target.tput > 0
                         ), f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
@@ -2190,6 +2208,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 f"Skipping report for task:= {task.task_name}, no eval score is defined."
             )
             continue
+
+        target_keys = []
+        # Check for exact match (e.g. "meta_gpqa")
 
         target_keys = []
         # Check for exact match (e.g. "meta_gpqa")

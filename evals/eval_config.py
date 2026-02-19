@@ -79,6 +79,9 @@ class EvalTask:
         assert not (
             self.use_chat_api and self.apply_chat_template
         ), "Chat API applies chat template."
+        assert not (
+            self.use_chat_api and self.apply_chat_template
+        ), "Chat API applies chat template."
 
 
 @dataclass(frozen=True)
