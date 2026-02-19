@@ -430,69 +430,95 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          pip install vllm
 
-      - name: Run LLM Streaming Performance Test
+      - name: Run vLLM bench serve
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
         run: |
-          # Run pytest and capture output (visible in job logs via tee)
-          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
-          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          RESULT_FILE="vllm-bench-result.json"
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-V3.2' \
+            --backend vllm \
+            --endpoint /v1/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "$RESULT_FILE" \
+            2>&1 | tee bench_output.txt
+          echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
 
-          # Extract only the CI report section (between markers) to avoid matching source code
-          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
-
-          # Parse CI report metrics from the extracted section
-          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-
-          # Determine status
-          if [ $TEST_EXIT_CODE -eq 0 ]; then
-            STATUS="✅ PASSED"
-          else
-            STATUS="❌ FAILED"
+      - name: Parse result and check thresholds
+        run: |
+          RESULT_FILE="${{ env.RESULT_FILE }}"
+          if [ ! -f "$RESULT_FILE" ]; then
+            echo "❌ Result file not found: $RESULT_FILE"
+            exit 1
           fi
 
-          # Write formatted summary
+          COMPLETED=$(jq -r '.completed // 0' "$RESULT_FILE")
+          FAILED=$(jq -r '.failed // 0' "$RESULT_FILE")
+          if [ "$COMPLETED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+            echo "❌ All requests failed (completed=0, failed=$FAILED)"
+            exit 1
+          fi
+
+          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
+          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
+          TPOT_THRESHOLD_MS="0.5"
+          TTFT_THRESHOLD_MS="100"
+
+          FAIL=0
+          if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+          if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+
+          echo "MEAN_TPOT_MS=$MEAN_TPOT_MS" >> $GITHUB_ENV
+          echo "MEAN_TTFT_MS=$MEAN_TTFT_MS" >> $GITHUB_ENV
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+
           {
-            echo "## 🚀 LLM Streaming Performance Test"
+            echo "## 🚀 vLLM Bench Serve (Completions)"
             echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| **Status** | $STATUS |"
-            echo "| **Tokens Received** | $TOKENS |"
-            echo "| **Total Time** | ${TOTAL_TIME}ms |"
-            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
-            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
-            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+            echo "| Metric | Value | Threshold |"
+            echo "|--------|-------|-----------|"
+            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_THRESHOLD_MS}ms |"
+            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_THRESHOLD_MS}ms |"
+            echo "| **completed** | $COMPLETED | - |"
+            echo "| **failed** | $FAILED | - |"
           } >> $GITHUB_STEP_SUMMARY
 
-          # Store exit code for later
-          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
-
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Server Logs ==="
-          if [ -f performance_tests/server.log ]; then
-            cat performance_tests/server.log
-          else
-            echo "No server.log file found"
+          if [ "$FAIL" -eq 1 ]; then
+            exit 1
           fi
 
-      - name: Upload server logs
+      - name: Upload benchmark result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: llm-streaming-server-logs
-          path: tt-media-server/performance_tests/server.log
+          name: vllm-bench-result
+          path: tt-media-server/vllm-bench-result.json
           retention-days: 1
           if-no-files-found: warn
 
-      - name: Check test result
-        run: exit ${{ env.TEST_EXIT_CODE }}
+      - name: Check benchmark result
+        run: exit ${{ env.BENCH_FAIL }}
 
   cpp-server-ttnn-build:
     needs: detect-changes
