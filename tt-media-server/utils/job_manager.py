@@ -26,6 +26,12 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
     CANCELLING = "cancelling"
 
+@dataclass
+class TrainingJobContext:
+    start_event: Event
+    cancel_event: Event
+    metrics_queue: Queue
+    metrics_subscribers: list = field(default_factory=list) 
 
 @dataclass
 class Job:
@@ -39,11 +45,7 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
-    _start_event: Optional[Event] = None
-    _cancel_event: Optional[Event] = (
-        None  # multiprocessing.Event for cooperative cancellation
-    )
-    _training_metrics_queue: Optional[Queue] = None
+    _training_context: Optional[TrainingJobContext] = None
     
     def __post_init__(self):
         if self.created_at is None:
@@ -127,9 +129,7 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
-        start_event: Optional[Event] = None,
-        cancel_event: Optional[Event] = None,
-        training_metrics_queue: Optional[Queue] = None,
+        training_context: Optional[TrainingJobContext] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -144,12 +144,8 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
-            if start_event:
-                job._start_event = start_event
-            if cancel_event:
-                job._cancel_event = cancel_event
-            if training_metrics_queue:
-                job._training_metrics_queue = training_metrics_queue
+            if training_context:
+                job._training_context = training_context
             
             if self.db:
                 try:
@@ -205,11 +201,12 @@ class JobManager:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
     
-    def get_training_metrics_queue(self, job_id: str):
+    def get_metrics_queue(self, job_id: str):
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            if job:
-                return job._training_metrics_queue
+            ctx = job._training_context
+            if ctx and ctx.metrics_queue:
+                return ctx.metrics_queue
         return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -281,10 +278,56 @@ class JobManager:
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
+    
+    def subscribe_to_metrics(self, job_id: str, queue: asyncio.Queue):
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                ctx = job._training_context
+                if ctx and ctx.metrics_queue: # TODO
+                    ctx.metrics_subscribers.append(queue)
+
+    def unsubscribe_from_metrics(self, job_id: str, queue: asyncio.Queue):
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                ctx = job._training_context
+                if ctx and ctx.metrics_queue and queue in ctx.metrics_subscribers: # TODO
+                    ctx.metrics_subscribers.remove(queue)
+
+    async def _drain_metrics_to_db(self, job: Job):
+        ctx = job._training_context
+        while True:
+            metric = await asyncio.get_event_loop().run_in_executor(
+                None, ctx.metrics_queue.get
+            )
+            if metric is None:
+                # notify all SSE subscribers
+                for subscriber in job._metrics_subscribers:
+                    await subscriber.put(None)
+                return
+
+            if self.db:
+                try:
+                    self.db.insert_metric(
+                        job_id=job.id,
+                        step=metric["step"],
+                        metric_name=metric["metric_name"],
+                        value=metric["value"],
+                        timestamp=metric["timestamp"],
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to persist metric for job {job.id}: {e}"
+                    )
+
+            for subscriber in job._metrics_subscribers:
+                await subscriber.put(metric)
 
     async def _mark_job_in_progress(self, job: Job):
-        if job._start_event:
-            while not job._start_event.is_set():
+        ctx = job._training_context
+        if ctx and ctx.start_event:
+            while not ctx.start_event.is_set():
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
@@ -297,9 +340,15 @@ class JobManager:
                 )
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
+        ctx = job._training_context
         try:
             # jobs with a start_event need to be marked as in_progress by the runner
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
+
+            if ctx and ctx.metrics_queue:
+                metrics_drain = asyncio.create_task(
+                    self._drain_metrics_to_db(job)
+                )
 
             result_path = await task_function(request)
 
@@ -374,8 +423,10 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
-            if job._training_metrics_queue:
-                job._training_metrics_queue.put(None)
+            if ctx and ctx.metrics_queue:
+                ctx.metrics_queue.put(None)  # safety sentinel
+                if not metrics_drain.done():
+                    await metrics_drain  # let it finish draining
             job._task = None
 
     def _start_cleanup_task(self):
@@ -447,9 +498,10 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            if job._cancel_event and not force:
+            ctx = job._training_context
+            if ctx and ctx.cancel_event and not force:
                 # runner handles cancellation
-                job._cancel_event.set()
+                ctx.cancel_event.set()
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()

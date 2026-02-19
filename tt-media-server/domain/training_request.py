@@ -31,4 +31,4 @@ class TrainingRequest(BaseRequest):
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
-    _training_metrics_queue: Queue = PrivateAttr(default=None)
+    _metrics_queue: Queue = PrivateAttr(default=None)

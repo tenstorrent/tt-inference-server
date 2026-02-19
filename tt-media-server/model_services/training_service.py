@@ -9,6 +9,7 @@ from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
+from utils.job_manager import TrainingJobContext
 
 
 class TrainingService(BaseJobService):
@@ -24,7 +25,13 @@ class TrainingService(BaseJobService):
 
         request._start_event = self._manager.Event()
         request._cancel_event = self._manager.Event()
-        request._training_metrics_queue = self._manager.Queue()
+        request._metrics_queue = self._manager.Queue()
+
+        ctx = TrainingJobContext(
+            start_event=request._start_event,
+            cancel_event=request._cancel_event,
+            metrics_queue=request._metrics_queue,
+        )
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -33,21 +40,18 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
-            start_event=request._start_event,
-            cancel_event=request._cancel_event,
-            training_metrics_queue=request._training_metrics_queue,
+            training_context=ctx,
         )
     
     async def stream_job_metrics(self, job_id: str):
-        metrics_queue = self._job_manager.get_training_metrics_queue(job_id)
-        if not metrics_queue:
-            return
+        subscriber_queue = asyncio.Queue()
 
-        while True:
-            metric = await asyncio.get_event_loop().run_in_executor(
-                None, metrics_queue.get  
-            )
-            if metric is None:  # sentinel = training done
-                return
-            
-            yield metric
+        self._job_manager.subscribe_to_metrics(job_id, subscriber_queue)
+        try:
+            while True:
+                metric = await subscriber_queue.get()
+                if metric is None:
+                    return
+                yield metric
+        finally:
+            self._job_manager.unsubscribe_from_metrics(job_id, subscriber_queue)
