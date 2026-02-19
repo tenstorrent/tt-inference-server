@@ -13,6 +13,8 @@
 
 namespace tt::services {
 
+using namespace std;
+
 /**
  * Service for handling embedding requests.
  *
@@ -48,7 +50,7 @@ public:
      * @param request The embedding request
      * @return Future containing the embedding response
      */
-    std::future<domain::EmbeddingResponse> process_request(domain::EmbeddingRequest request);
+    future<domain::EmbeddingResponse> process_request(domain::EmbeddingRequest request);
 
     /**
      * System status for health checks.
@@ -57,14 +59,14 @@ public:
         bool model_ready;
         size_t queue_size;
         size_t max_queue_size;
-        std::string device;
+        string device;
         size_t num_workers;
     };
     SystemStatus get_system_status() const;
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> impl_;
+    unique_ptr<Impl> impl_;
 };
 
 } // namespace tt::services
