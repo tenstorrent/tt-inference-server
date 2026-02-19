@@ -2200,10 +2200,6 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             prefix = f"{task.task_name}_"
             subtasks = [k for k in results if k.startswith(prefix)]
             target_keys.extend(sorted(subtasks))
-<<<<<<< HEAD
-=======
-        print(f"Determined target_keys: {target_keys} for task_name: {task.task_name}")
->>>>>>> 357cd27f (revision for comments but didnt find cause for duplicate rows)
         if target_keys:
             for t_key in target_keys:
                 logger.info(f"eval processing task_name: {t_key}")
