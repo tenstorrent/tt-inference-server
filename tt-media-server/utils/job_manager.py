@@ -10,6 +10,7 @@ from enum import Enum
 from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
+from multiprocessing import Event
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -38,6 +39,10 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
+    _start_event: Optional[Event] = None
+    _cancel_event: Optional[Event] = (
+        None  # multiprocessing.Event for cooperative cancellation
+    )
 
     def __post_init__(self):
         if self.created_at is None:
@@ -121,6 +126,8 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
+        start_event: Optional[Event] = None,
+        cancel_event: Optional[Event] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -135,6 +142,10 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
+            if start_event:
+                job._start_event = start_event
+            if cancel_event:
+                job._cancel_event = cancel_event
 
             if self.db:
                 try:
@@ -248,7 +259,8 @@ class JobManager:
                                 f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}"
                             )
 
-                    task = self._cleanup_job(job)
+                    # force the job to be cancelled without waiting for the runner to handle it, since we are shutting down the server
+                    task = self._cleanup_job(job, force=True)
                     if task:
                         running_tasks.append(task)
 
@@ -259,27 +271,52 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
+    async def _mark_job_in_progress(self, job: Job):
+        if job._start_event:
+            while not job._start_event.is_set():
+                await asyncio.sleep(0.5)
+
+        job.mark_in_progress()
+        if self.db:
+            try:
+                self.db.update_job_status(job.id, job.status.value)
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
+                )
+
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         try:
-            job.mark_in_progress()
-            if self.db:
-                try:
-                    self.db.update_job_status(job.id, job.status.value)
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
-                    )
+            # jobs with a start_event need to be marked as in_progress by the runner
+            progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             result_path = await task_function(request)
 
             # enforcing result_path to be a string
             if result_path is not None and not isinstance(result_path, str):
                 raise TypeError(f"result_path must be str, not {type(result_path)}")
-            # for training job types, the path is set on job creation, so we log here in case the final path differs
+            # for training job types, the path is set on job creation, and needs to be the same as the path returned by the task function
             if job.result_path and job.result_path != result_path:
-                self._logger.info(
-                    f"Job {job.id} result path updated on job completion: {job.result_path} -> {result_path}"
+                raise ValueError(
+                    f"The initially set result_path differs from the path returned by the task function ({job.result_path} != {result_path})."
                 )
+
+            if job.status == JobStatus.CANCELLING:
+                self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
+                job.mark_cancelled()
+                if self.db:
+                    try:
+                        self.db.update_job_status(
+                            job.id,
+                            job.status.value,
+                            completed_at=job.completed_at,
+                            result_path=job.result_path,
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
+                        )
+                return  # we return here to avoid marking the job as completed
 
             job.mark_completed(result_path=result_path)
             if self.db:
@@ -324,6 +361,8 @@ class JobManager:
                         f"Failed to sync 'failed' to DB for {job.id}: {e}"
                     )
         finally:
+            if not progress_monitor.done():
+                progress_monitor.cancel()
             job._task = None
 
     def _start_cleanup_task(self):
@@ -358,41 +397,50 @@ class JobManager:
                     and job.completed_at
                     and job.completed_at < cutoff_time
                 ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
-                    jobs_to_remove.append(job_id)
-                    self._cleanup_job(job)
+                    jobs_to_remove.append(job)
 
-        if jobs_to_remove:
-            with self._jobs_lock:
-                for job_id in jobs_to_remove:
-                    self._jobs.pop(job_id, None)
-                    if self.db:
-                        try:
-                            self.db.delete_job(job_id)
-                        except Exception as e:
-                            self._logger.error(
-                                f"Database deletion failed for job {job_id} during cleanup: {e}"
-                            )
+        if not jobs_to_remove:
+            return
+
+        for job in jobs_to_remove:
+            self._cleanup_job(job)
+            if job.result_path and isinstance(job.result_path, str):
+                try:
+                    if os.path.exists(job.result_path):
+                        os.remove(job.result_path)
+                        self._logger.debug(
+                            f"Deleted file for job {job.id}: {job.result_path}"
+                        )
+                except Exception as e:
+                    self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
+
+        # Remove from storage under lock
+        with self._jobs_lock:
+            for job in jobs_to_remove:
+                self._jobs.pop(job.id, None)
+                if self.db:
+                    try:
+                        self.db.delete_job(job.id)
+                    except Exception as e:
+                        self._logger.error(
+                            f"Database deletion failed for job {job.id} during cleanup: {e}"
+                        )
 
             self._logger.info(
-                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(jobs_to_remove)}"
+                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
             )
 
-    def _cleanup_job(self, job: Job):
+    def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            job._task.cancel()
+            if job._cancel_event and not force:
+                # runner handles cancellation
+                job._cancel_event.set()
+            else:
+                # runner does not handle cancellation, so we cancel the task ourselves
+                job._task.cancel()
             running_task = job._task
-
-        if job.result_path and isinstance(job.result_path, str):
-            try:
-                if os.path.exists(job.result_path):
-                    os.remove(job.result_path)
-                    self._logger.debug(
-                        f"Deleted file for job {job.id}: {job.result_path}"
-                    )
-            except Exception as e:
-                self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
         return running_task
 
