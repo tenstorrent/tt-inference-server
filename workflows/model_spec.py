@@ -3013,6 +3013,33 @@ cnn_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-70B"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=150,
+        min_ram_gb=80,
+        model_type=ModelType.LLM,
+        display_name="Llama-3.1-70B",
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "32768",
+                    "VLLM__MAX_MODEL_LENGTH": "131072",
+                    "VLLM__MIN_CONTEXT_LENGTH": "1024",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
 ]
 
 # make spec_templates from the templates in the correct order

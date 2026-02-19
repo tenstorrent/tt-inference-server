@@ -18,7 +18,7 @@ LLMService::LLMService()
     : num_workers_(tt::config::num_workers()),
       tokenizer_(tt::config::tokenizer_path()) {
     std::cout << "[LLMService] Initialized (" << num_workers_ << " workers)\n" << std::flush;
-    queue_manager_ = std::make_unique<QueueManager>(num_workers_);
+    queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
 }
 
 LLMService::~LLMService() {
