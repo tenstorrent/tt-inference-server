@@ -1829,7 +1829,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=128,
-                max_context=64 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 4,
