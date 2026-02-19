@@ -134,7 +134,11 @@ std::string visible_devices_for_worker(size_t worker_index) {
 llm_engine::Config llm_engine_config() {
     llm_engine::Config c;
     if (runner_type() == RunnerType::TTNN_TEST) {
-        c.eos = 128001;  // Llama 3.1 EOS so scheduler stops when pipe runner returns EOS
+        // Llama 3.1 Instruct stop tokens:
+        //   128001 = <|end_of_text|>
+        //   128008 = <|eom_id|>
+        //   128009 = <|eot_id|>  (end-of-turn, emitted after assistant response)
+        c.stop_token_ids = {128001, 128008, 128009};
     }
     return c;
 }

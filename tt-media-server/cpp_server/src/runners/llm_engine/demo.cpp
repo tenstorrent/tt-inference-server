@@ -8,7 +8,6 @@ int main() {
   llm_engine::Config config;
   config.num_kvcache_blocks = 128;
   config.kvcache_block_size = 8;
-  config.eos = 0;
 
   int finished_count = 0;
   constexpr int TOTAL_REQUESTS = 3;

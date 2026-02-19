@@ -65,11 +65,10 @@ public:
     std::string decode(const std::vector<int>& token_ids) const;
 
     /**
-     * Apply chat template using tokenizer_config.json (HF-style).
-     * Requires tokenizer_config.json to be loadable; uses bos_token, eos_token, add_bos_token
-     * and add_eos_token from config. Renders a built-in ChatML-style format (system, then
-     * user/assistant turns with <<|User|>> / <<|Assistant|>>). Throws if config is missing,
-     * invalid, or if add_bos_token/add_eos_token are true but the corresponding token is empty.
+     * Apply Llama 3.1 Instruct chat template.
+     * Wraps each turn in <|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>,
+     * with a system preamble containing the knowledge cutoff date. When add_generation_prompt
+     * is true, appends an assistant header to prompt model generation.
      */
     static std::string apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
         bool add_generation_prompt = true);

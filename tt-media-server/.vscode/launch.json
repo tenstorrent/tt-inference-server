@@ -8,7 +8,7 @@
       "program": "${workspaceFolder}/cpp_server/build/tt_media_server_cpp",
       "args": ["-p", "8001"],
       "cwd": "${workspaceFolder}/cpp_server",
-      "env": { "DEVICE_IDS": "(0)" },
+      "env": { "DEVICE_IDS": "(1)" },
       "initCommands": ["settings set target.process.follow-fork-mode child"],
       "preLaunchTask": "Build C++ Server (debug)"
     }

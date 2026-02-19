@@ -19,7 +19,7 @@ std::vector<DecodeResult> DecodeQueue::drain() {
 
 ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
     : config_(config),
-      dummy_token_((config.eos == 0) ? 1 : 0),
+      dummy_token_(config.stop_token_ids.empty() ? 1 : 0),
       decode_callback_(std::move(callback)),
       reader_thread_([this] { reader_loop(); }) {}
 

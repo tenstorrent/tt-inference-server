@@ -17,9 +17,6 @@ LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_p
   } else {
     model_runner_ = make_model_runner(config_, std::move(decode_cb));
   }
-  if (config_.eos < 0) {
-    config_.eos = 0;
-  }
 }
 
 LLMEngine::~LLMEngine() {

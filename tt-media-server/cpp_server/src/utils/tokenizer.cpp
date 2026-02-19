@@ -58,8 +58,12 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
 
 namespace {
 
-const char* USER_TAG = "<｜User｜>";
-const char* ASSISTANT_TAG = "<｜Assistant｜>";
+constexpr const char* HEADER_START = "<|start_header_id|>";
+constexpr const char* HEADER_END = "<|end_header_id|>";
+constexpr const char* EOT = "<|eot_id|>";
+constexpr const char* SYSTEM_PREAMBLE =
+    "Cutting Knowledge Date: December 2023\n"
+    "Today Date: 26 Jul 2024\n\n";
 
 }  // namespace
 
@@ -67,32 +71,32 @@ std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMes
     bool add_generation_prompt) {
     static TokenizerConfig cfg = get_tokenizer_config();
 
-    const std::string& bos = cfg.bos_token;
-    const std::string& eos = cfg.eos_token;
-
     std::ostringstream out;
-    std::string system_prompt;
-    bool first_system = true;
+
+    std::string system_content;
     for (const auto& m : messages) {
-        if (m.role != "system") continue;
-        if (!first_system) system_prompt += "\n\n";
-        system_prompt += m.content;
-        first_system = false;
-    }
-    if (cfg.add_bos_token) out << bos;
-    out << system_prompt;
-    for (const auto& m : messages) {
-        std::string role = m.role.empty() ? "user" : m.role;
-        if (role == "system") continue;
-        if (role == "user") {
-            out << USER_TAG << m.content;
-        } else if (role == "assistant") {
-            out << ASSISTANT_TAG << m.content;
-            if (cfg.add_eos_token) out << eos;
+        if (m.role == "system") {
+            if (!system_content.empty()) system_content += "\n\n";
+            system_content += m.content;
         }
     }
+
+    if (cfg.add_bos_token) out << cfg.bos_token;
+
+    out << HEADER_START << "system" << HEADER_END << "\n\n"
+        << SYSTEM_PREAMBLE
+        << system_content
+        << EOT;
+
+    for (const auto& m : messages) {
+        if (m.role == "system") continue;
+        std::string role = m.role.empty() ? "user" : m.role;
+        out << HEADER_START << role << HEADER_END << "\n\n"
+            << m.content << EOT;
+    }
+
     if (add_generation_prompt) {
-        out << ASSISTANT_TAG;
+        out << HEADER_START << "assistant" << HEADER_END << "\n\n";
     }
     return out.str();
 }
