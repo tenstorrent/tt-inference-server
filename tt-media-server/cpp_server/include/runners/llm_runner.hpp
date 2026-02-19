@@ -17,9 +17,13 @@ namespace tt::runners {
 using TokenCallback =
     std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
+using ModelRunnerFactory =
+    std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;
+
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue);
+  LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue,
+            ModelRunnerFactory factory = nullptr);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
@@ -41,4 +45,4 @@ class LLMRunner : public IRunner {
   std::atomic<bool> stopped_{false};
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners

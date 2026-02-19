@@ -5,10 +5,23 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
+#include "runners/pipe_llama_model_runner.hpp"
 
 #include <iostream>
 
 namespace tt::utils::runner_factory {
+
+static tt::runners::ModelRunnerFactory make_model_runner_factory() {
+    if (tt::config::model_runner_type() != tt::config::RunnerType::TTNN_TEST) {
+        return nullptr;
+    }
+    return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb) {
+        auto runner = llm_engine::make_pipe_llama_model_runner(cfg, cb);
+        if (runner) return runner;
+        std::cerr << "[RunnerFactory] Pipe Llama runner spawn failed, using stub\n";
+        return llm_engine::make_model_runner(cfg, std::move(cb));
+    };
+}
 
 std::unique_ptr<runners::IRunner> create_runner(
     const llm_engine::Config& config,
@@ -19,15 +32,16 @@ std::unique_ptr<runners::IRunner> create_runner(
     
     if (runner_type == "llm") {
         std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
-        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
+        return std::make_unique<tt::runners::LLMRunner>(
+            config, std::move(on_token), task_queue, make_model_runner_factory());
     } else if (runner_type == "embedding") {
         std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
-        // For embedding runner, we'll use device_0 as default and visible_device=0
         return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
     } else {
         std::cout << "[RunnerFactory] Unknown runner type '" << runner_type 
                   << "', defaulting to LLM runner\n" << std::flush;
-        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
+        return std::make_unique<tt::runners::LLMRunner>(
+            config, std::move(on_token), task_queue, make_model_runner_factory());
     }
 }
 

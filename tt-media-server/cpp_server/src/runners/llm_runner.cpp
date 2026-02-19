@@ -6,16 +6,21 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue)
+LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue,
+                     ModelRunnerFactory factory)
     : config_(config), on_token_(std::move(on_token)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
- 
+
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
-  
+
   auto decode_cb = [this](const DecodeResult& result) {
     decode_queue_.push(result);
   };
-  model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  if (factory) {
+    model_runner_ = factory(config_, std::move(decode_cb));
+  } else {
+    model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  }
   if (config_.eos < 0) {
     config_.eos = 0;
   }
@@ -79,4 +84,4 @@ void LLMRunner::drain_decode_results() {
   }
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners

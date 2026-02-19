@@ -147,7 +147,14 @@ llm_engine::Config llm_engine_config() {
             cfg.device = llm_engine::DeviceBackend::Mock;
         }
     }
+    if (model_runner_type() == RunnerType::TTNN_TEST) {
+        cfg.eos = 128001;  // Llama 3.1 EOS so scheduler stops when pipe runner returns EOS
+    }
     return cfg;
+}
+
+RunnerType model_runner_type() {
+    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
 
 }  // namespace tt::config
