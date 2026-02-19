@@ -77,6 +77,22 @@ private:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
+     * Handle non-streaming text completion: accumulates streamed tokens
+     * into a single CompletionResponse JSON.
+     */
+    void handle_non_streaming(
+        domain::CompletionRequest request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+    /**
+     * Handle non-streaming chat completion: accumulates streamed tokens
+     * into a single ChatCompletionResponse JSON.
+     */
+    void handle_chat_non_streaming(
+        domain::CompletionRequest request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+    /**
      * Generate a unique completion ID (hex string).
      */
     static std::string generate_completion_id();
