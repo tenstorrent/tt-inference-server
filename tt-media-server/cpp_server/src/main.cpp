@@ -16,7 +16,7 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
-#include "worker/llm_worker.hpp"
+#include "worker/single_process_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
         int worker_id = std::atoi(argv[2]);
         tracy_config::TracyStartupWorker(worker_id);
         tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
-        tt::worker::LLMWorker worker(cfg, tt::config::llm_engine_config());
+        tt::worker::SingleProcessWorker worker(cfg);
         worker.start();
         _exit(0);
     }
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
                       << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default) or 'ttnn_test'\n";
+                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
             return 0;
         }
     }
