@@ -310,7 +310,7 @@ class DeviceModelSpec:
             max_concurrency = max_concurrency // data_parallel_size
             max_num_batched_tokens = max_num_batched_tokens * data_parallel_size
         object.__setattr__(self, "max_num_batched_tokens", max_num_batched_tokens)
-        # NOTE: DO NOT INFER MAX_NUM_BATCHED_TOKENS LIKE THIS, GET FROM MODEL_SPEC
+        # TODO: DO NOT INFER MAX_NUM_BATCHED_TOKENS LIKE THIS, GET FROM MODEL_SPEC
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
