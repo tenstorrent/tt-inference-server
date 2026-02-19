@@ -10,6 +10,7 @@
 
 #include "llm_engine/config.hpp"
 #include "llm_engine/engine/sequence.hpp"
+#include "profiling/tracy.hpp"
 
 namespace llm_engine {
 
@@ -27,7 +28,7 @@ class DecodeQueue {
   std::vector<DecodeResult> drain();
 
  private:
-  std::mutex mutex_;
+  TracyLockable(std::mutex, mutex_);
   std::vector<DecodeResult> pending_;
 };
 
@@ -51,7 +52,7 @@ class ModelRunnerStub : public IModelRunner {
   Config config_;
   int64_t dummy_token_;
   DecodeCallback decode_callback_;
-  std::mutex work_mutex_;
+  TracyLockable(std::mutex, work_mutex_);
   std::vector<DecodeResult> work_queue_;
   std::atomic<bool> stop_{false};
   std::thread reader_thread_;  // must be last: uses all members above

@@ -4,6 +4,7 @@
 #include "services/embedding_service.hpp"
 #include "config/settings.hpp"
 #include "runners/embedding_runner.hpp"
+#include "profiling/tracy.hpp"
 
 #include <iostream>
 #include <thread>
@@ -52,7 +53,7 @@ struct EmbeddingService::Impl {
     size_t num_workers_ = 3;  // Default 3 workers for devices 1, 2, 3
 
     // Shared request queue (all worker dispatch threads pull from this)
-    std::mutex queue_mutex_;
+    TracyLockable(std::mutex, queue_mutex_);
     std::queue<std::shared_ptr<PendingRequest>> request_queue_;
     std::condition_variable queue_cv_;
 
@@ -341,7 +342,7 @@ struct EmbeddingService::Impl {
 
             auto queue_start = std::chrono::steady_clock::now();
             {
-                std::unique_lock<std::mutex> lock(queue_mutex_);
+                std::unique_lock lock(queue_mutex_);
 
                 // Wait for at least one request (with timeout to check running flag)
                 auto wait_result = queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, &worker] {
@@ -630,7 +631,7 @@ struct EmbeddingService::Impl {
         auto future = pending->promise.get_future();
 
         {
-            std::lock_guard<std::mutex> lock(queue_mutex_);
+            std::lock_guard lock(queue_mutex_);
             request_queue_.push(pending);
         }
         queue_cv_.notify_all();  // Wake all workers so they can compete for work
@@ -667,7 +668,7 @@ EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
     status.model_ready = impl_->is_ready_.load();
 
     {
-        std::lock_guard<std::mutex> lock(impl_->queue_mutex_);
+        std::lock_guard lock(impl_->queue_mutex_);
         status.queue_size = impl_->request_queue_.size();
     }
 

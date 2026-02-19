@@ -28,13 +28,13 @@ void reported_insert(void* ptr) {
         return;
     }
     n->ptr = ptr;
-    std::lock_guard<std::mutex> lock(g_reported_mutex);
+    std::lock_guard lock(g_reported_mutex);
     n->next = g_reported_head;
     g_reported_head = n;
 }
 
 bool reported_erase(void* ptr) {
-    std::lock_guard<std::mutex> lock(g_reported_mutex);
+    std::lock_guard lock(g_reported_mutex);
     ReportedNode** p = &g_reported_head;
     while (*p != nullptr) {
         if ((*p)->ptr == ptr) {

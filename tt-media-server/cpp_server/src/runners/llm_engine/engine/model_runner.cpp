@@ -6,12 +6,12 @@
 namespace llm_engine {
 
 void DecodeQueue::push(const DecodeResult& result) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   pending_.push_back(result);
 }
 
 std::vector<DecodeResult> DecodeQueue::drain() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   std::vector<DecodeResult> out;
   out.swap(pending_);
   return out;
@@ -31,7 +31,7 @@ void ModelRunnerStub::reader_loop() {
   while (!stop_.load(std::memory_order_relaxed)) {
     std::vector<DecodeResult> work;
     {
-      std::lock_guard<std::mutex> lock(work_mutex_);
+      std::lock_guard lock(work_mutex_);
       work.swap(work_queue_);
     }
     for (const auto& item : work) {
@@ -54,7 +54,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
     }
   } else {
     // h2d
-    std::lock_guard<std::mutex> lock(work_mutex_);
+    std::lock_guard lock(work_mutex_);
     for (Sequence* seq : seqs) {
       work_queue_.push_back({seq->seq_id, seq->last_token + 1});
     }

@@ -353,6 +353,8 @@ void MultiprocessScheduler::consumer_loop_for_worker(size_t worker_idx) {
             }
 
             if (token.is_final() && (token.flags & ipc::SharedToken::FLAG_DONE)) {
+                pending_tasks_.fetch_sub(1);
+                TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
                 std::lock_guard lock(promises_mutex_);
                 auto it = result_promises_.find(std::string(token.task_id));
                 if (it != result_promises_.end()) {
@@ -443,6 +445,9 @@ std::future<domain::CompletionResponse> MultiprocessScheduler::submit_request(do
         std::lock_guard lock(promises_mutex_);
         result_promises_[task_id] = promise;
     }
+
+    pending_tasks_.fetch_add(1);
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
     ProcessTask task;
     task.request = std::move(request);
