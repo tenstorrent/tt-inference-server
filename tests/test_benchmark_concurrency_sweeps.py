@@ -63,7 +63,7 @@ def test_expand_concurrency_sweeps_image_accounts_for_vision_tokens():
             osl=128,
             max_concurrency=1,
             num_prompts=8,
-            task_type="image",
+            task_type="vlm",
             image_height=512,
             image_width=512,
             images_per_prompt=1,

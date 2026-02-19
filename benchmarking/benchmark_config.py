@@ -147,7 +147,7 @@ def _expand_image_sweep_params(
             osl=osl,
             max_concurrency=concurrency,
             num_prompts=get_num_prompts(isl, osl, concurrency),
-            task_type="image",
+            task_type="vlm",
             image_height=image_height,
             image_width=image_width,
             images_per_prompt=images_per_prompt,
