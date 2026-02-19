@@ -1,7 +1,7 @@
 #include "llm_engine/engine/model_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
-
-#include <chrono>
+#include "llm_engine/engine/device_backend.hpp"
+#include "llm_engine/engine/sequence.hpp"
 
 namespace llm_engine {
 
@@ -17,29 +17,25 @@ std::vector<DecodeResult> DecodeQueue::drain() {
   return out;
 }
 
-ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback)
+ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback,
+                                std::unique_ptr<IDeviceBackend> backend)
     : config_(config),
-      dummy_token_((config.eos == 0) ? 1 : 0),
       decode_callback_(std::move(callback)),
-      reader_thread_([this] { reader_loop(); }) {}
+      backend_(std::move(backend)) {
+  backend_->init();
+  reader_thread_ = std::thread([this] { reader_loop(); });
+}
 
 ModelRunnerStub::~ModelRunnerStub() {
   exit();
 }
 
 void ModelRunnerStub::reader_loop() {
+  DecodeResult result;
   while (!stop_.load(std::memory_order_relaxed)) {
-    std::vector<DecodeResult> work;
-    {
-      std::lock_guard lock(work_mutex_);
-      work.swap(work_queue_);
-    }
-    for (const auto& item : work) {
-      decode_callback_({item.task_id, item.token_id});
-    }
-    if (work.empty()) {
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
-    }
+    if (!backend_->read(&result)) break;
+    if (stop_.load(std::memory_order_relaxed)) break;
+    decode_callback_(result);
   }
 }
 
@@ -53,23 +49,21 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->task_id, seq->last_token + 1});
     }
   } else {
-    // h2d
-    std::lock_guard lock(work_mutex_);
-    for (Sequence* seq : seqs) {
-      work_queue_.push_back({seq->task_id, seq->last_token + 1});
-    }
+    backend_->write(*seqs[0]);
   }
 }
 
 void ModelRunnerStub::exit() {
   if (stop_.exchange(true)) return;
+  backend_->terminate();
   if (reader_thread_.joinable()) reader_thread_.join();
   LLM_ENGINE_LOG("model_runner") << "exit" << std::endl;
 }
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback) {
-  return std::make_unique<ModelRunnerStub>(config, std::move(callback));
+  auto backend = make_device_backend(config);
+  return std::make_unique<ModelRunnerStub>(config, std::move(callback), std::move(backend));
 }
 
 }  // namespace llm_engine

@@ -5,10 +5,10 @@
 
 #include "services/base_service.hpp"
 #include "ipc/shared_memory.hpp"
+#include "ipc/queue_manager.hpp"
 #include "worker/base_worker.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
-#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
 
 #include <atomic>
 #include <functional>
@@ -21,34 +21,8 @@
 
 namespace tt::services {
 
-/** WorkerConfig for exec'd worker process. Used by main.cpp --worker path. */
 worker::WorkerConfig make_worker_config_for_process(int worker_id);
 
-constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
-
-constexpr size_t RING_BUFFER_CAPACITY = 65536;
-struct QueueManager {
-    std::shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
-    std::vector<std::shared_ptr<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
-
-    QueueManager(int num_workers) {
-        llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
-        result_queues.reserve(num_workers);
-        for (int i = 0; i < num_workers; i++) {
-            result_queues.emplace_back(std::make_shared<ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-                "/tt_tokens_" + std::to_string(i), true
-            ));
-        }
-    }
-
-    void clear() {
-        llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        for (auto& queue : result_queues) {
-            queue->shutdown();
-        }
-    }
-};
 class LLMService : public BaseService {
 public:
 
@@ -98,7 +72,7 @@ private:
     size_t max_queue_size_ = 10000;
     std::string device_ = "cpu";
 
-    std::unique_ptr<QueueManager> queue_manager_;
+    std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
     tt::utils::Tokenizer tokenizer_;
 };
 

@@ -10,6 +10,16 @@
 namespace llm_engine {
 namespace {
 
+TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
+  TaskID orig;
+
+  std::vector<char> buf = orig.serialize();
+  ASSERT_EQ(buf.size(), 36);
+
+  TaskID restored = TaskID::deserialize(buf.data(), buf.size());
+  EXPECT_EQ(restored.id, orig.id);
+}
+
 TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   Sequence orig({1, 2, 3, 4, 5}, SamplingParams{.temperature = 0.7f, .max_tokens = 20, .ignore_eos = true});
   orig.num_cached_tokens_ = 256;

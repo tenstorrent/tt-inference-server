@@ -82,7 +82,6 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-
     std::cout << "=================================================\n"
               << std::endl;
 
