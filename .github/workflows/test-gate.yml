@@ -517,7 +517,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --ttnn
+          ./build.sh
 
   cpp-server-llm-streaming:
     needs: detect-changes
