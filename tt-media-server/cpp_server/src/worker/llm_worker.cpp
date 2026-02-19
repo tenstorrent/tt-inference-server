@@ -1,4 +1,9 @@
 #include "worker/llm_worker.hpp"
+#include <csignal>
+#include <sys/wait.h>
+#include <iostream>
+#include <chrono>
+#include <thread>
 
 namespace tt::worker {
 
@@ -41,6 +46,21 @@ void LLMWorker::start() {
 void LLMWorker::stop() {
     if (llm_engine_) {
         llm_engine_->stop();
+    }
+    if (pid > 0) {
+        kill(pid, SIGTERM);
+
+        int status;
+        int wait_result = waitpid(pid, &status, WNOHANG);
+        if (wait_result == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            wait_result = waitpid(pid, &status, WNOHANG);
+            if (wait_result == 0) {
+                kill(pid, SIGKILL);
+                waitpid(pid, &status, 0);
+            }
+        }
+        std::cout << "[LLMService] Worker " << worker_id << " exited\n" << std::flush;
     }
 }
 

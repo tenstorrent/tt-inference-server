@@ -8,11 +8,9 @@
 
 #include <chrono>
 #include <cstring>
-#include <csignal>
 #include <iostream>
 #include <memory>
 #include <sys/wait.h>
-#include <unistd.h>
 
 namespace tt::services {
 
@@ -123,10 +121,6 @@ void LLMService::stop() {
 
     std::cout << "[LLMService] Stopping...\n" << std::flush;
 
-    // Signal shutdown to all workers
-    for (auto& w : workers_) {
-        w->stop();
-    }
 
     // Wait for all consumer threads
     for (auto& thread : consumer_threads_) {
@@ -136,23 +130,9 @@ void LLMService::stop() {
     }
     consumer_threads_.clear();
 
-    // Wait for worker processes
+    // Signal shutdown to all workers
     for (auto& w : workers_) {
-        if (w->pid > 0) {
-            kill(w->pid, SIGTERM);
-
-            int status;
-            int wait_result = waitpid(w->pid, &status, WNOHANG);
-            if (wait_result == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                wait_result = waitpid(w->pid, &status, WNOHANG);
-                if (wait_result == 0) {
-                    kill(w->pid, SIGKILL);
-                    waitpid(w->pid, &status, 0);
-                }
-            }
-            std::cout << "[LLMService] Worker " << w->worker_id << " exited\n" << std::flush;
-        }
+        w->stop();
     }
 
     workers_.clear();
