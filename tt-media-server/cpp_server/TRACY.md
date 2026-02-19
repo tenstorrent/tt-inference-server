@@ -57,3 +57,9 @@ Typical workflow for “capture to file”:
 1. Start **C++ Server [CodeLLDB + Tracy]** (server listening on 8086).
 2. Run **Tracy: Capture to file** (capture connects to 8086 and writes `capture.tracy`).
 3. Open `cpp_server/capture.tracy` in the Tracy GUI to inspect the capture offline.
+
+### Tips
+
+- **Many thread rows** – The timeline can show many thread rows; those are the request-handling threads.
+- **Capture scope** – The "Capture to file" config connects to the main process (8086) only. Worker data (8087, 8088, …) is not included unless you run separate captures for those ports.
+- **Debugging** – When using **C++ Server [CodeLLDB + Tracy]**, you can set the launch config to use `"initCommands": ["settings set target.process.follow-fork-mode parent"]` so the debugger doesn’t follow worker processes after fork (avoids stopping in worker code when you intend to stay in the main process).
