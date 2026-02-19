@@ -10,8 +10,6 @@
 
 namespace tt::utils::service_factory {
 
-using namespace std;
-
 /**
  * Create and start all services determined by the current configuration.
  * Must be called early in main(), before drogon::app().run(), so that
@@ -23,6 +21,6 @@ void register_services();
  * Retrieve a previously registered service by name.
  * Returns nullptr if the name is not found.
  */
-shared_ptr<services::BaseService> get_service(const string& name);
+std::shared_ptr<services::BaseService> get_service(const std::string& name);
 
 } // namespace tt::utils::service_factory

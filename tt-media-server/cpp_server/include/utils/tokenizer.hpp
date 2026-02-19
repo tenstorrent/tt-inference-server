@@ -12,18 +12,16 @@
 
 namespace tt::utils {
 
-using namespace std;
-
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
  * Token fields may be plain strings or AddedToken {"content": "..."}; parsing normalizes to strings.
  */
 struct TokenizerConfig {
-    string bos_token;
-    string eos_token;
-    string pad_token;
-    string unk_token;
-    string chat_template;  // Raw Jinja2 string; rendering is format-specific elsewhere
+    std::string bos_token;
+    std::string eos_token;
+    std::string pad_token;
+    std::string unk_token;
+    std::string chat_template;  // Raw Jinja2 string; rendering is format-specific elsewhere
     bool add_bos_token = true;   // If true, prepend bos_token when applying chat template
     bool add_eos_token = false;  // If true, append eos_token after assistant turns
 };
@@ -31,7 +29,7 @@ struct TokenizerConfig {
 /**
  * Load tokenizer config from the path given by config::tokenizer_config_path(), validate
  * add_bos_token/add_eos_token vs bos_token/eos_token, and return the config.
- * @throws runtime_error if config path is empty, file cannot be loaded, or tokens are missing when flags are set.
+ * @throws std::runtime_error if config path is empty, file cannot be loaded, or tokens are missing when flags are set.
  */
 TokenizerConfig get_tokenizer_config();
 
@@ -44,9 +42,9 @@ class Tokenizer {
 public:
     /**
      * Construct a tokenizer from a .json (HuggingFace) or .model (SentencePiece) file.
-     * @throws runtime_error if path is empty, file is unreadable, or format is unsupported.
+     * @throws std::runtime_error if path is empty, file is unreadable, or format is unsupported.
      */
-    explicit Tokenizer(const string& path);
+    explicit Tokenizer(const std::string& path);
     ~Tokenizer() = default;
 
     Tokenizer(const Tokenizer&) = delete;
@@ -56,15 +54,15 @@ public:
 
     /**
      * Encode text to token IDs.
-     * @throws runtime_error if tokenizer not loaded.
+     * @throws std::runtime_error if tokenizer not loaded.
      */
-    vector<int> encode(const string& text) const;
+    std::vector<int> encode(const std::string& text) const;
 
     /**
      * Decode token IDs to text.
-     * @throws runtime_error if tokenizer not loaded.
+     * @throws std::runtime_error if tokenizer not loaded.
      */
-    string decode(const vector<int>& token_ids) const;
+    std::string decode(const std::vector<int>& token_ids) const;
 
     /**
      * Apply chat template using tokenizer_config.json (HF-style).
@@ -73,14 +71,14 @@ public:
      * user/assistant turns with <<|User|>> / <<|Assistant|>>). Throws if config is missing,
      * invalid, or if add_bos_token/add_eos_token are true but the corresponding token is empty.
      */
-    static string apply_chat_template(const vector<tt::domain::ChatMessage>& messages,
+    static std::string apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
         bool add_generation_prompt = true);
 
     /** Check if tokenizer is loaded and ready. */
     bool is_loaded() const;
 
 private:
-    unique_ptr<tokenizers::Tokenizer> tok_;
+    std::unique_ptr<tokenizers::Tokenizer> tok_;
 };
 
 }  // namespace tt::utils

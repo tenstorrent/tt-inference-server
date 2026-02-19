@@ -7,19 +7,17 @@
 #include "ipc/shared_memory.hpp"
 
 namespace tt::worker {
-
-using namespace std;
     
 struct WorkerConfig {
-    unordered_map<string, string> env_vars;
-    shared_ptr<llm_engine::ITaskQueue> task_queue;
-    shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
+    std::unordered_map<std::string, std::string> env_vars;
+    std::shared_ptr<llm_engine::ITaskQueue> task_queue;
+    std::shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
     int worker_id;
 };
 
 class BaseWorker {
 public:
-    BaseWorker(WorkerConfig& cfg): cfg(move(cfg)) {
+    BaseWorker(WorkerConfig& cfg): cfg(std::move(cfg)) {
         pid = getpid();
         worker_id = cfg.worker_id;
     }

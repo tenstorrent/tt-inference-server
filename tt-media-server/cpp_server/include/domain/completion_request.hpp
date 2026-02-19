@@ -11,8 +11,6 @@
 
 namespace tt::domain {
 
-using namespace std;
-
 /**
  * Stream options for OpenAI-compatible streaming responses.
  */
@@ -38,13 +36,13 @@ struct StreamOptions {
  */
 struct CompletionRequest {
     // Internal task tracking
-    string task_id;
+    std::string task_id;
 
     // Model identifier
-    optional<string> model;
+    std::optional<std::string> model;
 
     // Prompt can be a string or a list of token ids
-    variant<string, vector<int>> prompt;
+    std::variant<std::string, std::vector<int>> prompt;
 
     // Response configuration
     bool echo = false;
@@ -52,39 +50,39 @@ struct CompletionRequest {
     int n = 1;
     float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
-    optional<string> suffix;
+    std::optional<std::string> suffix;
     bool stream = false;
-    optional<StreamOptions> stream_options;
+    std::optional<StreamOptions> stream_options;
 
     // Stopping criteria
-    vector<string> stop;
+    std::vector<std::string> stop;
 
     // Reproducibility
-    optional<int> seed;
+    std::optional<int> seed;
 
     // Sampling params
-    optional<float> temperature;
-    optional<float> top_p;
+    std::optional<float> temperature;
+    std::optional<float> top_p;
 
     // Logging and debugging
-    optional<int> logprobs;
-    optional<string> user;
+    std::optional<int> logprobs;
+    std::optional<std::string> user;
 
     // Completion sampling params
     bool use_beam_search = false;
-    optional<int> top_k;
-    optional<float> min_p;
-    optional<float> repetition_penalty;
+    std::optional<int> top_k;
+    std::optional<float> min_p;
+    std::optional<float> repetition_penalty;
     float length_penalty = 1.0f;
-    vector<int> stop_token_ids;
+    std::vector<int> stop_token_ids;
     bool include_stop_str_in_output = false;
     bool ignore_eos = false;
     int min_tokens = 0;
     bool skip_special_tokens = true;
     bool spaces_between_special_tokens = true;
-    optional<vector<int>> allowed_token_ids;
-    optional<int> prompt_logprobs;
-    optional<int> truncate_prompt_tokens;
+    std::optional<std::vector<int>> allowed_token_ids;
+    std::optional<int> prompt_logprobs;
+    std::optional<int> truncate_prompt_tokens;
 
     static CompletionRequest fromJson(const Json::Value& json) {
         CompletionRequest req;
@@ -97,7 +95,7 @@ struct CompletionRequest {
             if (json["prompt"].isString()) {
                 req.prompt = json["prompt"].asString();
             } else if (json["prompt"].isArray()) {
-                vector<int> tokens;
+                std::vector<int> tokens;
                 for (const auto& token : json["prompt"]) {
                     tokens.push_back(token.asInt());
                 }

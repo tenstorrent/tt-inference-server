@@ -4,8 +4,6 @@
 #include <mutex>
 #include <unordered_map>
 
-using namespace std;
-
 template <typename Key, typename Value>
 class ConcurrentMap {
 public:
@@ -13,26 +11,26 @@ public:
     ~ConcurrentMap() = default;
 
     void insert(const Key& key, const Value& value) {
-        lock_guard<mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         map_[key] = value;
     }
 
-    optional<Value> get(const Key& key) {
-        lock_guard<mutex> lock(mutex_);
+    std::optional<Value> get(const Key& key) {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = map_.find(key);
         if (it != map_.end()) {
             return it->second;
         }
-        return nullopt;
+        return std::nullopt;
     }
 
     void erase(const Key& key) {
-        lock_guard<mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         map_.erase(key);
     }
 
     bool contains(const Key& key) {
-        lock_guard<mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         return map_.find(key) != map_.end();
     }
 
@@ -40,6 +38,6 @@ public:
     ConcurrentMap& operator=(const ConcurrentMap&) = delete;
 
 private:
-    unordered_map<Key, Value> map_;
-    mutable mutex mutex_;
+    std::unordered_map<Key, Value> map_;
+    std::mutex mutex_;
 };
