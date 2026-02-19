@@ -48,19 +48,19 @@ class StepResult:
     finished: bool
 
 
-# Default model name for Llama-3.1-8B (reuse HF_MODEL env)
 DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
-BLOCK_SIZE = 32
 MAX_NUM_BLOCKS = 512
+KV_CACHE_BLOCK_SIZE = 32
 
 
-def _num_blocks_for_seq(seq_len: int) -> int:
-    return math.ceil(seq_len / BLOCK_SIZE)
+def _block_size_from_kv_cache(kv_cache) -> int:
+    """Read block size from the first KV cache tensor. Structure: kv_cache[dp][layer] = [k_tt, v_tt]."""
+    return int(kv_cache[0][0][0].shape[2])
 
 
-def _padded_prefill_len(seq_len: int) -> int:
-    return ((seq_len + BLOCK_SIZE - 1) // BLOCK_SIZE) * BLOCK_SIZE
+def _num_blocks_for_seq(seq_len: int, block_size: int) -> int:
+    return math.ceil(seq_len / block_size)
 
 
 @dataclass
@@ -71,9 +71,47 @@ class _SeqState:
     prompt_len: int
 
 
+def _sample_greedy(logits):
+    """Host-side greedy sampling from a 1-D logits vector."""
+    import torch
+
+    return int(torch.argmax(logits).item())
+
+
+def _log_top_tokens(logger, label, logits, k=5):
+    """Log the top-k tokens from a 1-D logits tensor for debugging."""
+    import torch
+
+    topk = torch.topk(logits.float(), k)
+    pairs = [(int(idx), float(val)) for idx, val in zip(topk.indices, topk.values)]
+    logger.info(f"{label} top-{k}: {pairs}")
+
+
+def _clamp_token_ids(token_ids: list[int], vocab_size: int, logger) -> list[int]:
+    """Replace out-of-range token IDs with 0 and log a warning."""
+    clamped = []
+    for tid in token_ids:
+        if tid < 0 or tid >= vocab_size:
+            logger.warning(
+                f"Token ID {tid} out of range [0, {vocab_size}), replacing with 0"
+            )
+            clamped.append(0)
+        else:
+            clamped.append(tid)
+    return clamped
+
+
 class Llama31_8BRunner(BaseMetalDeviceRunner):
     """
     Runner that wraps tt-metal LlamaForCausalLM for use with cpp_server LLM engine.
+
+    Calling convention mirrors the vLLM TT plugin (tt_model_runner.py):
+    - prefill_forward / decode_forward are called WITHOUT sampling_params
+      so the model returns logits; sampling happens on host.
+    - warmup_prefill=True (default) compiles operators and captures traces;
+      skipping it causes "unsafe device buffer allocation" that corrupts output.
+    - enable_trace=True for decode to match vLLM behaviour.
+    - Token IDs are clamped to [0, vocab_size) to prevent OOB embedding lookups.
     """
 
     def __init__(self, device_id: str):
@@ -83,22 +121,24 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", "1"))
         self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "2048"))
         self._kv_cache = None
+        self._vocab_size = 0
         self._seq_state: dict[str, _SeqState] = {}
         self._next_free_block = 0
 
     def get_pipeline_device_params(self):
-        # Trace region required for prefill/decode; 0 causes TT_FATAL in mesh_trace
         return {"num_command_queues": 2, "trace_region_size": 32 * 1024 * 1024}
 
     def _allocate_kv_cache(self) -> None:
         import torch
 
         a = self.model.model_args[0]
+        self._vocab_size = a.vocab_size
         self._kv_cache = self.model.allocate_kv_cache(
-            (MAX_NUM_BLOCKS, a.n_kv_heads, BLOCK_SIZE, a.head_dim),
+            (MAX_NUM_BLOCKS, a.n_kv_heads, KV_CACHE_BLOCK_SIZE, a.head_dim),
             torch.bfloat16,
             a.n_layers,
         )
+        self._block_size = _block_size_from_kv_cache(self._kv_cache)
 
     def _load_model(self):
         from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
@@ -131,35 +171,13 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         sequences = kwargs.get("sequences", [])
         return self.run_step(is_prefill, sequences)
 
-    # Llama 3.1 EOS token id (stub uses this so C++ stream stops cleanly).
     EOS_TOKEN_ID = 128001
 
     def run_step(
         self, is_prefill: bool, sequences: list[StepSequence]
     ) -> list[StepResult]:
-        """
-        Run one scheduler step: prefill or decode.
-        Returns one token per sequence (next token; for prefill, first generated token).
-
-        Calls tt-metal prefill_forward / decode_forward with paged KV cache. The model is loaded in warmup()
-        but never run. To produce real tokens you must:
-
-        1. Allocate KV cache (self.model.allocate_kv_cache with block manager / config).
-        2. Build paged-attention state per sequence (page_table, block allocation).
-        3. Prefill: call self.model.prefill_forward_text(
-             tokens=..., page_table=..., kv_cache=..., sampling_params=SamplingParams(...)
-           ) and take the returned sampled token(s).
-        4. Decode: call self.model.decode_forward_text(
-             tokens=last_token, start_pos=..., page_table=..., kv_cache=..., sampling_params=...
-           ) in a loop; each call returns the next token until EOS or max_tokens.
-
-        The tt-metal Generator (prefill_forward_text / decode_forward_text) expects
-        vLLM-style inputs: batched tokens, page tables, and SamplingParams. Wiring
-        that into this pipe protocol requires a minimal block manager and per-sequence
-        state (token list, position, page_table) or reusing tt-metal/vLLM scheduler logic.
-        """
+        """Run one scheduler step (prefill or decode), returning one token per sequence."""
         import torch
-        from models.tt_transformers.tt.generator import SamplingParams
 
         if self._kv_cache is None:
             return [
@@ -167,15 +185,15 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 for s in sequences
             ]
         return [
-            self._run_prefill(s, torch, SamplingParams)
-            if is_prefill
-            else self._run_decode(s, torch, SamplingParams)
+            self._run_prefill(s, torch) if is_prefill else self._run_decode(s, torch)
             for s in sequences
         ]
 
-    def _run_prefill(self, seq: StepSequence, torch, SamplingParams) -> StepResult:
-        prompt_len = len(seq.token_ids)
-        num_blocks = _num_blocks_for_seq(prompt_len)
+    def _run_prefill(self, seq: StepSequence, torch) -> StepResult:
+        block_size = self._block_size
+        safe_ids = _clamp_token_ids(seq.token_ids, self._vocab_size, self.logger)
+        prompt_len = len(safe_ids)
+        num_blocks = _num_blocks_for_seq(prompt_len, block_size)
         if self._next_free_block + num_blocks > MAX_NUM_BLOCKS:
             return StepResult(
                 task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
@@ -185,25 +203,37 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         )
         self._next_free_block += num_blocks
         page_table = torch.tensor([block_ids], dtype=torch.int32)
-        padded_len = _padded_prefill_len(prompt_len)
-        tokens = torch.tensor(
-            [seq.token_ids + [0] * (padded_len - prompt_len)],
-            dtype=torch.int64,
+
+        tokens = torch.tensor([safe_ids], dtype=torch.int64)
+
+        self.logger.info(
+            f"PREFILL task={seq.task_id} prompt_len={prompt_len} "
+            f"blocks={block_ids} token_ids={safe_ids[:10]}..."
         )
-        # 0 = greedy; respect client value (API default 1.0 when not set)
-        temp = max(0.0, float(seq.temperature))
-        sampling_params = SamplingParams(temperature=temp, top_k=50, top_p=1.0)
-        out_tokens, _ = self.model.prefill_forward(
+
+        # No sampling_params → model returns logits (not sampled tokens).
+        # warmup_prefill=True (default) compiles operators and captures traces;
+        # without it the trace output is corrupted by unsafe device allocations.
+        logits_output = self.model.prefill_forward(
             tokens=tokens,
             page_table=page_table,
             kv_cache=self._kv_cache,
-            prompt_lens=torch.tensor([prompt_len]),
+            prompt_lens=[prompt_len],
             empty_slots=[0],
-            sampling_params=sampling_params,
-            start_pos=torch.tensor([0]),
-            warmup_prefill=False,
         )
-        next_token = int(out_tokens.flatten()[0].item())
+
+        self.logger.info(
+            f"PREFILL output shape={logits_output.shape} dtype={logits_output.dtype}"
+        )
+        logits_1d = (
+            logits_output[0, -1, :]
+            if logits_output.dim() >= 3
+            else logits_output.flatten()
+        )
+        _log_top_tokens(self.logger, "PREFILL", logits_1d)
+        next_token = _sample_greedy(logits_1d)
+        self.logger.info(f"PREFILL sampled token={next_token}")
+
         self._seq_state[seq.task_id] = _SeqState(
             page_table=page_table,
             current_len=prompt_len + 1,
@@ -213,16 +243,18 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         finished = next_token == self.EOS_TOKEN_ID and not seq.ignore_eos
         return StepResult(task_id=seq.task_id, token_id=next_token, finished=finished)
 
-    def _run_decode(self, seq: StepSequence, torch, SamplingParams) -> StepResult:
+    def _run_decode(self, seq: StepSequence, torch) -> StepResult:
         state = self._seq_state.get(seq.task_id)
         if state is None:
             return StepResult(
                 task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
             )
+        block_size = self._block_size
         last_token = seq.token_ids[-1]
         current_len = state.current_len
         num_blocks_used = state.num_blocks_used
-        if (current_len + 1) > num_blocks_used * BLOCK_SIZE:
+
+        if (current_len + 1) > num_blocks_used * block_size:
             if self._next_free_block >= MAX_NUM_BLOCKS:
                 return StepResult(
                     task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
@@ -236,20 +268,30 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             )
             self._next_free_block += 1
             self._seq_state[seq.task_id] = state
+
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
-        # RoPE/position_id must be the position of the token we're feeding (0-indexed), not the next slot
-        position_of_input_token = current_len - 1
-        temp = max(0.0, float(seq.temperature))
-        sampling_params = SamplingParams(temperature=temp, top_k=50, top_p=1.0)
-        out_tokens, _ = self.model.decode_forward(
+        position = current_len - 1
+
+        self.logger.info(
+            f"DECODE task={seq.task_id} token={last_token} pos={position} "
+            f"page_table={state.page_table.tolist()}"
+        )
+
+        # No sampling_params → model returns (logits, log_probs).
+        # enable_trace=True matches vLLM's calling convention.
+        logits, _ = self.model.decode_forward(
             tokens=tokens,
-            start_pos=torch.tensor([position_of_input_token]),
+            start_pos=torch.tensor([position]),
             page_table=state.page_table,
             kv_cache=self._kv_cache,
-            sampling_params=sampling_params,
-            enable_trace=False,
+            enable_trace=True,
         )
-        next_token = int(out_tokens.flatten()[0].item())
+
+        logits_1d = logits[0, -1, :]
+        _log_top_tokens(self.logger, "DECODE", logits_1d)
+        next_token = _sample_greedy(logits_1d)
+        self.logger.info(f"DECODE sampled token={next_token}")
+
         new_len = current_len + 1
         self._seq_state[seq.task_id] = _SeqState(
             page_table=state.page_table,

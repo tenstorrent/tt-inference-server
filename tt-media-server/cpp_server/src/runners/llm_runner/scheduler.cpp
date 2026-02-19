@@ -9,7 +9,7 @@ namespace llm_engine {
 Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
     : max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
-      eos_(config.eos),
+      stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
       waiting_(task_queue) {}
 
@@ -124,13 +124,14 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     seq->append_token(token_id);
 
+    bool is_stop_token = stop_token_ids_.count(token_id) > 0;
     bool finished =
-        (!seq->ignore_eos && token_id == eos_) ||
+        (!seq->ignore_eos && is_stop_token) ||
         seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens);
 
     if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess task_id=" << seq->task_id << " finished"
-          << " (eos=" << (token_id == eos_) << " max_tokens="
+          << " (stop_token=" << is_stop_token << " max_tokens="
           << (seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);

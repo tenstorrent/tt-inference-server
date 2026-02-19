@@ -133,6 +133,13 @@ struct PipeLlamaModelRunner::Impl {
     Json::Value req(Json::objectValue);
     req["is_prefill"] = is_prefill;
     req["exit"] = false;
+
+    Json::Value stop_ids(Json::arrayValue);
+    for (int64_t id : config.stop_token_ids) {
+      stop_ids.append(static_cast<Json::Int64>(id));
+    }
+    req["stop_token_ids"] = std::move(stop_ids);
+
     Json::Value arr(Json::arrayValue);
     for (Sequence* seq : seqs) {
       Json::Value s(Json::objectValue);

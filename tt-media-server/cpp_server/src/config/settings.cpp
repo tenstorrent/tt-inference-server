@@ -148,7 +148,7 @@ llm_engine::Config llm_engine_config() {
         }
     }
     if (model_runner_type() == RunnerType::TTNN_TEST) {
-        cfg.eos = 128001;  // Llama 3.1 EOS so scheduler stops when pipe runner returns EOS
+        cfg.stop_token_ids = {128001, 128008, 128009};
     }
     return cfg;
 }

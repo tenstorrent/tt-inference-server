@@ -157,44 +157,61 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
-    // Same message list as used in HuggingFace docs for apply_chat_template.
+TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama31InstructFormat) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    // Expected output from HuggingFace transformers tokenizer.apply_chat_template(..., add_generation_prompt=True)
-    // for DeepSeek-V3 (add_bos_token=true, add_eos_token=false).
+    // Llama 3.1 Instruct format: system header with knowledge preamble, then
+    // each turn wrapped in <|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>.
     const std::string expected =
-        "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How are you?<｜Assistant｜>";
+        "<|begin_of_text|>"
+        "<|start_header_id|>system<|end_header_id|>\n\n"
+        "Cutting Knowledge Date: December 2023\n"
+        "Today Date: 26 Jul 2024\n\n"
+        "<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "Hello<|eot_id|>"
+        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        "Hi!<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "How are you?<|eot_id|>"
+        "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
     std::string actual = Tokenizer::apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match HuggingFace DeepSeek-V3 format.\n"
+        << "apply_chat_template output should match Llama 3.1 Instruct format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format) {
-    // Same message list as used in HuggingFace docs for apply_chat_template.
+TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama31InstructFormat) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    // Expected output from HuggingFace transformers tokenizer.apply_chat_template(..., add_generation_prompt=True)
-    // for DeepSeek-V3 (add_bos_token=true, add_eos_token=false).
     const std::string expected =
-        "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How are you?";
+        "<|begin_of_text|>"
+        "<|start_header_id|>system<|end_header_id|>\n\n"
+        "Cutting Knowledge Date: December 2023\n"
+        "Today Date: 26 Jul 2024\n\n"
+        "<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "Hello<|eot_id|>"
+        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        "Hi!<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "How are you?<|eot_id|>";
 
     std::string actual = Tokenizer::apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match HuggingFace DeepSeek-V3 format.\n"
+        << "apply_chat_template output should match Llama 3.1 Instruct format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }

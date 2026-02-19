@@ -21,9 +21,6 @@ LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* t
   } else {
     model_runner_ = make_model_runner(config_, std::move(decode_cb));
   }
-  if (config_.eos < 0) {
-    config_.eos = 0;
-  }
 }
 
 LLMRunner::~LLMRunner() {

@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 #include <unordered_map>
 
@@ -61,7 +62,7 @@ class Scheduler {
  private:
   int max_num_seqs_;
   int max_num_batched_tokens_;
-  int eos_;
+  std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* waiting_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;

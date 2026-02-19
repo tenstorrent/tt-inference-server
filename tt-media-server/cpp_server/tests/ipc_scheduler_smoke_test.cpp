@@ -78,7 +78,6 @@ int main() {
     config.num_kvcache_blocks = 32;
     config.kvcache_block_size = 8;
     config.max_num_batched_tokens = 256;
-    config.eos = 0;
 
     auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
     Scheduler sched(config, queue.get());
