@@ -314,7 +314,6 @@ def main():
     assert all_params, (
         f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
     )
-    breakpoint()
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
