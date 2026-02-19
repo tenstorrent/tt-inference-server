@@ -245,6 +245,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
+            # signal training done
+            if request._training_metrics_queue:
+                request._training_metrics_queue.put(None)
 
         return [model_path]
 

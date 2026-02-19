@@ -374,6 +374,8 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
+            if job._training_metrics_queue:
+                job._training_metrics_queue.put(None)
             job._task = None
 
     def _start_cleanup_task(self):

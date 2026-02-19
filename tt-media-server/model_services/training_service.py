@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 import os
 from multiprocessing import Manager
+import asyncio
 
 from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
@@ -38,19 +39,15 @@ class TrainingService(BaseJobService):
         )
     
     async def stream_job_metrics(self, job_id: str):
-        metrics_queue = self._job_manager.get_job_metrics_queue(job_id)
+        metrics_queue = self._job_manager.get_training_metrics_queue(job_id)
         if not metrics_queue:
             return
 
         while True:
-            try:
-                metric = await asyncio.get_event_loop().run_in_executor(
-                    None, metrics_queue.get, True, 1.0
-                )
-                if metric is None:  # sentinel
-                    return
-                yield metric
-            except queue.Empty:
-                job_data = self._job_manager.get_job_metadata(job_id)
-                if job_data and job_data["status"] in ("completed", "failed", "cancelled"):
-                    return
+            metric = await asyncio.get_event_loop().run_in_executor(
+                None, metrics_queue.get  
+            )
+            if metric is None:  # sentinel = training done
+                return
+            
+            yield metric
