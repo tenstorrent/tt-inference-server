@@ -5,6 +5,8 @@
 
 namespace llm_engine {
 
+constexpr int64_t kWhitespaceTokenId = 223;
+
 void DecodeQueue::push(const DecodeResult& result) {
   std::lock_guard<std::mutex> lock(mutex_);
   pending_.push_back(result);
@@ -46,7 +48,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->task_id, seq->last_token + 1});
+      decode_callback_({seq->task_id, kWhitespaceTokenId});
     }
   } else {
     backend_->write(*seqs[0]);
