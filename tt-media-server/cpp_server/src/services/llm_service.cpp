@@ -20,10 +20,6 @@ namespace tt::services {
 
 namespace {
 
-/** Replaces this process with the same binary running as worker N. Sets env, then exec so the
- * new process has no inherited Tracy/alloc state and can start Tracy on port 8087 + worker_id.
- * Does not return on success; _exit(1) on failure. See main.cpp --worker path for the entry point.
- */
 [[noreturn]] void exec_worker_process(
     size_t worker_id,
     const std::unordered_map<std::string, std::string>& env_vars) {
@@ -46,6 +42,16 @@ namespace {
 }
 
 }  // namespace
+
+worker::WorkerConfig make_worker_config_for_process(int worker_id) {
+    worker::WorkerConfig cfg;
+    cfg.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(worker_id);
+    cfg.task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME);
+    cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<RING_BUFFER_CAPACITY>>(
+        "/tt_tokens_" + std::to_string(worker_id), false);
+    cfg.worker_id = worker_id;
+    return cfg;
+}
 
 LLMService::LLMService()
     : num_workers_(tt::config::num_workers()),
@@ -132,8 +138,8 @@ void LLMService::start_workers() {
                 exec_worker_process(i, cfg.env_vars);
             } catch (const std::exception& e) {
                 std::cerr << "[LLMService] Worker " << i << " failed: " << e.what() << "\n" << std::flush;
+                _exit(1);
             }
-            _exit(1);
         }
         worker->pid = pid;
         std::cout << "[LLMService] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;

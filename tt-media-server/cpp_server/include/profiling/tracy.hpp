@@ -16,6 +16,8 @@ constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
 void TracySetPortForMain();
 void TracySetPortForWorker(int worker_id);
+/** Start Tracy for the main process. Call once before any Tracy use (e.g. from register_services). */
+void TracyStartMainProcess();
 void TracyStartupSchedulerParent();
 void TracyStartupWorker(int worker_id);
 void TracyRegisterPlots();
@@ -44,6 +46,7 @@ constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
 void TracySetPortForMain();
 void TracySetPortForWorker(int worker_id);
+void TracyStartMainProcess();
 void TracyStartupSchedulerParent();
 void TracyStartupWorker(int worker_id);
 void TracyRegisterPlots();

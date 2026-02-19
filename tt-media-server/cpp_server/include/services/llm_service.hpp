@@ -20,9 +20,12 @@
 #include <vector>
 
 namespace tt::services {
-    
+
+/** WorkerConfig for exec'd worker process. Used by main.cpp --worker path. */
+worker::WorkerConfig make_worker_config_for_process(int worker_id);
+
 constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
-    
+
 constexpr size_t RING_BUFFER_CAPACITY = 65536;
 struct QueueManager {
     std::shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
@@ -38,7 +41,7 @@ struct QueueManager {
             ));
         }
     }
-    
+
     void clear() {
         llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
         for (auto& queue : result_queues) {

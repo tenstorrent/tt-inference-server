@@ -8,7 +8,7 @@ We use [Tenstorrent’s Tracy](https://github.com/tenstorrent/tracy) with the Tr
 - **Plots** – Numeric series over time (e.g. `pending_tasks`).
 - **Memory profiling** – Allocation/free tracking (when built with Tracy alloc hooks).
 - **Lock profiling** – Mutex hold/wait times for `TracyLockable(std::mutex, ...)` (scheduler, embedding service/controller, model runner). Lock events appear on the thread timeline; in the GUI, **Options → Locks** lists locks and **Draw locks** shows them on the timeline. Uncheck **Only contended** to see locks used by a single thread (otherwise only contended locks are shown).
-- **Multi-process** – Main process on port 8086, workers on 8087, 8088, … (each process can be connected separately in the GUI).
+- **Multi-process** – Main process on port 8086 (Tracy started in `register_services()` via `TracyStartMainProcess()`). Workers are started by fork+exec and each starts Tracy on 8087, 8088, … (connect to each in the GUI).
 
 ### Building the Tracy GUI
 

@@ -14,8 +14,6 @@
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
-#include "ipc/shared_memory.hpp"
-#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
 #include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/llm_worker.hpp"
@@ -33,27 +31,15 @@ namespace {
 }
 
 int main(int argc, char* argv[]) {
-    // Standalone worker (started via fork+exec): start Tracy on 8087+ and run worker loop only.
     if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
         int worker_id = std::atoi(argv[2]);
         tracy_config::TracyStartupWorker(worker_id);
-        tt::worker::WorkerConfig cfg;
-        cfg.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(worker_id);
-        cfg.task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(tt::services::TASK_QUEUE_NAME);
-        cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::services::RING_BUFFER_CAPACITY>>(
-            "/tt_tokens_" + std::to_string(worker_id), false);
-        cfg.worker_id = worker_id;
+        tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
         tt::worker::LLMWorker worker(cfg, tt::config::llm_engine_config());
         worker.start();
         _exit(0);
     }
 
-    // Set port without allocating (snprintf + stack buffer), then start profiler
-    // before any other allocation so Tracy memory profiling sees matching alloc/free.
-    tracy_config::TracySetPortForMain();
-    tracy_config::TracyStartupProfiler();
-    tracy_config::TracySetThreadName("Main");
-    tracy_config::TracyRegisterPlots();  // Register plot names so graphs show in Tracy UI
     // Parse command line arguments
     std::string host = "0.0.0.0";
     uint16_t port = 8000;

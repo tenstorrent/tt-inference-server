@@ -25,8 +25,14 @@ void TracySetPortForWorker(int worker_id) {
     setenv("TRACY_PORT", buf, 1);
 }
 
+void TracyStartMainProcess() {
+    TracySetPortForMain();
+    TracyStartupProfiler();
+    TracySetThreadName("Main");
+    TracyRegisterPlots();
+}
+
 void TracyStartupSchedulerParent() {
-    // Profiler already started in main(); only configure plot (also done in TracyRegisterPlots).
     TracyPlotConfig("pending_tasks", tracy::PlotFormatType::Number, true, true, 0);
 }
 
@@ -41,6 +47,7 @@ void TracyStartupWorker(int worker_id) {
 #else
 void TracySetPortForMain() {}
 void TracySetPortForWorker(int /*worker_id*/) {}
+void TracyStartMainProcess() {}
 void TracyStartupSchedulerParent() {}
 void TracyStartupWorker(int /*worker_id*/) {}
 void TracyRegisterPlots() {}
