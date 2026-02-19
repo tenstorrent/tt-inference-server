@@ -1141,8 +1141,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="65718bb",
-        vllm_commit="409b1cd",
+        tt_metal_commit="08bcd06",
+        vllm_commit="47be1ca",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1150,7 +1150,10 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,  # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
                 default_impl=True,
-                env_vars={"VLLM_USE_V1": 1},
+                env_vars={
+                    "VLLM_USE_V1": 1,
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
                 vllm_args={
                     "data_parallel_size": 4,
                     "num_scheduler_steps": 1,
@@ -1415,8 +1418,8 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="65718bb",
-        vllm_commit="409b1cd",
+        tt_metal_commit="08bcd06",
+        vllm_commit="47be1ca",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
