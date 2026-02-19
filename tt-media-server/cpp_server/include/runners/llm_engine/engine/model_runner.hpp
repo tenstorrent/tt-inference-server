@@ -9,14 +9,10 @@
 #include <vector>
 
 #include "llm_engine/config.hpp"
+#include "llm_engine/engine/device_backend.hpp"
 #include "llm_engine/engine/sequence.hpp"
 
 namespace llm_engine {
-
-struct DecodeResult {
-  TaskID task_id;
-  int64_t token_id;
-};
 
 // Invoked from the device-to-host reader thread when a token is generated.
 using DecodeCallback = std::function<void(const DecodeResult&)>;
@@ -40,7 +36,8 @@ class IModelRunner {
 
 class ModelRunnerStub : public IModelRunner {
  public:
-  ModelRunnerStub(const Config& config, DecodeCallback callback);
+  ModelRunnerStub(const Config& config, DecodeCallback callback,
+                  std::unique_ptr<IDeviceBackend> backend);
   ~ModelRunnerStub() override;
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
@@ -49,12 +46,10 @@ class ModelRunnerStub : public IModelRunner {
   void reader_loop();
 
   Config config_;
-  int64_t dummy_token_;
   DecodeCallback decode_callback_;
-  std::mutex work_mutex_;
-  std::vector<DecodeResult> work_queue_;
+  std::unique_ptr<IDeviceBackend> backend_;
   std::atomic<bool> stop_{false};
-  std::thread reader_thread_;  // must be last: uses all members above
+  std::thread reader_thread_;
 };
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
