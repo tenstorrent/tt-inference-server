@@ -378,7 +378,6 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     cli_args: Dict[str, str] = field(default_factory=dict)
-    display_name: Optional[str] = None
     has_builtin_warmup: bool = False
 
     def __post_init__(self):
@@ -810,7 +809,6 @@ class ModelSpecTemplate:
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
     uses_tensor_model_cache: bool = True
-    display_name: Optional[str] = None
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (shared across all weights)
     )
@@ -2186,7 +2184,6 @@ video_templates = [
         min_disk_gb=60,
         min_ram_gb=32,
         model_type=ModelType.VIDEO,
-        display_name="mochi-1-preview",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2238,7 +2235,6 @@ video_templates = [
         min_disk_gb=60,
         min_ram_gb=32,
         model_type=ModelType.VIDEO,
-        display_name="wan2.2-t2v-a14b-diffusers",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2441,7 +2437,6 @@ image_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.IMAGE,
-        display_name="motif-image-6b-preview",
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2567,7 +2562,6 @@ embedding_templates = [
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.EMBEDDING,
         inference_engine=InferenceEngine.MEDIA.value,
-        display_name="BGE-Large-EN-v1.5",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -2639,7 +2633,6 @@ embedding_templates = [
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.EMBEDDING,
         inference_engine=InferenceEngine.MEDIA.value,
-        display_name="Qwen3-Embedding-8B",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -2700,7 +2693,6 @@ embedding_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.EMBEDDING,
         inference_engine=InferenceEngine.FORGE.value,
-        display_name="Qwen3-Embedding-4B",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -2774,7 +2766,6 @@ cnn_templates = [
         min_ram_gb=8,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.LLM,
-        display_name="Qwen3-4B",
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
         device_model_specs=[
@@ -2810,7 +2801,6 @@ cnn_templates = [
         min_ram_gb=8,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.LLM,
-        display_name="Llama-3.2-3B",
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
         device_model_specs=[
@@ -2846,7 +2836,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="resnet-50",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2871,7 +2860,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="vovnet",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2896,7 +2884,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="mobilenetv2",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2921,7 +2908,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="efficientnet",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2946,7 +2932,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="segformer",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2971,7 +2956,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="vit",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2996,7 +2980,6 @@ cnn_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
-        display_name="unet",
         inference_engine=InferenceEngine.FORGE.value,
         device_model_specs=[
             DeviceModelSpec(
