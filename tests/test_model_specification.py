@@ -20,7 +20,7 @@ from workflows.model_spec import (
     spec_templates,
     SystemRequirements,
 )
-from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelStatusTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelStatusTypes, VersionMode
 
 
 @pytest.fixture
