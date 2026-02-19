@@ -5,6 +5,8 @@
 
 namespace tt::worker {
 
+using namespace std;
+
 class LLMWorker: public BaseWorker {
 public:
     LLMWorker(
@@ -16,8 +18,8 @@ public:
     void stop() override;
     
 private:
-    std::unique_ptr<llm_engine::LLMEngine> llm_engine_;
-    std::function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished)> on_token_;
+    unique_ptr<llm_engine::LLMEngine> llm_engine_;
+    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished)> on_token_;
     llm_engine::Config llm_engine_config_;
 };
 

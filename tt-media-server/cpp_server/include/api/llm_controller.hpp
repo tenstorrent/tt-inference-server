@@ -11,6 +11,8 @@
 
 namespace tt::api {
 
+using namespace std;
+
 /**
  * LLM API Controller - OpenAI-compatible completions endpoint.
  * Similar to Python's open_ai_api/llm.py router.
@@ -32,7 +34,7 @@ public:
      */
     void completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 
     /**
@@ -41,7 +43,7 @@ public:
      */
     void chat_completions(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /health
@@ -49,7 +51,7 @@ public:
      */
     void health(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * GET /ready
@@ -57,34 +59,34 @@ public:
      */
     void ready(
         const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 private:
-    std::shared_ptr<services::LLMService> service_;
+    shared_ptr<services::LLMService> service_;
 
     /**
      * Handle streaming text completion request (SSE).
      */
     void handle_streaming(
         const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * Handle streaming chat completion request (SSE).
      */
     void handle_chat_streaming(
         const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
     /**
      * Generate a unique completion ID (hex string).
      */
-    static std::string generate_completion_id();
+    static string generate_completion_id();
 
     /**
      * Build OpenAI-style error JSON (flat object/message/type/param/code).
      */
-    static Json::Value error_json(const std::string& message, const std::string& type,
+    static Json::Value error_json(const string& message, const string& type,
         const Json::Value& param = Json::nullValue, const Json::Value& code = Json::nullValue);
 };
 

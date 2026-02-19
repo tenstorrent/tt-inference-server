@@ -12,6 +12,8 @@
 
 namespace tt::services {
 
+using namespace std;
+
 /**
  * Abstract base service class defining the interface for all completion services.
  * Concrete implementations (e.g. LLMService) provide scheduling, worker management,
@@ -40,7 +42,7 @@ public:
      * Worker info for monitoring.
      */
     struct WorkerInfo {
-        std::string worker_id;
+        string worker_id;
         bool is_ready;
         size_t processed_requests;
     };
@@ -52,15 +54,15 @@ public:
         bool model_ready;
         size_t queue_size;
         size_t max_queue_size;
-        std::string device;
-        std::vector<WorkerInfo> worker_info;
+        string device;
+        vector<WorkerInfo> worker_info;
     };
 
     virtual SystemStatus get_system_status() const = 0;
     
     void submit_request(
         domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+        function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
     ) {
         pre_process(request);
         process_request(request, callback);
@@ -71,7 +73,7 @@ public:
 protected:
     virtual void process_request(
         domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+        function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
     ) = 0;
 
     virtual void pre_process(domain::CompletionRequest& request) const = 0;
