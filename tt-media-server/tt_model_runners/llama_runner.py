@@ -47,6 +47,7 @@ class StepSequence:
     max_tokens: int
     temperature: float
     ignore_eos: bool
+    seed: int | None = None
 
 
 @dataclass
@@ -86,6 +87,12 @@ def _sample_greedy(logits):
     import torch
 
     return int(torch.argmax(logits).item())
+
+
+def _apply_seed(seed: int | None, torch) -> None:
+    """Set torch manual seed when provided for reproducible sampling."""
+    if seed is not None:
+        torch.manual_seed(seed)
 
 
 def _log_top_tokens(logger, label, logits, k=5):
@@ -265,6 +272,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             else logits_output.flatten()
         )
         _log_top_tokens(self.logger, "PREFILL", logits_1d)
+        _apply_seed(seq.seed, torch)
         next_token = _sample_greedy(logits_1d)
 
         self._seq_state[seq.task_id] = _SeqState(
@@ -318,6 +326,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
         logits_1d = logits[0, -1, :]
         _log_top_tokens(self.logger, "DECODE", logits_1d)
+        _apply_seed(seq.seed, torch)
         next_token = _sample_greedy(logits_1d)
 
         new_len = current_len + 1
@@ -424,6 +433,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             state = states_after_alloc[pos]
             logits_1d = logits[pos, -1, :]
             _log_top_tokens(self.logger, f"DECODE[{pos}]", logits_1d)
+            _apply_seed(seq.seed, torch)
             next_token = _sample_greedy(logits_1d)
             new_len = state.current_len + 1
             self._seq_state[seq.task_id] = _SeqState(
@@ -492,6 +502,7 @@ def main() -> int:
                     max_tokens=s.get("max_tokens", 64),
                     temperature=float(s.get("temperature", 1.0)),
                     ignore_eos=bool(s.get("ignore_eos", False)),
+                    seed=s.get("seed"),
                 )
                 for s in req.get("sequences", [])
             ]

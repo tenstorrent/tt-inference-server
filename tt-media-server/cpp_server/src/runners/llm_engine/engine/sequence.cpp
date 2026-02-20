@@ -12,7 +12,8 @@ Sequence::Sequence(std::vector<int64_t> token_ids,
       num_prompt_tokens_(token_ids_.size()),
       temperature(sampling_params.temperature),
       max_tokens(sampling_params.max_tokens),
-      ignore_eos(sampling_params.ignore_eos) {
+      ignore_eos(sampling_params.ignore_eos),
+      seed(sampling_params.seed) {
   if (!token_ids_.empty()) {
     last_token = token_ids_.back();
   }
@@ -84,7 +85,7 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
 
   is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
-  
+
   is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
   return seq;
 }

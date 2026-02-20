@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 #include "llm_engine/sampling_params.hpp"
@@ -17,7 +18,7 @@
 
 
 namespace llm_engine {
-  
+
 struct TaskID {
   TaskID() {
     auto uuid = boost::uuids::random_generator()();
@@ -35,7 +36,7 @@ inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
 }
 
 
-  
+
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
@@ -47,7 +48,7 @@ class Sequence {
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;
-  
+
   static Sequence* deserialize(std::istream& is);
 
   size_t size() const { return token_ids_.size(); }
@@ -82,6 +83,7 @@ class Sequence {
   /** Max completion tokens for this sequence (from SamplingParams). Each request can have a different value. */
   int max_tokens = 64;
   bool ignore_eos = false;
+  std::optional<int> seed;
 
  private:
   size_t num_tokens() const { return token_ids_.size(); }
