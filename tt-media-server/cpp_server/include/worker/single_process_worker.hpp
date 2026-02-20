@@ -6,7 +6,7 @@
 #include <functional>
 #include <unistd.h>
 #include "runners/llm_runner.hpp"
-#include "runners/llm_engine/engine/task_queue.hpp"
+#include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
 #include "config/settings.hpp"
 

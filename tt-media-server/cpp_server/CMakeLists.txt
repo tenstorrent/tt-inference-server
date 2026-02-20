@@ -118,18 +118,18 @@ endif()
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 # When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
-    src/runners/llm_engine/engine/block_manager.cpp
-    src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
-    src/runners/llm_engine/engine/device_backend.cpp
-    src/runners/llm_engine/engine/mock_device_backend.cpp
-    src/runners/llm_engine/engine/hash.cpp
+    src/runners/llm_runner/block_manager.cpp
+    src/runners/llm_runner/boost_ipc_task_queue.cpp
+    src/runners/llm_runner/device_backend.cpp
+    src/runners/llm_runner/mock_device_backend.cpp
+    src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
-    src/runners/llm_engine/engine/model_runner.cpp
-    src/runners/llm_engine/engine/scheduler.cpp
-    src/runners/llm_engine/engine/sequence.cpp
+    src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/scheduler.cpp
+    src/runners/llm_runner/sequence.cpp
 )
 if(TT_METAL_API_FOUND)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/sockets_device_backend.cpp)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
 else()
     message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
 endif()

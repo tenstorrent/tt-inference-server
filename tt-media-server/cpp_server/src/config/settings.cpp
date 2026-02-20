@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
-#include "runners/llm_engine/config.hpp"
+#include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
 #include <cstddef>

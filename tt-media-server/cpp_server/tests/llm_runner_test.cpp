@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "llm_engine/config.hpp"
+#include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/sequence.hpp"
 #include <gtest/gtest.h>
 #include <unordered_map>
 #include <vector>
-#include "llm_engine/engine/in_memory_task_queue.hpp"
+#include "runners/llm_runner/in_memory_task_queue.hpp"
 namespace llm_engine {
 namespace {
   
