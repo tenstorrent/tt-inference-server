@@ -17,11 +17,7 @@ The engine does **not** support chunked prefill: each request is prefilled in fu
 
 **Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
 
-### Run the demo
-
-```bash
-./build/engine_demo
-```
+### Run unit tests
 
 Run scheduler unit tests (Google Test):
 
@@ -274,7 +270,6 @@ cpp_server/
 │   │   ├── completion_request.hpp  # Request domain object
 │   │   └── completion_response.hpp # Response domain objects
 │   ├── runners/
-│   │   ├── base_device_runner.hpp  # Base runner interface
 │   │   └── runner_factory.hpp      # Runner factory (env-based selection)
 │   ├── scheduler/
 │   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
@@ -309,7 +304,6 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- `BaseDeviceRunner`: Abstract base class for model runners
 - `RunnerFactory`: Creates appropriate runner based on `TT_RUNNER_TYPE` environment variable
 
 ### API
