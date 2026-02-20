@@ -1,5 +1,5 @@
 #include "runners/llm_runner.hpp"
-#include "llm_engine/engine/debug.hpp"
+#include "runners/llm_runner/debug.hpp"
 
 #include <cassert>
 

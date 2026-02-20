@@ -1,5 +1,5 @@
-#include "llm_engine/engine/device_backend.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/device_backend.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 #include <condition_variable>
 #include <mutex>

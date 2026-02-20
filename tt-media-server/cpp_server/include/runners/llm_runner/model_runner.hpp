@@ -8,9 +8,9 @@
 #include <thread>
 #include <vector>
 
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/device_backend.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner/device_backend.hpp"
+#include "runners/llm_runner/sequence.hpp"
 #include "profiling/tracy.hpp"
 
 namespace llm_engine {
