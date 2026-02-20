@@ -4,7 +4,6 @@
 #pragma once
 
 #include "services/base_service.hpp"
-#include "ipc/shared_memory.hpp"
 #include "ipc/queue_manager.hpp"
 #include "worker/base_worker.hpp"
 #include "domain/completion_request.hpp"
@@ -23,7 +22,9 @@ namespace tt::services {
 
 worker::WorkerConfig make_worker_config_for_process(int worker_id);
 
-class LLMService : public BaseService<domain::CompletionRequest, domain::StreamingChunkResponse> {
+class LLMService
+    : public BaseService<domain::CompletionRequest, domain::StreamingChunkResponse>
+    , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
 
     LLMService();
@@ -41,10 +42,11 @@ public:
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
     void post_process(domain::StreamingChunkResponse& response) const override;
-
     domain::StreamingChunkResponse process_request(
         domain::CompletionRequest request) override;
 
+    void streaming_pre_process(domain::CompletionRequest& request) const override { pre_process(request); }
+    void streaming_post_process(domain::StreamingChunkResponse& response) const override { post_process(response); }
     void process_streaming_request(
         domain::CompletionRequest request,
         std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback

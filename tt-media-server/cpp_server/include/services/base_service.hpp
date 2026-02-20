@@ -24,9 +24,8 @@ struct SystemStatus {
 };
 
 /**
- * Templated base service with separate sync and streaming submission paths.
- * Both paths run pre_process on the request. The sync path also runs
- * post_process on the response before returning it.
+ * Base service providing lifecycle management and a sync submission path.
+ * pre_process runs before dispatch, post_process runs on the returned response.
  */
 template<typename RequestType, typename ResponseType>
 class BaseService {
@@ -45,29 +44,41 @@ public:
         return response;
     }
 
+protected:
+    virtual ResponseType process_request(RequestType request) = 0;
+    virtual void pre_process(RequestType& request) const = 0;
+    virtual void post_process(ResponseType& response) const = 0;
+};
+
+/**
+ * Mixin for services that support streaming responses.
+ * post_process is applied to each chunk before forwarding to the caller.
+ */
+template<typename RequestType, typename ResponseType>
+class Streamable {
+public:
+    virtual ~Streamable() = default;
+
     void submit_streaming_request(
         RequestType request,
         std::function<void(const ResponseType&, bool is_final)> callback
     ) {
-        pre_process(request);
+        streaming_pre_process(request);
         process_streaming_request(std::move(request),
-            [this, cb = std::move(callback)](const ResponseType& response, bool is_final) {
-                auto processed = response;
-                post_process(processed);
-                cb(processed, is_final);
+            [this, cb = std::move(callback)](ResponseType& response, bool is_final) {
+                streaming_post_process(response);
+                cb(response, is_final);
             });
     }
 
 protected:
-    virtual ResponseType process_request(RequestType request) = 0;
-
     virtual void process_streaming_request(
         RequestType request,
         std::function<void(const ResponseType&, bool is_final)> callback
     ) = 0;
 
-    virtual void pre_process(RequestType& request) const = 0;
-    virtual void post_process(ResponseType& response) const = 0;
+    virtual void streaming_pre_process(RequestType& request) const = 0;
+    virtual void streaming_post_process(ResponseType& response) const = 0;
 };
 
 } // namespace tt::services

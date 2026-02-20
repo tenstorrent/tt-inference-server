@@ -38,11 +38,6 @@ protected:
     domain::EmbeddingResponse process_request(
         domain::EmbeddingRequest request) override;
 
-    void process_streaming_request(
-        domain::EmbeddingRequest request,
-        std::function<void(const domain::EmbeddingResponse&, bool is_final)> callback
-    ) override;
-
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -677,11 +677,6 @@ domain::EmbeddingResponse EmbeddingService::process_request(
     return future.get();
 }
 
-void EmbeddingService::process_streaming_request(
-    domain::EmbeddingRequest, std::function<void(const domain::EmbeddingResponse&, bool)>) {
-    throw std::runtime_error("Streaming not supported for embedding service");
-}
-
 SystemStatus EmbeddingService::get_system_status() const {
     SystemStatus status;
     status.model_ready = impl_->is_ready_.load();
