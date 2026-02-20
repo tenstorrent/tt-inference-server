@@ -249,8 +249,6 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/tokenizer_config_loader.cpp
-    )
-list(APPEND SOURCES
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
