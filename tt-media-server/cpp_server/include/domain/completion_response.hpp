@@ -7,15 +7,15 @@
 #include <string>
 #include <json/json.h>
 
-#include "utils/json_escape.hpp"
 #include "domain/base_response.hpp"
+#include "utils/json_escape.hpp"
+
 namespace tt::domain {
-    
 
 /**
  * Usage statistics for the completion.
  */
- struct CompletionUsage {
+struct CompletionUsage {
     int prompt_tokens = 0;
     int completion_tokens = 0;
     int total_tokens = 0;
@@ -49,6 +49,41 @@ struct CompletionChoice {
             json["finish_reason"] = Json::nullValue;
         }
         return json;
+    }
+};
+
+/**
+ * Full OpenAI-compatible completion response.
+ */
+struct CompletionResponse: BaseResponse {
+    std::string id;
+    std::string object = "text_completion";
+    int64_t created;
+    std::string model;
+    std::vector<CompletionChoice> choices;
+    CompletionUsage usage;
+
+    Json::Value toJson() const {
+        Json::Value json;
+        json["id"] = id;
+        json["object"] = object;
+        json["created"] = static_cast<Json::Int64>(created);
+        json["model"] = model;
+
+        Json::Value choicesArray(Json::arrayValue);
+        for (const auto& choice : choices) {
+            choicesArray.append(choice.toJson());
+        }
+        json["choices"] = choicesArray;
+        json["usage"] = usage.toJson();
+
+        return json;
+    }
+
+    std::string toJsonString() const {
+        Json::StreamWriterBuilder writer;
+        writer["indentation"] = "";
+        return Json::writeString(writer, toJson());
     }
 };
 

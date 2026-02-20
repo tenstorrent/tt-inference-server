@@ -23,10 +23,6 @@ struct SystemStatus {
     std::vector<WorkerInfo> worker_info;
 };
 
-/**
- * Base service providing lifecycle management and a sync submission path.
- * pre_process runs before dispatch, post_process runs on the returned response.
- */
 template<typename RequestType, typename ResponseType>
 class BaseService {
 public:
@@ -50,10 +46,6 @@ protected:
     virtual void post_process(ResponseType& response) const = 0;
 };
 
-/**
- * Mixin for services that support streaming responses.
- * post_process is applied to each chunk before forwarding to the caller.
- */
 template<typename RequestType, typename ResponseType>
 class Streamable {
 public:
@@ -74,7 +66,7 @@ public:
 protected:
     virtual void process_streaming_request(
         RequestType request,
-        std::function<void(const ResponseType&, bool is_final)> callback
+        std::function<void(ResponseType&, bool is_final)> callback
     ) = 0;
 
     virtual void streaming_pre_process(RequestType& request) const = 0;

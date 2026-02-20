@@ -36,16 +36,6 @@ public:
         const std::vector<domain::CompletionRequest>& requests) = 0;
 
     /**
-     * Run streaming inference, calling callback for each chunk.
-     * @param request The completion request
-     * @param chunk_callback Called for each generated chunk
-     */
-    virtual void run_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const domain::StreamingChunkOutput&)> chunk_callback,
-        std::function<void(const domain::FinalResultOutput&)> final_callback) = 0;
-
-    /**
      * Close the device and cleanup resources.
      */
     virtual void close() {}

@@ -81,6 +81,23 @@ struct ChatCompletionResponse {
         return Json::writeString(writer, toJson());
     }
 
+    static ChatCompletionResponse fromCompletionResponse(const CompletionResponse& completion) {
+        ChatCompletionResponse response;
+        response.id = completion.id;
+        response.created = completion.created;
+        response.model = completion.model;
+        response.usage = completion.usage;
+
+        for (const auto& choice : completion.choices) {
+            ChatCompletionChoice chat_choice;
+            chat_choice.index = choice.index;
+            chat_choice.message.content = choice.text;
+            chat_choice.finish_reason = choice.finish_reason.value_or("stop");
+            response.choices.push_back(std::move(chat_choice));
+        }
+
+        return response;
+    }
 };
 
 /**

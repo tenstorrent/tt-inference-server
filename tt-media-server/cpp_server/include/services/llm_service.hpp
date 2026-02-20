@@ -5,7 +5,7 @@
 
 #include "services/base_service.hpp"
 #include "ipc/queue_manager.hpp"
-#include "worker/base_worker.hpp"
+#include "worker/single_process_worker.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 
@@ -23,7 +23,7 @@ namespace tt::services {
 worker::WorkerConfig make_worker_config_for_process(int worker_id);
 
 class LLMService
-    : public BaseService<domain::CompletionRequest, domain::StreamingChunkResponse>
+    : public BaseService<domain::CompletionRequest, domain::CompletionResponse>
     , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
 
@@ -41,15 +41,15 @@ public:
 
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
-    void post_process(domain::StreamingChunkResponse& response) const override;
-    domain::StreamingChunkResponse process_request(
+    void post_process(domain::CompletionResponse& response) const override;
+    domain::CompletionResponse process_request(
         domain::CompletionRequest request) override;
 
     void streaming_pre_process(domain::CompletionRequest& request) const override { pre_process(request); }
-    void streaming_post_process(domain::StreamingChunkResponse& response) const override { post_process(response); }
+    void streaming_post_process(domain::StreamingChunkResponse&) const override {}
     void process_streaming_request(
         domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
+        std::function<void(domain::StreamingChunkResponse&, bool is_final)> callback
     ) override;
 
 private:
@@ -60,12 +60,12 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    std::vector<std::unique_ptr<worker::BaseWorker>> workers_;
+    std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
     size_t num_workers_;
 
     std::vector<std::thread> consumer_threads_;
 
-    ConcurrentMap<std::string, std::function<void(const domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
+    ConcurrentMap<std::string, std::function<void(domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
 
     std::atomic<uint64_t> next_worker_{0};
 
