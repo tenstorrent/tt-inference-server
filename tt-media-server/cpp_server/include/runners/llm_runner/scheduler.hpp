@@ -5,11 +5,11 @@
 #include <vector>
 #include <unordered_map>
 
-#include "runners/llm_engine/config.hpp"
-#include "runners/llm_engine/engine/block_manager.hpp"
-#include "runners/llm_engine/engine/sequence.hpp"
-#include "runners/llm_engine/engine/task_queue.hpp"
-#include "runners/llm_engine/sampling_params.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner/block_manager.hpp"
+#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/task_queue.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 

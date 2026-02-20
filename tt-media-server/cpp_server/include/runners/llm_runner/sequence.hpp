@@ -9,7 +9,7 @@
 #include <vector>
 #include <string>
 #include <vector>
-#include "llm_engine/sampling_params.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>

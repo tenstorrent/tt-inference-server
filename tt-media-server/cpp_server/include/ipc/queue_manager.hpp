@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ipc/shared_memory.hpp"
-#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/boost_ipc_task_queue.hpp"
 #include <memory>
 #include <string>
 #include <vector>
