@@ -43,7 +43,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_batched_tokens = 0;
 
   // --- Prefill: pop from task queue ---
-  while (num_seqs < Config::max_num_seqs) {
+  while (num_seqs < max_num_seqs_) {
     auto seq = waiting_->try_pop();
     if (!seq) {
       break;  // Queue empty
@@ -77,7 +77,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   // --- Decode: process running sequences ---
-  while (!running_.empty() && num_seqs < Config::max_num_seqs) {
+  while (!running_.empty() && num_seqs < max_num_seqs_) {
     Sequence* seq = running_.front();
     running_.pop_front();
     auto self_preempt = false;
@@ -142,7 +142,7 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
       --in_flight_count_;
     }
   }
-  
+
 }
 
 void Scheduler::removeSequence(TaskID task_id) {

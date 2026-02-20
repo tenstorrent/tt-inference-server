@@ -91,6 +91,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `LLM_MAX_NUM_SEQS` | Max sequences per scheduler step (prefill or decode). Higher values allow more concurrent requests per step; Python runner still runs one forward per sequence. | `1` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 

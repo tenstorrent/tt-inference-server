@@ -218,10 +218,10 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             ).count();
 
             domain::CompletionChoice choice;
-            choice.text = token.is_final() ? "" : tokenizer.decode({static_cast<int>(token.token_id)});
+            choice.text = token.is_stop_token() ? "" : tokenizer.decode({static_cast<int>(token.token_id)});
             choice.index = token.token_index;
             if (token.is_final()) {
-                choice.finish_reason = "stop";
+                choice.finish_reason = token.is_stop_token() ? "stop" : "length";
             }
             response.choices.push_back(std::move(choice));
 

@@ -67,7 +67,8 @@ void LLMEngine::drain_decode_results() {
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    on_token_(dr.task_id, dr.token_id, finished);
+    bool is_stop = finished && scheduler_->is_stop_token(dr.token_id);
+    on_token_(dr.task_id, dr.token_id, finished, is_stop);
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id

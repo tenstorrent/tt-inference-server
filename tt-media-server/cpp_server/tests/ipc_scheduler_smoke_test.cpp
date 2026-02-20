@@ -100,7 +100,7 @@ int main() {
       std::cout << "]\n";
     }
 
-    // --- Verify (batch size is 1 with current Config::max_num_seqs) ---
+    // --- Verify (batch size is 1 by default; LLM_MAX_NUM_SEQS not set) ---
     bool ok = true;
     auto fail = [&](const char* msg) {
       std::cerr << "[child]  FAIL: " << msg << "\n";

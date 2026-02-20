@@ -127,6 +127,7 @@ struct PipeLlamaModelRunner::Impl {
     return true;
   }
 
+  // Batch protocol: one request carries all scheduled sequences; response is one result per sequence (same order).
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) {
     if (stop_.load() || child_pid <= 0 || write_fd < 0 || read_fd < 0) return;
 

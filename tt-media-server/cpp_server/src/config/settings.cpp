@@ -133,6 +133,8 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     llm_engine::Config c;
+    c.max_num_seqs = static_cast<int>(env_ulong("LLM_MAX_NUM_SEQS", 1));
+    if (c.max_num_seqs < 1) c.max_num_seqs = 1;
     if (runner_type() == RunnerType::TTNN_TEST) {
         // Llama 3.1 Instruct stop tokens:
         //   128001 = <|end_of_text|>

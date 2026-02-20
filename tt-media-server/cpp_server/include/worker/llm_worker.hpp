@@ -14,10 +14,10 @@ public:
 
     void start() override;
     void stop() override;
-    
+
 private:
     std::unique_ptr<llm_engine::LLMEngine> llm_engine_;
-    std::function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished)> on_token_;
+    llm_engine::TokenCallback on_token_;
     llm_engine::Config llm_engine_config_;
 };
 

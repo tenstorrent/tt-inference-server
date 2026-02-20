@@ -49,7 +49,7 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   auto task_queue = make_queue();
   auto scheduler = make_scheduler(config, task_queue.get());
 
-  LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
+  LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();

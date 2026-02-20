@@ -7,10 +7,13 @@
 namespace tt::worker {
 
 LLMWorker::LLMWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config): BaseWorker(cfg), llm_engine_config_(llm_engine_config) {
-    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished) {
+    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token) {
+            uint32_t flags = 0;
+            if (finished) flags |= ipc::SharedToken::FLAG_FINAL;
+            if (is_stop_token) flags |= ipc::SharedToken::FLAG_STOP_TOKEN;
             auto token = ipc::SharedToken{
                 .token_index = 0,
-                .flags = static_cast<uint32_t>(finished ? 1 : 0),
+                .flags = flags,
                 .token_id = token_id,
                 .task_id = {},
                 .padding = {},
