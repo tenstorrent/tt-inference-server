@@ -250,13 +250,11 @@ set(SOURCES
     src/utils/service_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     )
-if(NOT TEST)
-    list(APPEND SOURCES
-        src/api/embedding_controller.cpp
-        src/runners/embedding_runner.cpp
-        src/services/embedding_service.cpp
-    )
-endif()
+list(APPEND SOURCES
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+)
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
