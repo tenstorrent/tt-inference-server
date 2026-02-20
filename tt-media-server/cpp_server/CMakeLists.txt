@@ -239,6 +239,7 @@ set(SOURCES
     src/utils/tokenizer.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
+    src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
