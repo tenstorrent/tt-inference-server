@@ -47,14 +47,13 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   int total_requests = static_cast<int>(requests.size());
 
   auto task_queue = make_queue();
-  auto scheduler = make_scheduler(config, task_queue.get());
 
   LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();
       }
-    }, std::move(scheduler)};
+    }, task_queue.get()};
 
   std::vector<TaskID> task_ids;
   for (const auto& req : requests) {

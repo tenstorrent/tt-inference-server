@@ -5,24 +5,27 @@
 #include <functional>
 #include <memory>
 
+#include "runners/runner_interface.hpp"
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/task_queue.hpp"
 
 namespace llm_engine {
 
 using TokenCallback =
     std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
-class LLMRunner {
+class LLMRunner : public tt::runners::IRunner {
  public:
-  LLMRunner(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler);
-  ~LLMRunner();
+  LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue);
+  ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
 
-  void run();
-  void stop();
+  void run() override;
+  void stop() override;
+  const char* runner_type() const override { return "LLMRunner"; }
 
  private:
   void step();

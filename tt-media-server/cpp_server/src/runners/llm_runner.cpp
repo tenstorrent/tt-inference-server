@@ -5,9 +5,12 @@
 
 namespace llm_engine {
 
-LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler)
-    : config_(config), on_token_(std::move(on_token)), scheduler_(std::move(scheduler)) {
+LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue)
+    : config_(config), on_token_(std::move(on_token)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
+ 
+  scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
+  
   auto decode_cb = [this](const DecodeResult& result) {
     decode_queue_.push(result);
   };
