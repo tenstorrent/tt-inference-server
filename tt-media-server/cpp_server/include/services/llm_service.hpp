@@ -8,6 +8,7 @@
 #include "worker/single_process_worker.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
+#include "services/streamable.hpp"
 
 #include <atomic>
 #include <functional>
