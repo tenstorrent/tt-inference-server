@@ -8,7 +8,6 @@
 
 #include <iostream>
 #include <chrono>
-#include <iomanip>
 #include <sstream>
 #include <random>
 #include <thread>
@@ -96,9 +95,7 @@ EmbeddingController::EmbeddingController() {
         return;
     }
 
-    service_ = std::dynamic_pointer_cast<services::EmbeddingService>(
-        tt::utils::service_factory::get_service("embedding")
-    );
+    service_ = tt::utils::service_factory::get_service_by_type<services::EmbeddingService>();
     if (!service_) {
         throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
                                  "Ensure register_services() is called before Drogon starts.");
@@ -152,14 +149,11 @@ void EmbeddingController::create_embedding(
 
     auto submit_time = std::chrono::steady_clock::now();
 
-    // Submit request and get future
-    auto future = std::make_shared<std::future<domain::EmbeddingResponse>>(
-        service_->process_embedding(std::move(request)));
-
-    // Use thread pool instead of creating new thread per request
-    get_callback_pool().submit([callback = std::move(callback), future, req_num, start_time, submit_time]() {
+    get_callback_pool().submit(
+        [service = service_, request = std::move(request),
+         callback = std::move(callback), req_num, start_time, submit_time]() {
         try {
-            auto response = future->get();
+            auto response = service->submit_request(std::move(request));
             auto got_response_time = std::chrono::steady_clock::now();
 
             if (!response.error.empty()) {
@@ -172,13 +166,11 @@ void EmbeddingController::create_embedding(
                 return;
             }
 
-            // Build OpenAI-compatible response
             Json::Value json_response = response.to_openai_json();
             auto built_json_time = std::chrono::steady_clock::now();
 
             auto resp = drogon::HttpResponse::newHttpJsonResponse(json_response);
 
-            // Log timing every 100 requests
             if (req_num % 100 == 0) {
                 double parse_ms = std::chrono::duration<double, std::milli>(submit_time - start_time).count();
                 double wait_ms = std::chrono::duration<double, std::milli>(got_response_time - submit_time).count();

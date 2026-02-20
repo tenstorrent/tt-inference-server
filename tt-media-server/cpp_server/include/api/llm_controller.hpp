@@ -48,17 +48,7 @@ private:
      * Handle streaming completion (SSE). When is_chat is true, emits
      * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      */
-    void handle_streaming_impl(
-        domain::CompletionRequest request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        bool is_chat) const;
-
-    /**
-     * Handle non-streaming completion: accumulates streamed tokens into a
-     * single JSON response. When is_chat is true, wraps as
-     * ChatCompletionResponse; otherwise CompletionResponse.
-     */
-    void handle_non_streaming_impl(
+    void handle_streaming(
         domain::CompletionRequest request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         bool is_chat) const;

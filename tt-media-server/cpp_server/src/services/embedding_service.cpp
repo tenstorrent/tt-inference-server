@@ -6,6 +6,7 @@
 #include "runners/embedding_runner.hpp"
 #include "profiling/tracy.hpp"
 
+#include <future>
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -662,11 +663,21 @@ bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-std::future<domain::EmbeddingResponse> EmbeddingService::process_embedding(domain::EmbeddingRequest request) {
-    return impl_->submit_request(std::move(request));
+void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
+    // no-op
 }
 
-BaseService::SystemStatus EmbeddingService::get_system_status() const {
+void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
+    // no-op
+}
+
+domain::EmbeddingResponse EmbeddingService::process_request(
+    domain::EmbeddingRequest request) {
+    auto future = impl_->submit_request(std::move(request));
+    return future.get();
+}
+
+SystemStatus EmbeddingService::get_system_status() const {
     SystemStatus status;
     status.model_ready = impl_->is_ready_.load();
 
@@ -679,6 +690,11 @@ BaseService::SystemStatus EmbeddingService::get_system_status() const {
     status.device = "tenstorrent";
 
     for (size_t i = 0; i < impl_->num_workers_; ++i) {
+        WorkerInfo info;
+        info.worker_id = std::to_string(i);
+        info.is_ready = (i < impl_->workers_.size()) && impl_->workers_[i]->is_ready.load();
+        info.processed_requests = 0;
+        status.worker_info.push_back(info);
         status.worker_info.push_back({
             "embedding-worker-" + std::to_string(i),
             impl_->is_ready_.load(),
@@ -688,14 +704,5 @@ BaseService::SystemStatus EmbeddingService::get_system_status() const {
 
     return status;
 }
-
-void EmbeddingService::process_request(
-    domain::CompletionRequest,
-    std::function<void(const domain::StreamingChunkResponse&, bool)>) {
-    throw std::runtime_error("EmbeddingService does not support completion requests");
-}
-
-void EmbeddingService::pre_process(domain::CompletionRequest&) const {}
-void EmbeddingService::post_process(domain::CompletionRequest&) const {}
 
 } // namespace tt::services
