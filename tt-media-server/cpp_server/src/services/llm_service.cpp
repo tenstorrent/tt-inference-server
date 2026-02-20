@@ -347,6 +347,9 @@ void LLMService::process_streaming_request(
     sequence->temperature = request.temperature.value_or(1.0f);
     sequence->max_tokens = request.max_tokens;
     sequence->ignore_eos = request.ignore_eos;
+    if (request.seed.has_value()) {
+      sequence->seed = request.seed;
+    }
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 

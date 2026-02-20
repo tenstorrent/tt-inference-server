@@ -151,6 +151,9 @@ struct PipeLlamaModelRunner::Impl {
       s["max_tokens"] = seq->max_tokens;
       s["temperature"] = seq->temperature;
       s["ignore_eos"] = seq->ignore_eos;
+      if (seq->seed.has_value()) {
+        s["seed"] = *seq->seed;
+      }
       arr.append(std::move(s));
     }
     req["sequences"] = std::move(arr);

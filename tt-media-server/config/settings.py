@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 1
+    max_batch_size: int = 16
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
     use_queue_per_worker: bool = False
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     mock_devices_count: int = 5
     max_worker_restart_count: int = 5
     worker_check_sleep_timeout: float = 30.0
-    default_throttle_level: str = "5"
+    default_throttle_level: str = ""
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
