@@ -2,291 +2,222 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-
 import asyncio
-import json
 import logging
-import math
-import sys
 import time
-from pathlib import Path
 from typing import Optional
-
 
 import aiohttp
 from transformers import AutoTokenizer
 
-
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, TaskType
 from .test_status import TtsTestStatus
-
-# Add project root to Python path
-project_root = Path(__file__).resolve().parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
+from .utils.metrics_utils import (
+    MetricsAggregator,
+    aggregate_metrics_from_status_list,
+    percentiles_from_metric,
+)
+from .utils.report_utils import ReportContext
+from utils.constants import PerformanceResult
 from workflows.utils import get_num_calls
 from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
-# Default text for TTS testing (going to be changed with dataset)
-DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
-
 
 class TtsClientStrategy(BaseMediaStrategy):
     """Strategy for text-to-speech models (SpeechT5, etc.)."""
 
+    task_type = TaskType.TTS
+    DEFAULT_BENCHMARK_CALLS = 10
+    DEFAULT_EVAL_CALLS = 5
+    DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
+
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
+        self.tokenizer = self._load_tokenizer()
 
-        # Initialize tokenizer for text token counting
-        self.tokenizer = None
+    def _load_tokenizer(self):
+        """Load tokenizer with graceful fallback."""
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
-            logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
+            tokenizer = AutoTokenizer.from_pretrained(self.model_spec.hf_model_repo)
+            logger.info(f"✅ Loaded tokenizer for {self.model_spec.hf_model_repo}")
+            return tokenizer
         except Exception as e:
             logger.warning(
-                f"⚠️ Could not load tokenizer for {model_spec.hf_model_repo}: {e}"
+                f"⚠️ Could not load tokenizer for {self.model_spec.hf_model_repo}: {e}. "
+                "Using word-based counting."
             )
-            logger.info("📝 Falling back to word-based token counting")
+            return None
+
+    def _verify_health(self) -> None:
+        """Verify service health, raise on failure."""
+        health_ok, runner = self.get_health()
+        if not health_ok:
+            raise RuntimeError("Health check failed")
+        logger.info(f"Health check passed. Runner: {runner}")
+
+    def _get_num_calls(self, is_eval: bool) -> int:
+        """Get number of calls with TTS-specific defaults."""
+        configured = get_num_calls(self)
+        if configured != 2:
+            logger.info(f"Using configured num_calls: {configured}")
+            return configured
+        default = self.DEFAULT_EVAL_CALLS if is_eval else self.DEFAULT_BENCHMARK_CALLS
+        logger.info(f"Using TTS default: {default} calls")
+        return default
+
+    def _get_test_text(self) -> str:
+        """Extract test text from params or use default."""
+        if isinstance(self.all_params, (list, tuple)):
+            return self.DEFAULT_TTS_TEXT
+        tasks = getattr(self.all_params, "tasks", [])
+        if not tasks:
+            return self.DEFAULT_TTS_TEXT
+        task = tasks[0]
+        return getattr(task, "text", None) or getattr(
+            task, "task_name", self.DEFAULT_TTS_TEXT
+        )
 
     def run_eval(self) -> None:
-        """Run evaluations for the TTS model."""
-        status_list = []
-
+        """Run TTS evaluation."""
         logger.info(
-            f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
+            f"Running eval for {self.model_spec.model_name} on {self.device.name}"
         )
-        try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
+        self._verify_health()
+        num_calls = self._get_num_calls(is_eval=True)
+        status_list = self._run_tts_benchmark(num_calls)
+        context = ReportContext.from_strategy(self)
+        extra_data = self._create_eval_extra_data(status_list=status_list)
+        self._report_generator.generate_eval_report(
+            context, self._task_type_str, extra_data
+        )
 
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            num_calls = self._get_tts_num_calls(is_eval=True)
-
-            status_list = self._run_tts_benchmark(num_calls)
-        except Exception as e:
-            logger.error(f"Eval execution encountered an error: {e}")
-            raise
-
-        logger.info("Generating eval report...")
-        benchmark_data = {}
-
-        ttft_value = self._calculate_ttft_value(status_list)
+    def _create_eval_extra_data(
+        self,
+        status_list=None,
+        eval_result=None,
+        total_time=None,
+    ) -> dict:
+        """TTS eval payload: task_name, tolerance, score, rtr, p90/p95, results, configs."""
+        if not status_list:
+            return {}
+        aggregated = aggregate_metrics_from_status_list(status_list)
+        ttft_value = aggregated.get("ttft_ms", 0.0)
+        rtr_value = aggregated.get("rtr", 0.0)
+        p90_ttft, p95_ttft = percentiles_from_metric(
+            status_list, "ttft_ms", (0.90, 0.95)
+        )
         logger.info(f"Extracted TTFT value: {ttft_value:.2f}ms")
-
-        # Calculate RTR
-        rtr_value = self._calculate_rtr_value(status_list)
         logger.info(f"Extracted RTR value: {rtr_value:.2f}")
-
-        # Calculate tail latency (P90, P95)
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
         logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
-        # Metadata fields (excluded from numeric metrics in process_list_format_eval_files)
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
-        )
-        benchmark_data["task_type"] = "text_to_speech"
-        # all_params is always an object with tasks attribute
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        benchmark_data["rtr"] = rtr_value
-        benchmark_data["p90_ttft"] = p90_ttft
-        benchmark_data["p95_ttft"] = p95_ttft
-
-        performance_check = self._calculate_performance_check(
-            ttft_value=ttft_value, rtr_value=rtr_value
-        )
-        benchmark_data["performance_check"] = performance_check
-
-        benchmark_data["accuracy_check"] = self._calculate_accuracy_check()
-
-        benchmark_data = [benchmark_data]
-        eval_filename = (
-            Path(self.output_path)
-            / f"eval_{self.model_spec.model_id}"
-            / self.model_spec.hf_model_repo.replace("/", "__")
-            / f"results_{time.time()}.json"
-        )
-
-        eval_filename.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(eval_filename, "w") as f:
-            json.dump(benchmark_data, f, indent=4)
-        logger.info(f"Evaluation data written to: {eval_filename}")
-
-    def run_benchmark(self, attempt=0) -> list[TtsTestStatus]:
-        """Run benchmarks for the TTS model."""
-        logger.info(
-            f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
-        )
-        try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            num_calls = self._get_tts_num_calls(is_eval=False)
-
-            status_list = self._run_tts_benchmark(num_calls)
-
-            self._generate_report(status_list)
-            return status_list
-        except Exception as e:
-            logger.error(f"Benchmark execution encountered an error: {e}")
-            raise
-
-    def _get_tts_num_calls(self, is_eval: bool = False) -> int:
-        """Get number of calls for TTS with TTS-specific defaults.
-
-        TTS requires more samples for statistical validity:
-        - BENCHMARK: 10 calls (for reliable P90/P95 tail latency)
-        - EVAL: 5 calls (for consistent evaluation results)
-
-        Args:
-            is_eval: True for EVAL workflow, False for BENCHMARK workflow
-
-        Returns:
-            Number of calls to make, respecting num_eval_runs if specified
-        """
-        base_num_calls = get_num_calls(self)
-
-        # If base_num_calls is not the default (2), respect the configured value
-        if base_num_calls != 2:
-            logger.info(f"Using configured num_eval_runs: {base_num_calls} calls")
-            return base_num_calls
-
-        # Override default (2) with TTS-specific defaults
-        tts_default = 5 if is_eval else 10
-        workflow_type = "eval" if is_eval else "benchmark"
-        logger.info(
-            f"Using TTS-specific {workflow_type} default: {tts_default} calls (was {base_num_calls})"
-        )
-        return tts_default
-
-    def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
-        """
-        Generate benchmark report for TTS model.
-        """
-        logger.info("Generating benchmark report...")
-        result_filename = (
-            Path(self.output_path)
-            / f"benchmark_{self.model_spec.model_id}_{time.time()}.json"
-        )
-
-        result_filename.parent.mkdir(parents=True, exist_ok=True)
-
-        ttft_value = self._calculate_ttft_value(status_list)
-
-        # Calculate RTR
-        rtr_value = self._calculate_rtr_value(status_list)
-
-        # Calculate tail latency (P90, P95)
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
-
-        report_data = {
-            "benchmarks": {
-                "num_requests": len(status_list),
-                "ttft": ttft_value / 1000,
-                "rtr": rtr_value,
-                "ttft_p90": p90_ttft / 1000,  # ms to seconds; 0.0 when no data
-                "ttft_p95": p95_ttft / 1000,  # ms to seconds; 0.0 when no data
+        task_name = self.all_params.tasks[0].task_name
+        performance_check = self._calculate_performance_check(ttft_value, rtr_value)
+        accuracy_check = self._calculate_accuracy_check()
+        return {
+            "task_name": task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": ttft_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "rtr": rtr_value,
+            "p90_ttft": p90_ttft,
+            "p95_ttft": p95_ttft,
+            "performance_check": performance_check,
+            "accuracy_check": accuracy_check,
+            "results": {
+                task_name: {
+                    "score": ttft_value,
+                    "rtr": rtr_value,
+                    "p90_ttft": p90_ttft,
+                    "p95_ttft": p95_ttft,
+                }
             },
-            "model": self.model_spec.model_name,
-            "device": self.device.name,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "tts",
+            "configs": {
+                task_name: {
+                    "task": task_name,
+                    "dataset_path": "N/A",
+                }
+            },
         }
 
-        with open(result_filename, "w") as f:
-            json.dump(report_data, f, indent=4)
+    def run_benchmark(self, attempt: int = 0) -> list[TtsTestStatus]:
+        """Run TTS benchmark with streaming aggregation."""
+        logger.info(
+            f"Running benchmark for {self.model_spec.model_name} on {self.device.name}"
+        )
+        self._verify_health()
+        num_calls = self._get_num_calls(is_eval=False)
+        aggregator = self._create_aggregator()
+        status_list = self._run_tts_benchmark(num_calls, aggregator=aggregator)
 
-        logger.info(f"Report generated: {result_filename}")
+        context = ReportContext.from_strategy(self)
+        aggregated = aggregator.result(len(status_list))
+        ttft_ms = aggregated.get("ttft_ms", 0.0)
+        p90, p95 = percentiles_from_metric(status_list, "ttft_ms", (0.90, 0.95))
+        extras = {
+            "ttft": ttft_ms / 1000,
+            "ttft_p90": p90 / 1000,
+            "ttft_p95": p95 / 1000,
+        }
+        self._report_generator.generate_benchmark_report(
+            context,
+            status_list,
+            self._task_type_str,
+            extra_benchmarks=extras,
+            pre_aggregated=aggregated,
+        )
+        return status_list
 
-    def _run_tts_benchmark(self, num_calls: int) -> list[TtsTestStatus]:
-        """Run TTS benchmark."""
-        logger.info(f"Running TTS benchmark with {num_calls} calls.")
-        status_list = []
+    def _run_tts_benchmark(
+        self,
+        num_calls: int,
+        aggregator: Optional["MetricsAggregator"] = None,
+    ) -> list[TtsTestStatus]:
+        """
+        Run TTS benchmark loop.
 
-        test_text = DEFAULT_TTS_TEXT
-        if (
-            not isinstance(self.all_params, (list, tuple))
-            and hasattr(self.all_params, "tasks")
-            and len(self.all_params.tasks) > 0
-        ):
-            if hasattr(self.all_params.tasks[0], "text"):
-                test_text = self.all_params.tasks[0].text
-            elif hasattr(self.all_params.tasks[0], "task_name"):
-                test_text = self.all_params.tasks[0].task_name
+        If aggregator is provided, metrics are aggregated during the loop.
+        """
+        logger.info(f"Running {num_calls} TTS calls.")
+        test_text = self._get_test_text()
+        status_list: list[TtsTestStatus] = []
 
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
-
-            status, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(
-                self._generate_speech()
-            )
-            logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
-
-            status_list.append(
-                TtsTestStatus(
-                    status=status,
-                    elapsed=elapsed,
-                    ttft_ms=ttft_ms,
-                    rtr=rtr,
-                    text=test_text,
-                    audio_duration=audio_duration,
-                )
-            )
+            status = self._generate_speech_status(test_text)
+            status_list.append(status)
+            if aggregator is not None:
+                aggregator.add(status.get_metrics())
 
         return status_list
 
+    def _generate_speech_status(self, text: str) -> TtsTestStatus:
+        """Generate speech and return status object."""
+        success, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(
+            self._generate_speech(text)
+        )
+        return TtsTestStatus(
+            status=success,
+            elapsed=elapsed,
+            ttft_ms=ttft_ms,
+            rtr=rtr,
+            text=text,
+            audio_duration=audio_duration,
+            reference_text=text,
+        )
+
     async def _generate_speech(
-        self,
+        self, text: str
     ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
-        """Generate speech from text.
+        """
+        Generate speech from text via API.
 
         Returns:
-            tuple: (success, latency_sec, ttft_ms, rtr, audio_duration)
-                - success: True if speech generation completed successfully
-                - latency_sec: Total end-to-end latency in seconds
-                - ttft_ms: Time to first token/sound in milliseconds
-                - rtr: Real-Time Ratio (audio_duration / processing_time)
-                - audio_duration: Duration of generated audio in seconds
+            (success, latency_sec, ttft_ms, rtr, audio_duration)
         """
         logger.info("🔊 Calling TTS /audio/speech endpoint")
-
-        # For eval workflow, all_params is an object with tasks attribute
-        # For benchmark workflow, all_params is a list, so use default text
-        text = DEFAULT_TTS_TEXT
-        if (
-            not isinstance(self.all_params, (list, tuple))
-            and hasattr(self.all_params, "tasks")
-            and len(self.all_params.tasks) > 0
-        ):
-            if hasattr(self.all_params.tasks[0], "text"):
-                text = self.all_params.tasks[0].text
-            elif hasattr(self.all_params.tasks[0], "task_name"):
-                text = self.all_params.tasks[0].task_name
 
         headers = {
             "accept": "application/json",
@@ -373,68 +304,11 @@ class TtsClientStrategy(BaseMediaStrategy):
             logger.error(f"TTS generation failed: {e}")
             return False, 0.0, None, None, None
 
-    def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average TTFT value in milliseconds."""
-        logger.info("Calculating TTFT value")
-
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [
-                status.ttft_ms for status in status_list if status.ttft_ms is not None
-            ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
-                else 0
-            )
-
-        return ttft_value
-
-    def _calculate_rtr_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average RTR value."""
-        logger.info("Calculating RTR value")
-
-        rtr_value = 0
-        if status_list:
-            valid_rtr_values = [
-                status.rtr for status in status_list if status.rtr is not None
-            ]
-            rtr_value = (
-                sum(valid_rtr_values) / len(valid_rtr_values) if valid_rtr_values else 0
-            )
-
-        return rtr_value
-
-    def _calculate_tail_latency(
-        self, status_list: list[TtsTestStatus]
-    ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency for TTFT."""
-        logger.info("Calculating tail latency (P90, P95)")
-
-        if not status_list:
-            return 0.0, 0.0
-
-        valid_ttft_values = [
-            status.ttft_ms for status in status_list if status.ttft_ms is not None
-        ]
-
-        if not valid_ttft_values:
-            return 0.0, 0.0
-
-        sorted_ttft = sorted(valid_ttft_values)
-        n = len(sorted_ttft)
-        p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
-        p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-        p90_ttft = sorted_ttft[p90_index]
-        p95_ttft = sorted_ttft[p95_index]
-
-        return p90_ttft, p95_ttft
-
     def _calculate_performance_check(
         self,
         ttft_value: Optional[float] = None,
         rtr_value: Optional[float] = None,
-    ) -> int:
+    ) -> PerformanceResult:
         """Calculate performance check based on TTFT and RTR targets.
 
         Uses get_performance_targets from model_performance_reference.json.
@@ -444,9 +318,9 @@ class TtsClientStrategy(BaseMediaStrategy):
             rtr_value: Real-time ratio (audio_duration / generation_time)
 
         Returns:
-            0 - undefined (no targets or values)
-            2 - passed (all metrics within tolerance)
-            3 - failed (any metric outside tolerance)
+            PerformanceResult.UNDEFINED - no targets available
+            PerformanceResult.PASS - all metrics within tolerance
+            PerformanceResult.FAIL - any metric outside tolerance
         """
         logger.info("Calculating performance check based on TTFT, RTR targets")
 
@@ -462,7 +336,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         # TTFT is the primary metric for TTS performance - required for validation
         if not targets.ttft_ms:
             logger.warning("⚠️ No TTFT target found, skipping performance check")
-            return 0  # UNDEFINED
+            return PerformanceResult.UNDEFINED
 
         tolerance = targets.tolerance if targets.tolerance else 0.05
         logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
@@ -494,23 +368,20 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         if checks_total == 0:
             logger.warning("⚠️ No metrics available for validation")
-            return 0  # UNDEFINED
+            return PerformanceResult.UNDEFINED
 
         if checks_passed == checks_total:
             logger.info(f"✅ All {checks_total} performance checks passed")
-            return 2  # PASS
-        else:
-            logger.warning(
-                f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
-            )
-            return 3  # FAIL
+            return PerformanceResult.PASS
+        logger.warning(
+            f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
+        )
+        return PerformanceResult.FAIL
 
     def _calculate_accuracy_check(self) -> int:
         """Calculate accuracy/quality check for TTS eval/benchmark.
 
         Returns:
-            0 - undefined (no quality metric implemented)
-            2 - passed
-            3 - failed
+            PerformanceResult.UNDEFINED, PASS, or FAIL (0, 2, 3).
         """
-        return 0
+        return PerformanceResult.UNDEFINED

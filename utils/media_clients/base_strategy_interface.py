@@ -4,23 +4,80 @@
 
 import logging
 from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Optional, Union
 
 from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from tests.server_tests.test_classes import TestConfig
 
-# Import test framework components
 from .test_status import BaseTestStatus
+from .utils.metrics_utils import MetricsAggregator
+from .utils.report_utils import ReportGenerator
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
 
+
+TIMEOUT_SECONDS = 1200  # 20 minutes
+MAX_RETRY_ATTEMPTS = 229
+RETRY_DELAY_SECONDS = 10
+
+
 logger = logging.getLogger(__name__)
 
 
-class BaseMediaStrategy(ABC):
-    """Interface for media strategies."""
+class TaskType(str, Enum):
+    """Task type constants for report metadata. Value is used in JSON (e.g. text_to_speech)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
+    TTS = "text_to_speech"
+    AUDIO = "audio"
+    # CNN = "cnn", IMAGE = "image", etc. when those clients are migrated
+
+
+# Removable after all clients use TaskType.
+def _task_type_value(task_type: Union["TaskType", str]) -> str:
+    """Return string value for report (enum.value or str as-is). Remove after all clients use TaskType."""
+    return task_type.value if isinstance(task_type, TaskType) else task_type
+
+
+class BaseMediaStrategy(ABC):
+    """
+    Abstract base class for media client strategies.
+
+    Subclasses MUST define task_type class attribute (TaskType enum or str, e.g. task_type = TaskType.TTS).
+    Clients build ReportContext.from_strategy(self), then call ReportGenerator.generate_benchmark_report(...)
+    or generate_eval_report(...) with context and client-specific extra_benchmarks/extra_data.
+    """
+
+    # Subclasses override: task_type = TaskType.TTS or TASK_TYPE = "audio" (legacy)
+    TASK_TYPE: str = "unknown"
+
+    def __init_subclass__(cls, **kwargs):
+        """Validate that subclasses define required class attributes."""
+        super().__init_subclass__(**kwargs)
+        if ABC in cls.__bases__:
+            return
+        resolved = _task_type_value(getattr(cls, "task_type", cls.TASK_TYPE))
+        if resolved == "unknown":
+            import warnings
+
+            warnings.warn(
+                f"{cls.__name__} should define task_type (e.g. task_type = TaskType.TTS). "
+                "Using 'unknown' as default.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+    def __init__(
+        self,
+        all_params,
+        model_spec,
+        device,
+        output_path,
+        service_port,
+        *,
+        report_generator: Optional[ReportGenerator] = None,
+    ):
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
@@ -28,6 +85,14 @@ class BaseMediaStrategy(ABC):
         self.service_port = service_port
         self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
+        self._report_generator = report_generator or ReportGenerator()
+        self._task_type_str: str = _task_type_value(
+            getattr(self.__class__, "task_type", self.TASK_TYPE)
+        )
+
+    def _create_aggregator(self) -> MetricsAggregator:
+        """Create a fresh aggregator for a benchmark run."""
+        return MetricsAggregator()
 
     @abstractmethod
     def run_eval(self) -> None:
@@ -59,9 +124,9 @@ class BaseMediaStrategy(ABC):
         # Configure test with retry logic
         test_config = TestConfig(
             {
-                "test_timeout": 1200,  # 20 minutes
-                "retry_attempts": 229,  # 230 total attempts (0-indexed)
-                "retry_delay": 10,  # 10 seconds between attempts
+                "test_timeout": TIMEOUT_SECONDS,
+                "retry_attempts": MAX_RETRY_ATTEMPTS,
+                "retry_delay": RETRY_DELAY_SECONDS,
                 "break_on_failure": False,
             }
         )

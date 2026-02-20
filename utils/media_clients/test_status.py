@@ -3,15 +3,25 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 
 class BaseTestStatus(ABC):
     """Base class for all test status objects."""
 
+    _METRIC_ATTRS: Sequence[str] = ("elapsed",)
+
     def __init__(self, status: bool, elapsed: float):
         self.status = status
         self.elapsed = elapsed
+
+    def get_metrics(self) -> Dict[str, float]:
+        """Numeric metrics for report aggregation based on _METRIC_ATTRS."""
+        return {
+            k: float(getattr(self, k))
+            for k in self._METRIC_ATTRS
+            if getattr(self, k, None) is not None
+        }
 
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:
@@ -56,6 +66,8 @@ class ImageGenerationTestStatus(BaseTestStatus):
 
 class AudioTestStatus(BaseTestStatus):
     """Test status for audio transcription models."""
+
+    _METRIC_ATTRS = ("elapsed", "ttft", "tsu", "rtr")
 
     def __init__(
         self,
@@ -128,6 +140,8 @@ class EmbeddingTestStatus(BaseTestStatus):
 
 class TtsTestStatus(BaseTestStatus):
     """Test status for text-to-speech models."""
+
+    _METRIC_ATTRS = ("elapsed", "ttft_ms", "rtr", "audio_duration", "wer")
 
     def __init__(
         self,
