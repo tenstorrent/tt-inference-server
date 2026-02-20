@@ -12,11 +12,11 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/boost_ipc_task_queue.hpp"
-#include "llm_engine/engine/scheduler.hpp"
-#include "llm_engine/engine/sequence.hpp"
-#include "llm_engine/sampling_params.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 

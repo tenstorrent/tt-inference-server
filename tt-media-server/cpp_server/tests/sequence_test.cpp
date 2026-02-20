@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "llm_engine/engine/sequence.hpp"
-#include "llm_engine/sampling_params.hpp"
+#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 #include <gtest/gtest.h>
 #include <sstream>

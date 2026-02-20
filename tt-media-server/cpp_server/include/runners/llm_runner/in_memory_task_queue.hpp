@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "llm_engine/engine/task_queue.hpp"
+#include "runners/llm_runner/task_queue.hpp"
 
 #include <deque>
 

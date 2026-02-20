@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
 

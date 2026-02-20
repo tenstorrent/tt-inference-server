@@ -1,9 +1,11 @@
-#include "llm_engine/engine/model_runner.hpp"
-#include "llm_engine/engine/debug.hpp"
-#include "llm_engine/engine/device_backend.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/model_runner.hpp"
+#include "runners/llm_runner/debug.hpp"
+#include "runners/llm_runner/device_backend.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
+
+constexpr int64_t kWhitespaceTokenId = 223;
 
 void DecodeQueue::push(const DecodeResult& result) {
   std::lock_guard lock(mutex_);
@@ -46,7 +48,7 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
 
   if (is_prefill) {
     for (Sequence* seq : seqs) {
-      decode_callback_({seq->task_id, seq->last_token + 1});
+      decode_callback_({seq->task_id, kWhitespaceTokenId});
     }
   } else {
     backend_->write(*seqs[0]);
