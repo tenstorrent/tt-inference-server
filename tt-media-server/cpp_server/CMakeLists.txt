@@ -16,12 +16,7 @@ endif()
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
-
-# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
-option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
-if(NOT TEST)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
@@ -278,12 +273,7 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
-if(TEST)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
-endif()
-if(NOT TEST)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)

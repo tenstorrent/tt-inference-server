@@ -16,7 +16,6 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 
 # Development builds
 ./build.sh --debug          # Debug build with symbols
-./build.sh --test           # PR gate build (LLM only, no Python required)
 ./build.sh --asan           # AddressSanitizer + LeakSanitizer for memory debugging
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
 ```

@@ -8,8 +8,6 @@
 #include <cstring>
 #include <sys/stat.h>
 
-#ifndef TEST
-#endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
