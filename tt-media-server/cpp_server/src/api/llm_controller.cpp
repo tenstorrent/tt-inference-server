@@ -27,7 +27,7 @@ LLMController::LLMController() {
         return;
     }
 
-    service_ = tt::utils::service_factory::get_service<services::LLMService>();
+    service_ = tt::utils::service_factory::get_service_by_type<services::LLMService>();
     if (!service_) {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
                                  "Ensure register_services() is called before Drogon starts.");

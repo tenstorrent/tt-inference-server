@@ -95,7 +95,7 @@ EmbeddingController::EmbeddingController() {
         return;
     }
 
-    service_ = tt::utils::service_factory::get_service<services::EmbeddingService>();
+    service_ = tt::utils::service_factory::get_service_by_type<services::EmbeddingService>();
     if (!service_) {
         throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
                                  "Ensure register_services() is called before Drogon starts.");

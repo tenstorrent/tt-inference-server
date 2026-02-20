@@ -13,7 +13,7 @@
 namespace tt::api {
 
 HealthController::HealthController() {
-    service_ = tt::utils::service_factory::get_service<services::IService>();
+    service_ = tt::utils::service_factory::get_configured_service();
     std::cout << "[HealthController] Initialized (service="
               << (service_ ? "yes" : "no") << ")\n" << std::flush;
 }

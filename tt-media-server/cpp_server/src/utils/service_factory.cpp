@@ -6,6 +6,9 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "services/embedding_service.hpp"
+#include "config/constants.hpp"
+#include "services/llm_service.hpp"
+#include "services/embedding_service.hpp"
 
 #include <iostream>
 
@@ -27,6 +30,16 @@ void register_services() {
         register_service(std::move(emb));
         std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
     }
+}
+
+std::shared_ptr<services::IService> get_configured_service() {
+    switch (tt::config::model_service()) {
+        case tt::config::ModelService::LLM:
+            return get_service_by_type<services::LLMService>();
+        case tt::config::ModelService::EMBEDDING:
+            return get_service_by_type<services::EmbeddingService>();
+    }
+    return nullptr;
 }
 
 } // namespace tt::utils::service_factory
