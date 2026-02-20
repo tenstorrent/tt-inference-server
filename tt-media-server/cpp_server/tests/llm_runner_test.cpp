@@ -48,7 +48,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   auto task_queue = make_queue();
 
-  LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
+  tt::runners::LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();

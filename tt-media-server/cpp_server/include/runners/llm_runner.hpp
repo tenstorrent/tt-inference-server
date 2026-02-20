@@ -11,12 +11,13 @@
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::runners {
+  using namespace llm_engine;
 
 using TokenCallback =
     std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
-class LLMRunner : public tt::runners::IRunner {
+class LLMRunner : public IRunner {
  public:
   LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue);
   ~LLMRunner() override;

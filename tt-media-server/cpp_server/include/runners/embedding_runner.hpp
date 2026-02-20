@@ -19,7 +19,7 @@ namespace tt::runners {
  * Uses Python C API to instantiate and call the BGELargeENRunner class
  * from tt_model_runners/embedding_runner.py.
  */
-class EmbeddingRunner : public tt::runners::IRunner {
+class EmbeddingRunner : public IRunner {
 public:
     /** @param device_id e.g. "device_0". @param visible_device TT device index (1-based) for logging. */
     EmbeddingRunner(const std::string& device_id, int visible_device = 0);

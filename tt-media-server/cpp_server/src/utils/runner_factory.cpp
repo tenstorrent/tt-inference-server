@@ -19,7 +19,7 @@ std::unique_ptr<runners::IRunner> create_runner(
     
     if (runner_type == "llm") {
         std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
-        return std::make_unique<llm_engine::LLMRunner>(config, std::move(on_token), task_queue);
+        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
     } else if (runner_type == "embedding") {
         std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
         // For embedding runner, we'll use device_0 as default and visible_device=0
@@ -27,7 +27,7 @@ std::unique_ptr<runners::IRunner> create_runner(
     } else {
         std::cout << "[RunnerFactory] Unknown runner type '" << runner_type 
                   << "', defaulting to LLM runner\n" << std::flush;
-        return std::make_unique<llm_engine::LLMRunner>(config, std::move(on_token), task_queue);
+        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
     }
 }
 

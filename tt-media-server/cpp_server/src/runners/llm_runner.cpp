@@ -3,7 +3,8 @@
 
 #include <cassert>
 
-namespace llm_engine {
+namespace tt::runners {
+  using namespace llm_engine;
 
 LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue)
     : config_(config), on_token_(std::move(on_token)) {
