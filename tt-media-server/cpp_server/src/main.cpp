@@ -99,8 +99,8 @@ int main(int argc, char* argv[]) {
 
             const std::string& path = req->path();
 
-            // Skip authentication for health, ready, docs, and openapi endpoints
-            if (path == "/health" || path == "/ready" ||
+            // Skip authentication for health, tt-liveness, docs, and openapi endpoints
+            if (path == "/health" || path == "/tt-liveness" ||
                 path == "/docs" || path == "/swagger" || path == "/openapi.json") {
                 chainCallback();
                 return;
@@ -155,16 +155,16 @@ int main(int argc, char* argv[]) {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
                   << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
+                  << "  GET  /tt-liveness     - Liveness check\n"
                   << std::endl;
     } else {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions - OpenAI-compatible chat completions\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
-                  << "  GET  /docs            - Swagger UI\n"
-                  << "  GET  /openapi.json    - OpenAPI specification\n"
+                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
+                  << "  GET  /health               - Health check\n"
+                  << "  GET  /tt-liveness          - Liveness check\n"
+                  << "  GET  /docs                 - Swagger UI\n"
+                  << "  GET  /openapi.json         - OpenAPI specification\n"
                   << std::endl;
     }
 

@@ -180,8 +180,8 @@ The server provides OpenAI-compatible endpoints:
 - `POST /v1/chat/completions` - Chat completion with streaming support
 - `POST /v1/embeddings` - Text embeddings (embedding mode only)
 - `GET /health` - Health check
-- `GET /ready` - Readiness check with detailed system status
+- `GET /tt-liveness` - Liveness check with detailed system status
 - `GET /docs` - Swagger UI documentation
 - `GET /openapi.json` - OpenAPI specification
 
-All endpoints except health/ready/docs require Bearer token authentication.
+All endpoints except health/tt-liveness/docs require Bearer token authentication.
