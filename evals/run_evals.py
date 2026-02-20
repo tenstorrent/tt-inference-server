@@ -335,6 +335,16 @@ def main():
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
 
+    # Automatically control trace capture based on has_builtin_warmup
+    # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
+    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
+        if model_spec.has_builtin_warmup:
+            disable_trace_capture = True
+            logger.info(
+                "Model has builtin warmup (has_builtin_warmup=True), "
+                "automatically disabling trace capture for evals workflow"
+            )
+
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
