@@ -162,7 +162,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         super().__init__(device_id)
         self.model = None
         self.hf_model_name = os.environ.get("HF_MODEL", DEFAULT_HF_MODEL)
-        self.max_batch_size = 16
+        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", 16))
         self.max_seq_len = 1024
         self._kv_cache = None
         self._vocab_size = 0
@@ -298,9 +298,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         if is_prefill:
             return self._run_prefill_batch(sequences, torch)
         if self.max_batch_size > 1 and len(sequences) > 0:
-            self.logger.info(
-                f"Batched decode: {len(sequences)} sequences in one forward"
-            )
             return self._run_decode_batch(sequences, torch)
         return [self._run_decode(s, torch) for s in sequences]
 
@@ -336,7 +333,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             if logits_output.dim() >= 3
             else logits_output.flatten()
         )
-        _log_top_tokens(self.logger, "PREFILL", logits_1d)
         next_token = _sample(logits_1d, seq.temperature, seq.seed)
 
         finished = next_token in self.STOP_TOKEN_IDS and not seq.ignore_eos
@@ -394,7 +390,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         )
 
         logits_1d = logits[0, -1, :]
-        _log_top_tokens(self.logger, "DECODE", logits_1d)
         next_token = _sample(logits_1d, seq.temperature, seq.seed)
 
         new_len = current_len + 1
@@ -506,7 +501,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             seq = sequences[idx]
             state = states_after_check[pos]
             logits_1d = logits[pos, -1, :]
-            _log_top_tokens(self.logger, f"DECODE[{pos}]", logits_1d)
             next_token = _sample(logits_1d, seq.temperature, seq.seed)
             new_len = state.current_len + 1
             num_generated = new_len - state.prompt_len
