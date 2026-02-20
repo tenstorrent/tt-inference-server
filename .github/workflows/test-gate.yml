@@ -582,7 +582,7 @@ jobs:
           RESULT_FILE="vllm-bench-result.json"
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-V3.2' \
-            --backend vllm \
+            --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
             --random-input-len 128 \
