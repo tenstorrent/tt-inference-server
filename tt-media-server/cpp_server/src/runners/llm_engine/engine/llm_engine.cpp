@@ -62,13 +62,20 @@ void LLMEngine::drain_decode_results() {
     assert(seq);
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
+    if (dr.is_error) {
+      LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
+      scheduler_->removeSequence(dr.task_id);
+      on_token_(dr.task_id, 0, /*finished=*/true, /*is_stop=*/false, /*is_error=*/true);
+      continue;
+    }
+
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> token_ids = {dr.token_id};
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
     bool is_stop = finished && scheduler_->is_stop_token(dr.token_id);
-    on_token_(dr.task_id, dr.token_id, finished, is_stop);
+    on_token_(dr.task_id, dr.token_id, finished, is_stop, /*is_error=*/false);
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id

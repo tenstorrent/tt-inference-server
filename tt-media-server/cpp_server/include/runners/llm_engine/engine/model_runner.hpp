@@ -16,6 +16,7 @@ namespace llm_engine {
 struct DecodeResult {
   TaskID task_id;
   int64_t token_id;
+  bool is_error = false;
 };
 
 // Invoked from the device-to-host reader thread when a token is generated.

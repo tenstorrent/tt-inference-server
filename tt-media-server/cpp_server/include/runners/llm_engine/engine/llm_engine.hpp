@@ -12,7 +12,7 @@
 namespace llm_engine {
 
 using TokenCallback =
-    std::function<void(TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token)>;
+    std::function<void(TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token, bool is_error)>;
 
 /** Factory: (Config, DecodeCallback) -> unique_ptr<IModelRunner>. If null, engine uses make_model_runner. */
 using ModelRunnerFactory = std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;

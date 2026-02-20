@@ -141,6 +141,9 @@ llm_engine::Config llm_engine_config() {
         //   128008 = <|eom_id|>
         //   128009 = <|eot_id|>  (end-of-turn, emitted after assistant response)
         c.stop_token_ids = {128001, 128008, 128009};
+        // Match Python llama_runner and tt-metal KV cache block size
+        c.kvcache_block_size = 32;
+        c.num_kvcache_blocks = 512;
     }
     return c;
 }

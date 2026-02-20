@@ -10,7 +10,7 @@
 #include "llm_engine/engine/in_memory_task_queue.hpp"
 namespace llm_engine {
 namespace {
-  
+
 std::shared_ptr<ITaskQueue> make_queue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
@@ -49,7 +49,7 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   auto task_queue = make_queue();
   auto scheduler = make_scheduler(config, task_queue.get());
 
-  LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/) {
+  LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/, bool /*is_error*/) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();

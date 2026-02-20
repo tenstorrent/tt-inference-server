@@ -57,6 +57,7 @@ class StepResult:
     task_id: str
     token_id: int
     finished: bool
+    error: str = ""
 
 
 DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
@@ -76,6 +77,8 @@ def _num_blocks_for_seq(seq_len: int, block_size: int) -> int:
 
 @dataclass
 class _SeqState:
+    """Per-sequence state for decode. Runner allocates blocks; page_table is stored here."""
+
     page_table: Any
     current_len: int
     num_blocks_used: int
@@ -89,10 +92,20 @@ def _sample_greedy(logits):
     return int(torch.argmax(logits).item())
 
 
-def _apply_seed(seed: int | None, torch) -> None:
-    """Set torch manual seed when provided for reproducible sampling."""
+def _sample(logits, temperature: float = 1.0, seed: int | None = None):
+    """Host-side sampling with temperature and optional seed for reproducibility.
+    Falls back to greedy when temperature is near zero."""
+    import torch
+
+    if temperature < 1e-6:
+        return _sample_greedy(logits)
+    generator = torch.Generator()
     if seed is not None:
-        torch.manual_seed(seed)
+        generator.manual_seed(seed)
+    else:
+        generator.seed()
+    probs = torch.softmax(logits.float() / temperature, dim=-1)
+    return int(torch.multinomial(probs, num_samples=1, generator=generator).item())
 
 
 def _log_top_tokens(logger, label, logits, k=5):
@@ -105,11 +118,14 @@ def _log_top_tokens(logger, label, logits, k=5):
 
 
 def _pad_page_table(page_table, max_width: int, torch):
-    """Pad page table to fixed width for constant shape required by tracing."""
+    """Pad page table to fixed width for constant shape required by tracing.
+    Use 0 for padding (matching vLLM convention); unused columns are never
+    written to because the position mask prevents writes past current_pos."""
     current_width = page_table.shape[1]
     if current_width < max_width:
         pad = torch.zeros(
-            (page_table.shape[0], max_width - current_width), dtype=page_table.dtype
+            (page_table.shape[0], max_width - current_width),
+            dtype=page_table.dtype,
         )
         page_table = torch.cat([page_table, pad], dim=1)
     return page_table
@@ -146,16 +162,51 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         super().__init__(device_id)
         self.model = None
         self.hf_model_name = os.environ.get("HF_MODEL", DEFAULT_HF_MODEL)
-        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", "10"))
-        self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "2048"))
+        self.max_batch_size = 16
+        self.max_seq_len = 1024
         self._kv_cache = None
         self._vocab_size = 0
         self._max_num_blocks_per_seq = 0
-        self._seq_state: dict[str, _SeqState] = {}
         self._next_free_block = 0
+        self._free_blocks: list[int] = []
+        self._seq_state: dict[str, _SeqState] = {}
 
     def get_pipeline_device_params(self):
         return {"num_command_queues": 2, "trace_region_size": 32 * 1024 * 1024}
+
+    def _page_table_from_block_ids(self, block_ids: list[int], torch) -> Any:
+        """Build padded page_table tensor from a list of block ids (single sequence)."""
+        row = torch.tensor([block_ids], dtype=torch.int32)
+        return _pad_page_table(row, self._max_num_blocks_per_seq, torch)
+
+    def _allocate_blocks(self, count: int) -> list[int] | None:
+        """Allocate `count` blocks from the free list or next_free_block. Returns None if not enough blocks."""
+        blocks: list[int] = []
+        for _ in range(count):
+            if self._free_blocks:
+                blocks.append(self._free_blocks.pop())
+            elif self._next_free_block < MAX_NUM_BLOCKS:
+                blocks.append(self._next_free_block)
+                self._next_free_block += 1
+            else:
+                self._free_blocks.extend(blocks)
+                return None
+        return blocks
+
+    def _allocate_single_block(self) -> int | None:
+        """Allocate one block. Returns None if no blocks available."""
+        if self._free_blocks:
+            return self._free_blocks.pop()
+        if self._next_free_block < MAX_NUM_BLOCKS:
+            block_id = self._next_free_block
+            self._next_free_block += 1
+            return block_id
+        return None
+
+    def _free_seq_blocks(self, page_table, num_blocks_used: int) -> None:
+        """Return allocated block IDs from a page table back to the free list."""
+        block_ids = page_table[0, :num_blocks_used].tolist()
+        self._free_blocks.extend(block_ids)
 
     def _allocate_kv_cache(self) -> None:
         import torch
@@ -171,6 +222,11 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self._max_num_blocks_per_seq = min(
             math.ceil(self.max_seq_len / self._block_size), MAX_NUM_BLOCKS
         )
+        # Block 0 is reserved as a null/scratch block: padding rows in batched
+        # decode point their page tables at block 0, so writes from inactive
+        # batch positions land here instead of corrupting a real sequence's KV.
+        self._next_free_block = 1
+        self._free_blocks = []
 
     def _load_model(self):
         from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
@@ -206,17 +262,34 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         sequences = kwargs.get("sequences", [])
         return self.run_step(is_prefill, sequences)
 
+    # Llama 3.1 Instruct stop tokens (must match C++ config in settings.cpp):
+    #   128001 = <|end_of_text|>
+    #   128008 = <|eom_id|>   (end-of-message)
+    #   128009 = <|eot_id|>   (end-of-turn, emitted after every assistant response)
     EOS_TOKEN_ID = 128001
+    STOP_TOKEN_IDS: frozenset[int] = frozenset({128001, 128008, 128009})
 
     def run_step(
-        self, is_prefill: bool, sequences: list[StepSequence]
+        self,
+        is_prefill: bool,
+        sequences: list[StepSequence],
+        request_block_size: int | None = None,
     ) -> list[StepResult]:
         """Run one scheduler step (prefill or decode), returning one token per sequence.
         Prefill: batch from API POV; metal runs sequential forwards per sequence.
         Decode: single batched metal forward when max_batch_size > 1, else sequential.
+        KV cache blocks are allocated by this runner (_next_free_block).
         """
         import torch
 
+        if (
+            request_block_size is not None
+            and getattr(self, "_block_size", None) is not None
+        ):
+            if request_block_size != self._block_size:
+                self.logger.warning(
+                    f"block_size mismatch: request={request_block_size} runner={self._block_size}"
+                )
         if self._kv_cache is None:
             return [
                 StepResult(task_id=s.task_id, token_id=self.EOS_TOKEN_ID, finished=True)
@@ -242,22 +315,14 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         safe_ids = _clamp_token_ids(seq.token_ids, self._vocab_size, self.logger)
         prompt_len = len(safe_ids)
         num_blocks = _num_blocks_for_seq(prompt_len, block_size)
-        if self._next_free_block + num_blocks > MAX_NUM_BLOCKS:
+        block_ids = self._allocate_blocks(num_blocks)
+        if block_ids is None:
             return StepResult(
                 task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
             )
-        block_ids = list(
-            range(self._next_free_block, self._next_free_block + num_blocks)
-        )
-        self._next_free_block += num_blocks
-        page_table = torch.tensor([block_ids], dtype=torch.int32)
-        page_table = _pad_page_table(page_table, self._max_num_blocks_per_seq, torch)
-
+        page_table = self._page_table_from_block_ids(block_ids, torch)
         tokens = torch.tensor([safe_ids], dtype=torch.int64)
 
-        # No sampling_params → model returns logits (not sampled tokens).
-        # warmup_prefill=True (default) compiles operators and captures traces;
-        # without it the trace output is corrupted by unsafe device allocations.
         logits_output = self.model.prefill_forward(
             tokens=tokens,
             page_table=page_table,
@@ -272,16 +337,18 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             else logits_output.flatten()
         )
         _log_top_tokens(self.logger, "PREFILL", logits_1d)
-        _apply_seed(seq.seed, torch)
-        next_token = _sample_greedy(logits_1d)
+        next_token = _sample(logits_1d, seq.temperature, seq.seed)
 
-        self._seq_state[seq.task_id] = _SeqState(
-            page_table=page_table,
-            current_len=prompt_len + 1,
-            num_blocks_used=num_blocks,
-            prompt_len=prompt_len,
-        )
-        finished = next_token == self.EOS_TOKEN_ID and not seq.ignore_eos
+        finished = next_token in self.STOP_TOKEN_IDS and not seq.ignore_eos
+        if finished:
+            self._free_seq_blocks(page_table, num_blocks)
+        else:
+            self._seq_state[seq.task_id] = _SeqState(
+                page_table=page_table,
+                current_len=prompt_len + 1,
+                num_blocks_used=num_blocks,
+                prompt_len=prompt_len,
+            )
         return StepResult(task_id=seq.task_id, token_id=next_token, finished=finished)
 
     def _run_decode(self, seq: StepSequence, torch) -> StepResult:
@@ -294,66 +361,72 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         last_token = seq.token_ids[-1]
         current_len = state.current_len
         num_blocks_used = state.num_blocks_used
+        page_table = state.page_table
 
         if (current_len + 1) > num_blocks_used * block_size:
-            if self._next_free_block >= MAX_NUM_BLOCKS:
+            new_block_id = self._allocate_single_block()
+            if new_block_id is None:
+                self._free_seq_blocks(state.page_table, num_blocks_used)
+                self._seq_state.pop(seq.task_id, None)
                 return StepResult(
                     task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
                 )
-            page_table = state.page_table.clone()
-            page_table[0, num_blocks_used] = self._next_free_block
+            block_ids = state.page_table[0, :num_blocks_used].tolist()
+            block_ids.append(new_block_id)
+            page_table = self._page_table_from_block_ids(block_ids, torch)
+            num_blocks_used += 1
             state = _SeqState(
                 page_table=page_table,
                 current_len=state.current_len,
-                num_blocks_used=num_blocks_used + 1,
+                num_blocks_used=num_blocks_used,
                 prompt_len=state.prompt_len,
             )
-            self._next_free_block += 1
-            self._seq_state[seq.task_id] = state
 
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         position = current_len - 1
 
-        # No sampling_params → model returns (logits, log_probs).
-        # enable_trace=True matches vLLM's calling convention.
         logits, _ = self.model.decode_forward(
             tokens=tokens,
-            start_pos=torch.tensor([position]),
-            page_table=state.page_table,
+            start_pos=torch.tensor([position], dtype=torch.int64),
+            page_table=page_table,
             kv_cache=self._kv_cache,
             enable_trace=True,
         )
 
         logits_1d = logits[0, -1, :]
         _log_top_tokens(self.logger, "DECODE", logits_1d)
-        _apply_seed(seq.seed, torch)
-        next_token = _sample_greedy(logits_1d)
+        next_token = _sample(logits_1d, seq.temperature, seq.seed)
 
         new_len = current_len + 1
-        self._seq_state[seq.task_id] = _SeqState(
-            page_table=state.page_table,
-            current_len=new_len,
-            num_blocks_used=state.num_blocks_used,
-            prompt_len=state.prompt_len,
-        )
         num_generated = new_len - state.prompt_len
-        hit_eos = next_token == self.EOS_TOKEN_ID and not seq.ignore_eos
+        hit_eos = next_token in self.STOP_TOKEN_IDS and not seq.ignore_eos
         hit_max = num_generated >= seq.max_tokens
         finished = hit_eos or hit_max
+
+        if finished:
+            self._free_seq_blocks(state.page_table, num_blocks_used)
+            self._seq_state.pop(seq.task_id, None)
+        else:
+            self._seq_state[seq.task_id] = _SeqState(
+                page_table=state.page_table,
+                current_len=new_len,
+                num_blocks_used=num_blocks_used,
+                prompt_len=state.prompt_len,
+            )
         return StepResult(task_id=seq.task_id, token_id=next_token, finished=finished)
 
     def _run_decode_batch(
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
         """Single batched decode forward when len(sequences) <= max_batch_size.
-        Pads to max_batch_size for metal. Returns one StepResult per sequence in input order."""
+        Page tables come from runner-owned _seq_state."""
         B = self.max_batch_size
+        block_size = self._block_size
         if len(sequences) > B:
             return [self._run_decode(s, torch) for s in sequences]
-        block_size = self._block_size
         early_results: dict[int, StepResult] = {}
         valid_indices: list[int] = []
-        states_after_alloc: list[_SeqState] = []
+        states_after_check: list[_SeqState] = []
 
         for i, seq in enumerate(sequences):
             state = self._seq_state.get(seq.task_id)
@@ -364,30 +437,29 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                     finished=True,
                 )
                 continue
-            current_len = state.current_len
-            num_blocks_used = state.num_blocks_used
-
-            if (current_len + 1) > num_blocks_used * block_size:
-                if self._next_free_block >= MAX_NUM_BLOCKS:
+            if (state.current_len + 1) > state.num_blocks_used * block_size:
+                new_block_id = self._allocate_single_block()
+                if new_block_id is None:
+                    self._free_seq_blocks(state.page_table, state.num_blocks_used)
+                    self._seq_state.pop(seq.task_id, None)
                     early_results[i] = StepResult(
                         task_id=seq.task_id,
                         token_id=self.EOS_TOKEN_ID,
                         finished=True,
                     )
                     continue
-                page_table = state.page_table.clone()
-                page_table[0, num_blocks_used] = self._next_free_block
+                block_ids = state.page_table[0, : state.num_blocks_used].tolist()
+                block_ids.append(new_block_id)
+                page_table = self._page_table_from_block_ids(block_ids, torch)
                 state = _SeqState(
                     page_table=page_table,
                     current_len=state.current_len,
-                    num_blocks_used=num_blocks_used + 1,
+                    num_blocks_used=state.num_blocks_used + 1,
                     prompt_len=state.prompt_len,
                 )
-                self._next_free_block += 1
                 self._seq_state[seq.task_id] = state
-
             valid_indices.append(i)
-            states_after_alloc.append(state)
+            states_after_check.append(state)
 
         out_order: list[StepResult] = []
         for i in range(len(sequences)):
@@ -403,14 +475,16 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         start_pos_list = [0] * B
         for pos, idx in enumerate(valid_indices):
             seq = sequences[idx]
-            state = states_after_alloc[pos]
+            state = states_after_check[pos]
             tokens_list[pos] = seq.token_ids[-1]
             start_pos_list[pos] = int(state.current_len - 1)
 
         tokens_batch = torch.tensor([[t] for t in tokens_list], dtype=torch.int64)
-        start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
+        start_pos_batch = torch.tensor(
+            start_pos_list, dtype=torch.int64
+        )  # tt-metal expects int64
         page_tables = [
-            states_after_alloc[j].page_table for j in range(len(states_after_alloc))
+            states_after_check[pos].page_table for pos in range(len(valid_indices))
         ]
         page_table_batch = torch.cat(page_tables, dim=0)
         pad_rows = B - page_table_batch.shape[0]
@@ -430,22 +504,26 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
         for pos, idx in enumerate(valid_indices):
             seq = sequences[idx]
-            state = states_after_alloc[pos]
+            state = states_after_check[pos]
             logits_1d = logits[pos, -1, :]
             _log_top_tokens(self.logger, f"DECODE[{pos}]", logits_1d)
-            _apply_seed(seq.seed, torch)
-            next_token = _sample_greedy(logits_1d)
+            next_token = _sample(logits_1d, seq.temperature, seq.seed)
             new_len = state.current_len + 1
-            self._seq_state[seq.task_id] = _SeqState(
-                page_table=state.page_table,
-                current_len=new_len,
-                num_blocks_used=state.num_blocks_used,
-                prompt_len=state.prompt_len,
-            )
             num_generated = new_len - state.prompt_len
-            hit_eos = next_token == self.EOS_TOKEN_ID and not seq.ignore_eos
+            hit_eos = next_token in self.STOP_TOKEN_IDS and not seq.ignore_eos
             hit_max = num_generated >= seq.max_tokens
             finished = hit_eos or hit_max
+
+            if finished:
+                self._free_seq_blocks(state.page_table, state.num_blocks_used)
+                self._seq_state.pop(seq.task_id, None)
+            else:
+                self._seq_state[seq.task_id] = _SeqState(
+                    page_table=state.page_table,
+                    current_len=new_len,
+                    num_blocks_used=state.num_blocks_used,
+                    prompt_len=state.prompt_len,
+                )
             out_order[idx] = StepResult(
                 task_id=seq.task_id, token_id=next_token, finished=finished
             )
@@ -506,12 +584,15 @@ def main() -> int:
                 )
                 for s in req.get("sequences", [])
             ]
-            step_results = runner.run_step(is_prefill, seqs)
+            step_results = runner.run_step(
+                is_prefill, seqs, request_block_size=req.get("block_size")
+            )
             response = [
                 {
                     "task_id": r.task_id,
                     "token_id": r.token_id,
                     "finished": r.finished,
+                    **({"error": r.error} if r.error else {}),
                 }
                 for r in step_results
             ]

@@ -202,9 +202,11 @@ void LLMController::handle_streaming(
                         }
                     }
                     if (is_final) {
-                        loop->queueInLoop([stream_ptr, done]() {
+                        bool is_error = !chunk.choices.empty() &&
+                            chunk.choices[0].finish_reason == "error";
+                        loop->queueInLoop([stream_ptr, done, is_error]() {
                             if (!done->exchange(true) && *stream_ptr) {
-                                (*stream_ptr)->send("data: [DONE]\n\n");
+                                if (!is_error) (*stream_ptr)->send("data: [DONE]\n\n");
                                 (*stream_ptr)->close();
                             }
                         });
@@ -241,25 +243,15 @@ void LLMController::handle_chat_streaming(
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
+            auto first_token_sent = std::make_shared<std::atomic<bool>>(false);
             auto stream_ptr =
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
             auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
-            // Send initial role-only chunk before content generation starts
-            {
-                std::optional<domain::CompletionUsage> initial_usage;
-                if (continuous_usage) {
-                    initial_usage = domain::CompletionUsage{0, 0, 0};
-                }
-                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                    completion_id, model, created, initial_usage);
-                if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
-            }
-
             service_->submit_request(
                 std::move(req),
-                [loop, stream_ptr, done, completion_id, model, created,
-                 completion_tokens, continuous_usage, include_usage](
+                [loop, stream_ptr, done, first_token_sent, completion_id, model,
+                 created, completion_tokens, continuous_usage, include_usage](
                     const domain::StreamingChunkResponse& chunk, bool is_final) {
                     if (done->load() || !*stream_ptr) {
                         return;
@@ -271,26 +263,45 @@ void LLMController::handle_chat_streaming(
                             int tokens = completion_tokens->load();
                             usage = domain::CompletionUsage{0, tokens, tokens};
                         }
+
+                        std::string role_sse;
+                        if (!first_token_sent->exchange(true)) {
+                            std::optional<domain::CompletionUsage> initial_usage;
+                            if (continuous_usage) {
+                                initial_usage = domain::CompletionUsage{0, 0, 0};
+                            }
+                            auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+                                completion_id, model, created, initial_usage);
+                            role_sse = initial_chunk.toSSE();
+                        }
+
                         auto chat_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
                             completion_id, model, created, chunk.choices[0], usage);
-                        std::string sse = chat_chunk.toSSE();
-                        loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                            if (*stream_ptr) (*stream_ptr)->send(sse);
+                        std::string content_sse = chat_chunk.toSSE();
+                        loop->queueInLoop([stream_ptr, role_sse = std::move(role_sse),
+                                           content_sse = std::move(content_sse)]() {
+                            if (!*stream_ptr) return;
+                            if (!role_sse.empty()) (*stream_ptr)->send(role_sse);
+                            (*stream_ptr)->send(content_sse);
                         });
                     }
                     if (is_final) {
+                        bool is_error = !chunk.choices.empty() &&
+                            chunk.choices[0].finish_reason == "error";
                         loop->queueInLoop(
-                            [stream_ptr, done, include_usage,
+                            [stream_ptr, done, include_usage, is_error,
                              completion_id, model, created, completion_tokens]() {
                                 if (!done->exchange(true) && *stream_ptr) {
-                                    if (include_usage) {
-                                        int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{0, tokens, tokens};
-                                        auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                            completion_id, model, created, usage);
-                                        (*stream_ptr)->send(usage_chunk.toSSE());
+                                    if (!is_error) {
+                                        if (include_usage) {
+                                            int tokens = completion_tokens->load();
+                                            domain::CompletionUsage usage{0, tokens, tokens};
+                                            auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                                completion_id, model, created, usage);
+                                            (*stream_ptr)->send(usage_chunk.toSSE());
+                                        }
+                                        (*stream_ptr)->send("data: [DONE]\n\n");
                                     }
-                                    (*stream_ptr)->send("data: [DONE]\n\n");
                                     (*stream_ptr)->close();
                                 }
                             });
