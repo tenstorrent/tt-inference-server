@@ -8,7 +8,7 @@
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 
-#include "runners/llm_engine/engine/task_queue.hpp"
+#include "runners/llm_runner/task_queue.hpp"
 
 namespace llm_engine {
 

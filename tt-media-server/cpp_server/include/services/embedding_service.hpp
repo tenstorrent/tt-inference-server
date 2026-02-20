@@ -10,7 +10,7 @@
 #include "services/base_service.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runners/base_embedding_runner.hpp"
+#include "runners/embedding_runner.hpp"
 
 namespace tt::services {
 

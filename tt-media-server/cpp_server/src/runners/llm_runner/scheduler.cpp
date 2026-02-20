@@ -1,5 +1,5 @@
-#include "llm_engine/engine/scheduler.hpp"
-#include "llm_engine/engine/debug.hpp"
+#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/debug.hpp"
 
 #include <cassert>
 

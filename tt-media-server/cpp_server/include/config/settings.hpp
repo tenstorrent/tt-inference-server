@@ -4,7 +4,7 @@
 #pragma once
 
 #include "config/constants.hpp"
-#include "runners/llm_engine/config.hpp"
+#include "runners/llm_runner/config.hpp"
 #include <cstddef>
 #include <string>
 

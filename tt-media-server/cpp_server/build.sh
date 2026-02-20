@@ -260,10 +260,6 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
-if [ -f "${BUILD_DIR}/engine_demo" ] 2>/dev/null; then
-    echo "LLM engine demo: ./build/engine_demo"
-    echo ""
-fi
 echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"

@@ -46,7 +46,7 @@ void SingleProcessWorker::start() {
         auto scheduler = make_unique<llm_engine::Scheduler>(
             llm_engine_config_, cfg.task_queue.get()
         );
-        llm_engine_ = make_unique<llm_engine::LLMEngine>(
+        llm_engine_ = make_unique<llm_engine::LLMRunner>(
             llm_engine_config_,
             on_token_,
             move(scheduler)

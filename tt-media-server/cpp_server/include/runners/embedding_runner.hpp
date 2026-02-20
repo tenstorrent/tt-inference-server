@@ -5,8 +5,10 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
-#include "runners/base_embedding_runner.hpp"
+#include "domain/embedding_request.hpp"
+#include "domain/embedding_response.hpp"
 
 namespace tt::runners {
 
@@ -16,11 +18,11 @@ namespace tt::runners {
  * Uses Python C API to instantiate and call the BGELargeENRunner class
  * from tt_model_runners/embedding_runner.py.
  */
-class EmbeddingRunner : public BaseEmbeddingRunner {
+class EmbeddingRunner {
 public:
     /** @param device_id e.g. "device_0". @param visible_device TT device index (1-based) for logging. */
     EmbeddingRunner(const std::string& device_id, int visible_device = 0);
-    ~EmbeddingRunner() override;
+    ~EmbeddingRunner();
 
     // Prevent copying
     EmbeddingRunner(const EmbeddingRunner&) = delete;
@@ -30,20 +32,26 @@ public:
      * Initialize Python, import modules, create BGELargeENRunner instance,
      * and call warmup().
      */
-    bool warmup() override;
+    bool warmup();
 
     /**
      * Clean up Python objects and optionally finalize interpreter.
      */
-    void close() override;
+    void close();
 
     /**
      * Run embedding inference by calling runner.run(requests).
      */
     std::vector<domain::EmbeddingResponse> run(
-        const std::vector<domain::EmbeddingRequest>& requests) override;
+        const std::vector<domain::EmbeddingRequest>& requests);
+
+    /**
+     * Get the device ID.
+     */
+    const std::string& device_id() const { return device_id_; }
 
 private:
+    std::string device_id_;
     int visible_device_;
     struct Impl;
     std::unique_ptr<Impl> impl_;
