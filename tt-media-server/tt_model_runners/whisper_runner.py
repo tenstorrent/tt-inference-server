@@ -661,7 +661,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return init_kv_cache(
                     config,
                     self.ttnn_device,
-                    self.settings.max_batch_size,
                     max_seq_len=max_seq_len,
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
