@@ -7,6 +7,7 @@
 #include <string>
 
 #include "services/base_service.hpp"
+#include "services/embedding_service.hpp"
 
 namespace tt::utils::service_factory {
 
@@ -18,7 +19,7 @@ namespace tt::utils::service_factory {
 void register_services();
 
 /**
- * Retrieve a previously registered service by name.
+ * Retrieve a previously registered BaseService by name.
  * Returns nullptr if the name is not found.
  */
 std::shared_ptr<services::BaseService> get_service(const std::string& name);

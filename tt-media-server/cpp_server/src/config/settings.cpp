@@ -81,6 +81,10 @@ bool is_llm_service_enabled() {
     return model_service() == ModelService::LLM;
 }
 
+std::string runner_type() {
+    return to_string(model_service());
+}
+
 size_t num_workers() {
     return device_ids_parsed().size();
 }

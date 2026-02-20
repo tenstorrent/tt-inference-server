@@ -5,6 +5,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
+#include "services/embedding_service.hpp"
 
 #include <iostream>
 #include <unordered_map>
@@ -21,6 +22,13 @@ void register_services() {
         llm->start();
         services["llm"] = std::move(llm);
         std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
+    }
+
+    if (tt::config::is_embedding_service()) {
+        auto emb = std::make_shared<services::EmbeddingService>();
+        emb->start();
+        services["embedding"] = std::move(emb);
+        std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
     }
 }
 
