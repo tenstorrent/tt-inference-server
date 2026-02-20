@@ -4,6 +4,8 @@
 
 namespace llm_engine {
 
+int Sequence::block_size = 32;
+
 Sequence::Sequence(std::vector<int64_t> token_ids,
                    const SamplingParams& sampling_params)
     : task_id(TaskID{}),

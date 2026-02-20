@@ -151,6 +151,8 @@ llm_engine::Config llm_engine_config() {
     }
     if (model_runner_type() == RunnerType::TTNN_TEST) {
         cfg.stop_token_ids = {128001, 128008, 128009};
+        cfg.kvcache_block_size = 32;
+        cfg.num_kvcache_blocks = 512;
     }
     return cfg;
 }

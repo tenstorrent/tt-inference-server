@@ -238,18 +238,22 @@ void LLMController::handle_streaming(
                         }
                     }
                     if (is_final) {
+                        bool is_error = !chunk.choices.empty() &&
+                            chunk.choices[0].finish_reason == "error";
                         loop->queueInLoop(
-                            [stream_ptr, done, is_chat, include_usage,
+                            [stream_ptr, done, is_chat, include_usage, is_error,
                              completion_id, model, created, completion_tokens]() {
                                 if (!done->exchange(true) && *stream_ptr) {
-                                    if (is_chat && include_usage) {
-                                        int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{0, tokens, tokens};
-                                        (*stream_ptr)->send(
-                                            domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                                completion_id, model, created, usage).toSSE());
+                                    if (!is_error) {
+                                        if (is_chat && include_usage) {
+                                            int tokens = completion_tokens->load();
+                                            domain::CompletionUsage usage{0, tokens, tokens};
+                                            (*stream_ptr)->send(
+                                                domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                                    completion_id, model, created, usage).toSSE());
+                                        }
+                                        (*stream_ptr)->send("data: [DONE]\n\n");
                                     }
-                                    (*stream_ptr)->send("data: [DONE]\n\n");
                                     (*stream_ptr)->close();
                                 }
                             });

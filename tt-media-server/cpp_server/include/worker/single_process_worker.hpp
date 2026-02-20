@@ -28,7 +28,7 @@ struct WorkerConfig {
 class SingleProcessWorker {
 public:
     SingleProcessWorker(
-        WorkerConfig& cfg, 
+        WorkerConfig& cfg,
         const llm_engine::Config& llm_engine_config = tt::config::llm_engine_config()
     );
     ~SingleProcessWorker();
@@ -42,10 +42,10 @@ public:
     bool is_alive{true};
     int worker_id{-1};
     WorkerConfig cfg;
-    
+
 private:
     unique_ptr<tt::runners::IRunner> runner_;
-    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token)> on_token_;
+    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token, bool is_error)> on_token_;
     llm_engine::Config llm_engine_config_;
 };
 

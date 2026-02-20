@@ -53,18 +53,21 @@ enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 struct DecodeResult {
   TaskID task_id;
   int64_t token_id;
+  bool is_error = false;
 };
 
 class Sequence {
  public:
-  static constexpr int block_size = 256;
-
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;
 
   static Sequence* deserialize(std::istream& is);
+
+  /** KV cache block size; must match BlockManager and Python runner (e.g. 32 for Llama). */
+  static int block_size;
+  static void set_kvcache_block_size(int size) { block_size = size; }
 
   size_t size() const { return token_ids_.size(); }
   int64_t operator[](size_t i) const { return token_ids_[i]; }

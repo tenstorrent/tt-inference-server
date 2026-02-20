@@ -40,6 +40,9 @@ TokenizerConfig get_tokenizer_config();
  */
 class Tokenizer {
 public:
+    // Llama 3 special tokens occupy IDs [128000, 128255]; decode() suppresses them.
+    static constexpr int SPECIAL_TOKEN_START = 128000;
+
     /**
      * Construct a tokenizer from a .json (HuggingFace) or .model (SentencePiece) file.
      * @throws std::runtime_error if path is empty, file is unreadable, or format is unsupported.

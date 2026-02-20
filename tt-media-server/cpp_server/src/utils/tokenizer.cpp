@@ -53,7 +53,15 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }
-    return tok_->Decode(token_ids);
+    // Llama 3 special tokens occupy IDs [128000, 128255]. They must never appear
+    // in decoded output — filter them before passing to the underlying tokenizer.
+    std::vector<int> filtered;
+    filtered.reserve(token_ids.size());
+    for (int id : token_ids) {
+        if (id < SPECIAL_TOKEN_START) filtered.push_back(id);
+    }
+    if (filtered.empty()) return "";
+    return tok_->Decode(filtered);
 }
 
 namespace {

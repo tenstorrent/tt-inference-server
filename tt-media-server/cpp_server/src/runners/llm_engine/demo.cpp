@@ -11,10 +11,10 @@ int main() {
 
   int finished_count = 0;
   constexpr int TOTAL_REQUESTS = 3;
-  
+
   std::unique_ptr<llm_engine::Scheduler> scheduler = std::make_unique<llm_engine::Scheduler>(config, std::make_shared<llm_engine::InMemoryTaskQueue>().get());
 
-  llm_engine::LLMEngine engine{config, [&](llm_engine::TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/) {
+  llm_engine::LLMEngine engine{config, [&](llm_engine::TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/, bool /*is_error*/) {
     std::cout << "seq " << task_id << " token " << token_id;
     if (finished) {
       std::cout << " [done]";
