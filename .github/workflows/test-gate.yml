@@ -583,7 +583,7 @@ jobs:
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-V3.2' \
             --backend vllm \
-            --endpoint /v1/completions \
+            --endpoint /v1/chat/completions \
             --dataset-name random \
             --random-input-len 128 \
             --random-output-len 128 \
