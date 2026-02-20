@@ -6,7 +6,7 @@
 #include "services/base_service.hpp"
 #include "ipc/shared_memory.hpp"
 #include "ipc/queue_manager.hpp"
-#include "worker/base_worker.hpp"
+#include "worker/single_process_worker.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 
@@ -20,6 +20,8 @@
 #include <vector>
 
 namespace tt::services {
+
+worker::WorkerConfig make_worker_config_for_process(int worker_id);
 
 class LLMService : public BaseService {
 public:
@@ -53,7 +55,7 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    std::vector<std::unique_ptr<worker::BaseWorker>> workers_;
+    std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
     size_t num_workers_;
 
     std::vector<std::thread> consumer_threads_;

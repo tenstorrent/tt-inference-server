@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <vector>
 #include "llm_engine/engine/in_memory_task_queue.hpp"
-
 namespace llm_engine {
 namespace {
   
@@ -30,7 +29,7 @@ Config make_engine_config(int num_blocks = 128, int block_size = 8,
   return c;
 }
 
-TEST(LLMEngineTest, AllTokensPublishedInOrder) {
+TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   Config config = make_engine_config();
 
   struct Request {
@@ -68,25 +67,16 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
 
   ASSERT_EQ(finished_count, total_requests);
 
-  // 1st published token in the mocked prefill is always whitespace token id=223
-  // The followed tokens using the mocked runner are increments of 223
   const std::vector<int64_t> expected_seq0 = {
-    223, 224,225, 226, 227, 
-    228, 229, 230, 231, 232, 
-    233, 234, 235, 236, 237, 
-    238, 239, 240, 241, 242, 
-    243, 244, 245, 246, 247, 
-    248, 249, 250, 251, 252,
+      4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18,
+      19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
   };
   const std::vector<int64_t> expected_seq1 = {
-    223, 224,225, 226, 227, 
-    228, 229, 230, 231, 232, 
+      8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
   };
   const std::vector<int64_t> expected_seq2 = {
-    223, 224,225, 226, 227, 
-    228, 229, 230, 231, 232, 
-    233, 234, 235, 236, 237, 
-    238, 239, 240, 241, 242, 
+      13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+      23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
   };
 
   EXPECT_EQ(received_tokens[task_ids[0]], expected_seq0);

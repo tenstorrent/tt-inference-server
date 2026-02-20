@@ -7,7 +7,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
-ENABLE_TTNN="OFF"
 
 # Parse arguments
 TEST="OFF"
@@ -19,10 +18,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
             BUILD_TYPE="Debug"
-            shift
-            ;;
-        --ttnn)
-            ENABLE_TTNN="ON"
             shift
             ;;
         --test)
@@ -52,7 +47,6 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --debug              Build in Debug mode (default: Release)"
-            echo "  --ttnn               Enable TTNN test runner (requires Python + ttnn)"
             echo "  --test               Build for PR gate: LLM only (no Python required)"
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
@@ -77,7 +71,6 @@ fi
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
-echo "  TTNN enabled: ${ENABLE_TTNN}"
 echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
@@ -97,19 +90,6 @@ if ! command -v cargo >/dev/null 2>&1; then
         echo "  Then: source ~/.cargo/env  (or start a new terminal)"
         echo ""
         exit 1
-    fi
-fi
-
-# If TTNN is enabled, ensure we have the right Python
-if [ "${ENABLE_TTNN}" = "ON" ]; then
-    if [ -z "${VIRTUAL_ENV}" ]; then
-        echo ""
-        echo "WARNING: No VIRTUAL_ENV detected. For TTNN support, you should"
-        echo "         activate the tt-metal Python environment first:"
-        echo "         source /path/to/tt-metal/python_env/bin/activate"
-        echo ""
-    else
-        echo "Using Python from: ${VIRTUAL_ENV}"
     fi
 fi
 
@@ -237,7 +217,6 @@ CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    -DENABLE_TTNN="${ENABLE_TTNN}"
     -DLLM_ENGINE_DEBUG_BUILD=OFF
     -DTEST="${TEST}"
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
@@ -281,16 +260,8 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
-if [ -f "${BUILD_DIR}/engine_demo" ] 2>/dev/null; then
-    echo "LLM engine demo: ./build/engine_demo"
-    echo ""
-fi
 echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"
 echo "  -t, --threads N     Number of IO threads"
 echo ""
-if [ "${ENABLE_TTNN}" = "ON" ]; then
-    echo "TTNN runner enabled. Set TT_RUNNER_TYPE=ttnn_test to use it."
-    echo ""
-fi

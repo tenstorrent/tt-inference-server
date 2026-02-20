@@ -143,7 +143,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh --ttnn"
+    && ./build.sh"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"

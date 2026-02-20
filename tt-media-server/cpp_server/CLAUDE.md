@@ -16,7 +16,6 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 
 # Development builds
 ./build.sh --debug          # Debug build with symbols
-./build.sh --ttnn           # Enable TTNN test runner (requires Python + ttnn)
 ./build.sh --test           # PR gate build (LLM only, no Python required)
 ./build.sh --asan           # AddressSanitizer + LeakSanitizer for memory debugging
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
@@ -49,9 +48,6 @@ cd build && ctest --output-on-failure
 ./build/llm_engine_test      # LLM engine integration tests
 ./build/sequence_test        # Sequence management tests
 ./build/test_tokenizer       # Tokenizer functionality tests
-
-# LLM engine demo
-./build/engine_demo
 
 # IPC smoke test
 ./build/ipc_scheduler_smoke_test
@@ -97,9 +93,8 @@ The server operates in two modes via `MODEL_SERVICE` environment variable:
 
 ### Runner Types
 
-Multiple runner implementations selected via `MODEL_RUNNER` environment variable:
+Single runner implementation selected via `MODEL_RUNNER` environment variable:
 - **`llm_test`**: CPU-based test runner generating 120k tokens/sec for benchmarking
-- **`ttnn_test`**: TTNN device I/O runner measuring real device read latency
 
 ## Configuration System
 
@@ -108,7 +103,7 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `MODEL_RUNNER`: `llm_test` or `ttnn_test` (default: `llm_test`)
+- `MODEL_RUNNER`: `llm_test` (default: `llm_test`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
 - `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
