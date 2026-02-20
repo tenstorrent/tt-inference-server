@@ -519,6 +519,21 @@ jobs:
           cd cpp_server
           ./build.sh
 
+      - name: Install clang-format and clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+
+      - name: C++ format check (Google style)
+        run: |
+          cd cpp_server
+          find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r clang-format --dry-run --Werror
+
+      - name: C++ static analysis (clang-tidy, Google style + camelCase)
+        run: |
+          cd cpp_server
+          find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r -I {} clang-tidy {} -p build --quiet
+
   cpp-server-llm-streaming:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
