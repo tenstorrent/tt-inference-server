@@ -3,6 +3,7 @@
 
 #include "utils/service_factory.hpp"
 #include "config/settings.hpp"
+#include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 
 #include <iostream>
@@ -13,6 +14,8 @@ namespace tt::utils::service_factory {
 static std::unordered_map<std::string, std::shared_ptr<services::BaseService>> services;
 
 void register_services() {
+    tracy_config::TracyStartMainProcess();
+
     if (tt::config::is_llm_service_enabled()) {
         auto llm = std::make_shared<services::LLMService>();
         llm->start();

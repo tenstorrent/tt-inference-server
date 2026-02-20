@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
+endif()
 
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
@@ -43,8 +47,17 @@ FetchContent_MakeAvailable(googletest)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
-# Option for TTNN support
-option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+# Option for Tracy support
+option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
+        GIT_TAG master
+    )
+    FetchContent_MakeAvailable(tracy)
+endif()
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -56,26 +69,95 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tokenizers_cpp)
 
+# TT Metal C++ API: headers from TT_METAL_HOME (for referencing Metal API, intellisense)
+if(NOT DEFINED TT_METAL_HOME AND DEFINED ENV{TT_METAL_HOME})
+    set(TT_METAL_HOME "$ENV{TT_METAL_HOME}" CACHE PATH "TT Metal home (from TT_METAL_HOME env)")
+endif()
+if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/tt_metal/api")
+    set(TT_METAL_API_FOUND ON)
+    set(TT_METAL_INCLUDE_DIRS
+        "${TT_METAL_HOME}"
+        "${TT_METAL_HOME}/tt_metal"
+        "${TT_METAL_HOME}/tt_metal/api"
+        "${TT_METAL_HOME}/tt_metal/third_party/umd"
+        "${TT_METAL_HOME}/tt_metal/third_party/umd/device/api"
+        "${TT_METAL_HOME}/tt_metal/hostdevcommon/api"
+        "${TT_METAL_HOME}/tt_metal/hw/inc"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/wormhole"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/wormhole/wormhole_b0_defines"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/blackhole"
+        "${TT_METAL_HOME}/tt_metal/third_party/tracy/public"
+        "${TT_METAL_HOME}/tt_stl"
+    )
+    if(EXISTS "${TT_METAL_HOME}/build_Release/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build_Release/include"
+            "${TT_METAL_HOME}/build_Release/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build/include"
+            "${TT_METAL_HOME}/build/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+    elseif(EXISTS "${TT_METAL_HOME}/.cpmcache/enchantum")
+        file(GLOB _enchantum_dirs "${TT_METAL_HOME}/.cpmcache/enchantum/*/enchantum/include")
+        if(_enchantum_dirs)
+            list(GET _enchantum_dirs 0 _enchantum_include)
+            list(APPEND TT_METAL_INCLUDE_DIRS "${_enchantum_include}")
+        endif()
+    endif()
+    message(STATUS "TT Metal C++ API: ${TT_METAL_HOME} (includes + intellisense)")
+else()
+    set(TT_METAL_API_FOUND OFF)
+    set(TT_METAL_INCLUDE_DIRS "")
+    if(TT_METAL_HOME)
+        message(STATUS "TT Metal C++ API: TT_METAL_HOME set but tt_metal/api not found, skipping")
+    endif()
+endif()
+
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/block_manager.cpp
     src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
+    src/runners/llm_engine/engine/device_backend.cpp
+    src/runners/llm_engine/engine/mock_device_backend.cpp
     src/runners/llm_engine/engine/hash.cpp
     src/runners/llm_engine/engine/llm_engine.cpp
     src/runners/llm_engine/engine/model_runner.cpp
     src/runners/llm_engine/engine/scheduler.cpp
     src/runners/llm_engine/engine/sequence.cpp
 )
+if(TT_METAL_API_FOUND)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/sockets_device_backend.cpp)
+else()
+    message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
+endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
 )
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL USE_METAL_CPP_LIB)
+    # Find tt_metal library directory
+    set(_tt_metal_lib_dir "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
+    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
+    endif()
+    if(_tt_metal_lib_dir)
+        target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
+        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl)
+    endif()
+endif()
 target_link_libraries(llm_engine PUBLIC Boost::boost)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
-target_compile_features(llm_engine PUBLIC cxx_std_17)
+target_compile_features(llm_engine PUBLIC cxx_std_20)
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
 if(LLM_ENGINE_DEBUG_BUILD)
@@ -156,14 +238,15 @@ target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCp
 # Source files
 set(SOURCES
     src/main.cpp
+    src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
-    src/utils/service_factory.cpp
     src/utils/tokenizer.cpp
-    src/worker/llm_worker.cpp
+    src/worker/single_process_worker.cpp
+    src/utils/service_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     )
 if(NOT TEST)
@@ -174,11 +257,6 @@ if(NOT TEST)
     )
 endif()
 
-# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
-if(ENABLE_TTNN)
-    list(APPEND SOURCES src/runners/embedding_runner.cpp)
-endif()
-
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
@@ -187,20 +265,31 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
 )
 
 # Link Drogon and llm_engine (used by LLMService)
 target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
+if(ENABLE_TRACY)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
+        src/profiling/tracy_alloc.cpp
+    )
+    # TRACY_DELAYED_INIT + TRACY_MANUAL_LIFETIME: init profiler after fork so main/workers
+    # each call StartupProfiler() on their own port (see tracy_config::TracyStartupSchedulerParent etc.).
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        TT_ENABLE_TRACY
+        TRACY_ENABLE
+        TRACY_DELAYED_INIT
+        TRACY_MANUAL_LIFETIME
+    )
+endif()
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
 endif()
 if(NOT TEST)
     target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
-
-# TTNN support (optional)
-if(ENABLE_TTNN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
 endif()
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
