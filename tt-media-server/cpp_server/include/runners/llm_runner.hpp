@@ -5,9 +5,9 @@
 #include <functional>
 #include <memory>
 
-#include "runners/llm_engine/config.hpp"
-#include "runners/llm_engine/engine/model_runner.hpp"
-#include "runners/llm_engine/engine/scheduler.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner/model_runner.hpp"
+#include "runners/llm_runner/scheduler.hpp"
 
 namespace llm_engine {
 

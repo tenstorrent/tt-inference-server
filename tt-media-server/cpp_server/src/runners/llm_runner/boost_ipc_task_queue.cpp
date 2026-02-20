@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "llm_engine/engine/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/boost_ipc_task_queue.hpp"
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <boost/interprocess/errors.hpp>
 #include <iostream>

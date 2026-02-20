@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "runners/llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
 
