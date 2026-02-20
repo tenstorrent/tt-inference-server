@@ -56,8 +56,10 @@ class Scheduler {
    */
   void postprocess(std::vector<Sequence*>& seqs,
                    const std::vector<int64_t>& token_ids);
-  
+
   void removeSequence(TaskID task_id);
+
+  bool is_stop_token(int64_t token_id) const { return stop_token_ids_.count(token_id) > 0; }
 
  private:
   int max_num_seqs_;

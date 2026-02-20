@@ -45,7 +45,7 @@ public:
     
 private:
     unique_ptr<tt::runners::IRunner> runner_;
-    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished)> on_token_;
+    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token)> on_token_;
     llm_engine::Config llm_engine_config_;
 };
 

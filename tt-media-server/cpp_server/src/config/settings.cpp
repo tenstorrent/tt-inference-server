@@ -138,6 +138,8 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
+    cfg.max_num_seqs = static_cast<int>(env_ulong("LLM_MAX_NUM_SEQS", 1));
+    if (cfg.max_num_seqs < 1) cfg.max_num_seqs = 1;
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);

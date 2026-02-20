@@ -8,6 +8,16 @@ Wraps LlamaForCausalLM from tt-metal (models.tt_transformers.tt.generator_vllm).
 Designed to be run as a subprocess: reads JSON requests from stdin, writes JSON
 responses to stdout (length-prefixed). Used by C++ PipeLlamaModelRunner.
 
+Batching:
+- Pipe protocol is batch-oriented: one request can carry multiple sequences;
+  response is one result per sequence (same order).
+- Prefill: batch at API level (run_step(prefill, sequences)); metal runs sequential
+  forwards per sequence.
+- Decode: when max_batch_size > 1, a single batched decode_forward is used (logs show
+  DECODE[0], DECODE[1], ...). Default max_batch_size=10; set MAX_BATCH_SIZE if needed.
+  If max_batch_size=1 or unset in env with older code, decode is sequential (logs show
+  "DECODE top-5" with ~35ms between lines).
+
 Requires: PYTHONPATH to include TT_METAL_HOME and tt-media-server root.
 Environment: HF_MODEL (e.g. meta-llama/Llama-3.1-8B-Instruct), TT_VISIBLE_DEVICES.
 """
@@ -87,6 +97,17 @@ def _log_top_tokens(logger, label, logits, k=5):
     logger.info(f"{label} top-{k}: {pairs}")
 
 
+def _pad_page_table(page_table, max_width: int, torch):
+    """Pad page table to fixed width for constant shape required by tracing."""
+    current_width = page_table.shape[1]
+    if current_width < max_width:
+        pad = torch.zeros(
+            (page_table.shape[0], max_width - current_width), dtype=page_table.dtype
+        )
+        page_table = torch.cat([page_table, pad], dim=1)
+    return page_table
+
+
 def _clamp_token_ids(token_ids: list[int], vocab_size: int, logger) -> list[int]:
     """Replace out-of-range token IDs with 0 and log a warning."""
     clamped = []
@@ -118,10 +139,11 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         super().__init__(device_id)
         self.model = None
         self.hf_model_name = os.environ.get("HF_MODEL", DEFAULT_HF_MODEL)
-        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", "1"))
+        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", "10"))
         self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "2048"))
         self._kv_cache = None
         self._vocab_size = 0
+        self._max_num_blocks_per_seq = 0
         self._seq_state: dict[str, _SeqState] = {}
         self._next_free_block = 0
 
@@ -139,6 +161,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             a.n_layers,
         )
         self._block_size = _block_size_from_kv_cache(self._kv_cache)
+        self._max_num_blocks_per_seq = min(
+            math.ceil(self.max_seq_len / self._block_size), MAX_NUM_BLOCKS
+        )
 
     def _load_model(self):
         from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
@@ -162,7 +187,10 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         os.environ["HF_MODEL"] = self.hf_model_name
         self._load_model()
         self._allocate_kv_cache()
-        self.logger.info(f"Device {self.device_id}: Warmup done")
+        self.logger.info(
+            f"Device {self.device_id}: Warmup done (max_batch_size={self.max_batch_size}, "
+            "batched decode enabled when multiple sequences per step)"
+        )
         return True
 
     def run(self, *args: Any, **kwargs: Any) -> list[StepResult]:
@@ -176,7 +204,10 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     def run_step(
         self, is_prefill: bool, sequences: list[StepSequence]
     ) -> list[StepResult]:
-        """Run one scheduler step (prefill or decode), returning one token per sequence."""
+        """Run one scheduler step (prefill or decode), returning one token per sequence.
+        Prefill: batch from API POV; metal runs sequential forwards per sequence.
+        Decode: single batched metal forward when max_batch_size > 1, else sequential.
+        """
         import torch
 
         if self._kv_cache is None:
@@ -184,10 +215,20 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 StepResult(task_id=s.task_id, token_id=self.EOS_TOKEN_ID, finished=True)
                 for s in sequences
             ]
-        return [
-            self._run_prefill(s, torch) if is_prefill else self._run_decode(s, torch)
-            for s in sequences
-        ]
+        if is_prefill:
+            return self._run_prefill_batch(sequences, torch)
+        if self.max_batch_size > 1 and len(sequences) > 0:
+            self.logger.info(
+                f"Batched decode: {len(sequences)} sequences in one forward"
+            )
+            return self._run_decode_batch(sequences, torch)
+        return [self._run_decode(s, torch) for s in sequences]
+
+    def _run_prefill_batch(
+        self, sequences: list[StepSequence], torch
+    ) -> list[StepResult]:
+        """Batch prefill: one result per sequence. Metal runs sequential forwards."""
+        return [self._run_prefill(s, torch) for s in sequences]
 
     def _run_prefill(self, seq: StepSequence, torch) -> StepResult:
         block_size = self._block_size
@@ -203,13 +244,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         )
         self._next_free_block += num_blocks
         page_table = torch.tensor([block_ids], dtype=torch.int32)
+        page_table = _pad_page_table(page_table, self._max_num_blocks_per_seq, torch)
 
         tokens = torch.tensor([safe_ids], dtype=torch.int64)
-
-        self.logger.info(
-            f"PREFILL task={seq.task_id} prompt_len={prompt_len} "
-            f"blocks={block_ids} token_ids={safe_ids[:10]}..."
-        )
 
         # No sampling_params → model returns logits (not sampled tokens).
         # warmup_prefill=True (default) compiles operators and captures traces;
@@ -222,9 +259,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             empty_slots=[0],
         )
 
-        self.logger.info(
-            f"PREFILL output shape={logits_output.shape} dtype={logits_output.dtype}"
-        )
         logits_1d = (
             logits_output[0, -1, :]
             if logits_output.dim() >= 3
@@ -232,7 +266,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         )
         _log_top_tokens(self.logger, "PREFILL", logits_1d)
         next_token = _sample_greedy(logits_1d)
-        self.logger.info(f"PREFILL sampled token={next_token}")
 
         self._seq_state[seq.task_id] = _SeqState(
             page_table=page_table,
@@ -259,9 +292,10 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 return StepResult(
                     task_id=seq.task_id, token_id=self.EOS_TOKEN_ID, finished=True
                 )
-            new_block = torch.tensor([[self._next_free_block]], dtype=torch.int32)
+            page_table = state.page_table.clone()
+            page_table[0, num_blocks_used] = self._next_free_block
             state = _SeqState(
-                page_table=torch.cat([state.page_table, new_block], dim=1),
+                page_table=page_table,
                 current_len=state.current_len,
                 num_blocks_used=num_blocks_used + 1,
                 prompt_len=state.prompt_len,
@@ -271,11 +305,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         position = current_len - 1
-
-        self.logger.info(
-            f"DECODE task={seq.task_id} token={last_token} pos={position} "
-            f"page_table={state.page_table.tolist()}"
-        )
 
         # No sampling_params → model returns (logits, log_probs).
         # enable_trace=True matches vLLM's calling convention.
@@ -290,7 +319,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         logits_1d = logits[0, -1, :]
         _log_top_tokens(self.logger, "DECODE", logits_1d)
         next_token = _sample_greedy(logits_1d)
-        self.logger.info(f"DECODE sampled token={next_token}")
 
         new_len = current_len + 1
         self._seq_state[seq.task_id] = _SeqState(
@@ -304,6 +332,115 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         hit_max = num_generated >= seq.max_tokens
         finished = hit_eos or hit_max
         return StepResult(task_id=seq.task_id, token_id=next_token, finished=finished)
+
+    def _run_decode_batch(
+        self, sequences: list[StepSequence], torch
+    ) -> list[StepResult]:
+        """Single batched decode forward when len(sequences) <= max_batch_size.
+        Pads to max_batch_size for metal. Returns one StepResult per sequence in input order."""
+        B = self.max_batch_size
+        if len(sequences) > B:
+            return [self._run_decode(s, torch) for s in sequences]
+        block_size = self._block_size
+        early_results: dict[int, StepResult] = {}
+        valid_indices: list[int] = []
+        states_after_alloc: list[_SeqState] = []
+
+        for i, seq in enumerate(sequences):
+            state = self._seq_state.get(seq.task_id)
+            if state is None:
+                early_results[i] = StepResult(
+                    task_id=seq.task_id,
+                    token_id=self.EOS_TOKEN_ID,
+                    finished=True,
+                )
+                continue
+            current_len = state.current_len
+            num_blocks_used = state.num_blocks_used
+
+            if (current_len + 1) > num_blocks_used * block_size:
+                if self._next_free_block >= MAX_NUM_BLOCKS:
+                    early_results[i] = StepResult(
+                        task_id=seq.task_id,
+                        token_id=self.EOS_TOKEN_ID,
+                        finished=True,
+                    )
+                    continue
+                page_table = state.page_table.clone()
+                page_table[0, num_blocks_used] = self._next_free_block
+                state = _SeqState(
+                    page_table=page_table,
+                    current_len=state.current_len,
+                    num_blocks_used=num_blocks_used + 1,
+                    prompt_len=state.prompt_len,
+                )
+                self._next_free_block += 1
+                self._seq_state[seq.task_id] = state
+
+            valid_indices.append(i)
+            states_after_alloc.append(state)
+
+        out_order: list[StepResult] = []
+        for i in range(len(sequences)):
+            if i in early_results:
+                out_order.append(early_results[i])
+                continue
+            out_order.append(None)
+
+        if not valid_indices:
+            return [out_order[i] for i in range(len(sequences))]
+
+        tokens_list = [0] * B
+        start_pos_list = [0] * B
+        for pos, idx in enumerate(valid_indices):
+            seq = sequences[idx]
+            state = states_after_alloc[pos]
+            tokens_list[pos] = seq.token_ids[-1]
+            start_pos_list[pos] = int(state.current_len - 1)
+
+        tokens_batch = torch.tensor([[t] for t in tokens_list], dtype=torch.int64)
+        start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
+        page_tables = [
+            states_after_alloc[j].page_table for j in range(len(states_after_alloc))
+        ]
+        page_table_batch = torch.cat(page_tables, dim=0)
+        pad_rows = B - page_table_batch.shape[0]
+        if pad_rows > 0:
+            pad = torch.zeros(
+                (pad_rows, self._max_num_blocks_per_seq), dtype=torch.int32
+            )
+            page_table_batch = torch.cat([page_table_batch, pad], dim=0)
+
+        logits, _ = self.model.decode_forward(
+            tokens=tokens_batch,
+            start_pos=start_pos_batch,
+            page_table=page_table_batch,
+            kv_cache=self._kv_cache,
+            enable_trace=True,
+        )
+
+        for pos, idx in enumerate(valid_indices):
+            seq = sequences[idx]
+            state = states_after_alloc[pos]
+            logits_1d = logits[pos, -1, :]
+            _log_top_tokens(self.logger, f"DECODE[{pos}]", logits_1d)
+            next_token = _sample_greedy(logits_1d)
+            new_len = state.current_len + 1
+            self._seq_state[seq.task_id] = _SeqState(
+                page_table=state.page_table,
+                current_len=new_len,
+                num_blocks_used=state.num_blocks_used,
+                prompt_len=state.prompt_len,
+            )
+            num_generated = new_len - state.prompt_len
+            hit_eos = next_token == self.EOS_TOKEN_ID and not seq.ignore_eos
+            hit_max = num_generated >= seq.max_tokens
+            finished = hit_eos or hit_max
+            out_order[idx] = StepResult(
+                task_id=seq.task_id, token_id=next_token, finished=finished
+            )
+
+        return out_order
 
 
 def _run_async_warmup(runner: Llama31_8BRunner) -> bool:

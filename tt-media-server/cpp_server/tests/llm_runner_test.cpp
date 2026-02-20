@@ -21,10 +21,12 @@ std::unique_ptr<Scheduler> make_scheduler(const Config& config,
 }
 
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
+                          int max_num_seqs = 32,
                           std::vector<int64_t> stop_ids = {}) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
+  c.max_num_seqs = max_num_seqs;
   c.stop_token_ids = std::move(stop_ids);
   return c;
 }
@@ -48,7 +50,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   auto task_queue = make_queue();
 
-  tt::runners::LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
+  tt::runners::LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();
