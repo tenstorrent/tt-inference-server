@@ -1,5 +1,6 @@
 # Build output and CMake / FetchContent
 build/
+build-tracy/
 .cache/
 
 # Object and dependency files (in-source or stray)
@@ -7,6 +8,7 @@ build/
 *.o.d
 *.obj
 *.obj.d
+*.tracy
 
 # In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
 CMakeFiles/
@@ -15,3 +17,5 @@ CMakeFiles/
 logs/
 
 **/vllm-venv
+
+deps/

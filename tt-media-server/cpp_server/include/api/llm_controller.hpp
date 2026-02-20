@@ -63,18 +63,23 @@ private:
     std::shared_ptr<services::LLMService> service_;
 
     /**
-     * Handle streaming text completion request (SSE).
+     * Handle streaming completion (SSE). When is_chat is true, emits
+     * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      */
-    void handle_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+    void handle_streaming_impl(
+        domain::CompletionRequest request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        bool is_chat) const;
 
     /**
-     * Handle streaming chat completion request (SSE).
+     * Handle non-streaming completion: accumulates streamed tokens into a
+     * single JSON response. When is_chat is true, wraps as
+     * ChatCompletionResponse; otherwise CompletionResponse.
      */
-    void handle_chat_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+    void handle_non_streaming_impl(
+        domain::CompletionRequest request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        bool is_chat) const;
 
     /**
      * Generate a unique completion ID (hex string).

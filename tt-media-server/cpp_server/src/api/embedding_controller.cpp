@@ -3,6 +3,7 @@
 
 #include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
+#include "profiling/tracy.hpp"
 
 #include <iostream>
 #include <chrono>
@@ -43,7 +44,7 @@ namespace {
                     while (true) {
                         std::function<void()> task;
                         {
-                            std::unique_lock<std::mutex> lock(mutex_);
+                            std::unique_lock lock(mutex_);
                             cv_.wait(lock, [this] { return stop_ || !tasks_.empty(); });
                             if (stop_ && tasks_.empty()) return;
                             task = std::move(tasks_.front());
@@ -57,7 +58,7 @@ namespace {
 
         ~CallbackThreadPool() {
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::lock_guard lock(mutex_);
                 stop_ = true;
             }
             cv_.notify_all();
@@ -68,7 +69,7 @@ namespace {
 
         void submit(std::function<void()> task) {
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::lock_guard lock(mutex_);
                 tasks_.push(std::move(task));
             }
             cv_.notify_one();
@@ -77,7 +78,7 @@ namespace {
     private:
         std::vector<std::thread> workers_;
         std::queue<std::function<void()>> tasks_;
-        std::mutex mutex_;
+        TracyLockable(std::mutex, mutex_);
         std::condition_variable cv_;
         bool stop_;
     };

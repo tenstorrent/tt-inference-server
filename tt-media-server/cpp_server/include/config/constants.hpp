@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <string>
-#include "runners/llm_engine/config.hpp"
 
 namespace tt::config {
 
@@ -37,14 +36,11 @@ inline ModelService model_service_from_string(const std::string& v) {
 
 enum class RunnerType {
     LLM_TEST,
-    TTNN_TEST,
 };
 
-/** String value for env MODEL_RUNNER (e.g. "llm_test", "ttnn_test"). */
+/** String value for env MODEL_RUNNER (e.g. "llm_test"). */
 inline std::string to_string(RunnerType r) {
     switch (r) {
-        case RunnerType::TTNN_TEST:
-            return "ttnn_test";
         case RunnerType::LLM_TEST:
         default:
             return "llm_test";
@@ -53,7 +49,6 @@ inline std::string to_string(RunnerType r) {
 
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& v) {
-    if (v == "ttnn_test" || v == "TTNN_TEST") return RunnerType::TTNN_TEST;
     return RunnerType::LLM_TEST;
 }
 
@@ -62,7 +57,7 @@ inline RunnerType runner_type_from_string(const std::string& v) {
  * Env overrides these when present.
  */
 namespace defaults {
-    constexpr const char* DEVICE_IDS = "(0),(1),(2),(3)";
+    constexpr const char* DEVICE_IDS = "(0)";
     constexpr const char* MODEL_SERVICE = "llm";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;

@@ -512,24 +512,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install C++ build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install libboost-dev
-          sudo apt-get install -y -qq cmake g++ pkg-config \
-            libjsoncpp-dev uuid-dev zlib1g-dev
-
-      - name: Clone Drogon for build
-        run: |
-          mkdir -p cpp_server/deps
-          git clone --depth 1 --branch v1.9.8 https://github.com/drogonframework/drogon.git cpp_server/deps/drogon
-          cd cpp_server/deps/drogon
-          git submodule update --init
-          cd ../../..
+        run: cpp_server/install_dependencies.sh
 
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --ttnn
+          ./build.sh
 
   cpp-server-llm-streaming:
     needs: detect-changes
@@ -549,19 +537,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install C++ build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install libboost-dev
-          sudo apt-get install -y -qq cmake g++ pkg-config \
-            libjsoncpp-dev uuid-dev zlib1g-dev
-
-      - name: Clone Drogon for build
-        run: |
-          mkdir -p cpp_server/deps
-          git clone --depth 1 --branch v1.9.8 https://github.com/drogonframework/drogon.git cpp_server/deps/drogon
-          cd cpp_server/deps/drogon
-          git submodule update --init
-          cd ../../..
+        run: cpp_server/install_dependencies.sh
 
       - name: Build C++ server
         run: |

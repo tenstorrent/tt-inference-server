@@ -5,6 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
+#include "profiling/tracy.hpp"
 
 #include <memory>
 #include <random>
@@ -65,6 +66,8 @@ void LLMController::completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
 
+    ZoneScopedN("API::completions");
+
     auto json = req->getJsonObject();
     if (!json) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
@@ -94,20 +97,17 @@ void LLMController::completions(
         return;
     }
 
-    if (!request.stream) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Non-streaming completions not implemented", "not_implemented"));
-        resp->setStatusCode(drogon::k501NotImplemented);
-        callback(resp);
-        return;
+    if (request.stream) {
+        handle_streaming_impl(std::move(request), std::move(callback), false);
+    } else {
+        handle_non_streaming_impl(std::move(request), std::move(callback), false);
     }
-
-    handle_streaming(std::move(request), std::move(callback));
 }
 
 void LLMController::chat_completions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+    ZoneScopedN("API::chat_completions");
 
     auto json = req->getJsonObject();
     if (!json) {
@@ -149,95 +149,35 @@ void LLMController::chat_completions(
 
     domain::CompletionRequest request = chat_req.to_completion_request();
 
-    if (!request.stream) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Non-streaming chat completions not implemented", "not_implemented"));
-        resp->setStatusCode(drogon::k501NotImplemented);
-        callback(resp);
-        return;
+    if (request.stream) {
+        handle_streaming_impl(std::move(request), std::move(callback), true);
+    } else {
+        handle_non_streaming_impl(std::move(request), std::move(callback), true);
     }
-
-    handle_chat_streaming(std::move(request), std::move(callback));
 }
 
-void LLMController::handle_streaming(
-    const domain::CompletionRequest& request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+void LLMController::handle_streaming_impl(
+    domain::CompletionRequest request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    bool is_chat) const {
 
-    const std::string completion_id = "cmpl-" + request.task_id;
+    ZoneScopedN("API::handle_streaming_impl");
+
+    const std::string completion_id =
+        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
     const std::string model = request.model.value_or("default");
     const int64_t created = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
 
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created](
-            drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-
-            service_->submit_request(
-                std::move(req),
-                [loop, stream_ptr, done, completion_id, model, created](
-                    const domain::StreamingChunkResponse& chunk, bool is_final) {
-                    if (done->load() || !*stream_ptr) {
-                        return;
-                    }
-                    if (!chunk.choices.empty()) {
-                        // Skip final empty-text chunk (client counts content tokens only)
-                        if (!chunk.choices[0].text.empty() ||
-                            !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out;
-                            out.id = completion_id;
-                            out.object = "text_completion";
-                            out.model = model;
-                            out.created = created;
-                            out.choices = chunk.choices;
-                            std::string sse = out.toSSE();
-                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                                if (*stream_ptr) (*stream_ptr)->send(sse);
-                            });
-                        }
-                    }
-                    if (is_final) {
-                        loop->queueInLoop([stream_ptr, done]() {
-                            if (!done->exchange(true) && *stream_ptr) {
-                                (*stream_ptr)->send("data: [DONE]\n\n");
-                                (*stream_ptr)->close();
-                            }
-                        });
-                    }
-                });
-        });
-
-    resp->setContentTypeString("text/event-stream");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "keep-alive");
-    resp->addHeader("X-Accel-Buffering", "no");
-
-    callback(resp);
-}
-
-void LLMController::handle_chat_streaming(
-    const domain::CompletionRequest& request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-
-    const int64_t created = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    const std::string completion_id = "chatcmpl-" + request.task_id;
-    const std::string model = request.model.value_or("default");
-
-    const bool include_usage = request.stream_options.has_value()
+    const bool include_usage = is_chat && request.stream_options.has_value()
         && request.stream_options->include_usage;
-    const bool continuous_usage = request.stream_options.has_value()
+    const bool continuous_usage = is_chat && request.stream_options.has_value()
         && request.stream_options->continuous_usage_stats;
 
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created,
-         include_usage, continuous_usage](
+         is_chat, include_usage, continuous_usage](
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
@@ -245,8 +185,7 @@ void LLMController::handle_chat_streaming(
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
             auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
-            // Send initial role-only chunk before content generation starts
-            {
+            if (is_chat) {
                 std::optional<domain::CompletionUsage> initial_usage;
                 if (continuous_usage) {
                     initial_usage = domain::CompletionUsage{0, 0, 0};
@@ -259,36 +198,51 @@ void LLMController::handle_chat_streaming(
             service_->submit_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
-                 completion_tokens, continuous_usage, include_usage](
+                 is_chat, include_usage, continuous_usage, completion_tokens](
                     const domain::StreamingChunkResponse& chunk, bool is_final) {
                     if (done->load() || !*stream_ptr) {
                         return;
                     }
                     if (!chunk.choices.empty()) {
                         completion_tokens->fetch_add(1);
-                        std::optional<domain::CompletionUsage> usage;
-                        if (continuous_usage) {
-                            int tokens = completion_tokens->load();
-                            usage = domain::CompletionUsage{0, tokens, tokens};
+
+                        std::string sse;
+                        if (is_chat) {
+                            std::optional<domain::CompletionUsage> usage;
+                            if (continuous_usage) {
+                                int tokens = completion_tokens->load();
+                                usage = domain::CompletionUsage{0, tokens, tokens};
+                            }
+                            sse = domain::ChatCompletionStreamChunk::makeContentChunk(
+                                completion_id, model, created, chunk.choices[0], usage).toSSE();
+                        } else if (!chunk.choices[0].text.empty() ||
+                                   !chunk.choices[0].finish_reason.has_value()) {
+                            domain::StreamingChunkResponse out;
+                            out.id = completion_id;
+                            out.object = "text_completion";
+                            out.model = model;
+                            out.created = created;
+                            out.choices = chunk.choices;
+                            sse = out.toSSE();
                         }
-                        auto chat_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-                            completion_id, model, created, chunk.choices[0], usage);
-                        std::string sse = chat_chunk.toSSE();
-                        loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                            if (*stream_ptr) (*stream_ptr)->send(sse);
-                        });
+
+                        if (!sse.empty()) {
+                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                                if (*stream_ptr) (*stream_ptr)->send(sse);
+                            });
+                        }
                     }
                     if (is_final) {
                         loop->queueInLoop(
-                            [stream_ptr, done, include_usage,
+                            [stream_ptr, done, is_chat, include_usage,
                              completion_id, model, created, completion_tokens]() {
                                 if (!done->exchange(true) && *stream_ptr) {
-                                    if (include_usage) {
+                                    if (is_chat && include_usage) {
                                         int tokens = completion_tokens->load();
                                         domain::CompletionUsage usage{0, tokens, tokens};
-                                        auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                            completion_id, model, created, usage);
-                                        (*stream_ptr)->send(usage_chunk.toSSE());
+                                        (*stream_ptr)->send(
+                                            domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                                completion_id, model, created, usage).toSSE());
                                     }
                                     (*stream_ptr)->send("data: [DONE]\n\n");
                                     (*stream_ptr)->close();
@@ -304,6 +258,71 @@ void LLMController::handle_chat_streaming(
     resp->addHeader("X-Accel-Buffering", "no");
 
     callback(resp);
+}
+
+void LLMController::handle_non_streaming_impl(
+    domain::CompletionRequest request,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    bool is_chat) const {
+
+    ZoneScopedN("API::handle_non_streaming_impl");
+
+    const std::string completion_id =
+        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
+    const std::string model = request.model.value_or("default");
+    const int64_t created = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
+        ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
+        : 0;
+
+    struct Accumulator {
+        std::string text;
+        int completion_tokens = 0;
+        std::string finish_reason = "stop";
+    };
+    auto acc = std::make_shared<Accumulator>();
+    auto cb = std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+        std::move(callback));
+
+    service_->submit_request(
+        std::move(request),
+        [acc, cb, completion_id, model, created, prompt_tokens, is_chat](
+            const domain::StreamingChunkResponse& chunk, bool is_final) {
+
+            if (!chunk.choices.empty()) {
+                acc->text.append(chunk.choices[0].text);
+                acc->completion_tokens++;
+                if (chunk.choices[0].finish_reason.has_value()) {
+                    acc->finish_reason = chunk.choices[0].finish_reason.value();
+                }
+            }
+
+            if (is_final) {
+                domain::CompletionResponse completion;
+                completion.id = completion_id;
+                completion.created = created;
+                completion.model = model;
+
+                domain::CompletionChoice choice;
+                choice.text = std::move(acc->text);
+                choice.index = 0;
+                choice.finish_reason = acc->finish_reason;
+                completion.choices.push_back(std::move(choice));
+
+                completion.usage = {prompt_tokens, acc->completion_tokens,
+                                    prompt_tokens + acc->completion_tokens};
+
+                if (is_chat) {
+                    auto chat_response =
+                        domain::ChatCompletionResponse::fromCompletionResponse(completion);
+                    (*cb)(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
+                } else {
+                    (*cb)(drogon::HttpResponse::newHttpJsonResponse(completion.toJson()));
+                }
+            }
+        });
 }
 
 void LLMController::health(
