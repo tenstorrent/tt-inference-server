@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <concepts>
 #include <functional>
 #include <string>
 #include <vector>
 
+#include "domain/base_request.hpp"
+#include "domain/base_response.hpp"
 namespace tt::services {
 
 struct WorkerInfo {
@@ -23,7 +26,7 @@ struct SystemStatus {
     std::vector<WorkerInfo> worker_info;
 };
 
-template<typename RequestType, typename ResponseType>
+template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
 class BaseService {
 public:
     virtual ~BaseService() = default;
@@ -46,7 +49,7 @@ protected:
     virtual void post_process(ResponseType& response) const = 0;
 };
 
-template<typename RequestType, typename ResponseType>
+template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
 class Streamable {
 public:
     virtual ~Streamable() = default;
