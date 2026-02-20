@@ -29,7 +29,7 @@ Config make_engine_config(int num_blocks = 128, int block_size = 8,
   return c;
 }
 
-TEST(LLMEngineTest, AllTokensPublishedInOrder) {
+TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   Config config = make_engine_config();
 
   struct Request {

@@ -14,10 +14,10 @@ namespace llm_engine {
 using TokenCallback =
     std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
 
-class LLMEngine {
+class LLMRunner {
  public:
-  LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler);
-  ~LLMEngine();
+  LLMRunner(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler);
+  ~LLMRunner();
 
   Scheduler& scheduler() { return *scheduler_; }
 
