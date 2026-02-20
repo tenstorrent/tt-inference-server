@@ -554,8 +554,6 @@ jobs:
       - name: Start C++ server (test runner mode)
         run: |
           cd cpp_server/build
-          export TT_RUNNER_TYPE=llm_test
-          export TEST_RUNNER_FREQUENCY_MS=1
           ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
@@ -565,16 +563,17 @@ jobs:
           done
           curl -sf http://127.0.0.1:8000/health || exit 1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.10"
-          cache: 'pip'
+          enable-cache: true
 
       - name: Install Python test dependencies
         run: |
-          pip install --upgrade pip
-          pip install vllm
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Run vLLM bench serve against C++ server
         env:
