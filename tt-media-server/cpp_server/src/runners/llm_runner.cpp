@@ -1,11 +1,11 @@
-#include "llm_engine/engine/llm_engine.hpp"
+#include "runners/llm_runner.hpp"
 #include "llm_engine/engine/debug.hpp"
 
 #include <cassert>
 
 namespace llm_engine {
 
-LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler)
+LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, std::unique_ptr<Scheduler> scheduler)
     : config_(config), on_token_(std::move(on_token)), scheduler_(std::move(scheduler)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
   auto decode_cb = [this](const DecodeResult& result) {
@@ -17,18 +17,18 @@ LLMEngine::LLMEngine(const Config& config, TokenCallback on_token, std::unique_p
   }
 }
 
-LLMEngine::~LLMEngine() {
+LLMRunner::~LLMRunner() {
   exit();
 }
 
-void LLMEngine::exit() {
+void LLMRunner::exit() {
   if (model_runner_) {
     LLM_ENGINE_LOG("llm_engine") << "exit" << std::endl;
     model_runner_->exit();
   }
 }
 
-void LLMEngine::run() {
+void LLMRunner::run() {
   LLM_ENGINE_LOG("llm_engine") << "run" << std::endl;
   while (!stopped_.load(std::memory_order_relaxed)) {
     step();
@@ -36,13 +36,13 @@ void LLMEngine::run() {
   LLM_ENGINE_LOG("llm_engine") << "run done" << std::endl;
 }
 
-void LLMEngine::stop() {
+void LLMRunner::stop() {
   stopped_.store(true, std::memory_order_relaxed);
 }
 
 
 
-void LLMEngine::step() {
+void LLMRunner::step() {
   drain_decode_results();
 
   auto [seqs, is_prefill] = scheduler_->schedule();
@@ -54,7 +54,7 @@ void LLMEngine::step() {
                                << " n=" << seqs.size() << std::endl;
 }
 
-void LLMEngine::drain_decode_results() {
+void LLMRunner::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.task_id);
     assert(seq);

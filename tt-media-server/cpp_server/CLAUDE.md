@@ -49,9 +49,6 @@ cd build && ctest --output-on-failure
 ./build/sequence_test        # Sequence management tests
 ./build/test_tokenizer       # Tokenizer functionality tests
 
-# LLM engine demo
-./build/engine_demo
-
 # IPC smoke test
 ./build/ipc_scheduler_smoke_test
 

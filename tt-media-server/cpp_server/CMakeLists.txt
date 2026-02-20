@@ -123,7 +123,7 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_engine/engine/device_backend.cpp
     src/runners/llm_engine/engine/mock_device_backend.cpp
     src/runners/llm_engine/engine/hash.cpp
-    src/runners/llm_engine/engine/llm_engine.cpp
+    src/runners/llm_runner.cpp
     src/runners/llm_engine/engine/model_runner.cpp
     src/runners/llm_engine/engine/scheduler.cpp
     src/runners/llm_engine/engine/sequence.cpp
@@ -179,10 +179,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(llm_engine PUBLIC -fsanitize=address)
 endif()
 
-add_executable(engine_demo src/runners/llm_engine/demo.cpp)
-target_link_libraries(engine_demo PRIVATE llm_engine)
-target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
-
 # Unit tests (LLM engine)
 enable_testing()
 add_executable(scheduler_test tests/scheduler_test.cpp)
@@ -192,9 +188,9 @@ target_include_directories(scheduler_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(llm_engine_test tests/llm_engine_test.cpp)
-target_link_libraries(llm_engine_test PRIVATE llm_engine GTest::gtest_main)
-target_include_directories(llm_engine_test PRIVATE
+add_executable(llm_runner_test tests/llm_runner_test.cpp)
+target_link_libraries(llm_runner_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(llm_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -215,7 +211,7 @@ target_include_directories(test_tokenizer PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
-gtest_discover_tests(llm_engine_test)
+gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(test_tokenizer)
 
@@ -312,12 +308,10 @@ if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
     target_compile_options(${PROJECT_NAME} PRIVATE ${ASAN_FLAGS})
     target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-    target_compile_options(engine_demo PRIVATE ${ASAN_FLAGS})
-    target_link_options(engine_demo PRIVATE -fsanitize=address)
     target_compile_options(scheduler_test PRIVATE ${ASAN_FLAGS})
     target_link_options(scheduler_test PRIVATE -fsanitize=address)
-    target_compile_options(llm_engine_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(llm_engine_test PRIVATE -fsanitize=address)
+    target_compile_options(llm_runner_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(llm_runner_test PRIVATE -fsanitize=address)
     target_compile_options(sequence_test PRIVATE ${ASAN_FLAGS})
     target_link_options(sequence_test PRIVATE -fsanitize=address)
     target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
