@@ -236,6 +236,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
@@ -245,14 +246,10 @@ set(SOURCES
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
-    )
-if(NOT TEST)
-    list(APPEND SOURCES
-        src/api/embedding_controller.cpp
-        src/runners/embedding_runner.cpp
-        src/services/embedding_service.cpp
-    )
-endif()
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+)
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -285,9 +282,7 @@ endif()
 if(TEST)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
 endif()
-if(NOT TEST)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)

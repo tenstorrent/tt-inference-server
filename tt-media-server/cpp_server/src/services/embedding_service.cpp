@@ -658,15 +658,15 @@ void EmbeddingService::stop() {
     impl_->stop();
 }
 
-bool EmbeddingService::is_ready() const {
+bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-std::future<domain::EmbeddingResponse> EmbeddingService::process_request(domain::EmbeddingRequest request) {
+std::future<domain::EmbeddingResponse> EmbeddingService::process_embedding(domain::EmbeddingRequest request) {
     return impl_->submit_request(std::move(request));
 }
 
-EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
+BaseService::SystemStatus EmbeddingService::get_system_status() const {
     SystemStatus status;
     status.model_ready = impl_->is_ready_.load();
 
@@ -677,9 +677,25 @@ EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
 
     status.max_queue_size = 10000;
     status.device = "tenstorrent";
-    status.num_workers = impl_->num_workers_;
+
+    for (size_t i = 0; i < impl_->num_workers_; ++i) {
+        status.worker_info.push_back({
+            "embedding-worker-" + std::to_string(i),
+            impl_->is_ready_.load(),
+            0
+        });
+    }
 
     return status;
 }
+
+void EmbeddingService::process_request(
+    domain::CompletionRequest,
+    std::function<void(const domain::StreamingChunkResponse&, bool)>) {
+    throw std::runtime_error("EmbeddingService does not support completion requests");
+}
+
+void EmbeddingService::pre_process(domain::CompletionRequest&) const {}
+void EmbeddingService::post_process(domain::CompletionRequest&) const {}
 
 } // namespace tt::services

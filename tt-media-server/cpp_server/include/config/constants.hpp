@@ -48,7 +48,7 @@ inline std::string to_string(RunnerType r) {
 }
 
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
-inline RunnerType runner_type_from_string(const std::string& /* v */) {
+inline RunnerType runner_type_from_string(const std::string& /*v*/) {
     return RunnerType::LLM_TEST;
 }
 
