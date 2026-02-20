@@ -100,7 +100,7 @@ EmbeddingController::EmbeddingController() {
         throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
                                  "Ensure register_services() is called before Drogon starts.");
     }
-    std::cout << "[EmbeddingController] Initialized (service already started)\n";
+    std::cout << "[EmbeddingController] Initialized (service already started)\n" << std::flush;
 }
 
 EmbeddingController::~EmbeddingController() = default;
@@ -194,44 +194,6 @@ void EmbeddingController::create_embedding(
             callback(resp);
         }
     });
-}
-
-void EmbeddingController::health(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    Json::Value response;
-    response["status"] = "healthy";
-    response["timestamp"] = static_cast<Json::Int64>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    callback(resp);
-}
-
-void EmbeddingController::ready(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    auto status = service_->get_system_status();
-
-    Json::Value response;
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
-    response["device"] = status.device;
-    response["num_workers"] = static_cast<Json::UInt64>(status.worker_info.size());
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-
-    if (!status.model_ready) {
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-    }
-
-    callback(resp);
 }
 
 } // namespace tt::api

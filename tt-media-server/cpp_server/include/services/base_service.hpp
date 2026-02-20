@@ -26,15 +26,19 @@ struct SystemStatus {
     std::vector<WorkerInfo> worker_info;
 };
 
-template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
-class BaseService {
+class IService {
 public:
-    virtual ~BaseService() = default;
-
+    virtual ~IService() = default;
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual bool is_model_ready() const = 0;
     virtual SystemStatus get_system_status() const = 0;
+};
+
+template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
+class BaseService : public IService {
+public:
+    virtual ~BaseService() = default;
 
     ResponseType submit_request(RequestType request) {
         pre_process(request);

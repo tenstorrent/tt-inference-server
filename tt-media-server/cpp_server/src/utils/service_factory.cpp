@@ -5,9 +5,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
-#ifndef TEST
 #include "services/embedding_service.hpp"
-#endif
 
 #include <iostream>
 
@@ -23,14 +21,12 @@ void register_services() {
         std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
     }
 
-#ifndef TEST
     if (tt::config::is_embedding_service()) {
-        auto embedding = std::make_shared<services::EmbeddingService>();
-        embedding->start();
-        register_service(std::move(embedding));
+        auto emb = std::make_shared<services::EmbeddingService>();
+        emb->start();
+        register_service(std::move(emb));
         std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
     }
-#endif
 }
 
 } // namespace tt::utils::service_factory

@@ -695,6 +695,11 @@ SystemStatus EmbeddingService::get_system_status() const {
         info.is_ready = (i < impl_->workers_.size()) && impl_->workers_[i]->is_ready.load();
         info.processed_requests = 0;
         status.worker_info.push_back(info);
+        status.worker_info.push_back({
+            "embedding-worker-" + std::to_string(i),
+            impl_->is_ready_.load(),
+            0
+        });
     }
 
     return status;

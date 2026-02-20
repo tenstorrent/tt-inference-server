@@ -1,5 +1,6 @@
 #include "worker/single_process_worker.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/runner_factory.hpp"
 #include <csignal>
 #include <sys/wait.h>
 #include <iostream>
@@ -43,21 +44,18 @@ void SingleProcessWorker::start() {
 
     {
         ZoneScopedN("Worker::init");
-        auto scheduler = make_unique<llm_engine::Scheduler>(
-            llm_engine_config_, cfg.task_queue.get()
-        );
-        llm_engine_ = make_unique<llm_engine::LLMRunner>(
+        runner_ = tt::utils::runner_factory::create_runner(
             llm_engine_config_,
             on_token_,
-            move(scheduler)
+            cfg.task_queue.get()
         );
     }
-    llm_engine_->run();
+    runner_->run();
 }
 
 void SingleProcessWorker::stop() {
-    if (llm_engine_) {
-        llm_engine_->stop();
+    if (runner_) {
+        runner_->stop();
     }
     if (pid > 0) {
         kill(pid, SIGTERM);
