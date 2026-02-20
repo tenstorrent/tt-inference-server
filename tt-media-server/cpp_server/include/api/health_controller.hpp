@@ -14,7 +14,7 @@ class HealthController : public drogon::HttpController<HealthController> {
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(HealthController::health, "/health", drogon::Get);
-    ADD_METHOD_TO(HealthController::ready, "/ready", drogon::Get);
+    ADD_METHOD_TO(HealthController::ready, "/tt-liveness", drogon::Get);
     METHOD_LIST_END
 
     HealthController();

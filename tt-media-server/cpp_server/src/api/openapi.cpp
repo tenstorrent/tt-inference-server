@@ -117,7 +117,7 @@ private:
         tags.append(completionsTag);
         Json::Value healthTag;
         healthTag["name"] = "Health";
-        healthTag["description"] = "Server health and readiness endpoints";
+        healthTag["description"] = "Server health and liveness endpoints";
         tags.append(healthTag);
         spec["tags"] = tags;
 
@@ -133,8 +133,8 @@ private:
         // GET /health
         paths["/health"]["get"] = buildHealthEndpoint();
 
-        // GET /ready
-        paths["/ready"]["get"] = buildReadyEndpoint();
+        // GET /tt-liveness
+        paths["/tt-liveness"]["get"] = buildLivenessEndpoint();
 
         spec["paths"] = paths;
 
@@ -278,12 +278,12 @@ private:
         return endpoint;
     }
 
-    Json::Value buildReadyEndpoint() {
+    Json::Value buildLivenessEndpoint() {
         Json::Value endpoint;
         endpoint["tags"].append("Health");
-        endpoint["summary"] = "Readiness check";
-        endpoint["description"] = "Returns detailed system status including model readiness, queue size, and worker information.";
-        endpoint["operationId"] = "readinessCheck";
+        endpoint["summary"] = "Liveness check";
+        endpoint["description"] = "Returns detailed system status including model liveness, queue size, and worker information.";
+        endpoint["operationId"] = "livenessCheck";
 
         Json::Value responses;
         Json::Value resp200;
