@@ -4,7 +4,6 @@
 #pragma once
 
 #include <memory>
-#include <functional>
 
 #include "services/base_service.hpp"
 #include "domain/embedding_request.hpp"

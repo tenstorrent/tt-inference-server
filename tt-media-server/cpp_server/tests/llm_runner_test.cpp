@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/llm_engine.hpp"
-#include "llm_engine/engine/sequence.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "runners/llm_runner.hpp"
+#include "runners/llm_runner/sequence.hpp"
 #include <gtest/gtest.h>
 #include <unordered_map>
 #include <vector>
-#include "llm_engine/engine/in_memory_task_queue.hpp"
+#include "runners/llm_runner/in_memory_task_queue.hpp"
 namespace llm_engine {
 namespace {
   
@@ -29,7 +29,7 @@ Config make_engine_config(int num_blocks = 128, int block_size = 8,
   return c;
 }
 
-TEST(LLMEngineTest, AllTokensPublishedInOrder) {
+TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   Config config = make_engine_config();
 
   struct Request {
@@ -49,7 +49,7 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
   auto task_queue = make_queue();
   auto scheduler = make_scheduler(config, task_queue.get());
 
-  LLMEngine engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
+  LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished) {
       received_tokens[task_id].push_back(token_id);
       if (finished && ++finished_count == total_requests) {
         engine.stop();
@@ -67,16 +67,25 @@ TEST(LLMEngineTest, AllTokensPublishedInOrder) {
 
   ASSERT_EQ(finished_count, total_requests);
 
+  // 1st published token in the mocked prefill is always whitespace token id=223
+  // The followed tokens using the mocked runner are increments of 223
   const std::vector<int64_t> expected_seq0 = {
-      4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18,
-      19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+    223, 224,225, 226, 227, 
+    228, 229, 230, 231, 232, 
+    233, 234, 235, 236, 237, 
+    238, 239, 240, 241, 242, 
+    243, 244, 245, 246, 247, 
+    248, 249, 250, 251, 252,
   };
   const std::vector<int64_t> expected_seq1 = {
-      8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+    223, 224,225, 226, 227, 
+    228, 229, 230, 231, 232, 
   };
   const std::vector<int64_t> expected_seq2 = {
-      13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-      23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+    223, 224,225, 226, 227, 
+    228, 229, 230, 231, 232, 
+    233, 234, 235, 236, 237, 
+    238, 239, 240, 241, 242, 
   };
 
   EXPECT_EQ(received_tokens[task_ids[0]], expected_seq0);
