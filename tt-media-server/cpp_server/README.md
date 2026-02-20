@@ -17,11 +17,7 @@ The engine does **not** support chunked prefill: each request is prefilled in fu
 
 **Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
 
-### Run the demo
-
-```bash
-./build/engine_demo
-```
+### Run unit tests
 
 Run scheduler unit tests (Google Test):
 
@@ -92,10 +88,16 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `MODEL_RUNNER` | Runner: `llm_test` (C++ uses this; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+
+### Tracy profiling (Tracy build only)
+
+When built with Tracy, use the **C++ Server [CodeLLDB + Tracy]** launch config, then connect the Tracy Profiler UI to **localhost:8086** (main) or **localhost:8087**, **8088**, … (workers). Workers are started via fork+exec so each runs in a fresh process and starts its own Tracy listener.
+
+See [TRACY.md](TRACY.md) for building the GUI, remote port forwarding, and launch configs.
 
 ## Authentication
 
@@ -268,9 +270,6 @@ cpp_server/
 │   │   ├── completion_request.hpp  # Request domain object
 │   │   └── completion_response.hpp # Response domain objects
 │   ├── runners/
-│   │   ├── base_device_runner.hpp  # Base runner interface
-│   │   ├── llm_test_runner.hpp     # Test runner (120k tokens/sec)
-│   │   ├── ttnn_test_runner.hpp    # TTNN device I/O runner
 │   │   └── runner_factory.hpp      # Runner factory (env-based selection)
 │   ├── scheduler/
 │   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
@@ -305,9 +304,6 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- `BaseDeviceRunner`: Abstract base class for model runners
-- `LLMTestRunner`: Test runner generating **120,000 tokens/second**
-- `TTNNTestRunner`: TTNN device I/O runner (reads tensor from device per token)
 - `RunnerFactory`: Creates appropriate runner based on `TT_RUNNER_TYPE` environment variable
 
 ### API
@@ -315,34 +311,15 @@ cpp_server/
 
 ## Runner Types
 
-The server supports multiple runner types, selected via the `TT_RUNNER_TYPE` environment variable:
+The server supports the following runner type, selected via the `TT_RUNNER_TYPE` environment variable:
 
 | Runner | Value | Description |
 |--------|-------|-------------|
 | LLMTestRunner | `llm_test` (default) | Pure CPU benchmark, generates 120k tokens/sec |
-| TTNNTestRunner | `ttnn_test` | TTNN device I/O, reads tensor from device per token |
 
 ### LLMTestRunner (Default)
 
 Generates tokens at 120,000 tokens/second using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of any device I/O.
-
-### TTNNTestRunner (TTNN Build Required)
-
-Interfaces with the TTNN Python library via embedded Python to measure device I/O overhead:
-- Opens a mesh device with shape (1,1)
-- Writes a tensor to the device on initialization
-- Reads the tensor from the device for each token generated
-- Measures real device read latency per token
-
-To use the TTNN runner:
-
-```bash
-# Build with TTNN support
-./build.sh --ttnn
-
-# Start with TTNN runner
-TT_RUNNER_TYPE=ttnn_test ./build/tt_media_server_cpp -p 8001
-```
 
 ## API Endpoints
 
@@ -395,7 +372,6 @@ cd cpp_server
 chmod +x build.sh
 ./build.sh           # Release build
 ./build.sh --debug   # Debug build
-./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
 ./build.sh --asan    # AddressSanitizer + LeakSanitizer (memory/leak detection)
 ./build.sh --tsan    # ThreadSanitizer (data-race detection; cannot combine with --asan)
 ```

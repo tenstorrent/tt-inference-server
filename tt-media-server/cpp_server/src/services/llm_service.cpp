@@ -4,23 +4,58 @@
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
 #include "domain/completion_request.hpp"
-#include "worker/llm_worker.hpp"
+#include "profiling/tracy.hpp"
+#include "worker/single_process_worker.hpp"
 
 #include <chrono>
+#include <climits>
 #include <cstring>
-#include <csignal>
 #include <iostream>
 #include <memory>
 #include <sys/wait.h>
-#include <unistd.h>
 
 namespace tt::services {
+
+namespace {
+
+[[noreturn]] void exec_worker_process(
+    size_t worker_id,
+    const std::unordered_map<std::string, std::string>& env_vars) {
+    for (const auto& [key, value] : env_vars) {
+        setenv(key.c_str(), value.c_str(), 1);
+    }
+    char exe_path[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (n <= 0) {
+        perror("readlink /proc/self/exe");
+        _exit(1);
+    }
+    exe_path[n] = '\0';
+    char id_buf[16];
+    std::snprintf(id_buf, sizeof(id_buf), "%zu", worker_id);
+    char* exec_argv[] = {exe_path, const_cast<char*>("--worker"), id_buf, nullptr};
+    execv(exe_path, exec_argv);
+    perror("execv");
+    _exit(1);
+}
+
+}  // namespace
+
+worker::WorkerConfig make_worker_config_for_process(int worker_id) {
+    worker::WorkerConfig cfg;
+    cfg.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(worker_id);
+    cfg.task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
+    cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
+        "/tt_tokens_" + std::to_string(worker_id), false);
+    cfg.worker_id = worker_id;
+    return cfg;
+}
 
 LLMService::LLMService()
     : num_workers_(tt::config::num_workers()),
       tokenizer_(tt::config::tokenizer_path()) {
     std::cout << "[LLMService] Initialized (" << num_workers_ << " workers)\n" << std::flush;
-    queue_manager_ = std::make_unique<QueueManager>(num_workers_);
+    queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
 }
 
 LLMService::~LLMService() {
@@ -28,17 +63,20 @@ LLMService::~LLMService() {
 }
 
 void LLMService::start() {
+    ZoneScopedN("LLMService::start");
     if (running_.exchange(true)) {
         return;  // Already running
     }
 
     std::cout << "[LLMService] Starting with " << num_workers_ << " worker processes\n" << std::flush;
     start_workers();
+    tracy_config::TracyStartupSchedulerParent();
     start_consumers();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     is_ready_ = true;
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
     std::cout << "[LLMService] Service started\n" << std::flush;
 }
 
@@ -85,7 +123,7 @@ void LLMService::start_workers() {
 
     for (size_t i = 0; i < num_workers_; i++) {
         auto cfg = create_worker_config(static_cast<int>(i));
-        workers_.push_back(std::make_unique<tt::worker::LLMWorker>(cfg));
+        workers_.push_back(std::make_unique<tt::worker::SingleProcessWorker>(cfg));
         auto& worker = workers_[i];
 
         pid_t pid = fork();
@@ -94,15 +132,13 @@ void LLMService::start_workers() {
             throw std::runtime_error("Failed to fork worker process");
         }
         if (pid == 0) {
-            // Child process — must never fall through to parent's loop
             try {
-                worker->start();
+                exec_worker_process(i, cfg.env_vars);
             } catch (const std::exception& e) {
                 std::cerr << "[LLMService] Worker " << i << " failed: " << e.what() << "\n" << std::flush;
+                _exit(1);
             }
-            _exit(1);
         }
-        // Parent process
         worker->pid = pid;
         std::cout << "[LLMService] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
     }
@@ -117,16 +153,13 @@ void LLMService::start_consumers() {
 }
 
 void LLMService::stop() {
+    ZoneScopedN("LLMService::stop");
     if (!running_.exchange(false)) {
         return;
     }
 
     std::cout << "[LLMService] Stopping...\n" << std::flush;
 
-    // Signal shutdown to all workers
-    for (auto& w : workers_) {
-        w->stop();
-    }
 
     // Wait for all consumer threads
     for (auto& thread : consumer_threads_) {
@@ -136,23 +169,9 @@ void LLMService::stop() {
     }
     consumer_threads_.clear();
 
-    // Wait for worker processes
+    // Signal shutdown to all workers
     for (auto& w : workers_) {
-        if (w->pid > 0) {
-            kill(w->pid, SIGTERM);
-
-            int status;
-            int wait_result = waitpid(w->pid, &status, WNOHANG);
-            if (wait_result == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                wait_result = waitpid(w->pid, &status, WNOHANG);
-                if (wait_result == 0) {
-                    kill(w->pid, SIGKILL);
-                    waitpid(w->pid, &status, 0);
-                }
-            }
-            std::cout << "[LLMService] Worker " << w->worker_id << " exited\n" << std::flush;
-        }
+        w->stop();
     }
 
     workers_.clear();
@@ -180,6 +199,10 @@ bool LLMService::check_worker_alive(size_t worker_idx) {
 }
 
 void LLMService::consumer_loop_for_worker(size_t worker_idx) {
+    ZoneScopedN("LLMService::consumer_loop");
+    tracy_config::TracySetThreadName(
+        ("Consumer-" + std::to_string(worker_idx)).c_str());
+
     std::cout << "[Consumer-" << worker_idx << "] Started\n" << std::flush;
 
     auto* worker = workers_[worker_idx].get();
@@ -226,6 +249,9 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             response.choices.push_back(std::move(choice));
 
             callback(response, token.is_final());
+            if (token.is_final()) {
+                TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+            }
         }
 
         if (!any_activity) {
@@ -240,12 +266,14 @@ void LLMService::process_request(
     domain::CompletionRequest request,
     std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
 
+    ZoneScopedN("LLMService::process_request");
     if (request.task_id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
     std::string task_id = request.task_id;
 
     pending_tasks_.fetch_add(1);
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
     stream_callbacks_.insert(task_id, [this, cb = std::move(callback)](
         const domain::StreamingChunkResponse& chunk, bool is_final) {

@@ -32,11 +32,11 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workflows.model_spec import (
-    ModelSpecTemplate,
-    spec_templates,
-    model_weights_to_model_name,
-    generate_default_docker_link,
     VERSION,
+    ModelSpecTemplate,
+    generate_default_docker_link,
+    model_weights_to_model_name,
+    spec_templates,
 )
 from workflows.workflow_types import (
     DeviceTypes,
@@ -205,8 +205,6 @@ def generate_section_anchor(section_title: str) -> str:
 
 def get_model_display_name(template: ModelSpecTemplate) -> str:
     """Get the display name for a model template."""
-    if template.display_name:
-        return template.display_name
     return model_weights_to_model_name(template.weights[0])
 
 
