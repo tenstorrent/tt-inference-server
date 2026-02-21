@@ -3,15 +3,17 @@
 
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
-#include "domain/completion_request.hpp"
 #include "profiling/tracy.hpp"
 #include "worker/single_process_worker.hpp"
 
+#include <cassert>
 #include <chrono>
 #include <climits>
+#include <condition_variable>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <sys/wait.h>
 
 namespace tt::services {
@@ -84,7 +86,7 @@ bool LLMService::is_model_ready() const {
     return is_ready_.load();
 }
 
-LLMService::SystemStatus LLMService::get_system_status() const {
+SystemStatus LLMService::get_system_status() const {
     SystemStatus status;
     status.model_ready = is_ready_.load();
     status.queue_size = pending_tasks_.load();
@@ -262,11 +264,65 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     std::cout << "[Consumer-" << worker_idx << "] Stopped\n" << std::flush;
 }
 
-void LLMService::process_request(
-    domain::CompletionRequest request,
-    std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
-
+domain::CompletionResponse LLMService::process_request(domain::CompletionRequest request) {
     ZoneScopedN("LLMService::process_request");
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool done = false;
+
+    std::string accumulated_text;
+    int completion_tokens = 0;
+    std::string finish_reason = "stop";
+
+    const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
+        ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
+        : 0;
+    const std::string task_id = request.task_id;
+    const std::string model = request.model.value_or("default");
+
+    process_streaming_request(std::move(request),
+        [&](domain::StreamingChunkResponse& chunk, bool is_final) {
+            if (!chunk.choices.empty()) {
+                accumulated_text.append(chunk.choices[0].text);
+                completion_tokens++;
+                if (chunk.choices[0].finish_reason.has_value()) {
+                    finish_reason = chunk.choices[0].finish_reason.value();
+                }
+            }
+            if (is_final) {
+                std::lock_guard<std::mutex> lock(mtx);
+                done = true;
+                cv.notify_one();
+            }
+        });
+
+    std::unique_lock<std::mutex> lock(mtx);
+    cv.wait(lock, [&] { return done; });
+
+    domain::CompletionResponse response;
+    response.id = task_id;
+    response.model = model;
+    response.created = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    domain::CompletionChoice choice;
+    choice.text = std::move(accumulated_text);
+    choice.index = 0;
+    choice.finish_reason = finish_reason;
+    response.choices.push_back(std::move(choice));
+
+    response.usage = {prompt_tokens, completion_tokens, prompt_tokens + completion_tokens};
+
+    return response;
+}
+
+void LLMService::process_streaming_request(
+    domain::CompletionRequest request,
+    std::function<void(domain::StreamingChunkResponse&, bool is_final)> callback) {
+    assert(callback != nullptr);
+
+    ZoneScopedN("LLMService::process_streaming_request");
     if (request.task_id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
@@ -276,7 +332,7 @@ void LLMService::process_request(
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
     stream_callbacks_.insert(task_id, [this, cb = std::move(callback)](
-        const domain::StreamingChunkResponse& chunk, bool is_final) {
+        domain::StreamingChunkResponse& chunk, bool is_final) {
         cb(chunk, is_final);
         if (is_final) {
             pending_tasks_.fetch_sub(1);
@@ -294,8 +350,8 @@ void LLMService::process_request(
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::post_process(domain::CompletionRequest&) const {
-    return; // no-op
+void LLMService::post_process(domain::CompletionResponse&) const {
+    // no-op
 }
 
 }

@@ -6,6 +6,7 @@
 #include "runners/embedding_runner.hpp"
 #include "profiling/tracy.hpp"
 
+#include <future>
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -658,15 +659,25 @@ void EmbeddingService::stop() {
     impl_->stop();
 }
 
-bool EmbeddingService::is_ready() const {
+bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-std::future<domain::EmbeddingResponse> EmbeddingService::process_request(domain::EmbeddingRequest request) {
-    return impl_->submit_request(std::move(request));
+void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
+    // no-op
 }
 
-EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
+void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
+    // no-op
+}
+
+domain::EmbeddingResponse EmbeddingService::process_request(
+    domain::EmbeddingRequest request) {
+    auto future = impl_->submit_request(std::move(request));
+    return future.get();
+}
+
+SystemStatus EmbeddingService::get_system_status() const {
     SystemStatus status;
     status.model_ready = impl_->is_ready_.load();
 
@@ -677,7 +688,19 @@ EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
 
     status.max_queue_size = 10000;
     status.device = "tenstorrent";
-    status.num_workers = impl_->num_workers_;
+
+    for (size_t i = 0; i < impl_->num_workers_; ++i) {
+        WorkerInfo info;
+        info.worker_id = std::to_string(i);
+        info.is_ready = (i < impl_->workers_.size()) && impl_->workers_[i]->is_ready.load();
+        info.processed_requests = 0;
+        status.worker_info.push_back(info);
+        status.worker_info.push_back({
+            "embedding-worker-" + std::to_string(i),
+            impl_->is_ready_.load(),
+            0
+        });
+    }
 
     return status;
 }

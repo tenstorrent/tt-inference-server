@@ -7,53 +7,10 @@
 #include <string>
 #include <json/json.h>
 
+#include "domain/base_response.hpp"
 #include "utils/json_escape.hpp"
 
 namespace tt::domain {
-
-/**
- * Represents a single streaming chunk from the completion.
- */
-struct CompletionStreamChunk {
-    std::string text;
-    std::optional<int> index;
-    std::optional<std::string> finish_reason;
-
-    Json::Value toJson() const {
-        Json::Value json;
-        json["text"] = text;
-        if (index.has_value()) {
-            json["index"] = index.value();
-        } else {
-            json["index"] = Json::nullValue;
-        }
-        if (finish_reason.has_value()) {
-            json["finish_reason"] = finish_reason.value();
-        } else {
-            json["finish_reason"] = Json::nullValue;
-        }
-        return json;
-    }
-};
-
-/**
- * Output yielded during streaming generation.
- */
-struct StreamingChunkOutput {
-    static constexpr const char* TYPE = "streaming_chunk";
-    CompletionStreamChunk chunk;
-    std::string task_id;
-};
-
-/**
- * Final output yielded at the end of streaming generation.
- */
-struct FinalResultOutput {
-    static constexpr const char* TYPE = "final_result";
-    CompletionStreamChunk result;
-    std::string task_id;
-    bool return_result;
-};
 
 /**
  * Usage statistics for the completion.
@@ -98,7 +55,7 @@ struct CompletionChoice {
 /**
  * Full OpenAI-compatible completion response.
  */
-struct CompletionResponse {
+struct CompletionResponse: BaseResponse {
     std::string id;
     std::string object = "text_completion";
     int64_t created;
@@ -133,7 +90,7 @@ struct CompletionResponse {
 /**
  * Streaming chunk response (SSE format).
  */
-struct StreamingChunkResponse {
+struct StreamingChunkResponse: BaseResponse {
     std::string id;
     std::string object = "text_completion";
     int64_t created;

@@ -16,12 +16,7 @@ endif()
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
-
-# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
-option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
-if(NOT TEST)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
@@ -236,6 +231,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
@@ -243,15 +239,12 @@ set(SOURCES
     src/utils/tokenizer.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
+    src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
-    )
-if(NOT TEST)
-    list(APPEND SOURCES
-        src/api/embedding_controller.cpp
-        src/runners/embedding_runner.cpp
-        src/services/embedding_service.cpp
-    )
-endif()
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+)
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -281,12 +274,7 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
-if(TEST)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
-endif()
-if(NOT TEST)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)

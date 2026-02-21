@@ -5,6 +5,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
+#include "domain/completion_response.hpp"
 #include "profiling/tracy.hpp"
 
 #include <memory>
@@ -26,9 +27,7 @@ LLMController::LLMController() {
         return;
     }
 
-    service_ = std::dynamic_pointer_cast<services::LLMService>(
-        tt::utils::service_factory::get_service("llm")
-    );
+    service_ = tt::utils::service_factory::get_service_by_type<services::LLMService>();
     if (!service_) {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
                                  "Ensure register_services() is called before Drogon starts.");
@@ -98,9 +97,11 @@ void LLMController::completions(
     }
 
     if (request.stream) {
-        handle_streaming_impl(std::move(request), std::move(callback), false);
+        handle_streaming(std::move(request), std::move(callback), false);
     } else {
-        handle_non_streaming_impl(std::move(request), std::move(callback), false);
+        auto response = service_->submit_request(std::move(request));
+        response.id = "cmpl-" + response.id;
+        callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
     }
 }
 
@@ -150,18 +151,22 @@ void LLMController::chat_completions(
     domain::CompletionRequest request = chat_req.to_completion_request();
 
     if (request.stream) {
-        handle_streaming_impl(std::move(request), std::move(callback), true);
+        handle_streaming(std::move(request), std::move(callback), true);
     } else {
-        handle_non_streaming_impl(std::move(request), std::move(callback), true);
+        auto completion = service_->submit_request(std::move(request));
+        completion.id = "chatcmpl-" + completion.id;
+        auto chat_response =
+            domain::ChatCompletionResponse::fromCompletionResponse(completion);
+        callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
     }
 }
 
-void LLMController::handle_streaming_impl(
+void LLMController::handle_streaming(
     domain::CompletionRequest request,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     bool is_chat) const {
 
-    ZoneScopedN("API::handle_streaming_impl");
+    ZoneScopedN("API::handle_streaming");
 
     const std::string completion_id =
         (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
@@ -195,7 +200,7 @@ void LLMController::handle_streaming_impl(
                 if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
             }
 
-            service_->submit_request(
+            service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
                  is_chat, include_usage, continuous_usage, completion_tokens](
@@ -257,116 +262,6 @@ void LLMController::handle_streaming_impl(
     resp->addHeader("Connection", "keep-alive");
     resp->addHeader("X-Accel-Buffering", "no");
 
-    callback(resp);
-}
-
-void LLMController::handle_non_streaming_impl(
-    domain::CompletionRequest request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    bool is_chat) const {
-
-    ZoneScopedN("API::handle_non_streaming_impl");
-
-    const std::string completion_id =
-        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
-    const std::string model = request.model.value_or("default");
-    const int64_t created = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
-        ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
-        : 0;
-
-    struct Accumulator {
-        std::string text;
-        int completion_tokens = 0;
-        std::string finish_reason = "stop";
-    };
-    auto acc = std::make_shared<Accumulator>();
-    auto cb = std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
-        std::move(callback));
-
-    service_->submit_request(
-        std::move(request),
-        [acc, cb, completion_id, model, created, prompt_tokens, is_chat](
-            const domain::StreamingChunkResponse& chunk, bool is_final) {
-
-            if (!chunk.choices.empty()) {
-                acc->text.append(chunk.choices[0].text);
-                acc->completion_tokens++;
-                if (chunk.choices[0].finish_reason.has_value()) {
-                    acc->finish_reason = chunk.choices[0].finish_reason.value();
-                }
-            }
-
-            if (is_final) {
-                domain::CompletionResponse completion;
-                completion.id = completion_id;
-                completion.created = created;
-                completion.model = model;
-
-                domain::CompletionChoice choice;
-                choice.text = std::move(acc->text);
-                choice.index = 0;
-                choice.finish_reason = acc->finish_reason;
-                completion.choices.push_back(std::move(choice));
-
-                completion.usage = {prompt_tokens, acc->completion_tokens,
-                                    prompt_tokens + acc->completion_tokens};
-
-                if (is_chat) {
-                    auto chat_response =
-                        domain::ChatCompletionResponse::fromCompletionResponse(completion);
-                    (*cb)(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
-                } else {
-                    (*cb)(drogon::HttpResponse::newHttpJsonResponse(completion.toJson()));
-                }
-            }
-        });
-}
-
-void LLMController::health(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-
-    Json::Value response;
-    response["status"] = "healthy";
-    response["timestamp"] = static_cast<Json::Int64>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    callback(resp);
-}
-
-void LLMController::ready(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-
-    auto status = service_->get_system_status();
-
-    Json::Value response;
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
-    response["device"] = status.device;
-
-    Json::Value workers(Json::arrayValue);
-    for (const auto& worker : status.worker_info) {
-        Json::Value w;
-        w["worker_id"] = worker.worker_id;
-        w["is_ready"] = worker.is_ready;
-        w["processed_requests"] = static_cast<Json::UInt64>(worker.processed_requests);
-        workers.append(w);
-    }
-    response["workers"] = workers;
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    if (!status.model_ready) {
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-    }
     callback(resp);
 }
 
