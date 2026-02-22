@@ -17,6 +17,6 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
-whisperx==3.4.3
+whisperx
 faster_fifo
 --extra-index-url https://download.pytorch.org/whl/cpu
