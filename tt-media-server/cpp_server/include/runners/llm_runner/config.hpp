@@ -11,7 +11,7 @@ enum class DeviceBackend {
 
 struct Config {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
-  int max_num_batched_tokens = 16384;
+  int max_num_batched_tokens = MAX_INPUT_TOKENS;
   static constexpr int max_num_seqs = 1; // Temporary hardcoded value for Deepseek blitz decode
   int eos = 1;
   int kvcache_block_size = 256;
