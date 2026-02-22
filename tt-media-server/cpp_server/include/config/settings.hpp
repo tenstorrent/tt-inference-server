@@ -24,6 +24,9 @@ bool is_embedding_service();
 /** True when model_service() == LLM. */
 bool is_llm_service_enabled();
 
+/** Get runner type string based on current model service configuration. */
+std::string runner_type();
+
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t num_workers();
 

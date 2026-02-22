@@ -4,10 +4,10 @@
 #include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/service_factory.hpp"
 
 #include <iostream>
 #include <chrono>
-#include <iomanip>
 #include <sstream>
 #include <random>
 #include <thread>
@@ -91,24 +91,19 @@ namespace {
 }
 
 EmbeddingController::EmbeddingController() {
-    // Only initialize if TT_MODEL_SERVICE=embedding
     if (!tt::config::is_embedding_service()) {
         return;
     }
 
-    std::cout << "[EmbeddingController] Creating service...\n";
-
-    service_ = std::make_shared<services::EmbeddingService>();
-    service_->start();
-
-    std::cout << "[EmbeddingController] Initialized and service started\n";
-}
-
-EmbeddingController::~EmbeddingController() {
-    if (service_) {
-        service_->stop();
+    service_ = tt::utils::service_factory::get_service_by_type<services::EmbeddingService>();
+    if (!service_) {
+        throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
+                                 "Ensure register_services() is called before Drogon starts.");
     }
+    std::cout << "[EmbeddingController] Initialized (service already started)\n" << std::flush;
 }
+
+EmbeddingController::~EmbeddingController() = default;
 
 std::string EmbeddingController::generate_task_id() {
     return random_hex(24);
@@ -154,14 +149,11 @@ void EmbeddingController::create_embedding(
 
     auto submit_time = std::chrono::steady_clock::now();
 
-    // Submit request and get future
-    auto future = std::make_shared<std::future<domain::EmbeddingResponse>>(
-        service_->process_request(std::move(request)));
-
-    // Use thread pool instead of creating new thread per request
-    get_callback_pool().submit([callback = std::move(callback), future, req_num, start_time, submit_time]() {
+    get_callback_pool().submit(
+        [service = service_, request = std::move(request),
+         callback = std::move(callback), req_num, start_time, submit_time]() {
         try {
-            auto response = future->get();
+            auto response = service->submit_request(std::move(request));
             auto got_response_time = std::chrono::steady_clock::now();
 
             if (!response.error.empty()) {
@@ -174,13 +166,11 @@ void EmbeddingController::create_embedding(
                 return;
             }
 
-            // Build OpenAI-compatible response
             Json::Value json_response = response.to_openai_json();
             auto built_json_time = std::chrono::steady_clock::now();
 
             auto resp = drogon::HttpResponse::newHttpJsonResponse(json_response);
 
-            // Log timing every 100 requests
             if (req_num % 100 == 0) {
                 double parse_ms = std::chrono::duration<double, std::milli>(submit_time - start_time).count();
                 double wait_ms = std::chrono::duration<double, std::milli>(got_response_time - submit_time).count();
@@ -204,44 +194,6 @@ void EmbeddingController::create_embedding(
             callback(resp);
         }
     });
-}
-
-void EmbeddingController::health(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    Json::Value response;
-    response["status"] = "healthy";
-    response["timestamp"] = static_cast<Json::Int64>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    callback(resp);
-}
-
-void EmbeddingController::ready(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    auto status = service_->get_system_status();
-
-    Json::Value response;
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
-    response["device"] = status.device;
-    response["num_workers"] = static_cast<Json::UInt64>(status.num_workers);
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-
-    if (!status.model_ready) {
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-    }
-
-    callback(resp);
 }
 
 } // namespace tt::api

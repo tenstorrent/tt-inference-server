@@ -107,7 +107,7 @@ The server uses Bearer token authentication for protected API endpoints. The tok
 
 The following endpoints do not require authentication:
 - `GET /health`
-- `GET /ready`
+- `GET /tt-liveness`
 - `GET /docs`
 - `GET /swagger`
 - `GET /openapi.json`
@@ -151,7 +151,7 @@ pkill -9 -f tt_media_server_cpp
 | `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
 | `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
 | `/health` | GET | ❌ No | Health check |
-| `/ready` | GET | ❌ No | Readiness check with system status |
+| `/tt-liveness` | GET | ❌ No | Liveness check with system status |
 | `/docs` | GET | ❌ No | Swagger UI documentation |
 | `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
@@ -230,10 +230,10 @@ curl http://localhost:8001/health
 }
 ```
 
-### Readiness Check
+### Liveness Check
 
 ```bash
-curl http://localhost:8001/ready
+curl http://localhost:8001/tt-liveness
 ```
 
 **Response:**
@@ -327,7 +327,7 @@ Generates tokens at 120,000 tokens/second using busy-wait loops for microsecond 
 |----------|--------|-------------|
 | `/v1/completions` | POST | OpenAI-compatible text completion |
 | `/health` | GET | Health check |
-| `/ready` | GET | Readiness check with system status |
+| `/tt-liveness` | GET | Liveness check with system status |
 
 ## Performance
 

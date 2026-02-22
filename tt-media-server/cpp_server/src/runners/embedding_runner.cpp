@@ -374,4 +374,18 @@ std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
     return impl_->run_inference(requests);
 }
 
+// IRunner interface implementation
+void EmbeddingRunner::run() {
+    // For embedding runners, this could be a service loop
+    // For now, we'll just do warmup since embeddings are request-response based
+    if (!warmup()) {
+        throw std::runtime_error("Failed to initialize EmbeddingRunner");
+    }
+    EMBED_LOG_INFO << "EmbeddingRunner ready for requests on device " << device_id_;
+}
+
+void EmbeddingRunner::stop() {
+    close();
+}
+
 } // namespace tt::runners
