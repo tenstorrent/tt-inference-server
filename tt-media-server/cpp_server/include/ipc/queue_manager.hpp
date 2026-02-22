@@ -22,12 +22,14 @@ constexpr size_t RING_BUFFER_CAPACITY = 65536;
  */
 class QueueManager {
 public:
+    static constexpr int TASK_QUEUE_DEPTH = 64;
+
     shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
     vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
 
     explicit QueueManager(int num_workers) {
         llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        task_queue = make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+        task_queue = make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, TASK_QUEUE_DEPTH);
         result_queues.reserve(num_workers);
         for (int i = 0; i < num_workers; i++) {
             result_queues.emplace_back(make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
