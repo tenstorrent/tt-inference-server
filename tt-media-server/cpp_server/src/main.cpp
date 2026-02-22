@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
+#include <netinet/tcp.h>
 
 #include "config/constants.hpp"
 #include "config/settings.hpp"
@@ -135,10 +136,14 @@ int main(int argc, char* argv[]) {
 
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kWarn)
+        .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
+        .setAfterAcceptSockOptCallback([](int fd) {
+            int one = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
         .setIdleConnectionTimeout(60)
