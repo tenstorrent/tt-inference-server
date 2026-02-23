@@ -5,3 +5,4 @@ pytest-asyncio==0.24.0
 pyjwt==2.7.0
 imageio
 imageio-ffmpeg
+requests
