@@ -55,6 +55,12 @@ struct DecodeResult {
   int64_t token_id;
 };
 
+struct TokenResult {
+  TaskID task_id;
+  uint64_t token_id;
+  bool finished;
+};
+
 class Sequence {
  public:
   static constexpr int block_size = 256;
