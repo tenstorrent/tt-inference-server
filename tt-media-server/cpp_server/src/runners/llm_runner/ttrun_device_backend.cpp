@@ -26,19 +26,20 @@ namespace llm_engine {
 namespace {
 
 constexpr size_t kPageSize = 64;
+constexpr uint32_t kNumSlots = 1024;
 
 struct ShmChannel {
-  uint32_t flag;
-  char pad[60];
-  char data[kPageSize];
+  uint32_t read_pos;
+  uint32_t write_pos;
+  char pad[56];
+  char slots[kNumSlots][kPageSize];
 };
-static_assert(sizeof(ShmChannel) == 128);
+static_assert(sizeof(ShmChannel) == 64 + kNumSlots * kPageSize);
 
 struct ShmRegion {
   ShmChannel c2p;
   ShmChannel p2c;
 };
-static_assert(sizeof(ShmRegion) == 256);
 
 static void token_to_page(const TaskID& task_id, int64_t token_id, char* page) {
   auto id_bytes = task_id.serialize();
@@ -123,19 +124,24 @@ class TtRunDeviceBackend : public IDeviceBackend {
     }
     int64_t token_id = kFixedReplySequence[index++];
     ShmChannel& ch = region_->c2p;
-    while (__atomic_load_n(&ch.flag, __ATOMIC_ACQUIRE) != 0) {
+    uint32_t w = __atomic_load_n(&ch.write_pos, __ATOMIC_RELAXED);
+    while (w - __atomic_load_n(&ch.read_pos, __ATOMIC_ACQUIRE) >= kNumSlots) {
       CPU_RELAX();
     }
-    token_to_page(seq.task_id, token_id, ch.data);
-    __atomic_store_n(&ch.flag, 1, __ATOMIC_RELEASE);
+    char* slot = ch.slots[w % kNumSlots];
+    token_to_page(seq.task_id, token_id, slot);
+    __atomic_store_n(&ch.write_pos, w + 1, __ATOMIC_RELEASE);
   }
 
   bool read(DecodeResult* result) override {
     ShmChannel& ch = region_->p2c;
     while (!stop_.load(std::memory_order_relaxed)) {
-      if (__atomic_load_n(&ch.flag, __ATOMIC_ACQUIRE) == 1) {
-        page_to_result(ch.data, result);
-        __atomic_store_n(&ch.flag, 0, __ATOMIC_RELEASE);
+      uint32_t r = __atomic_load_n(&ch.read_pos, __ATOMIC_RELAXED);
+      uint32_t w = __atomic_load_n(&ch.write_pos, __ATOMIC_ACQUIRE);
+      if (r != w) {
+        const char* slot = ch.slots[r % kNumSlots];
+        page_to_result(slot, result);
+        __atomic_store_n(&ch.read_pos, r + 1, __ATOMIC_RELEASE);
         return true;
       }
       CPU_RELAX();
