@@ -1,5 +1,6 @@
 #include "runners/llm_runner/device_backend.hpp"
 #include "runners/llm_runner/debug.hpp"
+#include "runners/llm_runner/fixed_reply_sequence.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 #include <atomic>
@@ -7,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <unordered_map>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
@@ -38,11 +40,11 @@ struct ShmRegion {
 };
 static_assert(sizeof(ShmRegion) == 256);
 
-static void seq_to_page(const Sequence& seq, char* page) {
-  auto id_bytes = seq.task_id.serialize();
+static void token_to_page(const TaskID& task_id, int64_t token_id, char* page) {
+  auto id_bytes = task_id.serialize();
   std::memcpy(page, id_bytes.data(), std::min(id_bytes.size(), TaskID::kSerializedSize));
   std::memset(page + TaskID::kSerializedSize, 0, kPageSize - TaskID::kSerializedSize);
-  std::memcpy(page + TaskID::kSerializedSize, &seq.last_token+1, sizeof(seq.last_token));
+  std::memcpy(page + TaskID::kSerializedSize, &token_id, sizeof(token_id));
 }
 
 static void page_to_result(const char* page, DecodeResult* result) {
@@ -115,11 +117,16 @@ class TtRunDeviceBackend : public IDeviceBackend {
   }
 
   void write(const Sequence& seq) override {
+    size_t& index = token_index_per_task_[seq.task_id];
+    if (index >= kFixedReplySequence.size()) {
+      index = 0;
+    }
+    int64_t token_id = kFixedReplySequence[index++];
     ShmChannel& ch = region_->c2p;
     while (__atomic_load_n(&ch.flag, __ATOMIC_ACQUIRE) != 0) {
       CPU_RELAX();
     }
-    seq_to_page(seq, ch.data);
+    token_to_page(seq.task_id, token_id, ch.data);
     __atomic_store_n(&ch.flag, 1, __ATOMIC_RELEASE);
   }
 
@@ -150,6 +157,7 @@ class TtRunDeviceBackend : public IDeviceBackend {
   ShmRegion* region_ = nullptr;
   std::atomic<bool> stop_{false};
   pid_t child_pid_ = -1;
+  std::unordered_map<TaskID, size_t> token_index_per_task_;
 };
 
 }  // namespace
