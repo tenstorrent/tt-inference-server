@@ -2527,7 +2527,7 @@
         "weights": [
             "FLUX.1-dev"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2891,7 +2891,7 @@
         "weights": [
             "FLUX.1-schnell"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
