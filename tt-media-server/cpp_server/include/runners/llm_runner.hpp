@@ -14,8 +14,7 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-using TokenCallback =
-    std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
+using TokenCallback = std::function<void(const TokenResult& result)>;
 
 class LLMRunner : public IRunner {
  public:

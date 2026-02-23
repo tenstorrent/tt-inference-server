@@ -123,6 +123,7 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
+    src/runners/llm_runner/sampling_params.cpp
 )
 if(TT_METAL_API_FOUND)
     list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
@@ -242,6 +243,7 @@ set(SOURCES
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
+    src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp

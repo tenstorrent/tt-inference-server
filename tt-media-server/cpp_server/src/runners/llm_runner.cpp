@@ -69,7 +69,7 @@ void LLMRunner::drain_decode_results() {
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    on_token_(dr.task_id, dr.token_id, finished);
+    on_token_(TokenResult{dr.task_id, static_cast<uint64_t>(dr.token_id), finished});
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
