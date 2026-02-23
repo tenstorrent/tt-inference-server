@@ -180,11 +180,11 @@ def _shm_pipeline_bridge(pipeline_block, shm_buf, log):
 
 
 def main():
-    log_dir = "/tmp/tt-run/logs"
+    log_dir = "/tmp/tt-run"
     os.makedirs(log_dir, exist_ok=True)
     pid = os.getpid()
     rank = _rank()
-    log_path = f"{log_dir}/ttrun_hello_world_{pid}_{rank}.log"
+    log_path = f"{log_dir}/{pid}_{rank}.log"
     try:
         log = open(log_path, "a", encoding="utf-8")
     except OSError as e:
@@ -231,6 +231,9 @@ def main():
                     log.write("Rank 0: TT_IPC_SHM not set – pipeline up, terminating\n")
                 log.flush()
 
+            # It seems like terminate() will immediatelly terminate the other processes but that will not happen
+            # This is because in order for them to terminate, they all need to meet at this barrier
+            # And the rank 0 will not reach it since it's in busy loop
             pipeline_block.terminate()
         finally:
             ttnn.close_mesh_device(mesh_device)
