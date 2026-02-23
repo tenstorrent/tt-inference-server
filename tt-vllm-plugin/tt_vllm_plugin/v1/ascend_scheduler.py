@@ -492,7 +492,6 @@ class AscendScheduler(Scheduler):
 
         self.finished_req_ids = set()  # type: ignore
 
-        # Log scheduling batch size for debugging
         if len(scheduled_new_reqs) > 0 or len(scheduled_running_reqs) > 0:
             logger.info(
                 f"AscendScheduler: batch_size={len(scheduled_new_reqs)} new + "

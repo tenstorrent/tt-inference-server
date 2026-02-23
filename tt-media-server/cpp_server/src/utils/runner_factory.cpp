@@ -12,7 +12,7 @@
 namespace tt::utils::runner_factory {
 
 static tt::runners::ModelRunnerFactory make_model_runner_factory() {
-    if (tt::config::model_runner_type() != tt::config::RunnerType::TTNN_TEST) {
+    if (tt::config::model_runner_type() != tt::config::RunnerType::LLAMA_RUNNER) {
         return nullptr;
     }
     return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb) {
@@ -27,9 +27,9 @@ std::unique_ptr<runners::IRunner> create_runner(
     const llm_engine::Config& config,
     llm_engine::TokenCallback on_token,
     llm_engine::ITaskQueue* task_queue) {
-    
+
     std::string runner_type = tt::config::runner_type();
-    
+
     if (runner_type == "llm") {
         std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
         return std::make_unique<tt::runners::LLMRunner>(
@@ -38,7 +38,7 @@ std::unique_ptr<runners::IRunner> create_runner(
         std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
         return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
     } else {
-        std::cout << "[RunnerFactory] Unknown runner type '" << runner_type 
+        std::cout << "[RunnerFactory] Unknown runner type '" << runner_type
                   << "', defaulting to LLM runner\n" << std::flush;
         return std::make_unique<tt::runners::LLMRunner>(
             config, std::move(on_token), task_queue, make_model_runner_factory());

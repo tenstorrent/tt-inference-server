@@ -34,26 +34,20 @@ inline ModelService model_service_from_string(const std::string& v) {
     return ModelService::LLM;
 }
 
+/** Runner type from MODEL_RUNNER: LLM_TEST (in-process stub) or LLAMA_RUNNER (Python tt_model_runners.llama_runner). */
 enum class RunnerType {
     LLM_TEST,
-    TTNN_TEST,
+    LLAMA_RUNNER,
 };
 
-/** String value for env MODEL_RUNNER (e.g. "llm_test", "ttnn_test"). */
+/** MODEL_RUNNER string for env (llm_test -> LLM_TEST, llama_runner -> LLAMA_RUNNER). */
 inline std::string to_string(RunnerType r) {
-    switch (r) {
-        case RunnerType::TTNN_TEST:
-            return "ttnn_test";
-        case RunnerType::LLM_TEST:
-        default:
-            return "llm_test";
-    }
+    return r == RunnerType::LLAMA_RUNNER ? "llama_runner" : "llm_test";
 }
 
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& v) {
-    if (v == "ttnn_test") return RunnerType::TTNN_TEST;
-    return RunnerType::LLM_TEST;
+    return v == "llama_runner" ? RunnerType::LLAMA_RUNNER : RunnerType::LLM_TEST;
 }
 
 /**

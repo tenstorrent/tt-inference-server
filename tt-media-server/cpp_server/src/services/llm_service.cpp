@@ -106,6 +106,12 @@ SystemStatus LLMService::get_system_status() const {
 void LLMService::pre_process(domain::CompletionRequest& request) const {
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
+        static auto cfg = tt::utils::get_tokenizer_config();
+        bool has_bos = text.size() >= cfg.bos_token.size() &&
+                       text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
+        if (cfg.add_bos_token && !cfg.bos_token.empty() && !has_bos) {
+            text = cfg.bos_token + text;
+        }
         request.prompt = tokenizer_.encode(text);
     }
 }
@@ -348,12 +354,9 @@ void LLMService::process_streaming_request(
     auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
-    sequence->temperature = request.temperature.value_or(1.0f);
+    sequence->temperature = request.temperature.value_or(0.0f);
     sequence->max_tokens = request.max_tokens;
     sequence->ignore_eos = request.ignore_eos;
-    if (request.seed.has_value()) {
-      sequence->seed = request.seed;
-    }
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 

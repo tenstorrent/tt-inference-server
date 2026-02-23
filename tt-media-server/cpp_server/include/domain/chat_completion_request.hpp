@@ -34,7 +34,7 @@ struct ChatCompletionRequest: BaseRequest {
     std::vector<ChatMessage> messages;
 
     bool echo = false;
-    int max_tokens = 128;
+    int max_tokens = 16;
     int n = 1;
     float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;

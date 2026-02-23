@@ -10,7 +10,7 @@
 namespace tt::worker {
 
 SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config)
-    : cfg(move(cfg)), llm_engine_config_(llm_engine_config) {
+    : cfg(std::move(cfg)), llm_engine_config_(llm_engine_config) {
 
     pid = getpid();
     worker_id = cfg.worker_id;

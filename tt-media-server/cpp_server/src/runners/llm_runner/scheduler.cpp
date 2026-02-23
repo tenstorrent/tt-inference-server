@@ -42,14 +42,8 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_seqs = 0;
   int num_batched_tokens = 0;
 
-  // Prefill one sequence per step so each token is delivered via
-  // drain_decode_results before the next prefill begins. This staggers
-  // TTFT: seq-1 gets its token after ~300ms instead of waiting for all
-  // N prefills (~N*300ms) to finish in a single batched pipe call.
-  constexpr int kPrefillBatchLimit = 1;
-
   // --- Prefill: pop from task queue ---
-  while (num_seqs < kPrefillBatchLimit) {
+  while (num_seqs < max_num_seqs_) {
     auto seq = waiting_->try_pop();
     if (!seq) {
       break;  // Queue empty
@@ -154,5 +148,4 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 void Scheduler::removeSequence(TaskID task_id) {
   sequences_.erase(task_id);
 }
-
 }  // namespace llm_engine

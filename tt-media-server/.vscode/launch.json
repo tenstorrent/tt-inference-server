@@ -13,7 +13,8 @@
       },
       "initCommands": [
         "settings set target.process.follow-fork-mode child"
-      ],      "preLaunchTask": "Build C++ Server (debug)"
+      ],
+      "preLaunchTask": "Build C++ Server (debug)"
     },
     {
       "name": "C++ Server [CodeLLDB + Tracy]",

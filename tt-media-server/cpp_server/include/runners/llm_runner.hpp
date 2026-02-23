@@ -23,7 +23,7 @@ using ModelRunnerFactory =
 class LLMRunner : public IRunner {
  public:
   LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue,
-            ModelRunnerFactory factory = nullptr);
+            ModelRunnerFactory model_runner_factory = nullptr);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }

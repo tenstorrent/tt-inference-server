@@ -115,6 +115,7 @@ struct PipeLlamaModelRunner::Impl {
       close(from_child[1]);
 
       const char* python_path = std::getenv("TT_PYTHON_PATH");
+      if (!python_path || !*python_path) python_path = "..";
       const char* metal_home = std::getenv("TT_METAL_HOME");
       std::string pypath;
       if (python_path && *python_path) pypath = python_path;
@@ -230,9 +231,6 @@ struct PipeLlamaModelRunner::Impl {
       s["max_tokens"] = seq->max_tokens;
       s["temperature"] = seq->temperature;
       s["ignore_eos"] = seq->ignore_eos;
-      if (seq->seed.has_value()) {
-        s["seed"] = *seq->seed;
-      }
       arr.append(std::move(s));
     }
     req["sequences"] = std::move(arr);

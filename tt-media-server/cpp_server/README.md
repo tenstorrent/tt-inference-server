@@ -88,8 +88,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
-| `LLM_MAX_NUM_SEQS` | Max sequences per scheduler step (prefill or decode). Higher values allow more concurrent requests per step; Python runner still runs one forward per sequence. | `1` |
+| `MODEL_RUNNER` | Runner type: `llm_test` (LLM_TEST, in-process stub) or `llama_runner` (spawns `python -m tt_model_runners.llama_runner`). | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
@@ -317,6 +316,7 @@ The server supports the following runner type, selected via the `TT_RUNNER_TYPE`
 | Runner | Value | Description |
 |--------|-------|-------------|
 | LLMTestRunner | `llm_test` (default) | Pure CPU benchmark, generates 120k tokens/sec |
+| Llama runner | `llama_runner` | Spawns `python -m tt_model_runners.llama_runner` (TTNN device) |
 
 ### LLMTestRunner (Default)
 
