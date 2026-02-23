@@ -401,6 +401,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -436,6 +443,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -454,6 +468,13 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },

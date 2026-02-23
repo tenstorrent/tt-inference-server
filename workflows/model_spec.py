@@ -2422,6 +2422,12 @@ image_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=1,
                 max_context=64 * 1024,
@@ -2453,6 +2459,12 @@ image_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
