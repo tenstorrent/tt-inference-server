@@ -268,27 +268,25 @@ jobs:
         run: |
           echo "tt-metal-commit: ${{ matrix.tt_metal_commit }}"
 
-      # - name: Checkout tt-inference branch
-      #   uses: actions/checkout@v4
-      #   with:
-      #     # TODO change
-      #     repository: tenstorrent/tt-inference-server
-      #     ref: ${{ needs.validate-input-and-extract-data.outputs.head-sha }}
-      #     token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+      - name: Checkout tt-inference branch
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-inference-server
+          ref: ${{ needs.validate-input-and-extract-data.outputs.head-sha }}
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
-      # - name: Docker login
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: https://ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          registry: https://ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Build for ${{ matrix.tt_metal_commit }}
-      #   run: |
-      #     echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
-      #     mkdir -p workflow_logs/docker_build_logs
-      #     python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --release --force-build
-      #  #   --push (Also, remove --force_build)
+      - name: Build for ${{ matrix.tt_metal_commit }}
+        run: |
+          echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
+          mkdir -p workflow_logs/docker_build_logs
+          python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --release --push
 
   open-release-pr-to-main:
     needs: [validate-input-and-extract-data, build-and-push-additional-images]
