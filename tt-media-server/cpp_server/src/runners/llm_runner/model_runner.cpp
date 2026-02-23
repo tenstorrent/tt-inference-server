@@ -19,9 +19,10 @@ void run_ttrun_hello_world_thread(std::string tt_metal_home) {
   std::string ttrun_py = tt_metal_home + "/ttnn/ttnn/distributed/ttrun.py";
   std::string rank_binding = tt_metal_home + "/bh_4x2_multi_mesh_rank_binding.yaml";
   std::string hello_script = tt_metal_home + "/ttnn/ttnn/distributed/ttrun_hello_world.py";
+  std::string python_path = tt_metal_home + "/python_env/bin/python";
 
   std::vector<std::string> args = {
-      "/data/dmadic/tt-metal/python_env/bin/python", ttrun_py, "--rank-binding", rank_binding,hello_script};
+      python_path, ttrun_py, "--rank-binding", rank_binding,hello_script};
   std::vector<char*> argv;
   argv.reserve(args.size() + 1);
   for (auto& a : args) argv.push_back(a.data());
@@ -98,11 +99,11 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
                                << " batch_size=" << seqs.size() << std::endl;
 
   if (is_prefill) {
+    std::cout << "ttrun hello world: running" << std::endl;
+    launch_ttrun_hello_world_nonblocking();
     for (Sequence* seq : seqs) {
       decode_callback_({seq->task_id, kWhitespaceTokenId});
     }
-    std::cout << "ttrun hello world: running" << std::endl;
-    launch_ttrun_hello_world_nonblocking();
   } else {
     backend_->write(*seqs[0]);
   }
