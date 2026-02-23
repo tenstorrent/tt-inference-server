@@ -94,7 +94,7 @@ class TtRunDeviceBackend : public IDeviceBackend {
     std::string tt_metal_home(home);
     std::string ttrun_py = tt_metal_home + "/ttnn/ttnn/distributed/ttrun.py";
     std::string rank_binding = tt_metal_home + "/bh_4x2_multi_mesh_rank_binding.yaml";
-    std::string hello_script = tt_metal_home + "/ttnn/ttnn/distributed/ttrun_hello_world.py";
+    std::string hello_script = "/home/user/tt-inference-server/tt-media-server/cpp_server/src/runners/runner.py";
     std::string python_path = tt_metal_home + "/python_env/bin/python";
 
     std::vector<std::string> args = {
@@ -110,6 +110,7 @@ class TtRunDeviceBackend : public IDeviceBackend {
     }
     if (pid == 0) {
       setenv("TT_IPC_SHM", shm_name_.c_str(), 1);
+      setenv("TT_METAL_SLOW_DISPATCH_MODE", "1", 1);
       execv(args[0].c_str(), argv.data());
       _exit(127);
     }
