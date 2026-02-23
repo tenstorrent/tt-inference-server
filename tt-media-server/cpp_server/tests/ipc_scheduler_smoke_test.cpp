@@ -13,7 +13,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include "runners/llm_runner/config.hpp"
-#include "runners/llm_runner/boost_ipc_task_queue.hpp"
+#include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
@@ -54,7 +54,7 @@ int main() {
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {
-    BoostIpcTaskQueue producer(QUEUE_NAME);
+    tt::ipc::BoostIpcTaskQueue producer(QUEUE_NAME);
     producer.push(seq1);
     producer.push(seq2);
   }
@@ -80,7 +80,7 @@ int main() {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<BoostIpcTaskQueue>(QUEUE_NAME);
+    auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
     Scheduler sched(config, queue.get());
 
     auto [batch, is_prefill] = sched.schedule();
