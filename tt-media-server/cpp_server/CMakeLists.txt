@@ -117,6 +117,7 @@ set(LLM_ENGINE_SOURCES
     src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/device_backend.cpp
     src/runners/llm_runner/mock_device_backend.cpp
+    src/runners/llm_runner/ttrun_device_backend.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
