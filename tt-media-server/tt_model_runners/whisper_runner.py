@@ -722,8 +722,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 input_mesh_mapper=input_mesh_mapper,
                 output_mesh_composer=output_mesh_composer,
                 weights_mesh_mapper=weights_mesh_mapper,
-                kv_cache=kv_cache_per_batch_size,
-                cross_attn_cache=cross_attn_cache_per_batch_size,
+                kv_cache_per_batch_size=kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size=cross_attn_cache_per_batch_size,
                 max_batch_size=self.settings.max_batch_size,
             )
 
