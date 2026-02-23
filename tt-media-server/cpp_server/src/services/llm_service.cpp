@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "worker/single_process_worker.hpp"
-
+#include "utils/mapper.hpp"
 #include <cassert>
 #include <chrono>
 #include <climits>
@@ -344,9 +344,7 @@ void LLMService::process_streaming_request(
     auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
-    sequence->temperature = request.temperature.value_or(1.0f);
-    sequence->max_tokens = request.max_tokens;
-    sequence->ignore_eos = request.ignore_eos;
+    sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 

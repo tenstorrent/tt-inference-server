@@ -91,8 +91,8 @@ int main() {
     for (auto* s : batch) {
       std::cout << "[child]    task_id=" << s->task_id
                 << " size=" << s->size()
-                << " max_tokens=" << s->max_tokens
-                << " temperature=" << s->temperature
+                << " max_tokens=" << s->sampling_params->max_tokens
+                << " temperature=" << s->sampling_params->temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -114,7 +114,7 @@ int main() {
     if (ok) {
       if (batch[0]->task_id.id != seq1_id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->max_tokens != 10) fail("seq1 max_tokens mismatch");
+      if (batch[0]->sampling_params->max_tokens != 10) fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 ||
           (*batch[0])[2] != 3 || (*batch[0])[3] != 4)
         fail("seq1 token values mismatch");
