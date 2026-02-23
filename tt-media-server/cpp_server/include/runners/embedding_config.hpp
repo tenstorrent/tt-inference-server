@@ -3,13 +3,8 @@
 
 #pragma once
 
-#include <string>
-
 namespace tt::runners {
 
-struct EmbeddingConfig {
-    std::string device_id = "device_0";
-    int visible_device = 0;
-};
+struct EmbeddingConfig {};
 
 }  // namespace tt::runners

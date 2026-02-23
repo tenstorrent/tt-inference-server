@@ -19,8 +19,7 @@ std::unique_ptr<runners::IRunner> create_runner(
     switch (service) {
         case config::ModelService::EMBEDDING: {
             std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
-            auto& cfg = std::get<runners::EmbeddingConfig>(config);
-            return std::make_unique<runners::EmbeddingRunner>(cfg.device_id, cfg.visible_device);
+            return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
         }
         case config::ModelService::LLM:
         default: {
