@@ -4,6 +4,7 @@
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "runners/llm_runner/config.hpp"
 #include "worker/single_process_worker.hpp"
 
 #include <cassert>
@@ -108,8 +109,13 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
         auto text = std::get<std::string>(request.prompt);
         request.prompt = tokenizer_.encode(text);
     }
+    const auto& tokens = std::get<std::vector<int>>(request.prompt);
+    if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
+        throw std::invalid_argument(
+            "Input too long: " + std::to_string(tokens.size()) +
+            " tokens exceeds maximum of " + std::to_string(llm_engine::Config::MAX_INPUT_TOKENS));
+    }
 }
-
 
 void LLMService::start_workers() {
     auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
