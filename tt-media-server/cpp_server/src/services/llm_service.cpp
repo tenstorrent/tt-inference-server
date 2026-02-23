@@ -47,7 +47,7 @@ namespace {
 worker::WorkerConfig make_worker_config_for_process(int worker_id) {
     worker::WorkerConfig cfg;
     cfg.env_vars["TT_VISIBLE_DEVICES"] = tt::config::visible_devices_for_worker(worker_id);
-    cfg.task_queue = std::make_shared<llm_engine::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
+    cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
     cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
         "/tt_tokens_" + std::to_string(worker_id), false);
     cfg.worker_id = worker_id;
