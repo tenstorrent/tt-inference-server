@@ -19,8 +19,10 @@ namespace llm_engine {
 
 class BoostIpcTaskQueue : public ITaskQueue {
  public:
+  /** Reserve for task_id, block_table, and other Sequence fields besides token_ids_. */
+  static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
   static constexpr size_t MAX_MSG_SIZE =
-      Config::MAX_INPUT_TOKENS * sizeof(int64_t) + 4096;
+      Config::MAX_INPUT_TOKENS * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
 
   BoostIpcTaskQueue(const std::string& name);
   BoostIpcTaskQueue(const std::string& name, int size);
