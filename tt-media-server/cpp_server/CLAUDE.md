@@ -11,8 +11,12 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 ### Building the Project
 
 ```bash
-# Standard release build
+# Standard release build (default model: meta-llama/Llama-3.1-8B)
 ./build.sh
+
+# Select model at compile time
+./build.sh --model meta-llama/Llama-3.1-8B    # default
+./build.sh --model deepseek-ai/DeepSeek-V3
 
 # Development builds
 ./build.sh --debug          # Debug build with symbols

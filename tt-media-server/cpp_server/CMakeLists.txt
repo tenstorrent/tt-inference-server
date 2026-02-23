@@ -8,6 +8,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Model selection: LLAMA_3_1_8B (default) or DEEPSEEK_V3
+set(MODEL_TYPE "DEEPSEEK_V3" CACHE STRING "Target model (LLAMA_3_1_8B or DEEPSEEK_V3)")
+if(MODEL_TYPE STREQUAL "DEEPSEEK_V3")
+    add_compile_definitions(MODEL_DEEPSEEK_V3)
+    message(STATUS "Model: deepseek-ai/DeepSeek-V3 (default)")
+elseif(MODEL_TYPE STREQUAL "LLAMA_3_1_8B")
+    message(STATUS "Model: meta-llama/Llama-3.1-8B")
+else()
+    message(FATAL_ERROR "Unknown MODEL_TYPE '${MODEL_TYPE}'. Use LLAMA_3_1_8B or DEEPSEEK_V3.")
+endif()
+
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")

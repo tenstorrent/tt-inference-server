@@ -8,6 +8,7 @@
 #include <vector>
 #include <tokenizers_cpp.h>
 
+#include "config/model_config.hpp"
 #include "domain/chat_message.hpp"
 
 namespace tt::utils {
@@ -37,12 +38,12 @@ TokenizerConfig get_tokenizer_config();
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace / SentencePiece).
  * Each instance owns its own underlying tokenizer, so separate instances are safe
  * to use from different threads without synchronization.
+ *
+ * Model-specific behavior (chat template format, special token decode filtering)
+ * is selected at compile time via MODEL_TYPE — see config/model_config.hpp.
  */
 class Tokenizer {
 public:
-    // Llama 3 special tokens occupy IDs [128000, 128255]; decode() suppresses them.
-    static constexpr int SPECIAL_TOKEN_START = 128000;
-
     /**
      * Construct a tokenizer from a .json (HuggingFace) or .model (SentencePiece) file.
      * @throws std::runtime_error if path is empty, file is unreadable, or format is unsupported.
@@ -62,16 +63,16 @@ public:
     std::vector<int> encode(const std::string& text) const;
 
     /**
-     * Decode token IDs to text.
+     * Decode token IDs to text. When the active model defines a special-token decode
+     * threshold (e.g. Llama 3 >= 128000), tokens at or above that ID are filtered out.
      * @throws std::runtime_error if tokenizer not loaded.
      */
     std::string decode(const std::vector<int>& token_ids) const;
 
     /**
-     * Apply Llama 3.1 Instruct chat template.
-     * Wraps each turn in <|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>,
-     * with a system preamble containing the knowledge cutoff date. When add_generation_prompt
-     * is true, appends an assistant header to prompt model generation.
+     * Apply the chat template for the compile-time selected model.
+     * Llama 3.1 8B: header/eot tags with a knowledge-cutoff preamble.
+     * DeepSeek V3: Unicode-delimited User/Assistant tags without a preamble.
      */
     static std::string apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
         bool add_generation_prompt = true);

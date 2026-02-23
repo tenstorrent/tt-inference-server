@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "config/model_config.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -35,7 +36,8 @@ Tokenizer::Tokenizer(const std::string& path) {
         throw std::runtime_error("[TokenizerUtil] Failed to create tokenizer from: " + path);
     }
 
-    std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
+    std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path
+              << " (model: " << tt::config::MODEL_NAME << ")" << std::endl;
 }
 
 bool Tokenizer::is_loaded() const {
@@ -53,29 +55,75 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }
-    // Llama 3 special tokens occupy IDs [128000, 128255]. They must never appear
-    // in decoded output — filter them before passing to the underlying tokenizer.
-    std::vector<int> filtered;
-    filtered.reserve(token_ids.size());
-    for (int id : token_ids) {
-        if (id < SPECIAL_TOKEN_START) filtered.push_back(id);
+    if (token_ids.empty()) return "";
+
+    constexpr int threshold = tt::config::SPECIAL_TOKEN_DECODE_THRESHOLD;
+    if (threshold > 0) {
+        std::vector<int> filtered;
+        filtered.reserve(token_ids.size());
+        for (int id : token_ids) {
+            if (id < threshold) filtered.push_back(id);
+        }
+        if (filtered.empty()) return "";
+        return tok_->Decode(filtered);
     }
-    if (filtered.empty()) return "";
-    return tok_->Decode(filtered);
+    return tok_->Decode(token_ids);
 }
 
+// ---------------------------------------------------------------------------
+// Chat template: compile-time selection between Llama 3.1 and DeepSeek V3
+// ---------------------------------------------------------------------------
+
+#ifdef MODEL_DEEPSEEK_V3
+
 namespace {
-
-constexpr const char* HEADER_START = "<|start_header_id|>";
-constexpr const char* HEADER_END = "<|end_header_id|>";
-constexpr const char* EOT = "<|eot_id|>";
-constexpr const char* SYSTEM_PREAMBLE =
-    "Cutting Knowledge Date: December 2023\n"
-    "Today Date: 26 Jul 2024\n\n";
-
+// DeepSeek V3 uses full-width vertical line U+FF5C (｜) as delimiter
+const char* USER_TAG = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
+const char* ASSISTANT_TAG = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
 }  // namespace
 
-std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
+std::string Tokenizer::apply_chat_template(
+    const std::vector<tt::domain::ChatMessage>& messages,
+    bool add_generation_prompt) {
+    static TokenizerConfig cfg = get_tokenizer_config();
+
+    std::ostringstream out;
+
+    if (cfg.add_bos_token) out << cfg.bos_token;
+
+    for (const auto& m : messages) {
+        if (m.role == "system") out << m.content;
+    }
+
+    for (const auto& m : messages) {
+        if (m.role == "system") continue;
+        if (m.role == "user") {
+            out << USER_TAG << m.content;
+        } else if (m.role == "assistant") {
+            out << ASSISTANT_TAG << m.content;
+            if (cfg.add_eos_token) out << cfg.eos_token;
+        }
+    }
+
+    if (add_generation_prompt) {
+        out << ASSISTANT_TAG;
+    }
+    return out.str();
+}
+
+#else  // Default: Llama 3.1 8B
+
+namespace {
+const char* HEADER_START = "<|start_header_id|>";
+const char* HEADER_END = "<|end_header_id|>";
+const char* EOT = "<|eot_id|>";
+const char* SYSTEM_PREAMBLE =
+    "Cutting Knowledge Date: December 2023\n"
+    "Today Date: 26 Jul 2024\n\n";
+}  // namespace
+
+std::string Tokenizer::apply_chat_template(
+    const std::vector<tt::domain::ChatMessage>& messages,
     bool add_generation_prompt) {
     static TokenizerConfig cfg = get_tokenizer_config();
 
@@ -108,5 +156,7 @@ std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMes
     }
     return out.str();
 }
+
+#endif
 
 }  // namespace tt::utils

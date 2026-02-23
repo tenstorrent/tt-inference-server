@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
+#include "config/model_config.hpp"
 #include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
@@ -147,11 +148,7 @@ llm_engine::Config llm_engine_config() {
             cfg.device = llm_engine::DeviceBackend::Mock;
         }
     }
-    if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
-        cfg.stop_token_ids = {128001, 128008, 128009};
-        cfg.kvcache_block_size = 32;
-        cfg.num_kvcache_blocks = 512;
-    }
+    cfg.stop_token_ids = tt::config::default_stop_token_ids();
     return cfg;
 }
 

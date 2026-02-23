@@ -19,7 +19,7 @@ Batching:
   "DECODE top-5" with ~35ms between lines).
 
 Requires: PYTHONPATH to include TT_METAL_HOME and tt-media-server root.
-Environment: HF_MODEL (e.g. meta-llama/Llama-3.1-8B-Instruct), TT_VISIBLE_DEVICES.
+Environment: HF_MODEL (e.g. meta-llama/Llama-3.1-8B), TT_VISIBLE_DEVICES.
 """
 
 import json
@@ -60,7 +60,7 @@ class StepResult:
     error: str = ""
 
 
-DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B"
 
 MAX_NUM_BLOCKS = 512
 KV_CACHE_BLOCK_SIZE = 32
@@ -262,7 +262,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         sequences = kwargs.get("sequences", [])
         return self.run_step(is_prefill, sequences)
 
-    # Llama 3.1 Instruct stop tokens (must match C++ config in settings.cpp):
+    # Llama 3.1 8B stop tokens (must match C++ config in settings.cpp):
     #   128001 = <|end_of_text|>
     #   128008 = <|eom_id|>   (end-of-message)
     #   128009 = <|eot_id|>   (end-of-turn, emitted after every assistant response)

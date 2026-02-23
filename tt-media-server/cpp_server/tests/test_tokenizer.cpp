@@ -3,6 +3,7 @@
 
 #include "utils/tokenizer.hpp"
 #include "config/settings.hpp"
+#include "config/model_config.hpp"
 #include "domain/chat_message.hpp"
 
 #include <gtest/gtest.h>
@@ -59,6 +60,7 @@ TEST_F(TokenizerTest, EmptyTokensDecode) {
     EXPECT_EQ(decoded, "");
 }
 
+#ifdef MODEL_DEEPSEEK_V3
 TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     // Pre-computed expected tokens from DeepSeek V3 tokenizer (without special tokens)
     // Generated using: tokenizer.encode(text, add_special_tokens=False)
@@ -156,15 +158,75 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     std::cout << "  Matches:        " << total_matches << "\n";
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
 }
+#endif  // MODEL_DEEPSEEK_V3
 
-TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama31InstructFormat) {
+#ifdef MODEL_DEEPSEEK_V3
+
+TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    // Llama 3.1 Instruct format: system header with knowledge preamble, then
+    // DeepSeek V3 format: BOS from config, then User/Assistant tags with
+    // full-width vertical line delimiters (U+FF5C), no system preamble.
+    // BOS = <｜begin▁of▁sentence｜>  (from tokenizer_config.json)
+    // U+FF5C (｜) = \xEF\xBD\x9C, U+2581 (▁) = \xE2\x96\x81
+    const std::string bos = "<\xEF\xBD\x9C" "begin\xE2\x96\x81of\xE2\x96\x81sentence\xEF\xBD\x9C>";
+    const std::string user_tag = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
+    const std::string asst_tag = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
+
+    const std::string expected =
+        bos +
+        user_tag + "Hello" +
+        asst_tag + "Hi!" +
+        user_tag + "How are you?" +
+        asst_tag;
+
+    std::string actual = Tokenizer::apply_chat_template(messages, true);
+
+    EXPECT_EQ(actual, expected)
+        << "apply_chat_template output should match DeepSeek V3 format.\n"
+        << "  Expected length: " << expected.size() << "\n"
+        << "  Actual length:   " << actual.size();
+}
+
+TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format) {
+    std::vector<ChatMessage> messages = {
+        {"user", "Hello"},
+        {"assistant", "Hi!"},
+        {"user", "How are you?"},
+    };
+
+    const std::string bos = "<\xEF\xBD\x9C" "begin\xE2\x96\x81of\xE2\x96\x81sentence\xEF\xBD\x9C>";
+    const std::string user_tag = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
+    const std::string asst_tag = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
+
+    const std::string expected =
+        bos +
+        user_tag + "Hello" +
+        asst_tag + "Hi!" +
+        user_tag + "How are you?";
+
+    std::string actual = Tokenizer::apply_chat_template(messages, false);
+
+    EXPECT_EQ(actual, expected)
+        << "apply_chat_template output should match DeepSeek V3 format.\n"
+        << "  Expected length: " << expected.size() << "\n"
+        << "  Actual length:   " << actual.size();
+}
+
+#else  // LLAMA_3_1_8B
+
+TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
+    std::vector<ChatMessage> messages = {
+        {"user", "Hello"},
+        {"assistant", "Hi!"},
+        {"user", "How are you?"},
+    };
+
+    // Llama 3.1 8B format: system header with knowledge preamble, then
     // each turn wrapped in <|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>.
     const std::string expected =
         "<|begin_of_text|>"
@@ -183,12 +245,12 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama31InstructFormat) {
     std::string actual = Tokenizer::apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match Llama 3.1 Instruct format.\n"
+        << "apply_chat_template output should match Llama 3.1 8B format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama31InstructFormat) {
+TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -211,8 +273,10 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama31InstructF
     std::string actual = Tokenizer::apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match Llama 3.1 Instruct format.\n"
+        << "apply_chat_template output should match Llama 3.1 8B format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
+
+#endif  // MODEL_DEEPSEEK_V3 / LLAMA_3_1_8B
 
