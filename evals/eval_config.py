@@ -2690,7 +2690,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "acc,none",
                         ],
                         "unit": "percent",
                     },
