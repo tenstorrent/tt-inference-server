@@ -15,15 +15,15 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg, const llm_engine::Co
     pid = getpid();
     worker_id = cfg.worker_id;
     
-    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished) {
+    on_token_ = [this](const llm_engine::TokenResult& result) {
         auto token = ipc::SharedToken{
             .token_index = 0,
-            .flags = static_cast<uint32_t>(finished ? 1 : 0),
-            .token_id = token_id,
+            .flags = static_cast<uint32_t>(result.finished ? 1 : 0),
+            .token_id = result.token_id,
             .task_id = {},
             .padding = {},
         };
-        strncpy(token.task_id, task_id.id.c_str(), sizeof(token.task_id) - 1);
+        strncpy(token.task_id, result.task_id.id.c_str(), sizeof(token.task_id) - 1);
         token.task_id[sizeof(token.task_id) - 1] = '\0';
         this->cfg.result_queue->push(token);
     };

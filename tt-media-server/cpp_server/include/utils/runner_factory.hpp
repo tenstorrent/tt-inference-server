@@ -11,7 +11,7 @@
 #include "runners/llm_runner/task_queue.hpp"
 
 namespace llm_engine {
-    using TokenCallback = std::function<void(TaskID task_id, uint64_t token_id, bool finished)>;
+    using TokenCallback = std::function<void(const TokenResult& result)>;
 }
 
 namespace tt::utils::runner_factory {
