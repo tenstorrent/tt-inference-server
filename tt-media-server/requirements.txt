@@ -19,8 +19,5 @@ tqdm
 uvicorn
 whisperx==3.4.3
 
-# Pinned to match tt-metal — must not be overridden by transitive deps (e.g. whisperx)
-transformers==4.53.0
-diffusers==0.35.1
 
 --extra-index-url https://download.pytorch.org/whl/cpu
