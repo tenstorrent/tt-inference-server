@@ -89,7 +89,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 )
                 await self.pipeline(dummy_audio)
                 if self.settings.max_batch_size > 1:
-                    warmup_batch = [dummy_audio] * 2
+                    warmup_batch = [dummy_audio]
                     await self.pipeline(warmup_batch)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
@@ -256,8 +256,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             audio_arrays = [req._audio_array for req in requests]
             durations = [req._duration for req in requests]
 
-            if len(audio_arrays) == 1:
-                audio_data = audio_arrays
             if len(audio_arrays) == 2:
                 # Pad audio arrays to the same length
                 max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
