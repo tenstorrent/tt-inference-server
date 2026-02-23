@@ -44,23 +44,5 @@ class TrainingService(BaseJobService):
         )
 
     async def stream_job_metrics(self, job_id: str):
-        metrics_list = self._job_manager.get_training_metrics(job_id)
-        if metrics_list is None:
-            return
-
-        last_sent = 0
-
-        while True:
-            current_len = len(metrics_list)
-            if current_len > last_sent:
-                for i in range(last_sent, current_len):
-                    yield metrics_list[i]
-                last_sent = current_len
-
-            job_data = self._job_manager.get_job_metadata(job_id)
-            if job_data and job_data["status"] in ("completed", "failed", "cancelled"):
-                for i in range(last_sent, len(metrics_list)):
-                    yield metrics_list[i]
-                return
-
-            await asyncio.sleep(1.0)
+        async for metric in self._job_manager.poll_training_metrics(job_id):
+            yield metric

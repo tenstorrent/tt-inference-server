@@ -278,45 +278,41 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
     
-    async def _persist_metrics_to_db(self, job: Job):
-        training_ctx = job._training_context
-        last_persisted = 0
+    async def poll_training_metrics(self, job_id: str):
+        metrics_list = self.get_training_metrics(job_id)
+        if metrics_list is None:
+            return
+
+        last_seen = 0
 
         while True:
-            current_len = len(training_ctx.training_metrics)
-            if current_len > last_persisted:
-                for i in range(last_persisted, current_len):
-                    metric = training_ctx.training_metrics[i]
-                    try:
-                        self.db.insert_metric(
-                            job_id=job.id,
-                            step=metric["step"],
-                            metric_name=metric["metric_name"],
-                            value=metric["value"],
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"Failed to persist metric for job {job.id}: {e}"
-                        )
-                last_persisted = current_len
+            current_len = len(metrics_list)
+            for i in range(last_seen, current_len):
+                yield metrics_list[i]
+            last_seen = current_len
 
-            if job.is_terminal():
-                for i in range(last_persisted, len(training_ctx.training_metrics)):
-                    metric = training_ctx.training_metrics[i]
-                    try:
-                        self.db.insert_metric(
-                            job_id=job.id,
-                            step=metric["step"],
-                            metric_name=metric["metric_name"],
-                            value=metric["value"],
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"Failed to persist metric for job {job.id}: {e}"
-                        )
+            job = self._jobs.get(job_id)
+            if job and job.is_terminal():
+                for i in range(last_seen, len(metrics_list)):
+                    yield metrics_list[i]
                 return
 
             await asyncio.sleep(1.0)
+
+    async def _persist_metrics_to_db(self, job: Job):
+        async for metric in self.poll_training_metrics(job.id):
+            try:
+                self.db.insert_metric(
+                    job_id=job.id,
+                    step=metric["step"],
+                    epoch=metric["epoch"],
+                    metric_name=metric["metric_name"],
+                    value=metric["value"],
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to persist metric for job {job.id}: {e}"
+                )
 
     async def _mark_job_in_progress(self, job: Job):
         training_ctx = job._training_context
@@ -525,6 +521,20 @@ class JobManager:
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
                 )
+
+                if db_job["job_type"] == JobTypes.TRAINING.value:
+                    try:
+                        metrics = self.db.get_metrics_flat(job.id)
+                        if metrics:
+                            job._training_context = TrainingJobContext(
+                                start_event=None,
+                                cancel_event=None,
+                                training_metrics=metrics,
+                            )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore metrics for job {job.id}: {e}"
+                        )
 
                 # If job was stuck, mark it as failed or cancelled and sync to database
                 if not job.is_terminal():
