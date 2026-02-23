@@ -10,14 +10,14 @@
 
 #include "runners/llm_runner/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::ipc {
 
 /**
  * ITaskQueue implementation backed by a Boost.Interprocess message queue.
  */
   
 
-class BoostIpcTaskQueue : public ITaskQueue {
+class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
  public:
   /** Max serialized message size (64 KiB).
    *  Must exceed the largest serialized Sequence (header fields + token_ids
@@ -28,8 +28,8 @@ class BoostIpcTaskQueue : public ITaskQueue {
   BoostIpcTaskQueue(const std::string& name, int size);
   ~BoostIpcTaskQueue();
 
-  void push(const Sequence& seq) override;
-  Sequence* try_pop() override;
+  void push(const llm_engine::Sequence& seq) override;
+  llm_engine::Sequence* try_pop() override;
   bool empty() const override;
 
   /** Remove the named shared-memory queue (cleanup helper). */
@@ -42,4 +42,4 @@ class BoostIpcTaskQueue : public ITaskQueue {
   std::vector<char> recv_buffer_;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::ipc

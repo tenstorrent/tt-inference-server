@@ -14,8 +14,6 @@ from typing import Optional
 
 
 import aiohttp
-from transformers import AutoTokenizer
-
 
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import TtsTestStatus
@@ -40,9 +38,10 @@ class TtsClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
 
-        # Initialize tokenizer for text token counting
         self.tokenizer = None
         try:
+            from transformers import AutoTokenizer
+
             self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
             logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
         except Exception as e:

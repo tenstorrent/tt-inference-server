@@ -114,7 +114,7 @@ endif()
 # When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
-    src/runners/llm_runner/boost_ipc_task_queue.cpp
+    src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/device_backend.cpp
     src/runners/llm_runner/mock_device_backend.cpp
     src/runners/llm_runner/hash.cpp
