@@ -9,7 +9,6 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 
 # Parse arguments
-TEST="OFF"
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 TOOLCHAIN_PATH_ARG=""
@@ -18,10 +17,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
             BUILD_TYPE="Debug"
-            shift
-            ;;
-        --test)
-            TEST="ON"
             shift
             ;;
         --tsan)
@@ -47,7 +42,6 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --debug              Build in Debug mode (default: Release)"
-            echo "  --test               Build for PR gate: LLM only (no Python required)"
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
@@ -71,7 +65,6 @@ fi
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
-echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "=============================================="
@@ -218,7 +211,6 @@ CMAKE_ARGS=(
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     -DLLM_ENGINE_DEBUG_BUILD=OFF
-    -DTEST="${TEST}"
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 )

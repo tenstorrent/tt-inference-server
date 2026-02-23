@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
-#include "runners/llm_engine/config.hpp"
+#include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
 #include <cstddef>
@@ -79,6 +79,10 @@ bool is_embedding_service() {
 
 bool is_llm_service_enabled() {
     return model_service() == ModelService::LLM;
+}
+
+std::string runner_type() {
+    return to_string(model_service());
 }
 
 size_t num_workers() {

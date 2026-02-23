@@ -16,7 +16,6 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 
 # Development builds
 ./build.sh --debug          # Debug build with symbols
-./build.sh --test           # PR gate build (LLM only, no Python required)
 ./build.sh --asan           # AddressSanitizer + LeakSanitizer for memory debugging
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
 ```
@@ -180,8 +179,8 @@ The server provides OpenAI-compatible endpoints:
 - `POST /v1/chat/completions` - Chat completion with streaming support
 - `POST /v1/embeddings` - Text embeddings (embedding mode only)
 - `GET /health` - Health check
-- `GET /ready` - Readiness check with detailed system status
+- `GET /tt-liveness` - Liveness check with detailed system status
 - `GET /docs` - Swagger UI documentation
 - `GET /openapi.json` - OpenAPI specification
 
-All endpoints except health/ready/docs require Bearer token authentication.
+All endpoints except health/tt-liveness/docs require Bearer token authentication.

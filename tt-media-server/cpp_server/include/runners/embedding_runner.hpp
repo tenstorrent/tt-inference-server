@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "runners/runner_interface.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
 
@@ -18,11 +19,11 @@ namespace tt::runners {
  * Uses Python C API to instantiate and call the BGELargeENRunner class
  * from tt_model_runners/embedding_runner.py.
  */
-class EmbeddingRunner {
+class EmbeddingRunner : public IRunner {
 public:
     /** @param device_id e.g. "device_0". @param visible_device TT device index (1-based) for logging. */
     EmbeddingRunner(const std::string& device_id, int visible_device = 0);
-    ~EmbeddingRunner();
+    ~EmbeddingRunner() override;
 
     // Prevent copying
     EmbeddingRunner(const EmbeddingRunner&) = delete;
@@ -44,6 +45,11 @@ public:
      */
     std::vector<domain::EmbeddingResponse> run(
         const std::vector<domain::EmbeddingRequest>& requests);
+
+    // IRunner interface implementation
+    void run() override;
+    void stop() override;
+    const char* runner_type() const override { return "EmbeddingRunner"; }
 
     /**
      * Get the device ID.

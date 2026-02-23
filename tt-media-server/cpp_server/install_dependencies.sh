@@ -31,7 +31,7 @@ drogon_found() {
 if ! drogon_found; then
     DROGON_TMP="/tmp/drogon_build"
     rm -rf "${DROGON_TMP}"
-    git clone --depth 1 --branch v1.9.8 --recurse-submodules https://github.com/drogonframework/drogon.git "${DROGON_TMP}"
+    git clone --depth 1 --branch v1.9.12 --recurse-submodules https://github.com/drogonframework/drogon.git "${DROGON_TMP}"
     mkdir -p "${DROGON_TMP}/build" && cd "${DROGON_TMP}/build"
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_EXAMPLES=OFF -DBUILD_CTL=OFF -DBUILD_YAML_CONFIG=OFF
     make -j"$(nproc 2>/dev/null || echo 4)"

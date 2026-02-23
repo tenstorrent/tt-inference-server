@@ -81,34 +81,22 @@ struct ChatCompletionResponse {
         return Json::writeString(writer, toJson());
     }
 
-    /**
-     * Convert a CompletionResponse into a ChatCompletionResponse.
-     * Maps completion choices (text) to chat choices (message with role).
-     */
-    static ChatCompletionResponse fromCompletionResponse(const CompletionResponse& r) {
-        ChatCompletionResponse chat;
+    static ChatCompletionResponse fromCompletionResponse(const CompletionResponse& completion) {
+        ChatCompletionResponse response;
+        response.id = completion.id;
+        response.created = completion.created;
+        response.model = completion.model;
+        response.usage = completion.usage;
 
-        // Ensure chat completion IDs use "chatcmpl-" prefix (vLLM convention)
-        chat.id = r.id;
-        if (chat.id.compare(0, 5, "cmpl-") == 0) {
-            chat.id = "chatcmpl-" + chat.id.substr(5);
-        }
-
-        chat.created = r.created;
-        chat.model = r.model;
-        chat.usage = r.usage;
-
-        for (const auto& choice : r.choices) {
+        for (const auto& choice : completion.choices) {
             ChatCompletionChoice chat_choice;
             chat_choice.index = choice.index;
             chat_choice.message.content = choice.text;
-            chat_choice.logprobs = choice.logprobs;
-            // vLLM defaults finish_reason to "stop" when not explicitly set
             chat_choice.finish_reason = choice.finish_reason.value_or("stop");
-            chat.choices.push_back(std::move(chat_choice));
+            response.choices.push_back(std::move(chat_choice));
         }
 
-        return chat;
+        return response;
     }
 };
 

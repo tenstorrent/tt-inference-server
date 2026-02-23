@@ -20,8 +20,6 @@ public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
     ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions", drogon::Post);
-    ADD_METHOD_TO(LLMController::health, "/health", drogon::Get);
-    ADD_METHOD_TO(LLMController::ready, "/ready", drogon::Get);
     METHOD_LIST_END
 
     LLMController();
@@ -43,22 +41,6 @@ public:
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-    /**
-     * GET /health
-     * Health check endpoint.
-     */
-    void health(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
-    /**
-     * GET /ready
-     * Readiness check endpoint.
-     */
-    void ready(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
 private:
     std::shared_ptr<services::LLMService> service_;
 
@@ -66,17 +48,7 @@ private:
      * Handle streaming completion (SSE). When is_chat is true, emits
      * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      */
-    void handle_streaming_impl(
-        domain::CompletionRequest request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-        bool is_chat) const;
-
-    /**
-     * Handle non-streaming completion: accumulates streamed tokens into a
-     * single JSON response. When is_chat is true, wraps as
-     * ChatCompletionResponse; otherwise CompletionResponse.
-     */
-    void handle_non_streaming_impl(
+    void handle_streaming(
         domain::CompletionRequest request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         bool is_chat) const;

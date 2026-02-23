@@ -16,12 +16,7 @@ endif()
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
-
-# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
-option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
-if(NOT TEST)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
@@ -118,18 +113,18 @@ endif()
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
 # When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
-    src/runners/llm_engine/engine/block_manager.cpp
-    src/runners/llm_engine/engine/boost_ipc_task_queue.cpp
-    src/runners/llm_engine/engine/device_backend.cpp
-    src/runners/llm_engine/engine/mock_device_backend.cpp
-    src/runners/llm_engine/engine/hash.cpp
+    src/runners/llm_runner/block_manager.cpp
+    src/runners/llm_runner/boost_ipc_task_queue.cpp
+    src/runners/llm_runner/device_backend.cpp
+    src/runners/llm_runner/mock_device_backend.cpp
+    src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
-    src/runners/llm_engine/engine/model_runner.cpp
-    src/runners/llm_engine/engine/scheduler.cpp
-    src/runners/llm_engine/engine/sequence.cpp
+    src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/scheduler.cpp
+    src/runners/llm_runner/sequence.cpp
 )
 if(TT_METAL_API_FOUND)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_engine/engine/sockets_device_backend.cpp)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
 else()
     message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
 endif()
@@ -236,6 +231,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
@@ -243,15 +239,12 @@ set(SOURCES
     src/utils/tokenizer.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
+    src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
-    )
-if(NOT TEST)
-    list(APPEND SOURCES
-        src/api/embedding_controller.cpp
-        src/runners/embedding_runner.cpp
-        src/services/embedding_service.cpp
-    )
-endif()
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+)
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -281,12 +274,7 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
-if(TEST)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
-endif()
-if(NOT TEST)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)

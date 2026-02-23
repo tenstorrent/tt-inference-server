@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <functional>
 #include <unistd.h>
-#include "runners/llm_runner.hpp"
-#include "runners/llm_engine/engine/task_queue.hpp"
+#include "runners/runner_interface.hpp"
+#include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
 #include "config/settings.hpp"
 
@@ -44,7 +44,7 @@ public:
     WorkerConfig cfg;
     
 private:
-    unique_ptr<llm_engine::LLMRunner> llm_engine_;
+    unique_ptr<tt::runners::IRunner> runner_;
     function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished)> on_token_;
     llm_engine::Config llm_engine_config_;
 };

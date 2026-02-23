@@ -1,6 +1,6 @@
-#include "llm_engine/engine/block_manager.hpp"
-#include "llm_engine/engine/debug.hpp"
-#include "llm_engine/engine/hash.hpp"
+#include "runners/llm_runner/block_manager.hpp"
+#include "runners/llm_runner/debug.hpp"
+#include "runners/llm_runner/hash.hpp"
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
