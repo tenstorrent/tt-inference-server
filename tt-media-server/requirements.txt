@@ -18,6 +18,7 @@ silero_vad
 tqdm
 uvicorn
 whisperx==3.4.3
+requests
 
 
 --extra-index-url https://download.pytorch.org/whl/cpu
