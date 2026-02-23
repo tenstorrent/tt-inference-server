@@ -59,6 +59,26 @@ LLMService::LLMService()
       tokenizer_(tt::config::tokenizer_path()) {
     std::cout << "[LLMService] Initialized (" << num_workers_ << " workers)\n" << std::flush;
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
+
+    // Initialize socket service
+    socket_service_ = std::make_unique<tt::sockets::InterServerService>();
+    if (socket_service_->initializeFromConfig()) {
+        // Set up callbacks for socket communication
+        socket_service_->setTaskForwardCallback([](const std::string& task_id, const std::string& /* prompt */, bool /* finished */) {
+            std::cout << "[LLMService] Received task from remote server: " << task_id << std::endl;
+            // TODO: Process forwarded task
+        });
+
+        socket_service_->setTaskResultCallback([](const std::string& task_id, const std::string& /* result */, bool /* finished */) {
+            std::cout << "[LLMService] Received result from remote server: " << task_id << std::endl;
+            // TODO: Handle result from remote server
+        });
+
+        socket_service_->setHealthCheckCallback([](const std::string& server_id, double cpu, double memory, int tasks) {
+            std::cout << "[LLMService] Health check from " << server_id
+                      << " - CPU: " << cpu << "%, Memory: " << memory << "%, Tasks: " << tasks << std::endl;
+        });
+    }
 }
 
 LLMService::~LLMService() {
@@ -77,6 +97,11 @@ void LLMService::start() {
     start_consumers();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Start socket service if enabled
+    if (socket_service_) {
+        socket_service_->start();
+    }
 
     is_ready_ = true;
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
@@ -183,6 +208,12 @@ void LLMService::stop() {
     }
 
     workers_.clear();
+
+    // Stop socket service
+    if (socket_service_) {
+        socket_service_->stop();
+    }
+
     is_ready_ = false;
     std::cout << "[LLMService] Stopped\n" << std::flush;
     queue_manager_->clear();
