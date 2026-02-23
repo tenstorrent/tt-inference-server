@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
-#include "config/model_config.hpp"
 #include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
@@ -148,7 +147,6 @@ llm_engine::Config llm_engine_config() {
             cfg.device = llm_engine::DeviceBackend::Mock;
         }
     }
-    cfg.stop_token_ids = tt::config::default_stop_token_ids();
     return cfg;
 }
 

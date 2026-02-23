@@ -21,13 +21,11 @@ std::unique_ptr<Scheduler> make_scheduler(const Config& config,
 }
 
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
-                          int max_num_seqs = 32,
-                          std::vector<int64_t> stop_ids = {}) {
+                          int max_num_seqs = 32) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_seqs = max_num_seqs;
-  c.stop_token_ids = std::move(stop_ids);
   return c;
 }
 

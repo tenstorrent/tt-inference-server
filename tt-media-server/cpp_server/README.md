@@ -30,7 +30,7 @@ cd build && ctest --output-on-failure
 ## Quick Start
 
 ```bash
-# Build
+# Build (defaults to DeepSeek V3)
 cd cpp_server
 ./build.sh
 
@@ -47,6 +47,41 @@ curl http://localhost:8001/health
 pkill -f tt_media_server_cpp
 # Or use Ctrl+C if running in foreground
 ```
+
+## Build Options
+
+The build script selects a target model at compile time. This determines which
+chat template, stop tokens, and tokenizer decode strategy are compiled into the
+binary (see `include/config/model_config.hpp`). The matching tokenizer files are
+downloaded automatically from HuggingFace during the build.
+
+```bash
+# Default build (DeepSeek V3 — public, no auth required)
+./build.sh
+
+# Build for Llama 3.1 8B (gated model — requires HF_TOKEN)
+HF_TOKEN=hf_... ./build.sh --model meta-llama/Llama-3.1-8B
+
+# Shorthand aliases also work
+./build.sh --model deepseek
+./build.sh --model llama
+
+# Debug build with a specific model
+./build.sh --debug --model llama
+```
+
+Supported `--model` values:
+
+| Value | Aliases | Auth |
+|-------|---------|------|
+| `deepseek-ai/DeepSeek-V3` | `DeepSeek-V3`, `deepseek` | None (public) |
+| `meta-llama/Llama-3.1-8B` | `Llama-3.1-8B`, `llama` | `HF_TOKEN` required |
+
+The token is resolved from `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, or
+`~/.cache/huggingface/token` (written by `huggingface-cli login`).
+
+When switching models, the build script detects the change and re-downloads
+the correct tokenizer files automatically.
 
 ## Starting the Server
 

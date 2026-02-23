@@ -6,6 +6,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 #include <gtest/gtest.h>
+#include <optional>
 #include <vector>
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 
@@ -18,12 +19,14 @@ namespace {
 
 Config make_config(int num_blocks = 32, int block_size = 8,
                    int max_batched_tokens = 256,
-                   std::vector<int64_t> stop_ids = {}) {
+                   std::optional<std::vector<int64_t>> stop_ids = std::nullopt) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
-  c.stop_token_ids = std::move(stop_ids);
+  if (stop_ids) {
+    c.stop_token_ids = std::move(*stop_ids);
+  }
   return c;
 }
 
@@ -96,7 +99,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
 }
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
-  Config config = make_config(32, 8, 256, {99});
+  Config config = make_config(32, 8, 256, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
@@ -160,7 +163,7 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
 }
 
 TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
-  Config config = make_config(32, 8, 256, {99});
+  Config config = make_config(32, 8, 256, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq{prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};

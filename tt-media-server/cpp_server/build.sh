@@ -193,11 +193,16 @@ if [ ! -f "${TOKENIZER_JSON}" ]; then
         echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
     else
         rm -f "${TOKENIZER_JSON}"
-        echo "Warning: Failed to download tokenizer."
+        echo ""
+        echo "ERROR: Failed to download tokenizer. tokenizer.json is required for build and tests."
         if [ "${MODEL_TYPE}" = "LLAMA_3_1_8B" ]; then
-            echo "  Llama models are gated on HuggingFace. Set HF_TOKEN to download automatically."
+            echo "  Llama models are gated on HuggingFace. Set HF_TOKEN (or HUGGING_FACE_HUB_TOKEN) and retry."
+        else
+            echo "  Check network access to huggingface.co"
         fi
-        echo "  Manual: wget -O cpp_server/tokenizers/tokenizer.json ${HF_REPO}/tokenizer.json"
+        echo "  Manual: wget -O ${TOKENIZER_JSON} ${HF_REPO}/tokenizer.json"
+        echo ""
+        exit 1
     fi
     echo ""
 fi
@@ -213,6 +218,12 @@ if [ ! -f "${TOKENIZER_CONFIG_JSON}" ]; then
         echo "  Manual: wget -O cpp_server/tokenizers/tokenizer_config.json ${HF_REPO}/tokenizer_config.json"
     fi
     echo ""
+fi
+
+# Ensure tokenizer.json exists before proceeding (download block above exits on failure)
+if [ ! -f "${TOKENIZER_JSON}" ]; then
+    echo "ERROR: tokenizer.json missing at ${TOKENIZER_JSON}"
+    exit 1
 fi
 
 echo "${MODEL_TYPE}" > "${MODEL_MARKER}"

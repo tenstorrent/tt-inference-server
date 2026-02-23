@@ -51,7 +51,9 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
       decode_callback_({seq->task_id, kWhitespaceTokenId});
     }
   } else {
-    backend_->write(*seqs[0]);
+    for (Sequence* seq : seqs) {
+      backend_->write(*seq);
+    }
   }
 }
 
