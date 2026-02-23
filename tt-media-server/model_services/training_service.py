@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+import asyncio
 import os
 from multiprocessing import Manager
-import asyncio
 
 from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes
@@ -25,12 +25,12 @@ class TrainingService(BaseJobService):
 
         request._start_event = self._manager.Event()
         request._cancel_event = self._manager.Event()
-        request._metrics_queue = self._manager.Queue()
+        request._training_metrics = self._manager.list()
 
-        ctx = TrainingJobContext(
+        training_ctx = TrainingJobContext(
             start_event=request._start_event,
             cancel_event=request._cancel_event,
-            metrics_queue=request._metrics_queue,
+            training_metrics=request._training_metrics,
         )
 
         return await self._job_manager.create_job(
@@ -40,18 +40,27 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
-            training_context=ctx,
+            training_context=training_ctx,
         )
-    
-    async def stream_job_metrics(self, job_id: str):
-        subscriber_queue = asyncio.Queue()
 
-        self._job_manager.subscribe_to_metrics(job_id, subscriber_queue)
-        try:
-            while True:
-                metric = await subscriber_queue.get()
-                if metric is None:
-                    return
-                yield metric
-        finally:
-            self._job_manager.unsubscribe_from_metrics(job_id, subscriber_queue)
+    async def stream_job_metrics(self, job_id: str):
+        metrics_list = self._job_manager.get_training_metrics(job_id)
+        if metrics_list is None:
+            return
+
+        last_sent = 0
+
+        while True:
+            current_len = len(metrics_list)
+            if current_len > last_sent:
+                for i in range(last_sent, current_len):
+                    yield metrics_list[i]
+                last_sent = current_len
+
+            job_data = self._job_manager.get_job_metadata(job_id)
+            if job_data and job_data["status"] in ("completed", "failed", "cancelled"):
+                for i in range(last_sent, len(metrics_list)):
+                    yield metrics_list[i]
+                return
+
+            await asyncio.sleep(1.0)

@@ -188,9 +188,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Step {global_step} | train/loss: {avg_loss:.4f}"
                         )
-                        # send training metrics to the queue
-                        if request._metrics_queue:
-                            request._metrics_queue.put({
+                        if request._training_metrics is not None:
+                            request._training_metrics.append({
                                 "step": global_step,
                                 "epoch": epoch,
                                 "metric_name": "train_loss",
@@ -215,9 +214,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
-                        # send validation metrics to the queue
-                        if request._metrics_queue:
-                            request._metrics_queue.put({
+                        if request._training_metrics is not None:
+                            request._training_metrics.append({
                                 "step": global_step,
                                 "epoch": epoch,
                                 "metric_name": "val_loss",
@@ -247,9 +245,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
-            # signal training done
-            if request._metrics_queue:
-                request._metrics_queue.put(None)
 
         return [model_path]
 

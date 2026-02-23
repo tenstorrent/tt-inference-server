@@ -10,7 +10,7 @@ from enum import Enum
 from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
-from multiprocessing import Event, Queue
+from multiprocessing import Event
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -26,12 +26,12 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
     CANCELLING = "cancelling"
 
+
 @dataclass
 class TrainingJobContext:
     start_event: Event
     cancel_event: Event
-    metrics_queue: Queue
-    metrics_subscribers: list = field(default_factory=list) 
+    training_metrics: list
 
 @dataclass
 class Job:
@@ -201,12 +201,11 @@ class JobManager:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
     
-    def get_metrics_queue(self, job_id: str):
+    def get_training_metrics(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            ctx = job._training_context
-            if ctx and ctx.metrics_queue:
-                return ctx.metrics_queue
+            if job and job._training_context:
+                return job._training_context.training_metrics
         return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -279,55 +278,50 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
     
-    def subscribe_to_metrics(self, job_id: str, queue: asyncio.Queue):
-        with self._jobs_lock:
-            job = self._jobs.get(job_id)
-            if job:
-                ctx = job._training_context
-                if ctx and ctx.metrics_queue: # TODO
-                    ctx.metrics_subscribers.append(queue)
+    async def _persist_metrics_to_db(self, job: Job):
+        training_ctx = job._training_context
+        last_persisted = 0
 
-    def unsubscribe_from_metrics(self, job_id: str, queue: asyncio.Queue):
-        with self._jobs_lock:
-            job = self._jobs.get(job_id)
-            if job:
-                ctx = job._training_context
-                if ctx and ctx.metrics_queue and queue in ctx.metrics_subscribers: # TODO
-                    ctx.metrics_subscribers.remove(queue)
-
-    async def _drain_metrics_to_db(self, job: Job):
-        ctx = job._training_context
         while True:
-            metric = await asyncio.get_event_loop().run_in_executor(
-                None, ctx.metrics_queue.get
-            )
-            if metric is None:
-                # notify all SSE subscribers
-                for subscriber in job._metrics_subscribers:
-                    await subscriber.put(None)
+            current_len = len(training_ctx.training_metrics)
+            if current_len > last_persisted:
+                for i in range(last_persisted, current_len):
+                    metric = training_ctx.training_metrics[i]
+                    try:
+                        self.db.insert_metric(
+                            job_id=job.id,
+                            step=metric["step"],
+                            metric_name=metric["metric_name"],
+                            value=metric["value"],
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to persist metric for job {job.id}: {e}"
+                        )
+                last_persisted = current_len
+
+            if job.is_terminal():
+                for i in range(last_persisted, len(training_ctx.training_metrics)):
+                    metric = training_ctx.training_metrics[i]
+                    try:
+                        self.db.insert_metric(
+                            job_id=job.id,
+                            step=metric["step"],
+                            metric_name=metric["metric_name"],
+                            value=metric["value"],
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to persist metric for job {job.id}: {e}"
+                        )
                 return
 
-            if self.db:
-                try:
-                    self.db.insert_metric(
-                        job_id=job.id,
-                        step=metric["step"],
-                        metric_name=metric["metric_name"],
-                        value=metric["value"],
-                        timestamp=metric["timestamp"],
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to persist metric for job {job.id}: {e}"
-                    )
-
-            for subscriber in job._metrics_subscribers:
-                await subscriber.put(metric)
+            await asyncio.sleep(1.0)
 
     async def _mark_job_in_progress(self, job: Job):
-        ctx = job._training_context
-        if ctx and ctx.start_event:
-            while not ctx.start_event.is_set():
+        training_ctx = job._training_context
+        if training_ctx and training_ctx.start_event:
+            while not training_ctx.start_event.is_set():
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
@@ -340,14 +334,13 @@ class JobManager:
                 )
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
-        ctx = job._training_context
+        metrics_persister = None
         try:
-            # jobs with a start_event need to be marked as in_progress by the runner
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
-            if ctx and ctx.metrics_queue:
-                metrics_drain = asyncio.create_task(
-                    self._drain_metrics_to_db(job)
+            if self.db and job._training_context:
+                metrics_persister = asyncio.create_task(
+                    self._persist_metrics_to_db(job)
                 )
 
             result_path = await task_function(request)
@@ -423,10 +416,8 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
-            if ctx and ctx.metrics_queue:
-                ctx.metrics_queue.put(None)  # safety sentinel
-                if not metrics_drain.done():
-                    await metrics_drain  # let it finish draining
+            if metrics_persister and not metrics_persister.done():
+                await metrics_persister
             job._task = None
 
     def _start_cleanup_task(self):
@@ -498,10 +489,10 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            ctx = job._training_context
-            if ctx and ctx.cancel_event and not force:
+            training_ctx = job._training_context
+            if training_ctx and training_ctx.cancel_event and not force:
                 # runner handles cancellation
-                ctx.cancel_event.set()
+                training_ctx.cancel_event.set()
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
