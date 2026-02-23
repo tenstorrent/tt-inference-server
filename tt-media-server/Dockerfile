@@ -101,7 +101,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && bash ./build_metal.sh --release -e \
     && uv pip install --upgrade cmake \
     && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -117,7 +117,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 
@@ -129,10 +129,11 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${TT_METAL_HOME}/server"
 COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
-    (echo 'Requirements installation failed, trying without pyluwen...' && \
-    grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
+    && uv pip install --no-cache-dir -r ${TT_METAL_HOME}/requirements.txt || \
+    (source ${PYTHON_ENV_DIR}/bin/activate && \
+    echo 'Requirements installation failed, trying without pyluwen...' && \
+    grep -v pyluwen ${TT_METAL_HOME}/requirements.txt > ${TT_METAL_HOME}/requirements_no_pyluwen.txt && \
+    uv pip install --no-cache-dir -r ${TT_METAL_HOME}/requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
