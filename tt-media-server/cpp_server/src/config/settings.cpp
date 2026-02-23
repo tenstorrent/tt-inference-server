@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
+#include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
 #include <cstddef>
@@ -80,6 +81,10 @@ bool is_llm_service_enabled() {
     return model_service() == ModelService::LLM;
 }
 
+std::string runner_type() {
+    return to_string(model_service());
+}
+
 size_t num_workers() {
     return device_ids_parsed().size();
 }
@@ -132,7 +137,17 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
-    return llm_engine::Config();
+    llm_engine::Config cfg;
+    const char* v = std::getenv("LLM_DEVICE_BACKEND");
+    if (v) {
+        std::string s(v);
+        if (s == "sockets") {
+            cfg.device = llm_engine::DeviceBackend::Sockets;
+        } else {
+            cfg.device = llm_engine::DeviceBackend::Mock;
+        }
+    }
+    return cfg;
 }
 
 }  // namespace tt::config

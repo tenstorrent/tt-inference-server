@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 
+#include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
 #include "domain/completion_request.hpp"
 #include "utils/tokenizer.hpp"
@@ -27,8 +28,7 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-struct ChatCompletionRequest {
-    std::string task_id;
+struct ChatCompletionRequest: BaseRequest {
     std::optional<std::string> model;
 
     std::vector<ChatMessage> messages;

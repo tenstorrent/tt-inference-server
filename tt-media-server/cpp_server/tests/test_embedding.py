@@ -26,11 +26,11 @@ def test_health_check(base_url: str) -> bool:
         return False
 
 
-def test_ready_check(base_url: str) -> bool:
-    """Test the readiness endpoint."""
-    print("\n=== Testing Ready Check ===")
+def test_liveness_check(base_url: str) -> bool:
+    """Test the liveness endpoint."""
+    print("\n=== Testing Liveness Check ===")
     try:
-        response = requests.get(f"{base_url}/ready", timeout=5)
+        response = requests.get(f"{base_url}/tt-liveness", timeout=5)
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
         return response.status_code == 200
@@ -240,7 +240,7 @@ def main():
 
     # Run tests
     results["health"] = test_health_check(base_url)
-    results["ready"] = test_ready_check(base_url)
+    results["tt-liveness"] = test_liveness_check(base_url)
     results["single"] = test_single_embedding(base_url, args.model)
     results["batch"] = test_batch_embedding(base_url, args.model)
 

@@ -4,14 +4,18 @@
 #include <drogon/drogon.h>
 #include <iostream>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <sys/stat.h>
+#include <netinet/tcp.h>
 
-#ifndef TEST
-#endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
+#include "profiling/tracy.hpp"
+#include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/single_process_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -26,6 +30,15 @@ namespace {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+        int worker_id = std::atoi(argv[2]);
+        tracy_config::TracyStartupWorker(worker_id);
+        tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
+        tt::worker::SingleProcessWorker worker(cfg);
+        worker.start();
+        _exit(0);
+    }
+
     // Parse command line arguments
     std::string host = "0.0.0.0";
     uint16_t port = 8000;
@@ -49,7 +62,7 @@ int main(int argc, char* argv[]) {
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
                       << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default) or 'ttnn_test'\n";
+                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
             return 0;
         }
     }
@@ -68,7 +81,6 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-
     std::cout << "=================================================\n"
               << std::endl;
 
@@ -86,8 +98,8 @@ int main(int argc, char* argv[]) {
 
             const std::string& path = req->path();
 
-            // Skip authentication for health, ready, docs, and openapi endpoints
-            if (path == "/health" || path == "/ready" ||
+            // Skip authentication for health, tt-liveness, docs, and openapi endpoints
+            if (path == "/health" || path == "/tt-liveness" ||
                 path == "/docs" || path == "/swagger" || path == "/openapi.json") {
                 chainCallback();
                 return;
@@ -124,10 +136,14 @@ int main(int argc, char* argv[]) {
 
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kWarn)
+        .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
+        .setAfterAcceptSockOptCallback([](int fd) {
+            int one = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
         .setIdleConnectionTimeout(60)
@@ -142,16 +158,16 @@ int main(int argc, char* argv[]) {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
                   << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
+                  << "  GET  /tt-liveness     - Liveness check\n"
                   << std::endl;
     } else {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions - OpenAI-compatible chat completions\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
-                  << "  GET  /docs            - Swagger UI\n"
-                  << "  GET  /openapi.json    - OpenAPI specification\n"
+                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
+                  << "  GET  /health               - Health check\n"
+                  << "  GET  /tt-liveness          - Liveness check\n"
+                  << "  GET  /docs                 - Swagger UI\n"
+                  << "  GET  /openapi.json         - OpenAPI specification\n"
                   << std::endl;
     }
 
