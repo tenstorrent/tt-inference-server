@@ -7,7 +7,7 @@
 #include <string>
 
 #include "runners/runner_interface.hpp"
-#include "runners/llm_runner/config.hpp"
+#include "runners/runner_config.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 
 namespace llm_engine {
@@ -17,16 +17,15 @@ namespace llm_engine {
 namespace tt::utils::runner_factory {
 
 /**
- * Create a runner based on the current configuration.
- * The runner type is determined by the MODEL_SERVICE environment variable.
+ * Create a runner based on the RunnerConfig variant.
  * 
- * @param config LLM engine configuration
- * @param on_token Token callback for streaming
- * @param task_queue Task queue for worker communication
+ * @param config Runner configuration (LLM or Embedding)
+ * @param on_token Token callback for streaming (used by LLM runner)
+ * @param task_queue Task queue for worker communication (used by LLM runner)
  * @return Unique pointer to the created runner
  */
 std::unique_ptr<runners::IRunner> create_runner(
-    const llm_engine::Config& config,
+    const runners::RunnerConfig& config,
     llm_engine::TokenCallback on_token,
     llm_engine::ITaskQueue* task_queue
 );

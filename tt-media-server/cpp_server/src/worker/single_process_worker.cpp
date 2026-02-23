@@ -9,12 +9,12 @@
 
 namespace tt::worker {
 
-SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config)
-    : cfg(move(cfg)), llm_engine_config_(llm_engine_config) {
-    
+SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
+    : cfg(move(cfg)) {
+
     pid = getpid();
     worker_id = cfg.worker_id;
-    
+
     on_token_ = [this](const llm_engine::TokenResult& result) {
         auto token = ipc::SharedToken{
             .token_index = 0,
@@ -45,7 +45,7 @@ void SingleProcessWorker::start() {
     {
         ZoneScopedN("Worker::init");
         runner_ = tt::utils::runner_factory::create_runner(
-            llm_engine_config_,
+            cfg.runner_config,
             on_token_,
             cfg.task_queue.get()
         );
