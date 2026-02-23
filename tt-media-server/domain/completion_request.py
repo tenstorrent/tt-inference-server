@@ -2,11 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Union, Annotated
+from typing import Annotated, Union
 
+import torch
 from domain.base_request import BaseRequest
 from pydantic import BaseModel, Field
-import torch
 
 _LONG_INFO = torch.iinfo(torch.long)
 

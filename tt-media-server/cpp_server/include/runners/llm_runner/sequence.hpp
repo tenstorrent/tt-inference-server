@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <vector>
+#include <memory>
 #include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -93,10 +94,7 @@ class Sequence {
   size_t num_prompt_tokens_ = 0;
   size_t num_cached_tokens_ = 0;
   std::vector<int> block_table_;
-  float temperature = 1.0f;
-  /** Max completion tokens for this sequence (from SamplingParams). Each request can have a different value. */
-  int max_tokens = 64;
-  bool ignore_eos = false;
+  std::unique_ptr<SamplingParams> sampling_params;
 
  private:
   size_t num_tokens() const { return token_ids_.size(); }

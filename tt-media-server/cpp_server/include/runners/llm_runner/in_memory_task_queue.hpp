@@ -6,21 +6,28 @@
 #include "runners/llm_runner/task_queue.hpp"
 
 #include <deque>
+#include <memory>
+#include <sstream>
 
 namespace llm_engine {
 
 /**
- * In-process ITaskQueue backed by a simple deque.
- * Stores copies of sequences; try_pop returns a heap-allocated copy.
+ * In-process ITaskQueue backed by a deque of owned pointers.
+ * Avoids requiring Sequence to be copy-constructible.
  * Useful for unit testing without IPC overhead.
  */
 class InMemoryTaskQueue : public ITaskQueue {
  public:
-  void push(const Sequence& seq) override { queue_.push_back(seq); }
+  void push(const Sequence& seq) override {
+    std::ostringstream os;
+    seq.serialize(os);
+    std::istringstream is(os.str());
+    queue_.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
+  }
 
   Sequence* try_pop() override {
     if (queue_.empty()) return nullptr;
-    auto* seq = new Sequence(std::move(queue_.front()));
+    Sequence* seq = queue_.front().release();
     queue_.pop_front();
     return seq;
   }
@@ -28,7 +35,7 @@ class InMemoryTaskQueue : public ITaskQueue {
   bool empty() const override { return queue_.empty(); }
 
  private:
-  std::deque<Sequence> queue_;
+  std::deque<std::unique_ptr<Sequence>> queue_;
 };
 
 }  // namespace llm_engine

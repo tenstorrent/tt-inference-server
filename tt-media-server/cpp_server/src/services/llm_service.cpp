@@ -4,8 +4,9 @@
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "runners/llm_runner/config.hpp"
 #include "worker/single_process_worker.hpp"
-
+#include "utils/mapper.hpp"
 #include <cassert>
 #include <chrono>
 #include <climits>
@@ -108,8 +109,13 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
         auto text = std::get<std::string>(request.prompt);
         request.prompt = tokenizer_.encode(text);
     }
+    const auto& tokens = std::get<std::vector<int>>(request.prompt);
+    if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
+        throw std::invalid_argument(
+            "Input too long: " + std::to_string(tokens.size()) +
+            " tokens exceeds maximum of " + std::to_string(llm_engine::Config::MAX_INPUT_TOKENS));
+    }
 }
-
 
 void LLMService::start_workers() {
     auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
@@ -344,9 +350,7 @@ void LLMService::process_streaming_request(
     auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
-    sequence->temperature = request.temperature.value_or(1.0f);
-    sequence->max_tokens = request.max_tokens;
-    sequence->ignore_eos = request.ignore_eos;
+    sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
 }
 
