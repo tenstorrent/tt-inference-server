@@ -34,8 +34,6 @@ public:
     LLMService(const LLMService&) = delete;
     LLMService& operator=(const LLMService&) = delete;
 
-    void validate_request(domain::CompletionRequest& request) const;
-
     void start() override;
     void stop() override;
 

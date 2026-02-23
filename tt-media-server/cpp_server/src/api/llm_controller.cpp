@@ -96,16 +96,6 @@ void LLMController::completions(
         return;
     }
 
-    try {
-        service_->validate_request(request);
-    } catch (const std::invalid_argument& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json(e.what(), "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
     if (request.stream) {
         handle_streaming(std::move(request), std::move(callback), false);
     } else {
@@ -159,16 +149,6 @@ void LLMController::chat_completions(
     }
 
     domain::CompletionRequest request = chat_req.to_completion_request();
-
-    try {
-        service_->validate_request(request);
-    } catch (const std::invalid_argument& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json(e.what(), "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
 
     if (request.stream) {
         handle_streaming(std::move(request), std::move(callback), true);

@@ -117,11 +117,6 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
     }
 }
 
-void LLMService::validate_request(domain::CompletionRequest& request) const {
-    pre_process(request);
-}
-
-
 void LLMService::start_workers() {
     auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
         return {
