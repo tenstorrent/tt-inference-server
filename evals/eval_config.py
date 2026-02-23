@@ -2638,7 +2638,7 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": 3600,
+                    "timeout": "7200",
                 },
                 gen_kwargs={
                     "reasoning_effort": "high",
@@ -2668,7 +2668,7 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": 3600,
+                    "timeout": "7200",
                 },
                 gen_kwargs={
                     "reasoning_effort": "high",
@@ -2698,7 +2698,7 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": 3600,
+                    "timeout": "7200",
                 },
                 gen_kwargs={
                     "reasoning_effort": "high",
