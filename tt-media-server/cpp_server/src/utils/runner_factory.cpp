@@ -7,29 +7,28 @@
 #include "runners/embedding_runner.hpp"
 
 #include <iostream>
-#include <stdexcept>
 
 namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> create_runner(
+    config::ModelService service,
     const runners::RunnerConfig& config,
     llm_engine::TokenCallback on_token,
     llm_engine::ITaskQueue* task_queue) {
 
-    return std::visit([&](const auto& cfg) -> std::unique_ptr<runners::IRunner> {
-        using T = std::decay_t<decltype(cfg)>;
-
-        if constexpr (std::is_same_v<T, llm_engine::Config>) {
-            std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
-            return std::make_unique<tt::runners::LLMRunner>(cfg, std::move(on_token), task_queue);
-        } else if constexpr (std::is_same_v<T, runners::EmbeddingConfig>) {
+    switch (service) {
+        case config::ModelService::EMBEDDING: {
             std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
+            auto& cfg = std::get<runners::EmbeddingConfig>(config);
             return std::make_unique<runners::EmbeddingRunner>(cfg.device_id, cfg.visible_device);
-        } else {
-            std::cout << "[RunnerFactory] Unknown runner config type\n, defaulting to LLM runner" << std::flush;
+        }
+        case config::ModelService::LLM:
+        default: {
+            std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
+            auto& cfg = std::get<llm_engine::Config>(config);
             return std::make_unique<tt::runners::LLMRunner>(cfg, std::move(on_token), task_queue);
         }
-    }, config);
+    }
 }
 
 } // namespace tt::utils::runner_factory

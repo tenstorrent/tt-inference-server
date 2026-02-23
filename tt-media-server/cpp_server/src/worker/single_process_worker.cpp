@@ -1,4 +1,5 @@
 #include "worker/single_process_worker.hpp"
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/runner_factory.hpp"
 #include <csignal>
@@ -45,6 +46,7 @@ void SingleProcessWorker::start() {
     {
         ZoneScopedN("Worker::init");
         runner_ = tt::utils::runner_factory::create_runner(
+            tt::config::model_service(),
             cfg.runner_config,
             on_token_,
             cfg.task_queue.get()
