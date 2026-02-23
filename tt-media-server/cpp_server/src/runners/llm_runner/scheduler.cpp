@@ -125,13 +125,13 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->append_token(token_id);
 
     bool finished =
-        (!seq->ignore_eos && token_id == eos_) ||
-        seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens);
+        (!seq->sampling_params->ignore_eos && token_id == eos_) ||
+        seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens);
 
     if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess task_id=" << seq->task_id << " finished"
           << " (eos=" << (token_id == eos_) << " max_tokens="
-          << (seq->num_completion_tokens() >= static_cast<size_t>(seq->max_tokens)) << ")" << std::endl;
+          << (seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens)) << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;
