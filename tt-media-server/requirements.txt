@@ -17,7 +17,7 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
-whisperx
+whisperx==3.4.3
 
 # Pinned to match tt-metal — must not be overridden by transitive deps (e.g. whisperx)
 transformers==4.53.0
