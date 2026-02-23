@@ -3,7 +3,58 @@
 #include "runners/llm_runner/device_backend.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
+
 namespace llm_engine {
+
+namespace {
+
+void run_ttrun_hello_world_thread(std::string tt_metal_home) {
+  std::string ttrun_py = tt_metal_home + "/ttnn/ttnn/distributed/ttrun.py";
+  std::string rank_binding = tt_metal_home + "/bh_4x2_multi_mesh_rank_binding.yaml";
+  std::string hello_script = tt_metal_home + "/ttnn/ttnn/distributed/ttrun_hello_world.py";
+
+  std::vector<std::string> args = {
+      "/data/dmadic/tt-metal/python_env/bin/python", ttrun_py, "--rank-binding", rank_binding,hello_script};
+  std::vector<char*> argv;
+  argv.reserve(args.size() + 1);
+  for (auto& a : args) argv.push_back(a.data());
+  argv.push_back(nullptr);
+
+  pid_t pid = fork();
+  std::cout << "ttrun hello world: forked process with pid " << pid << std::endl;
+  if (pid < 0) {
+    LLM_ENGINE_LOG("model_runner") << "ttrun hello world: fork failed" << std::endl;
+    return;
+  }
+  if (pid == 0) {
+    execv(args[0].c_str(), argv.data());
+    _exit(127);
+  }
+  int status = 0;
+  waitpid(pid, &status, 0);
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 127) {
+    LLM_ENGINE_LOG("model_runner") << "ttrun hello world: exec failed (127), is python3 in PATH?" << std::endl;
+  }
+}
+
+void launch_ttrun_hello_world_nonblocking() {
+  const char* home = std::getenv("TT_METAL_HOME");
+  if (!home || !*home) {
+    std::cout << "ttrun hello world: TT_METAL_HOME not set" << std::endl;
+    return;
+  };
+  std::string tt_metal_home(home);
+  std::thread([tt_metal_home]() { run_ttrun_hello_world_thread(tt_metal_home); }).detach();
+}
+
+}  // namespace
 
 constexpr int64_t kWhitespaceTokenId = 223;
 
@@ -50,6 +101,8 @@ void ModelRunnerStub::run(const std::vector<Sequence*>& seqs,
     for (Sequence* seq : seqs) {
       decode_callback_({seq->task_id, kWhitespaceTokenId});
     }
+    std::cout << "ttrun hello world: running" << std::endl;
+    launch_ttrun_hello_world_nonblocking();
   } else {
     backend_->write(*seqs[0]);
   }
