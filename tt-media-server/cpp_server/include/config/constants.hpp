@@ -42,7 +42,13 @@ enum class RunnerType {
 
 /** MODEL_RUNNER string for env (llm_test -> LLM_TEST, llama_runner -> LLAMA_RUNNER). */
 inline std::string to_string(RunnerType r) {
-    return r == RunnerType::LLAMA_RUNNER ? "llama_runner" : "llm_test";
+    switch (r) {
+        case RunnerType::LLAMA_RUNNER:
+            return "llama_runner";
+        case RunnerType::LLM_TEST:
+        default:
+            return "llm_test";
+    }
 }
 
 enum class SocketRole {

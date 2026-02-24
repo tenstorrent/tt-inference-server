@@ -146,6 +146,9 @@ std::string visible_devices_for_worker(size_t worker_index) {
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer_strategy().stop_token_ids();
+    if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
+        cfg.max_num_seqs = 16;
+    }
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);

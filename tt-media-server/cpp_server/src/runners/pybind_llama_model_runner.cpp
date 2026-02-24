@@ -76,7 +76,7 @@ struct PybindLlamaModelRunner::Impl {
 
   void fail_sequences(const std::vector<Sequence*>& seqs) {
     for (Sequence* seq : seqs) {
-      DecodeResult dr;
+      TokenResult dr;
       dr.task_id = seq->task_id;
       dr.token_id = 0;
       dr.is_error = true;
@@ -117,7 +117,7 @@ struct PybindLlamaModelRunner::Impl {
 
         for (size_t i = 0; i < seqs.size(); ++i) {
           py::object item = results[py::int_(i)];
-          DecodeResult dr;
+          TokenResult dr;
           dr.task_id.id = item.attr("task_id").cast<std::string>();
           dr.token_id = item.attr("token_id").cast<int64_t>();
           std::string error = item.attr("error").cast<std::string>();

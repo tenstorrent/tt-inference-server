@@ -52,7 +52,7 @@ class StepSequence:
 
 @dataclass
 class StepResult:
-    """One token result (mirrors C++ DecodeResult)."""
+    """One token result (mirrors C++ TokenResult)."""
 
     task_id: str
     token_id: int
