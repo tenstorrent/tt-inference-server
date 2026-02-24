@@ -101,6 +101,15 @@ struct PybindLlamaModelRunner::Impl {
           } else {
             token_ids.append(seq->token_ids_.back());
           }
+
+          py::list block_table;
+          for (int bid : seq->block_table_) {
+            block_table.append(bid);
+          }
+
+          int current_pos = is_prefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
+          int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
+
           const SamplingParams* sp = seq->sampling_params.get();
           int max_tokens = sp ? sp->max_tokens : 64;
           double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
@@ -110,7 +119,8 @@ struct PybindLlamaModelRunner::Impl {
             seed = py::int_(*sp->seed);
           }
           py_seqs.append(
-              step_seq_class_(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos, seed));
+              step_seq_class_(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos,
+                              block_table, current_pos, prompt_len, seed));
         }
 
         py::object results = runner_.attr("run_step")(is_prefill, py_seqs);
