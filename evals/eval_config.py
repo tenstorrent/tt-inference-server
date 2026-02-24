@@ -2682,7 +2682,7 @@ _eval_config_list = [
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.000063,  # 15,908 samples * 0.00006286 ~= 1 sample per sub-task
-                    EvalLimitMode.CI_NIGHTLY: 2,  # 2 samples per sub-task
+                    EvalLimitMode.CI_NIGHTLY: 0.15,  # 15% of 15,902 samples ~= 42 samples per sub-task
                 },
                 score=EvalTaskScore(
                     published_score=90.0,  # MMLU score (without tools)
@@ -2698,12 +2698,12 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,
+                max_concurrent=128,
                 model_kwargs={
                     "timeout": "7200",
                 },
                 gen_kwargs={
-                    "reasoning_effort": "high",
+                    "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
                     "max_gen_toks": 32*1024,
