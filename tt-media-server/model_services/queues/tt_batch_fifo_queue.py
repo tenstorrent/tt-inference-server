@@ -37,7 +37,9 @@ class TTBatchFifoQueue(TTQueueInterface):
         """Non-blocking put."""
         self._queue.put(item, block=False)
 
-    def put_many(self, items: List, block: bool = True, timeout: Optional[float] = None):
+    def put_many(
+        self, items: List, block: bool = True, timeout: Optional[float] = None
+    ):
         """Put multiple items at once."""
         for item in items:
             if timeout is not None:
@@ -62,7 +64,12 @@ class TTBatchFifoQueue(TTQueueInterface):
         except Empty:
             return None
 
-    def get_many(self, max_messages_to_get: int = 100, block: bool = True, timeout: Optional[float] = None) -> List:
+    def get_many(
+        self,
+        max_messages_to_get: int = 100,
+        block: bool = True,
+        timeout: Optional[float] = None,
+    ) -> List:
         """
         Smart batching get_many that tries to get full batches.
         Uses exponential backoff to wait for more items when queue has some but not enough.
@@ -83,7 +90,10 @@ class TTBatchFifoQueue(TTQueueInterface):
         batch_timeout = min(timeout or 1.0, 1.0)  # Max 1 second for batch filling
         start_time = time.time()
 
-        while len(items) < max_messages_to_get and (time.time() - start_time) < batch_timeout:
+        while (
+            len(items) < max_messages_to_get
+            and (time.time() - start_time) < batch_timeout
+        ):
             try:
                 # Try to get more items with increasingly shorter timeouts
                 remaining_time = batch_timeout - (time.time() - start_time)
@@ -101,7 +111,10 @@ class TTBatchFifoQueue(TTQueueInterface):
 
             except Empty:
                 # No more items available, check if we should wait longer
-                if len(items) < self._batch_size and (time.time() - start_time) < batch_timeout * 0.5:
+                if (
+                    len(items) < self._batch_size
+                    and (time.time() - start_time) < batch_timeout * 0.5
+                ):
                     # Wait a bit longer for more items to arrive
                     time.sleep(0.01)
                 else:
@@ -114,21 +127,21 @@ class TTBatchFifoQueue(TTQueueInterface):
         """Approximate queue size."""
         try:
             return self._queue.qsize()
-        except:
+        except Exception:
             return 0
 
     def empty(self) -> bool:
         """Check if queue is empty."""
         try:
             return self._queue.empty()
-        except:
+        except Exception:
             return True
 
     def full(self) -> bool:
         """Check if queue is full."""
         try:
             return self._queue.full()
-        except:
+        except Exception:
             return False
 
     def peek_next(self, timeout: Optional[float] = None) -> Optional[Any]:
@@ -143,7 +156,7 @@ class TTBatchFifoQueue(TTQueueInterface):
         """Close the queue."""
         try:
             self._queue.close()
-        except:
+        except Exception:
             pass
 
     def __getstate__(self):

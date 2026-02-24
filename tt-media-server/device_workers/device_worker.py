@@ -4,7 +4,6 @@
 
 import threading
 from multiprocessing import Queue
-import time
 
 from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
