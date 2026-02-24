@@ -1267,7 +1267,7 @@ llm_templates = [
         weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
         impl=tt_transformers_impl,
         tt_metal_commit="7e7b850",  # adam/mistral24b-multimodal - support text-only requests
-        vllm_commit="98a770b",  # adam/mistral24b-integration - fix profiling validation
+        vllm_commit="4ddf003",  # adam/mistral24b-integration - fix profiling validation
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
