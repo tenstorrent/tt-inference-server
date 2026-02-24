@@ -25,8 +25,31 @@
     "python-envs.pythonProjects": [],
     "python.envFile": "${workspaceFolder}/.env.test",
     "cmake.sourceDirectory": "${workspaceFolder}/tt-media-server/cpp_server",
+    "cmake.useCMakePresets": "always",
+    "cmake.allowCommentsInPresetsFile": true,
+    "cmake.configureOnOpen": true,
+    "cmake.buildBeforeRun": true,
+    "cmake.automaticReconfigure": true,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.cppStandard": "c++20",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/include/runners",
+        "/usr/include/jsoncpp"
+    ],
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.enhanced_hover": true,
+    "C_Cpp.autocomplete": "default",
+    "C_Cpp.suggestSnippets": true,
+    "files.associations": {
+        "*.hpp": "cpp",
+        "*.cpp": "cpp"
+    },
     "cmake.buildTask": true,
     "cmake.generator": "Ninja",
     "editor.semanticHighlighting.enabled": true,
     "editor.bracketPairColorization.enabled": true
-    }
+}
