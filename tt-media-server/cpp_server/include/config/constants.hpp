@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace tt::config {
@@ -45,6 +45,32 @@ inline std::string to_string(RunnerType r) {
     return r == RunnerType::LLAMA_RUNNER ? "llama_runner" : "llm_test";
 }
 
+enum class SocketRole {
+    NONE,
+    SERVER,
+    CLIENT,
+};
+
+/** String value for env SOCKET_ROLE (e.g. "server", "client"). */
+inline std::string to_string(SocketRole r) {
+    switch (r) {
+        case SocketRole::SERVER:
+            return "server";
+        case SocketRole::CLIENT:
+            return "client";
+        case SocketRole::NONE:
+        default:
+            return "";
+    }
+}
+
+/** Parse SOCKET_ROLE; empty or unknown -> NONE. */
+inline SocketRole socket_role_from_string(const std::string& v) {
+    if (v == "server") return SocketRole::SERVER;
+    if (v == "client") return SocketRole::CLIENT;
+    return SocketRole::NONE;
+}
+
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& v) {
     return v == "llama_runner" ? RunnerType::LLAMA_RUNNER : RunnerType::LLM_TEST;
@@ -61,6 +87,9 @@ namespace defaults {
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
+    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
+    constexpr const char* SOCKET_HOST = "localhost";
+    constexpr uint16_t SOCKET_PORT = 9000;
 }
 
 }  // namespace tt::config

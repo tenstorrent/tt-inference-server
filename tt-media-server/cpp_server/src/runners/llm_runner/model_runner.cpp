@@ -7,14 +7,14 @@ namespace llm_engine {
 
 constexpr int64_t kWhitespaceTokenId = 223;
 
-void DecodeQueue::push(const DecodeResult& result) {
+void DecodeQueue::push(const TokenResult& result) {
   std::lock_guard lock(mutex_);
   pending_.push_back(result);
 }
 
-std::vector<DecodeResult> DecodeQueue::drain() {
+std::vector<TokenResult> DecodeQueue::drain() {
   std::lock_guard lock(mutex_);
-  std::vector<DecodeResult> out;
+  std::vector<TokenResult> out;
   out.swap(pending_);
   return out;
 }
@@ -33,7 +33,7 @@ ModelRunnerStub::~ModelRunnerStub() {
 }
 
 void ModelRunnerStub::reader_loop() {
-  DecodeResult result;
+  TokenResult result;
   while (!stop_.load(std::memory_order_relaxed)) {
     if (!backend_->read(&result)) break;
     if (stop_.load(std::memory_order_relaxed)) break;

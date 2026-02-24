@@ -14,7 +14,7 @@ LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* t
 
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
 
-  auto decode_cb = [this](const DecodeResult& result) {
+  auto decode_cb = [this](const TokenResult& result) {
     decode_queue_.push(result);
   };
 
@@ -76,7 +76,7 @@ void LLMRunner::drain_decode_results() {
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> token_ids = {dr.token_id};
+    std::vector<int64_t> token_ids = {static_cast<int64_t>(dr.token_id)};
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();

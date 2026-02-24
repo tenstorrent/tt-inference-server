@@ -50,7 +50,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   tt::runners::LLMRunner engine{config, [&](const TokenResult& result) {
       received_tokens[result.task_id].push_back(result.token_id);
-      if (result.finished && ++finished_count == total_requests) {
+      if (result.finished.value_or(false) && ++finished_count == total_requests) {
         engine.stop();
       }
     }, task_queue.get()};

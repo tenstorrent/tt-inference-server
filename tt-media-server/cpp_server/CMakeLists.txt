@@ -18,6 +18,24 @@ find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
+# Try to find cereal, or fetch it if not available
+find_package(cereal QUIET)
+if(NOT cereal_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        cereal
+        GIT_REPOSITORY https://github.com/USCiLab/cereal.git
+        GIT_TAG v1.3.2
+    )
+
+    # Disable cereal tests and examples
+    set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+    set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
+    set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(cereal)
+endif()
+
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
 
@@ -256,6 +274,8 @@ set(SOURCES
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/inter_server_service.cpp
 )
 
 # Create executable
@@ -270,7 +290,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Link Drogon and llm_engine (used by LLMService)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal)
 if(ENABLE_TRACY)
     target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
     target_sources(${PROJECT_NAME} PRIVATE

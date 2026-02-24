@@ -58,4 +58,13 @@ llm_engine::Config llm_engine_config();
 /** Runner type from MODEL_RUNNER (llm_test -> LLM_TEST, llama_runner -> LLAMA_RUNNER). */
 RunnerType model_runner_type();
 
+/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
+SocketRole socket_role();
+
+/** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
+std::string socket_host();
+
+/** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
+uint16_t socket_port();
+
 }  // namespace tt::config

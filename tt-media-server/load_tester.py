@@ -6,7 +6,7 @@ import requests
 import time
 import sys
 
-API_URL = "http://localhost:8000/image/generations"
+API_URL = "http://localhost:8000/v1/images/generations"
 AUTH_TOKEN = "your-secret-key"
 LOG_FILE = "api_status.log"
 

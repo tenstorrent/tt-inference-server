@@ -23,7 +23,7 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
         if (result.is_error) flags |= ipc::SharedToken::FLAG_ERROR;
         auto token = ipc::SharedToken{
             .token_index = 0,
-            .flags = flags,
+            .flags = static_cast<uint32_t>(result.finished.value_or(false) ? 1 : 0),
             .token_id = result.token_id,
             .task_id = {},
             .padding = {},

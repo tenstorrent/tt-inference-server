@@ -162,4 +162,16 @@ RunnerType model_runner_type() {
     return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
 }
 
+SocketRole socket_role() {
+    return socket_role_from_string(env_string("SOCKET_ROLE", defaults::SOCKET_ROLE));
+}
+
+std::string socket_host() {
+    return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
+}
+
+uint16_t socket_port() {
+    return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
+}
+
 }  // namespace tt::config

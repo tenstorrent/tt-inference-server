@@ -261,7 +261,7 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/audio/transcriptions",
+            f"{self.base_url}/v1/audio/transcriptions",
             json=payload,
             headers=headers,
             timeout=90,
@@ -326,7 +326,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             "is_preprocessing_enabled": is_preprocessing_enabled,
         }
 
-        url = f"{self.base_url}/audio/transcriptions"
+        url = f"{self.base_url}/v1/audio/transcriptions"
         start_time = time.monotonic()
         ttft = None
         total_text = ""  # Accumulate full text

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
 #include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -51,16 +52,10 @@ inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
-struct DecodeResult {
-  TaskID task_id;
-  int64_t token_id;
-  bool is_error = false;
-};
-
 struct TokenResult {
   TaskID task_id;
   uint64_t token_id;
-  bool finished;
+  std::optional<bool> finished;
   bool is_stop_token = false;
   bool is_error = false;
 };
