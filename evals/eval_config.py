@@ -2644,6 +2644,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
+                    "max_gen_toks": 32*1024,
                 },
             ),
             EvalTask(
@@ -2674,10 +2675,11 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
+                    "max_gen_toks": 32*1024,
                 },
             ),
             EvalTask(
-                task_name="mmlu",
+                task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.000063,  # 15,908 samples * 0.00006286 ~= 1 sample
                     EvalLimitMode.CI_NIGHTLY: 0.00038,  # 15,908 samples samples * 0.00037717 ~= 6 samples
@@ -2690,7 +2692,7 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "acc,none",
+                            "exact_match,get_response",
                         ],
                         "unit": "percent",
                     },
@@ -2704,6 +2706,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
+                    "max_gen_toks": 32*1024,
                 },
             ),
         ],
