@@ -44,6 +44,7 @@ sys.modules["tt_model_runners.runner_fabric"] = Mock()
 # Now import the modules under test
 from device_workers.worker_utils import initialize_device_worker
 from utils.runner_utils import (
+    _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
     setup_cpu_threading_limits,
     setup_runner_environment,
@@ -249,6 +250,114 @@ class TestSetupGalaxyMeshConfig:
                 _setup_galaxy_mesh_config("/opt/tt-metal")
 
                 assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
+
+
+class TestSetupBlackholeMeshConfig:
+    """Test cases for _setup_blackhole_mesh_config function"""
+
+    def test_sets_p150_mesh_descriptor(self):
+        """Test mesh descriptor for (1, 1) device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_p150 = Mock()
+            mock_settings_p150.device_mesh_shape = (1, 1)
+
+            with patch("utils.runner_utils.settings", mock_settings_p150):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p150_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_sets_p300_mesh_descriptor(self):
+        """Test mesh descriptor for (1, 2) device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_p300 = Mock()
+            mock_settings_p300.device_mesh_shape = (1, 2)
+
+            with patch("utils.runner_utils.settings", mock_settings_p300):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p300_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_sets_p300_x2_mesh_descriptor(self):
+        """Test mesh descriptor for (2, 2) device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_p300x2 = Mock()
+            mock_settings_p300x2.device_mesh_shape = (2, 2)
+
+            with patch("utils.runner_utils.settings", mock_settings_p300x2):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p300_x2_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_sets_p150_x4_mesh_descriptor(self):
+        """Test mesh descriptor for (1, 4) device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_p150x4 = Mock()
+            mock_settings_p150x4.device_mesh_shape = (1, 4)
+
+            with patch("utils.runner_utils.settings", mock_settings_p150x4):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p150_x4_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_sets_p150_x8_mesh_descriptor(self):
+        """Test mesh descriptor for (2, 4) device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_p150x8 = Mock()
+            mock_settings_p150x8.device_mesh_shape = (2, 4)
+
+            with patch("utils.runner_utils.settings", mock_settings_p150x8):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p150_x8_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_skips_mesh_descriptor_for_unknown_shape(self):
+        """Test that mesh descriptor is not set for unknown device shape"""
+        with patch.dict(os.environ, {}, clear=True):
+            mock_settings_unknown = Mock()
+            mock_settings_unknown.device_mesh_shape = (3, 3)
+
+            with patch("utils.runner_utils.settings", mock_settings_unknown):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
+
+    def test_called_from_setup_runner_when_not_galaxy(self):
+        """Test that blackhole mesh config is called when is_galaxy is False"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
 
 
 class TestInitializeDeviceWorker:

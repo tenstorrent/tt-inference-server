@@ -31,6 +31,8 @@ def setup_runner_environment(
 
     if settings.is_galaxy:
         _setup_galaxy_mesh_config(tt_metal_home)
+    else:
+        _setup_blackhole_mesh_config(tt_metal_home)
 
 
 def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
@@ -41,6 +43,23 @@ def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
     set_torch_thread_limits(num_threads=num_torch_threads)
     if settings.default_throttle_level:
         os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
+
+
+def _setup_blackhole_mesh_config(tt_metal_home: str):
+    """Configure mesh graph descriptors for Blackhole hardware (P150/P300)"""
+    mesh_descriptors = {
+        (1, 1): "p150_mesh_graph_descriptor.textproto",
+        (1, 2): "p300_mesh_graph_descriptor.textproto",
+        (2, 2): "p300_x2_mesh_graph_descriptor.textproto",
+        (1, 4): "p150_x4_mesh_graph_descriptor.textproto",
+        (2, 4): "p150_x8_mesh_graph_descriptor.textproto",
+    }
+
+    descriptor = mesh_descriptors.get(settings.device_mesh_shape)
+    if descriptor:
+        os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+            f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+        )
 
 
 def _setup_galaxy_mesh_config(tt_metal_home: str):
