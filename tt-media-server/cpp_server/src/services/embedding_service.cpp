@@ -195,8 +195,7 @@ struct EmbeddingService::Impl {
         std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_devices << "\n";
         std::cout << "[Worker " << worker_id << "] read_fd=" << read_fd << ", write_fd=" << write_fd << "\n";
 
-        std::string device_id = "device_" + visible_devices;
-        runners::EmbeddingRunner runner(device_id, static_cast<int>(wid));
+        runners::EmbeddingRunner runner(visible_devices, static_cast<int>(wid));
 
         // Warmup
         if (!runner.warmup()) {

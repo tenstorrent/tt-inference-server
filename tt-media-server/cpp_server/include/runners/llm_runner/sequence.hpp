@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
 #include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -17,7 +18,7 @@
 #include <boost/uuid/uuid_io.hpp>
 
 namespace llm_engine {
-  
+
 struct TaskID {
   static constexpr size_t kSerializedSize = 36;
   TaskID() {
@@ -50,15 +51,10 @@ inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
-struct DecodeResult {
-  TaskID task_id;
-  int64_t token_id;
-};
-
 struct TokenResult {
   TaskID task_id;
   uint64_t token_id;
-  bool finished;
+  std::optional<bool> finished;
 };
 
 class Sequence {
@@ -69,7 +65,7 @@ class Sequence {
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;
-  
+
   static Sequence* deserialize(std::istream& is);
 
   size_t size() const { return token_ids_.size(); }
