@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace tt::config {
@@ -88,9 +88,9 @@ namespace defaults {
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
-    constexpr const char* SOCKET_ROLE = "";
+    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
     constexpr const char* SOCKET_HOST = "localhost";
-    constexpr uint16_t SOCKET_PORT = 8000;
+    constexpr uint16_t SOCKET_PORT = 9000;
 }
 
 }  // namespace tt::config
