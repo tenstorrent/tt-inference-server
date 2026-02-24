@@ -24,5 +24,9 @@
     "python.languageServer": "None",
     "python-envs.pythonProjects": [],
     "python.envFile": "${workspaceFolder}/.env.test",
-    "cmake.sourceDirectory": "${workspaceFolder}/tt-media-server/cpp_server"
-}
+    "cmake.sourceDirectory": "${workspaceFolder}/tt-media-server/cpp_server",
+    "cmake.buildTask": true,
+    "cmake.generator": "Ninja",
+    "editor.semanticHighlighting.enabled": true,
+    "editor.bracketPairColorization.enabled": true
+    }

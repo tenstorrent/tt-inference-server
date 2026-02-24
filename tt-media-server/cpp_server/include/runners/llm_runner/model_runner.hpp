@@ -16,16 +16,16 @@
 namespace llm_engine {
 
 // Invoked from the device-to-host reader thread when a token is generated.
-using DecodeCallback = std::function<void(const DecodeResult&)>;
+using DecodeCallback = std::function<void(const TokenResult&)>;
 
 class DecodeQueue {
  public:
-  void push(const DecodeResult& result);
-  std::vector<DecodeResult> drain();
+  void push(const TokenResult& result);
+  std::vector<TokenResult> drain();
 
  private:
   TracyLockable(std::mutex, mutex_);
-  std::vector<DecodeResult> pending_;
+  std::vector<TokenResult> pending_;
 };
 
 class IModelRunner {
