@@ -51,6 +51,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
     cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
         "/tt_tokens_" + std::to_string(worker_id), false);
     cfg.worker_id = worker_id;
+    cfg.runner_config = tt::config::llm_engine_config();
     return cfg;
 }
 
@@ -143,19 +144,8 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
 }
 
 void LLMService::start_workers() {
-    auto create_worker_config = [this](int worker_id) -> tt::worker::WorkerConfig {
-        return {
-            .env_vars = {
-                {"TT_VISIBLE_DEVICES", tt::config::visible_devices_for_worker(worker_id)}
-            },
-            .task_queue = queue_manager_->task_queue,
-            .result_queue = queue_manager_->result_queues[worker_id],
-            .worker_id = worker_id
-        };
-    };
-
     for (size_t i = 0; i < num_workers_; i++) {
-        auto cfg = create_worker_config(static_cast<int>(i));
+        tt::worker::WorkerConfig cfg = make_worker_config_for_process(static_cast<int>(i));
         workers_.push_back(std::make_unique<tt::worker::SingleProcessWorker>(cfg));
         auto& worker = workers_[i];
 

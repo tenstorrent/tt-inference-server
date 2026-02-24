@@ -17,11 +17,11 @@ class MockDeviceBackend : public IDeviceBackend {
 
   void write(const Sequence& seq) override {
     std::lock_guard<std::mutex> lock(work_mutex_);
-    work_queue_.push(DecodeResult{seq.task_id, seq.last_token + 1});
+    work_queue_.push(TokenResult{seq.task_id, static_cast<uint64_t>(seq.last_token + 1)});
     cv_.notify_one();
   }
 
-  bool read(DecodeResult* result) override {
+  bool read(TokenResult* result) override {
     std::unique_lock<std::mutex> lock(work_mutex_);
     cv_.wait(lock, [this] { return stop_ || !work_queue_.empty(); });
     if (stop_ && work_queue_.empty()) return false;
@@ -41,7 +41,7 @@ class MockDeviceBackend : public IDeviceBackend {
 
  private:
   std::mutex work_mutex_;
-  std::queue<DecodeResult> work_queue_;
+  std::queue<TokenResult> work_queue_;
   std::condition_variable cv_;
   bool stop_ = false;
 };

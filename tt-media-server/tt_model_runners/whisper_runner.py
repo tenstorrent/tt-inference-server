@@ -16,7 +16,6 @@ from domain.audio_text_response import (
     AudioTextResponse,
     AudioTextSegment,
 )
-from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.audio.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
@@ -28,6 +27,7 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
     AutoFeatureExtractor,
@@ -87,13 +87,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
-                # Warmup with batch matching max_batch_size
+                await self.pipeline(dummy_audio)
                 if self.settings.max_batch_size > 1:
-                    # Create batch of dummy audio to match expected batch size
-                    warmup_batch = [dummy_audio] * self.settings.max_batch_size
+                    warmup_batch = [dummy_audio]
                     await self.pipeline(warmup_batch)
-                else:
-                    await self.pipeline(dummy_audio)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -131,7 +128,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             if requests.__len__() > 1 or self.settings.max_batch_size > 1:
                 return await self._execute_pipeline_batch(
-                    requests, self._create_generation_params(requests[0])
+                    requests, [self._create_generation_params(req) for req in requests]
                 )
 
             request = self._validate_and_extract_request(requests)
@@ -259,11 +256,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             audio_arrays = [req._audio_array for req in requests]
             durations = [req._duration for req in requests]
 
-            if len(audio_arrays) == 1:
-                # Pipeline expects batch size of 2, duplicate the single audio
-                audio_data = [audio_arrays[0], audio_arrays[0]]
-                durations = [durations[0], durations[0]]
-            elif len(audio_arrays) == 2:
+            if len(audio_arrays) == 2:
                 # Pad audio arrays to the same length
                 max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
                 padded_arrays = []
@@ -661,17 +654,24 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return init_kv_cache(
                     config,
                     self.ttnn_device,
-                    self.settings.max_batch_size,
                     max_seq_len=max_seq_len,
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
 
-            kv_cache, cross_attn_cache = await asyncio.to_thread(_init_kv_cache)
+            (
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            ) = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully initialized TTNN model components"
             )
-            return parameters, ttnn_linear_weight, kv_cache, cross_attn_cache
+            return (
+                parameters,
+                ttnn_linear_weight,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            )
 
         except Exception as e:
             self.logger.error(
@@ -703,8 +703,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             (
                 parameters,
                 ttnn_linear_weight,
-                kv_cache,
-                cross_attn_cache,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )
@@ -720,8 +720,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 input_mesh_mapper=input_mesh_mapper,
                 output_mesh_composer=output_mesh_composer,
                 weights_mesh_mapper=weights_mesh_mapper,
-                kv_cache=kv_cache,
-                cross_attn_cache=cross_attn_cache,
+                kv_cache_per_batch_size=kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size=cross_attn_cache_per_batch_size,
                 max_batch_size=self.settings.max_batch_size,
             )
 

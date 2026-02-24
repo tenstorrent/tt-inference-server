@@ -9,10 +9,10 @@ namespace tt::runners {
 LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue)
     : config_(config), on_token_(std::move(on_token)) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
- 
+
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
-  
-  auto decode_cb = [this](const DecodeResult& result) {
+
+  auto decode_cb = [this](const TokenResult& result) {
     decode_queue_.push(result);
   };
   model_runner_ = make_model_runner(config_, std::move(decode_cb));
@@ -65,11 +65,11 @@ void LLMRunner::drain_decode_results() {
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> token_ids = {dr.token_id};
+    std::vector<int64_t> token_ids = {static_cast<int64_t>(dr.token_id)};
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    on_token_(dr.task_id, dr.token_id, finished);
+    on_token_(TokenResult{dr.task_id, static_cast<uint64_t>(dr.token_id), finished});
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
