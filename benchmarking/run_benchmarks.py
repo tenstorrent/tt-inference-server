@@ -39,7 +39,7 @@ from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes, ModelType
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ def build_benchmark_command(
 
     # VLM models need multimodal dataset; text models use standard dataset
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
-    backend = "vllm" if params.task_type == "text" else "openai-chat"
+    backend = "openai-chat"
 
     # fmt: off
     cmd = [
@@ -152,6 +152,8 @@ def build_benchmark_command(
         "bench",
         "serve",
         "--backend", backend,
+        "--endpoint", "/v1/chat/completions",
+        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
@@ -249,7 +251,14 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    # copy env vars to pass to subprocesses
+    if (
+        model_spec.inference_engine == InferenceEngine.MEDIA.value
+        or model_spec.inference_engine == InferenceEngine.FORGE.value
+    ):
+        os.environ["OPENAI_API_KEY"] = "your-secret-key"
+        os.environ["VLLM_API_KEY"] = "your-secret-key"
+        logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
+
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
@@ -316,6 +325,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 

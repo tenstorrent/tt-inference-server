@@ -9,8 +9,8 @@ from multiprocessing import Process, Queue
 from threading import Lock
 
 from config.settings import settings
-from device_workers.worker_utils import setup_cpu_threading_limits
 from utils.logger import TTLogger
+from utils.runner_utils import setup_cpu_threading_limits
 
 
 def _process_worker_tasks(

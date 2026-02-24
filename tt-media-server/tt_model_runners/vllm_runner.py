@@ -19,8 +19,8 @@ FINAL_TYPE = "final_result"
 
 
 class VLLMRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     @log_execution_time(
         "VLLM model load",

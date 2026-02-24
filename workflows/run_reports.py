@@ -1620,6 +1620,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
@@ -1670,6 +1671,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_cnn_md = get_markdown_table(vllm_cnn_display)
             cnn_sections.append(
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
         if vllm_video:
@@ -2735,9 +2745,13 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -2882,9 +2896,13 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":

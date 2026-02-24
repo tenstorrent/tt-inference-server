@@ -8,34 +8,15 @@
 #include <optional>
 #include <sstream>
 
+#include "domain/base_request.hpp"
+#include "domain/chat_message.hpp"
 #include "domain/completion_request.hpp"
+#include "utils/tokenizer.hpp"
 #include <json/json.h>
 
 namespace tt::domain {
 
-/** OpenAI chat message: role + content (content may be string or array of parts). */
-struct ChatMessage {
-    std::string role;
-    std::string content;
-
-    static ChatMessage fromJson(const Json::Value& json) {
-        ChatMessage msg;
-        if (json.isMember("role") && !json["role"].isNull())
-            msg.role = json["role"].asString();
-        if (json.isMember("content") && !json["content"].isNull()) {
-            const auto& c = json["content"];
-            if (c.isString())
-                msg.content = c.asString();
-            else if (c.isArray())
-                for (const auto& part : c)
-                    if (part.isObject() && part.isMember("type") && part["type"].asString() == "text" && part.isMember("text"))
-                        msg.content += part["text"].asString();
-        }
-        return msg;
-    }
-};
-
-/** Format messages as prompt: "Role: content\n\n" per message, ending with "Assistant: ". */
+/** Legacy format: "Role: content\n\n" per message, ending with "Assistant: ". */
 inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) {
     std::ostringstream out;
     for (const auto& m : messages) {
@@ -47,9 +28,7 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-/** Chat completion request: messages (role/content) converted to prompt via messages_to_prompt. */
-struct ChatCompletionRequest {
-    std::string task_id;
+struct ChatCompletionRequest: BaseRequest {
     std::optional<std::string> model;
 
     std::vector<ChatMessage> messages;
@@ -174,7 +153,7 @@ struct ChatCompletionRequest {
         CompletionRequest out;
         out.task_id = task_id;
         out.model = model;
-        out.prompt = messages_to_prompt(messages);
+        out.prompt = tt::utils::Tokenizer::apply_chat_template(messages);
 
         out.echo = echo;
         out.max_tokens = max_tokens;
