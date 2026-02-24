@@ -94,7 +94,7 @@ def setup_evals_common(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
         "--index-strategy unsafe-best-match "
         "--extra-index-url https://download.pytorch.org/whl/cpu "
-        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
+        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@adam/incremental-logging#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf] "
         "protobuf pillow==11.1 pyjwt==2.7.0 datasets==3.1.0",
         logger=logger,
     )
