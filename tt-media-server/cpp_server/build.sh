@@ -13,7 +13,6 @@ SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
-MODEL_TYPE="DEEPSEEK_V3"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -38,22 +37,6 @@ while [[ $# -gt 0 ]]; do
             CXX_COMPILER_PATH="$2"
             shift 2
             ;;
-        --model)
-            case "$2" in
-                deepseek-ai/DeepSeek-V3|DeepSeek-V3|deepseek)
-                    MODEL_TYPE="DEEPSEEK_V3"
-                    ;;
-                meta-llama/Llama-3.1-8B|Llama-3.1-8B|llama)
-                    MODEL_TYPE="LLAMA_3_1_8B"
-                    ;;
-                *)
-                    echo "Unknown model: $2"
-                    echo "Supported: deepseek-ai/DeepSeek-V3 (default), meta-llama/Llama-3.1-8B"
-                    exit 1
-                    ;;
-            esac
-            shift 2
-            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -63,7 +46,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
-            echo "  --model MODEL        Target model: deepseek-ai/DeepSeek-V3 (default) or meta-llama/Llama-3.1-8B"
             echo "  --help               Show this help message"
             exit 0
             ;;
@@ -80,15 +62,8 @@ if [ "${SANITIZE_THREAD}" = "ON" ] && [ "${SANITIZE_ADDRESS}" = "ON" ]; then
     exit 1
 fi
 
-if [ "${MODEL_TYPE}" = "DEEPSEEK_V3" ]; then
-    MODEL_DISPLAY="deepseek-ai/DeepSeek-V3"
-else
-    MODEL_DISPLAY="meta-llama/Llama-3.1-8B"
-fi
-
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
-echo "  Model: ${MODEL_DISPLAY}"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
@@ -154,79 +129,85 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     fi
 fi
 
-# Download tokenizer and tokenizer_config if not present (or if model changed)
+# ---------------------------------------------------------------------------
+# Pre-fetch tokenizer files for all supported models
+# ---------------------------------------------------------------------------
 TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
-TOKENIZER_JSON="${TOKENIZER_DIR}/tokenizer.json"
-TOKENIZER_CONFIG_JSON="${TOKENIZER_DIR}/tokenizer_config.json"
-MODEL_MARKER="${TOKENIZER_DIR}/.model"
-
 mkdir -p "${TOKENIZER_DIR}"
-
-# Re-download if model changed since last build
-if [ -f "${MODEL_MARKER}" ]; then
-    PREV_MODEL=$(cat "${MODEL_MARKER}")
-    if [ "${PREV_MODEL}" != "${MODEL_TYPE}" ]; then
-        echo "Model changed (${PREV_MODEL} -> ${MODEL_TYPE}). Re-downloading tokenizer files..."
-        rm -f "${TOKENIZER_JSON}" "${TOKENIZER_CONFIG_JSON}"
-    fi
-fi
-
-if [ "${MODEL_TYPE}" = "DEEPSEEK_V3" ]; then
-    HF_REPO="https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main"
-else
-    HF_REPO="https://huggingface.co/meta-llama/Llama-3.1-8B/raw/main"
-fi
 
 HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
 if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
     HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
 fi
-WGET_AUTH_ARGS=()
-if [ -n "${HF_TOKEN_RESOLVED}" ]; then
-    WGET_AUTH_ARGS=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
-fi
 
-if [ ! -f "${TOKENIZER_JSON}" ]; then
-    echo ""
-    echo "Tokenizer not found. Downloading ${MODEL_DISPLAY} tokenizer..."
-    if wget -q "${WGET_AUTH_ARGS[@]}" -O "${TOKENIZER_JSON}" "${HF_REPO}/tokenizer.json"; then
-        echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
+download_tokenizer() {
+    local model_name="$1"
+    local hf_repo="$2"
+    local requires_auth="$3"
+
+    local model_dir="${TOKENIZER_DIR}/${model_name}"
+    local tok_json="${model_dir}/tokenizer.json"
+    local tok_config="${model_dir}/tokenizer_config.json"
+
+    # Skip download if tokenizer files already exist (faster rebuilds, no HF_TOKEN needed)
+    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ]; then
+        echo "  Using existing ${model_name} tokenizer."
+        return 0
+    fi
+
+    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
+        return 0
+    fi
+
+    local wget_args=()
+    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
+        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
+    fi
+
+    mkdir -p "${model_dir}"
+
+    echo "Downloading ${model_name} tokenizer..."
+    if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
+        echo "  tokenizer.json downloaded to ${tok_json}"
     else
-        rm -f "${TOKENIZER_JSON}"
-        echo ""
-        echo "ERROR: Failed to download tokenizer. tokenizer.json is required for build and tests."
-        if [ "${MODEL_TYPE}" = "LLAMA_3_1_8B" ]; then
-            echo "  Llama models are gated on HuggingFace. Set HF_TOKEN (or HUGGING_FACE_HUB_TOKEN) and retry."
-        else
-            echo "  Check network access to huggingface.co"
+        rm -f "${tok_json}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer.json."
+        echo "  URL: ${hf_repo}/tokenizer.json"
+        if [ "${requires_auth}" = "true" ]; then
+            echo "  This is a gated model. Make sure you have:"
+            echo "    1. A valid HF_TOKEN set in your environment"
+            echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
         fi
-        echo "  Manual: wget -O ${TOKENIZER_JSON} ${HF_REPO}/tokenizer.json"
-        echo ""
-        exit 1
+        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
+        return 1
     fi
-    echo ""
-fi
 
-if [ ! -f "${TOKENIZER_CONFIG_JSON}" ]; then
-    echo ""
-    echo "Tokenizer config not found. Downloading tokenizer_config.json..."
-    if wget -q "${WGET_AUTH_ARGS[@]}" -O "${TOKENIZER_CONFIG_JSON}" "${HF_REPO}/tokenizer_config.json"; then
-        echo "Tokenizer config downloaded successfully to ${TOKENIZER_CONFIG_JSON}"
+    if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
+        echo "  tokenizer_config.json downloaded to ${tok_config}"
     else
-        rm -f "${TOKENIZER_CONFIG_JSON}"
-        echo "Warning: Failed to download tokenizer_config.json. Chat template may use defaults."
-        echo "  Manual: wget -O cpp_server/tokenizers/tokenizer_config.json ${HF_REPO}/tokenizer_config.json"
+        rm -f "${tok_config}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
+        return 1
     fi
-    echo ""
-fi
+}
 
-# Ensure tokenizer.json exists before proceeding (download block above exits on failure)
-if [ ! -f "${TOKENIZER_JSON}" ]; then
-    echo "ERROR: tokenizer.json missing at ${TOKENIZER_JSON}"
-    exit 1
-fi
+echo ""
+echo "Pre-fetching tokenizer files for supported models..."
 
-echo "${MODEL_TYPE}" > "${MODEL_MARKER}"
+# DeepSeek V3 (public, no auth) — required for default build
+download_tokenizer \
+    "deepseek-ai/DeepSeek-V3" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main" \
+    "false"
+
+# Llama 3.1 8B (gated, requires HF_TOKEN)
+download_tokenizer \
+    "meta-llama/Llama-3.1-8B" \
+    "https://huggingface.co/meta-llama/Llama-3.1-8B/raw/main" \
+    "true"
+
+echo ""
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -279,7 +260,6 @@ CMAKE_ARGS=(
     -DLLM_ENGINE_DEBUG_BUILD=OFF
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
-    -DMODEL_TYPE="${MODEL_TYPE}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 

@@ -8,17 +8,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Model selection: LLAMA_3_1_8B (default) or DEEPSEEK_V3
-set(MODEL_TYPE "DEEPSEEK_V3" CACHE STRING "Target model (LLAMA_3_1_8B or DEEPSEEK_V3)")
-if(MODEL_TYPE STREQUAL "DEEPSEEK_V3")
-    add_compile_definitions(MODEL_DEEPSEEK_V3)
-    message(STATUS "Model: deepseek-ai/DeepSeek-V3 (default)")
-elseif(MODEL_TYPE STREQUAL "LLAMA_3_1_8B")
-    message(STATUS "Model: meta-llama/Llama-3.1-8B")
-else()
-    message(FATAL_ERROR "Unknown MODEL_TYPE '${MODEL_TYPE}'. Use LLAMA_3_1_8B or DEEPSEEK_V3.")
-endif()
-
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
@@ -218,7 +207,7 @@ target_include_directories(sequence_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/utils/tokenizer_strategy.cpp src/config/settings.cpp)
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -240,7 +229,7 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/utils/tokenizer_strategy.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -258,6 +247,7 @@ set(SOURCES
     src/runners/pybind_llama_model_runner.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
+    src/utils/tokenizer_strategy.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp

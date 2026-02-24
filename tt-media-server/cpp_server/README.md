@@ -50,38 +50,63 @@ pkill -f tt_media_server_cpp
 
 ## Build Options
 
-The build script selects a target model at compile time. This determines which
-chat template, stop tokens, and tokenizer decode strategy are compiled into the
-binary (see `include/config/model_config.hpp`). The matching tokenizer files are
-downloaded automatically from HuggingFace during the build.
-
 ```bash
-# Default build (DeepSeek V3 — public, no auth required)
+# Default build
 ./build.sh
 
-# Build for Llama 3.1 8B (gated model — requires HF_TOKEN)
-HF_TOKEN=hf_... ./build.sh --model meta-llama/Llama-3.1-8B
+# Debug build
+./build.sh --debug
 
-# Shorthand aliases also work
-./build.sh --model deepseek
-./build.sh --model llama
-
-# Debug build with a specific model
-./build.sh --debug --model llama
+# AddressSanitizer
+./build.sh --asan
 ```
 
-Supported `--model` values:
+### Tokenizer files
 
-| Value | Aliases | Auth |
-|-------|---------|------|
-| `deepseek-ai/DeepSeek-V3` | `DeepSeek-V3`, `deepseek` | None (public) |
-| `meta-llama/Llama-3.1-8B` | `Llama-3.1-8B`, `llama` | `HF_TOKEN` required |
+The build script automatically pre-fetches tokenizer files for all supported
+models from HuggingFace into `tokenizers/<model-name>/`:
 
-The token is resolved from `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, or
-`~/.cache/huggingface/token` (written by `huggingface-cli login`).
+```
+tokenizers/
+  deepseek-ai/DeepSeek-V3/tokenizer.json
+  deepseek-ai/DeepSeek-V3/tokenizer_config.json
+  meta-llama/Llama-3.1-8B/tokenizer.json
+  meta-llama/Llama-3.1-8B/tokenizer_config.json
+```
 
-When switching models, the build script detects the change and re-downloads
-the correct tokenizer files automatically.
+Llama models are gated on HuggingFace — set `HF_TOKEN` (or
+`HUGGING_FACE_HUB_TOKEN`, or run `huggingface-cli login`) before building to
+download them. If the Llama download fails, the build continues (DeepSeek is
+required; Llama is optional unless `MODEL_RUNNER=llama_runner`). If both
+`tokenizer.json` and `tokenizer_config.json` already exist for a model, the
+build skips the download (no `HF_TOKEN` needed for subsequent builds). To force
+re-download, remove the model directory under `tokenizers/<org>/<model>/`.
+
+To add a new model, manually download its tokenizer files into a subdirectory
+matching the HuggingFace model name:
+
+```bash
+mkdir -p tokenizers/<org>/<model>
+wget -O tokenizers/<org>/<model>/tokenizer.json \
+  https://huggingface.co/<org>/<model>/raw/main/tokenizer.json
+wget -O tokenizers/<org>/<model>/tokenizer_config.json \
+  https://huggingface.co/<org>/<model>/raw/main/tokenizer_config.json
+```
+
+### Runtime model selection
+
+Model-specific behavior (chat template, stop tokens, decode filtering) is
+selected at **runtime** via the `MODEL_RUNNER` environment variable — no
+recompilation needed:
+
+| `MODEL_RUNNER` | Model | Tokenizer |
+|----------------|-------|-----------|
+| `llm_test` (default) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-V3/` |
+| `llama_runner` | Llama 3.1 8B | `tokenizers/meta-llama/Llama-3.1-8B/` |
+
+The runtime selection uses an OOP strategy pattern — see
+`include/utils/tokenizer_strategy.hpp` for the `ITokenizerStrategy` interface
+and `create_tokenizer_strategy()` factory.
 
 ## Starting the Server
 
@@ -436,17 +461,13 @@ The server includes tokenizer support for encode/decode:
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
 2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
-3. Build the server:
+3. Build the server — tokenizer files are pre-fetched automatically by `build.sh`:
    ```bash
    ./build.sh
    ```
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
-   To fetch DeepSeek V3 tokenizer and config from Hugging Face into `tokenizers/`:
-   ```bash
-   mkdir -p cpp_server/tokenizers
-   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
-   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer_config.json
-   ```
+4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
+   active tokenizer is selected at runtime based on `MODEL_RUNNER` (see
+   [Runtime model selection](#runtime-model-selection) above).
 
 ## Performance
 

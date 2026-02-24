@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "utils/tokenizer_strategy.hpp"
 #include "config/settings.hpp"
-#include "config/model_config.hpp"
 #include "domain/chat_message.hpp"
 
 #include <gtest/gtest.h>
@@ -15,6 +15,10 @@
 using namespace tt::utils;
 using namespace tt::domain;
 
+static bool is_deepseek() {
+    return active_tokenizer_strategy().model_name() == "deepseek-ai/DeepSeek-V3";
+}
+
 class TokenizerTest : public ::testing::Test {
 protected:
     std::unique_ptr<Tokenizer> tok_;
@@ -22,7 +26,8 @@ protected:
     void SetUp() override {
         std::string tokenizer_file_path = tt::config::tokenizer_path();
         if (tokenizer_file_path.empty()) {
-            FAIL() << "Tokenizer not found at default location (tokenizers/tokenizer.json)";
+            FAIL() << "Tokenizer not found at default location for model: "
+                   << active_tokenizer_strategy().model_name();
         }
 
         try {
@@ -60,10 +65,9 @@ TEST_F(TokenizerTest, EmptyTokensDecode) {
     EXPECT_EQ(decoded, "");
 }
 
-#ifdef MODEL_DEEPSEEK_V3
 TEST_F(TokenizerTest, CompareWithExpectedTokens) {
-    // Pre-computed expected tokens from DeepSeek V3 tokenizer (without special tokens)
-    // Generated using: tokenizer.encode(text, add_special_tokens=False)
+    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific token validation";
+
     std::map<std::string, std::vector<int>> expected_tokens = {
         {"Hello, world!", {19923, 14, 2058, 3}},
         {"The quick brown fox jumps over the lazy dog.", {671, 4787, 13769, 46012, 54994, 1060, 270, 41638, 6397, 16}},
@@ -152,27 +156,21 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
         }
     }
 
-    // Summary
     std::cout << "\nTokenizer Validation Summary:\n";
     std::cout << "  Total prompts:  " << expected_tokens.size() << "\n";
     std::cout << "  Matches:        " << total_matches << "\n";
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
 }
-#endif  // MODEL_DEEPSEEK_V3
-
-#ifdef MODEL_DEEPSEEK_V3
 
 TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
+    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific test";
+
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    // DeepSeek V3 format: BOS from config, then User/Assistant tags with
-    // full-width vertical line delimiters (U+FF5C), no system preamble.
-    // BOS = <｜begin▁of▁sentence｜>  (from tokenizer_config.json)
-    // U+FF5C (｜) = \xEF\xBD\x9C, U+2581 (▁) = \xE2\x96\x81
     const std::string bos = "<\xEF\xBD\x9C" "begin\xE2\x96\x81of\xE2\x96\x81sentence\xEF\xBD\x9C>";
     const std::string user_tag = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
     const std::string asst_tag = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
@@ -193,6 +191,8 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
 }
 
 TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format) {
+    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific test";
+
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -217,17 +217,15 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format
         << "  Actual length:   " << actual.size();
 }
 
-#else  // LLAMA_3_1_8B
-
 TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
+    if (is_deepseek()) GTEST_SKIP() << "Llama-specific test";
+
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    // Llama 3.1 8B format: system header with knowledge preamble, then
-    // each turn wrapped in <|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>.
     const std::string expected =
         "<|begin_of_text|>"
         "<|start_header_id|>system<|end_header_id|>\n\n"
@@ -251,6 +249,8 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
 }
 
 TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat) {
+    if (is_deepseek()) GTEST_SKIP() << "Llama-specific test";
+
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -277,6 +277,3 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat)
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
-
-#endif  // MODEL_DEEPSEEK_V3 / LLAMA_3_1_8B
-

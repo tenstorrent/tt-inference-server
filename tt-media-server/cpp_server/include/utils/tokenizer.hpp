@@ -8,7 +8,6 @@
 #include <vector>
 #include <tokenizers_cpp.h>
 
-#include "config/model_config.hpp"
 #include "domain/chat_message.hpp"
 
 namespace tt::utils {
@@ -40,7 +39,7 @@ TokenizerConfig get_tokenizer_config();
  * to use from different threads without synchronization.
  *
  * Model-specific behavior (chat template format, special token decode filtering)
- * is selected at compile time via MODEL_TYPE — see config/model_config.hpp.
+ * is selected at runtime via the active ITokenizerStrategy — see utils/tokenizer_strategy.hpp.
  */
 class Tokenizer {
 public:
@@ -70,9 +69,8 @@ public:
     std::string decode(const std::vector<int>& token_ids) const;
 
     /**
-     * Apply the chat template for the compile-time selected model.
-     * Llama 3.1 8B: header/eot tags with a knowledge-cutoff preamble.
-     * DeepSeek V3: Unicode-delimited User/Assistant tags without a preamble.
+     * Apply the chat template for the runtime-selected model (via active_tokenizer_strategy).
+     * Delegates to the active ITokenizerStrategy implementation.
      */
     static std::string apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
         bool add_generation_prompt = true);

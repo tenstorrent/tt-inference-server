@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "utils/tokenizer_strategy.hpp"
 
 #include <cstdlib>
 #include <cstddef>
@@ -115,7 +116,10 @@ static std::filesystem::path tokenizers_dir() {
 }
 
 std::string tokenizer_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer.json";
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::active_tokenizer_strategy().tokenizer_dir_name();
+    std::filesystem::path p = base / model_dir / "tokenizer.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
     }
@@ -123,7 +127,10 @@ std::string tokenizer_path() {
 }
 
 std::string tokenizer_config_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer_config.json";
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::active_tokenizer_strategy().tokenizer_dir_name();
+    std::filesystem::path p = base / model_dir / "tokenizer_config.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
     }
@@ -138,6 +145,7 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
+    cfg.stop_token_ids = utils::active_tokenizer_strategy().stop_token_ids();
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
