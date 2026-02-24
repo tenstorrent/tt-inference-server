@@ -250,6 +250,11 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         os.environ["HF_MODEL"] = self.hf_model_name
         self._load_model()
         self._allocate_kv_cache()
+        if self._kv_cache is None:
+            raise RuntimeError(
+                f"Device {self.device_id}: KV cache allocation returned None — "
+                "model.allocate_kv_cache() failed silently"
+            )
         self.logger.info(
             f"Device {self.device_id}: Warmup done (max_batch_size={self.max_batch_size}, "
             "batched decode enabled when multiple sequences per step)"

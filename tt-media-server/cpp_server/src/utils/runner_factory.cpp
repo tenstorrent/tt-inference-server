@@ -15,11 +15,16 @@ static tt::runners::ModelRunnerFactory make_model_runner_factory() {
     if (tt::config::model_runner_type() != tt::config::RunnerType::LLAMA_RUNNER) {
         return nullptr;
     }
-    return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb) {
+    return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb)
+               -> std::unique_ptr<llm_engine::IModelRunner> {
         auto runner = llm_engine::make_pybind_llama_model_runner(cfg, cb);
-        if (runner) return runner;
-        std::cerr << "[RunnerFactory] Pybind Llama runner init failed, using stub\n";
-        return llm_engine::make_model_runner(cfg, std::move(cb));
+        if (!runner) {
+            std::cerr << "[RunnerFactory] FATAL: Pybind Llama runner init failed — "
+                         "model warmup or Python init error. "
+                         "Check logs above for '[PybindLlama] Python init error'.\n";
+            std::abort();
+        }
+        return runner;
     };
 }
 
