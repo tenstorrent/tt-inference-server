@@ -1070,8 +1070,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="5df9985",
+        vllm_commit="220edfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
