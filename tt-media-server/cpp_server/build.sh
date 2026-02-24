@@ -214,11 +214,7 @@ CMAKE_ARGS=(
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 )
-if [ -n "${TT_METAL_HOME}" ]; then
-    CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
-else
-    CMAKE_ARGS+=(-UTT_METAL_HOME)
-fi
+[ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 
 # Compiler/toolchain: --cxx-compiler-path overrides --toolchain-path overrides auto-detection (match build_metal.sh)
 if [ -n "${CXX_COMPILER_PATH}" ]; then
