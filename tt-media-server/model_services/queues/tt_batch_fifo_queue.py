@@ -152,6 +152,11 @@ class TTBatchFifoQueue(TTQueueInterface):
         """Peek at next n items for conditional processing."""
         raise NotImplementedError("peek is not implemented for TTBatchFifoQueue")
 
+    def join_thread(self):
+        """Join the background feeder thread (if applicable)."""
+        if hasattr(self._queue, "join_thread"):
+            self._queue.join_thread()
+
     def close(self):
         """Close the queue."""
         try:
