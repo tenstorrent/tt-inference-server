@@ -14,7 +14,7 @@ import aiohttp
 import pytest
 
 BASE_URL = "http://localhost:8014"
-API_URL = f"{BASE_URL}/audio/transcriptions"
+API_URL = f"{BASE_URL}/v1/audio/transcriptions"
 
 output_dir = "./audio_transcription_eval_results"
 logs_output_dir = f"{output_dir}/run_logs"

@@ -80,7 +80,7 @@ Resnet Demo
 #### Using cURL
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/cnn/search-image' \
+  'http://127.0.0.1:8000/v1/cnn/search-image' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \

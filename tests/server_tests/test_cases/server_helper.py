@@ -11,7 +11,7 @@ from typing import Optional
 
 SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
-SERVER_DEFAULT_URL = "http://127.0.0.1:8000/cnn/search-image"
+SERVER_DEFAULT_URL = "http://127.0.0.1:8000/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
 TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[3] / "tt-media-server"
 READY_LOG_TEXT = "All devices are warmed up and ready"
