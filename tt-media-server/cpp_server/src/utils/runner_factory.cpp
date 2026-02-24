@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
-#include "runners/pipe_llama_model_runner.hpp"
+#include "runners/pybind_llama_model_runner.hpp"
 
 #include <iostream>
 
@@ -16,9 +16,9 @@ static tt::runners::ModelRunnerFactory make_model_runner_factory() {
         return nullptr;
     }
     return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb) {
-        auto runner = llm_engine::make_pipe_llama_model_runner(cfg, cb);
+        auto runner = llm_engine::make_pybind_llama_model_runner(cfg, cb);
         if (runner) return runner;
-        std::cerr << "[RunnerFactory] Pipe Llama runner spawn failed, using stub\n";
+        std::cerr << "[RunnerFactory] Pybind Llama runner init failed, using stub\n";
         return llm_engine::make_model_runner(cfg, std::move(cb));
     };
 }

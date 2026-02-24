@@ -31,6 +31,14 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
+
+# pybind11 for embedding Python interpreter (in-process model runner calls)
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG        v2.13.6
+)
+FetchContent_MakeAvailable(pybind11)
 FetchContent_Declare(
     rapidjson
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
@@ -247,7 +255,7 @@ set(SOURCES
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
-    src/runners/pipe_llama_model_runner.cpp
+    src/runners/pybind_llama_model_runner.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
     src/worker/single_process_worker.cpp
@@ -288,7 +296,7 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)

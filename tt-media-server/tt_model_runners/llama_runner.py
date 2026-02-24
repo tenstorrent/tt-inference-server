@@ -163,7 +163,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self.model = None
         self.hf_model_name = os.environ.get("HF_MODEL", DEFAULT_HF_MODEL)
         self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", 16))
-        self.max_seq_len = 1024
+        self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "8192"))
         self._kv_cache = None
         self._vocab_size = 0
         self._max_num_blocks_per_seq = 0
@@ -291,10 +291,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                     f"block_size mismatch: request={request_block_size} runner={self._block_size}"
                 )
         if self._kv_cache is None:
-            return [
-                StepResult(task_id=s.task_id, token_id=self.EOS_TOKEN_ID, finished=True)
-                for s in sequences
-            ]
+            raise RuntimeError("KV cache not allocated; warmup may have failed")
         if is_prefill:
             return self._run_prefill_batch(sequences, torch)
         if self.max_batch_size > 1 and len(sequences) > 0:
