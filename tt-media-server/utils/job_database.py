@@ -58,13 +58,13 @@ class JobDatabase:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS metrics (
                     job_id TEXT NOT NULL,
-                    step INTEGER NOT NULL,
+                    global_step INTEGER NOT NULL,
                     epoch INTEGER NOT NULL,
                     metric_name TEXT NOT NULL,
                     value FLOAT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    timestamp TIMESTAMP REAL NOT NULL,
                     
-                    PRIMARY KEY (job_id, step, epoch, metric_name), 
+                    PRIMARY KEY (job_id, global_step, metric_name), 
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
             ''')
@@ -179,52 +179,24 @@ class JobDatabase:
         return jobs
 
     # ------------- METRICS -------------
-    def insert_metric(self, job_id: str, step: int, epoch: int, metric_name: str, value: float) -> None:
+    def insert_metric(self, job_id: str, global_step: int, epoch: int, metric_name: str, value: float, timestamp: int) -> None:
         """Insert a new metric into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
-                "INSERT INTO metrics (job_id, step, epoch, metric_name, value) VALUES (?, ?, ?, ?, ?)",
-                (job_id, step, epoch, metric_name, value)
+                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, global_step, epoch, metric_name, value, timestamp)
             )
-
-    # def get_metrics(self, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
-    #     """
-    #     Returns FULL history of metrics for graphing.
-    #     Format:
-    #     {
-    #        "training_loss": [ {"step": 1, "value": 0.5, "timestamp": ...}, ... ],
-    #        "accuracy": [ ... ]
-    #     }
-    #     """
-    #     with self._get_cursor(commit=False) as cursor:
-    #         cursor.execute("SELECT step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY step ASC", (job_id,))
-    #         rows = cursor.fetchall()
-            
-    #         # Organize by metric name
-    #         history = {}
-    #         for r in rows:
-    #             name = r["metric_name"]
-    #             if name not in history:
-    #                 history[name] = []
-                
-    #             history[name].append({
-    #                 "step": r["step"],
-    #                 "epoch": r["epoch"],
-    #                 "value": r["value"],
-    #                 "timestamp": r["timestamp"]
-    #             })
-    #         return history
     
     def get_metrics_flat(self, job_id: str) -> List[Dict[str, Any]]:
         """Returns metrics as a flat list."""
         with self._get_cursor(commit=False) as cursor:
             cursor.execute(
-                "SELECT step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, epoch ASC, step ASC",
+                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, epoch ASC, global_step ASC",
                 (job_id,),
             )
             return [
                 {
-                    "step": r["step"],
+                    "global_step": r["global_step"],
                     "epoch": r["epoch"],
                     "metric_name": r["metric_name"],
                     "value": r["value"],

@@ -107,6 +107,7 @@ class JobManager:
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
         self._jobs_lock = Lock()
+        self._shutdown_event = asyncio.Event()
 
         self.db = None
 
@@ -239,6 +240,7 @@ class JobManager:
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
+        self._shutdown_event.set()
 
         if self._cleanup_task:
             self._cleanup_task.cancel()
@@ -292,7 +294,7 @@ class JobManager:
             last_seen = current_len
 
             job = self._jobs.get(job_id)
-            if job and job.is_terminal():
+            if (job and job.is_terminal()) or self._shutdown_event.is_set():
                 for i in range(last_seen, len(metrics_list)):
                     yield metrics_list[i]
                 return
@@ -304,10 +306,11 @@ class JobManager:
             try:
                 self.db.insert_metric(
                     job_id=job.id,
-                    step=metric["step"],
+                    global_step=metric["global_step"],
                     epoch=metric["epoch"],
                     metric_name=metric["metric_name"],
                     value=metric["value"],
+                    timestamp=metric["timestamp"],
                 )
             except Exception as e:
                 self._logger.error(
@@ -486,11 +489,10 @@ class JobManager:
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
             training_ctx = job._training_context
-            if training_ctx and training_ctx.cancel_event and not force:
+            if training_ctx and training_ctx.cancel_event:
                 # runner handles cancellation
                 training_ctx.cancel_event.set()
-            else:
-                # runner does not handle cancellation, so we cancel the task ourselves
+            if force:
                 job._task.cancel()
             running_task = job._task
 

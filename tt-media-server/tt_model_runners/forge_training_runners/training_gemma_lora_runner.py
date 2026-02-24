@@ -23,7 +23,7 @@ from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+        super().__init__(device_id, num_torch_threads=num_torch_threads)
         self.model_name = "google/gemma-1.1-2b-it"
 
     @log_execution_time("Setting up Gemma Lora training")
@@ -177,7 +177,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Optimizer step finished"
                     )
 
-                    do_validation = global_step % request.val_steps_freq == 0
+                    do_validation = global_step % request.val_steps_freq == 0 and global_step > 0
 
                     if global_step % request.steps_freq == 0:
                         avg_loss = (
@@ -190,7 +190,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         )
                         if request._training_metrics is not None:
                             request._training_metrics.append({
-                                "step": global_step,
+                                "global_step": global_step,
                                 "epoch": epoch,
                                 "metric_name": "train_loss",
                                 "value": round(avg_loss, 4),
@@ -216,7 +216,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         )
                         if request._training_metrics is not None:
                             request._training_metrics.append({
-                                "step": global_step,
+                                "global_step": global_step,
                                 "epoch": epoch,
                                 "metric_name": "val_loss",
                                 "value": round(avg_val_loss, 4),
