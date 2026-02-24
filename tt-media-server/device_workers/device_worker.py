@@ -4,6 +4,7 @@
 
 import threading
 from multiprocessing import Queue
+import time
 
 from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
@@ -46,7 +47,9 @@ def device_worker(
     # Main processing loop
     while True:
         requests: list[object] = task_queue.get_many(
-            max_messages_to_get=settings.max_batch_size, block=True
+            max_messages_to_get=settings.max_batch_size,
+            block=True,
+            timeout=0.2,  # 1 second timeout - the batch queue will handle optimal batching
         )
         if requests is None or len(requests) == 0:
             continue
@@ -54,7 +57,6 @@ def device_worker(
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
-            loop.close()
             break
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
