@@ -83,6 +83,138 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
     (128, 128, 512, 1024, 1),
 ]
 
+# Per-model benchmark sweep overrides.
+# When model_name matches a key, these ISL/OSL pairs, concurrencies, and
+# num_prompts are used instead of the global defaults.
+_TEXT_ISL_OSL_PAIRS_128_TO_32K = [
+    (128, 128),
+    (1024, 128),
+    (2048, 128),
+    (4096, 128),
+    (8192, 128),
+    (16384, 128),
+    (32768, 128),
+]
+
+# Fixed ISL=128 with OSL sweep, plus fixed OSL=128 with ISL sweep
+_QWEN_VL_TEXT_ISL_OSL_PAIRS = [
+    # Fixed ISL=128, sweep OSL
+    (128, 128),
+    (128, 1024),
+    (128, 2048),
+    (128, 4096),
+    (128, 8192),
+    (128, 16384),
+    (128, 32768),
+    # Fixed OSL=128, sweep ISL
+    (1024, 128),
+    (2048, 128),
+    (4096, 128),
+    (8192, 128),
+    (16384, 128),
+    (32768, 128),
+]
+
+# Image resolutions: 1080p, 2K, 4K
+_QWEN_VL_IMAGE_RESOLUTIONS = [
+    (1080, 1920),  # 1080p
+    (1440, 2560),  # 2K
+    (2160, 3840),  # 4K
+]
+
+_QWEN_VL_IMAGE_ISL_OSL_PAIRS = [
+    (isl, osl, h, w, 1)
+    for isl, osl in _QWEN_VL_TEXT_ISL_OSL_PAIRS
+    for h, w in _QWEN_VL_IMAGE_RESOLUTIONS
+]
+
+_FIXED_CONCURRENCIES = [1, 32]
+_FIXED_NUM_PROMPTS = {1: 8, 32: 128}
+
+MODEL_BENCHMARK_SWEEP_OVERRIDES = {
+    "Qwen2.5-VL-7B-Instruct": {
+        "text_isl_osl_pairs": _QWEN_VL_TEXT_ISL_OSL_PAIRS,
+        "image_isl_osl_resolution_pairs": _QWEN_VL_IMAGE_ISL_OSL_PAIRS,
+        "concurrencies": _FIXED_CONCURRENCIES,
+        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
+    },
+    "Llama-3.1-8B-Instruct": {
+        "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
+        "concurrencies": _FIXED_CONCURRENCIES,
+        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
+    },
+    "Llama-3.1-8B": {
+        "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
+        "concurrencies": _FIXED_CONCURRENCIES,
+        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
+    },
+}
+
+
+def _expand_override_text_sweep_params(
+    override: dict,
+    max_context: int,
+    model_max_concurrency: int,
+) -> List[BenchmarkTaskParams]:
+    """Build text sweep params from a MODEL_BENCHMARK_SWEEP_OVERRIDES entry."""
+    params: List[BenchmarkTaskParams] = []
+    num_prompts_map = override["num_prompts_by_concurrency"]
+    for isl, osl in override["text_isl_osl_pairs"]:
+        allowed_max = get_benchmark_max_concurrency(
+            isl, osl, max_context, model_max_concurrency
+        )
+        for concurrency in override["concurrencies"]:
+            if concurrency > allowed_max:
+                continue
+            params.append(
+                BenchmarkTaskParams(
+                    isl=isl,
+                    osl=osl,
+                    max_concurrency=concurrency,
+                    num_prompts=num_prompts_map[concurrency],
+                )
+            )
+    return params
+
+
+def _expand_override_image_sweep_params(
+    override: dict,
+    max_context: int,
+    model_max_concurrency: int,
+    model_name: str,
+) -> List[BenchmarkTaskParams]:
+    """Build image sweep params from a MODEL_BENCHMARK_SWEEP_OVERRIDES entry."""
+    params: List[BenchmarkTaskParams] = []
+    num_prompts_map = override["num_prompts_by_concurrency"]
+    for isl, osl, height, width, images_per_prompt in override[
+        "image_isl_osl_resolution_pairs"
+    ]:
+        vision_tokens = calculate_vision_tokens(
+            image_height=height,
+            image_width=width,
+            images_per_prompt=images_per_prompt,
+            model_name=model_name,
+        )
+        allowed_max = get_benchmark_max_concurrency(
+            isl, osl, max_context, model_max_concurrency, vision_tokens
+        )
+        for concurrency in override["concurrencies"]:
+            if concurrency > allowed_max:
+                continue
+            params.append(
+                BenchmarkTaskParams(
+                    isl=isl,
+                    osl=osl,
+                    max_concurrency=concurrency,
+                    num_prompts=num_prompts_map[concurrency],
+                    task_type="vlm",
+                    image_height=height,
+                    image_width=width,
+                    images_per_prompt=images_per_prompt,
+                )
+            )
+    return params
+
 
 def _expand_text_sweep_params(
     isl: int,
@@ -141,7 +273,7 @@ def _expand_image_sweep_params(
             osl=osl,
             max_concurrency=concurrency,
             num_prompts=get_num_prompts(isl, osl, concurrency),
-            task_type="image",
+            task_type="vlm",
             image_height=image_height,
             image_width=image_width,
             images_per_prompt=images_per_prompt,
@@ -369,7 +501,7 @@ def cap_benchmark_params(
 
     # Calculate vision tokens for VLM models
     vision_tokens = 0
-    if params.task_type == "image" and params.image_height and params.image_width:
+    if params.task_type in ("image", "vlm") and params.image_height and params.image_width:
         vision_tokens = calculate_vision_tokens(
             params.image_height,
             params.image_width,
@@ -465,39 +597,58 @@ for model_id, model_spec in MODEL_SPECS.items():
                 param_map={device: [BenchmarkTaskParams()]}
             )
         else:
-            benchmark_task_runs = BenchmarkTask(
-                param_map={
-                    device: [
-                        expanded_params
-                        for isl, osl in BENCHMARK_ISL_OSL_PAIRS
-                        for expanded_params in _expand_text_sweep_params(
-                            isl=isl,
-                            osl=osl,
-                            max_context=max_context,
-                            model_max_concurrency=model_max_concurrency,
-                        )
-                    ]
-                    + (
-                        # additional vision language model image + text benchmarks
-                        [
+            override = MODEL_BENCHMARK_SWEEP_OVERRIDES.get(model_spec.model_name)
+            if override:
+                sweep_params = _expand_override_text_sweep_params(
+                    override, max_context, model_max_concurrency
+                )
+                if (
+                    "image_isl_osl_resolution_pairs" in override
+                    and "image" in model_spec.supported_modalities
+                ):
+                    sweep_params += _expand_override_image_sweep_params(
+                        override,
+                        max_context,
+                        model_max_concurrency,
+                        model_spec.model_name,
+                    )
+                benchmark_task_runs = BenchmarkTask(
+                    param_map={device: sweep_params}
+                )
+            else:
+                benchmark_task_runs = BenchmarkTask(
+                    param_map={
+                        device: [
                             expanded_params
-                            for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
-                            for expanded_params in _expand_image_sweep_params(
+                            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                            for expanded_params in _expand_text_sweep_params(
                                 isl=isl,
                                 osl=osl,
-                                image_height=height,
-                                image_width=width,
-                                images_per_prompt=images_per_prompt,
                                 max_context=max_context,
                                 model_max_concurrency=model_max_concurrency,
-                                model_name=model_spec.model_name,
                             )
                         ]
-                        if "image" in model_spec.supported_modalities
-                        else []
-                    )
-                }
-            )
+                        + (
+                            # additional vision language model image + text benchmarks
+                            [
+                                expanded_params
+                                for isl, osl, height, width, images_per_prompt in ISL_OSL_IMAGE_RESOLUTION_PAIRS
+                                for expanded_params in _expand_image_sweep_params(
+                                    isl=isl,
+                                    osl=osl,
+                                    image_height=height,
+                                    image_width=width,
+                                    images_per_prompt=images_per_prompt,
+                                    max_context=max_context,
+                                    model_max_concurrency=model_max_concurrency,
+                                    model_name=model_spec.model_name,
+                                )
+                            ]
+                            if "image" in model_spec.supported_modalities
+                            else []
+                        )
+                    }
+                )
 
         tasks.append(benchmark_task_runs)
 

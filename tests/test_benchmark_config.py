@@ -60,7 +60,7 @@ def _extract_sweep_triplets(
         # CNN / audio / embedding sweeps may not have isl/osl at all
         if p.isl is None or p.osl is None or p.max_concurrency is None:
             continue
-        if not include_images and getattr(p, "task_type", "text") == "image":
+        if not include_images and getattr(p, "task_type", "text") in ("image", "vlm"):
             continue
         triplets.add((int(p.isl), int(p.osl), int(p.max_concurrency)))
     return sorted(triplets)
@@ -135,7 +135,7 @@ def test_benchmark_configs_selected_models_print_sweeps(
         image_params = [
             p
             for p in sweep_task.param_map[device]
-            if getattr(p, "task_type", "text") == "image"
+            if getattr(p, "task_type", "text") == "vlm"
         ]
         assert len(image_params) > 0
 
