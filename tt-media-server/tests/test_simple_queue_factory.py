@@ -8,7 +8,6 @@ from config.constants import QueueType
 from model_services.queues.tt_batch_fifo_queue import TTBatchFifoQueue
 from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.queues.tt_queue import TTQueue
-from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from utils.simple_queue_factory import get_queue, get_task_queue
 
 
@@ -22,7 +21,9 @@ class TestGetQueue:
         assert isinstance(queue, TTQueue)
 
     def test_memory_queue(self):
-        queue = get_queue(QueueType.MemoryQueue.value, size=10, name="test_q")
+        from model_services.queues.memory_queue import SharedMemoryChunkQueue
+
+        queue = get_queue(QueueType.MemoryQueue.value, size=10, name="test_factory_q")
         assert isinstance(queue, SharedMemoryChunkQueue)
         queue.close()
 
@@ -36,9 +37,7 @@ class TestGetTaskQueue:
         mock_settings = MagicMock()
         mock_settings.max_batch_size = 2
 
-        with patch(
-            "utils.simple_queue_factory.get_settings", return_value=mock_settings
-        ):
+        with patch("config.settings.get_settings", return_value=mock_settings):
             queue = get_task_queue(QueueType.FasterFifo.value, size=10)
             assert isinstance(queue, TTBatchFifoQueue)
             assert queue._batch_size == 2
