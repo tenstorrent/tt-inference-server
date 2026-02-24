@@ -55,4 +55,13 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
+/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
+SocketRole socket_role();
+
+/** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
+std::string socket_host();
+
+/** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
+uint16_t socket_port();
+
 }  // namespace tt::config

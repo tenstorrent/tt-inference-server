@@ -9,6 +9,7 @@
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "services/streamable.hpp"
+#include "sockets/inter_server_service.hpp"
 
 #include <atomic>
 #include <functional>
@@ -80,6 +81,7 @@ private:
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
     tt::utils::Tokenizer tokenizer_;
+    std::unique_ptr<tt::sockets::InterServerService> socket_service_;
 };
 
 }
