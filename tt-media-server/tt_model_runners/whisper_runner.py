@@ -89,7 +89,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 )
                 await self.pipeline(dummy_audio)
                 if self.settings.max_batch_size > 1:
-                    warmup_batch = [dummy_audio]
+                    warmup_batch = [dummy_audio, dummy_audio]
                     await self.pipeline(warmup_batch)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
@@ -244,25 +244,25 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     async def _execute_pipeline_batch(self, requests, generation_params):
         """Main pipeline execution method for batch processing.
 
-        Pipeline requires batch size of 2. If only 1 request, it is duplicated
-        to fill the batch and the duplicate result is discarded.
-        If 2 requests, audio arrays are padded to the same tensor size.
+        Supports 1 or 2 requests. When 2 requests are provided, audio arrays
+        are padded to the same tensor size. Generator handles both batch sizes
+        natively using separate pre-warmed traces (trace_key=1 and trace_key=2).
         """
         try:
             audio_arrays = [req._audio_array for req in requests]
             durations = [req._duration for req in requests]
 
-            if len(audio_arrays) == 1:
-                audio_arrays = [audio_arrays[0], audio_arrays[0]]
-                generation_params = [generation_params[0], generation_params[0]]
-            elif len(audio_arrays) != 2:
+            if len(audio_arrays) > 2:
                 raise ValueError(f"Expected 1 or 2 requests, got {len(audio_arrays)}")
 
-            max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
-            audio_data = [
-                np.pad(arr, (0, max_len - len(arr))) if len(arr) < max_len else arr
-                for arr in audio_arrays
-            ]
+            if len(audio_arrays) == 2:
+                max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
+                audio_data = [
+                    np.pad(arr, (0, max_len - len(arr))) if len(arr) < max_len else arr
+                    for arr in audio_arrays
+                ]
+            else:
+                audio_data = audio_arrays
 
             result = await self.pipeline(
                 audio_data,
@@ -273,8 +273,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             responses = []
             if result and result[0]:
                 for index, text in enumerate(result[0]):
-                    if index >= len(requests):
-                        break
                     cleaned_text, start, end = TextUtils.extract_text(text)
                     responses.append(
                         AudioTextResponse(
