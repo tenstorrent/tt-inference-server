@@ -9,20 +9,20 @@
 #include <boost/interprocess/ipc/message_queue.hpp>
 
 #include "runners/llm_runner/task_queue.hpp"
+#include "runners/llm_runner/config.hpp"
 
 namespace tt::ipc {
 
 /**
  * ITaskQueue implementation backed by a Boost.Interprocess message queue.
  */
-  
 
 class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
  public:
-  /** Max serialized message size (64 KiB).
-   *  Must exceed the largest serialized Sequence (header fields + token_ids
-   *  payload + block_table payload). */
-  static constexpr size_t MAX_MSG_SIZE = 65536;
+  /** Reserve for task_id, block_table, and other Sequence fields besides token_ids_. */
+  static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
+  static constexpr size_t MAX_MSG_SIZE =
+      llm_engine::Config::MAX_INPUT_TOKENS * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
 
   BoostIpcTaskQueue(const std::string& name);
   BoostIpcTaskQueue(const std::string& name, int size);

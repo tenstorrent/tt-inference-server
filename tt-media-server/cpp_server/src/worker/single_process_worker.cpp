@@ -1,4 +1,5 @@
 #include "worker/single_process_worker.hpp"
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/runner_factory.hpp"
 #include <csignal>
@@ -9,26 +10,25 @@
 
 namespace tt::worker {
 
-SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config)
-    : cfg(std::move(cfg)), llm_engine_config_(llm_engine_config) {
+SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
+    : cfg(std::move(cfg)) {
 
     pid = getpid();
     worker_id = cfg.worker_id;
 
-    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished,
-                       bool is_stop_token, bool is_error) {
+    on_token_ = [this](const llm_engine::TokenResult& result) {
         uint32_t flags = 0;
-        if (finished) flags |= ipc::SharedToken::FLAG_FINAL;
-        if (is_stop_token) flags |= ipc::SharedToken::FLAG_STOP_TOKEN;
-        if (is_error) flags |= ipc::SharedToken::FLAG_ERROR;
+        if (result.finished) flags |= ipc::SharedToken::FLAG_FINAL;
+        if (result.is_stop_token) flags |= ipc::SharedToken::FLAG_STOP_TOKEN;
+        if (result.is_error) flags |= ipc::SharedToken::FLAG_ERROR;
         auto token = ipc::SharedToken{
             .token_index = 0,
             .flags = flags,
-            .token_id = token_id,
+            .token_id = result.token_id,
             .task_id = {},
             .padding = {},
         };
-        strncpy(token.task_id, task_id.id.c_str(), sizeof(token.task_id) - 1);
+        strncpy(token.task_id, result.task_id.id.c_str(), sizeof(token.task_id) - 1);
         token.task_id[sizeof(token.task_id) - 1] = '\0';
         this->cfg.result_queue->push(token);
     };
@@ -50,7 +50,8 @@ void SingleProcessWorker::start() {
     {
         ZoneScopedN("Worker::init");
         runner_ = tt::utils::runner_factory::create_runner(
-            llm_engine_config_,
+            tt::config::model_service(),
+            cfg.runner_config,
             on_token_,
             cfg.task_queue.get()
         );

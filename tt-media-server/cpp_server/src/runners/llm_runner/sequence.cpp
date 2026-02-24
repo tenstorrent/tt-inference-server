@@ -1,4 +1,5 @@
 #include "runners/llm_runner/sequence.hpp"
+#include "llm_runner/sampling_params.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -10,9 +11,8 @@ Sequence::Sequence(std::vector<int64_t> token_ids,
       status_(SequenceStatus::WAITING),
       token_ids_(std::move(token_ids)),
       num_prompt_tokens_(token_ids_.size()),
-      temperature(sampling_params.temperature),
-      max_tokens(sampling_params.max_tokens),
-      ignore_eos(sampling_params.ignore_eos) {
+      sampling_params(std::make_unique<SamplingParams>(sampling_params))
+{
   if (!token_ids_.empty()) {
     last_token = token_ids_.back();
   }
@@ -50,14 +50,12 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
   os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
   os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
-  os.write(reinterpret_cast<const char*>(&max_tokens), sizeof(max_tokens));
-  os.write(reinterpret_cast<const char*>(&ignore_eos), sizeof(ignore_eos));
   os.write(reinterpret_cast<const char*>(&token_ids_size), sizeof(token_ids_size));
   os.write(reinterpret_cast<const char*>(token_ids_.data()), token_ids_size * sizeof(int64_t));
   os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
   os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
-  os.write(reinterpret_cast<const char*>(&temperature), sizeof(temperature));
   os.write(reinterpret_cast<const char*>(&status_), sizeof(status_));
+  sampling_params->serialize(os);
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
@@ -70,8 +68,6 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
   is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
   is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));
-  is.read(reinterpret_cast<char*>(&seq->max_tokens), sizeof(seq->max_tokens));
-  is.read(reinterpret_cast<char*>(&seq->ignore_eos), sizeof(seq->ignore_eos));
 
   size_t token_ids_size;
   is.read(reinterpret_cast<char*>(&token_ids_size), sizeof(token_ids_size));
@@ -83,8 +79,8 @@ Sequence* Sequence::deserialize(std::istream& is) {
   seq->block_table_.resize(block_table_size);
   is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
 
-  is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
   is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
+  seq->sampling_params.reset(SamplingParams::deserialize(is));
   return seq;
 }
 

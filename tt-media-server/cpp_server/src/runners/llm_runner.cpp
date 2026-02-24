@@ -71,7 +71,7 @@ void LLMRunner::drain_decode_results() {
     if (dr.is_error) {
       LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
       scheduler_->removeSequence(dr.task_id);
-      on_token_(dr.task_id, 0, /*finished=*/true, /*is_stop=*/false, /*is_error=*/true);
+      on_token_(TokenResult{dr.task_id, 0, true, false, true});
       continue;
     }
 
@@ -81,7 +81,7 @@ void LLMRunner::drain_decode_results() {
 
     bool finished = seq->is_finished();
     bool is_stop = finished && scheduler_->is_stop_token(dr.token_id);
-    on_token_(dr.task_id, dr.token_id, finished, is_stop, /*is_error=*/false);
+    on_token_(TokenResult{dr.task_id, static_cast<uint64_t>(dr.token_id), finished, is_stop, false});
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id

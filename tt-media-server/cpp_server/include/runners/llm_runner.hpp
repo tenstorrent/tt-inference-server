@@ -14,8 +14,7 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-using TokenCallback =
-    std::function<void(TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token, bool is_error)>;
+using TokenCallback = std::function<void(const TokenResult& result)>;
 
 using ModelRunnerFactory =
     std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;

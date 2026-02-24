@@ -6,9 +6,9 @@
 #include <functional>
 #include <unistd.h>
 #include "runners/runner_interface.hpp"
+#include "runners/runner_config.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
-#include "config/settings.hpp"
 
 namespace tt::worker {
 
@@ -19,6 +19,7 @@ struct WorkerConfig {
     shared_ptr<llm_engine::ITaskQueue> task_queue;
     shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
     int worker_id;
+    tt::runners::RunnerConfig runner_config;
 };
 
 /**
@@ -27,10 +28,7 @@ struct WorkerConfig {
  */
 class SingleProcessWorker {
 public:
-    SingleProcessWorker(
-        WorkerConfig& cfg,
-        const llm_engine::Config& llm_engine_config = tt::config::llm_engine_config()
-    );
+    SingleProcessWorker(WorkerConfig& cfg);
     ~SingleProcessWorker();
 
     void start();
@@ -45,8 +43,7 @@ public:
 
 private:
     unique_ptr<tt::runners::IRunner> runner_;
-    function<void(llm_engine::TaskID task_id, uint64_t token_id, bool finished, bool is_stop_token, bool is_error)> on_token_;
-    llm_engine::Config llm_engine_config_;
+    function<void(const llm_engine::TokenResult& result)> on_token_;
 };
 
 } // namespace tt::worker

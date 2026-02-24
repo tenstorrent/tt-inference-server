@@ -228,9 +228,13 @@ struct PipeLlamaModelRunner::Impl {
         tokens.append(static_cast<Json::Int64>(seq->token_ids_.back()));
       }
       s["token_ids"] = std::move(tokens);
-      s["max_tokens"] = seq->max_tokens;
-      s["temperature"] = seq->temperature;
-      s["ignore_eos"] = seq->ignore_eos;
+      const llm_engine::SamplingParams* sp = seq->sampling_params.get();
+      s["max_tokens"] = sp ? sp->max_tokens : 64;
+      s["temperature"] = sp ? sp->temperature : 1.0f;
+      s["ignore_eos"] = sp ? sp->ignore_eos : false;
+      if (sp && sp->seed.has_value()) {
+        s["seed"] = *sp->seed;
+      }
       arr.append(std::move(s));
     }
     req["sequences"] = std::move(arr);

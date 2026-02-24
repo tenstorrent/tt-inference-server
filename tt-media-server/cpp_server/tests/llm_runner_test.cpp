@@ -48,9 +48,9 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   auto task_queue = make_queue();
 
-  tt::runners::LLMRunner engine{config, [&](TaskID task_id, int64_t token_id, bool finished, bool /*is_stop_token*/, bool /*is_error*/) {
-      received_tokens[task_id].push_back(token_id);
-      if (finished && ++finished_count == total_requests) {
+  tt::runners::LLMRunner engine{config, [&](const TokenResult& result) {
+      received_tokens[result.task_id].push_back(result.token_id);
+      if (result.finished && ++finished_count == total_requests) {
         engine.stop();
       }
     }, task_queue.get()};
