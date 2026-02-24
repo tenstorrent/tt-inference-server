@@ -218,6 +218,8 @@ class Settings(BaseSettings):
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key == "vllm" and isinstance(value, dict):
+                        value = VLLMSettings(**value)
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value
