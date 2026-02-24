@@ -39,8 +39,8 @@ headers = {
 
 class ImageGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/image/generations"
-        logger.info("Param test targets: %s", self.targets)
+        self.url = f"http://localhost:{self.service_port}/v1/images/generations"
+        print(self.targets)
 
         # Create list of payloads (one per device)
         payloads = []

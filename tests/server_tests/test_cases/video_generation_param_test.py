@@ -63,7 +63,7 @@ headers = {
 
 class VideoGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/video/generations"
+        self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
         logger.info(f"Testing video generation parameters at {self.url}")
 
         # Determine model name and get appropriate num_inference_steps

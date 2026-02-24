@@ -50,7 +50,7 @@ headers = {
 
 class TTSParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/audio/speech"
+        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
         payloads = [
             default_payload,
