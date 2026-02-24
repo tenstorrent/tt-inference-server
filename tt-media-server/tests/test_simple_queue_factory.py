@@ -2,8 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-from unittest.mock import MagicMock
-
 from config.constants import QueueType
 from model_services.queues.tt_batch_fifo_queue import TTBatchFifoQueue
 from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
@@ -34,19 +32,11 @@ class TestGetQueue:
 
 class TestGetTaskQueue:
     def test_faster_fifo_returns_batch_queue(self):
-        mock_settings = MagicMock()
-        mock_settings.max_batch_size = 2
+        from config.settings import get_settings
 
-        import config.settings
-
-        original = config.settings.get_settings
-        config.settings.get_settings = lambda: mock_settings
-        try:
-            queue = get_task_queue(QueueType.FasterFifo.value, size=10)
-            assert isinstance(queue, TTBatchFifoQueue)
-            assert queue._batch_size == 2
-        finally:
-            config.settings.get_settings = original
+        queue = get_task_queue(QueueType.FasterFifo.value, size=10)
+        assert isinstance(queue, TTBatchFifoQueue)
+        assert queue._batch_size == get_settings().max_batch_size
 
     def test_other_type_returns_tt_queue(self):
         queue = get_task_queue(QueueType.TTQueue.value, size=10)
