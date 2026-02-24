@@ -37,7 +37,7 @@ class TestGetTaskQueue:
         mock_settings = MagicMock()
         mock_settings.max_batch_size = 2
 
-        with patch("config.settings.get_settings", return_value=mock_settings):
+        with patch("config.settings.get_settings", new=lambda: mock_settings):
             queue = get_task_queue(QueueType.FasterFifo.value, size=10)
             assert isinstance(queue, TTBatchFifoQueue)
             assert queue._batch_size == 2
