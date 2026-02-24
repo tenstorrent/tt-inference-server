@@ -31,7 +31,10 @@ FIFO_SIZE = 128                             # 2 × page size for minimal in-flig
 PIPELINE_CORE = ttnn.CoreCoord(0, 0)
 FABRIC_MAX_PAYLOAD = 7168
 
-# SHM layout – must match TtRunDeviceBackend (C++)
+# SHM page layout for c2p/p2c – must match C++ (token_to_page / page_to_result)
+_TASK_ID_SIZE = 36
+_TOKEN_ID_OFF = 36
+_TOKEN_ID_SIZE = 8
 _PAGE_SIZE = 64
 _NUM_SLOTS = 1024
 _CHANNEL_HEADER = 64
@@ -71,6 +74,17 @@ def _shm_recv_from_cpp(buf):
     return data
 
 
+def _shm_sync_to_cpp(buf):
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        MS_SYNC = 0x2
+        addr = ctypes.addressof(ctypes.c_char.from_buffer(buf))
+        libc.msync(ctypes.c_void_p(addr), len(buf), MS_SYNC)
+    except Exception:
+        pass
+
+
 def _shm_send_to_cpp(buf, payload):
     while not _shutdown:
         r = struct.unpack_from("<I", buf, _P2C_READ_POS)[0]
@@ -82,6 +96,7 @@ def _shm_send_to_cpp(buf, payload):
     slot_off = _P2C_SLOTS_OFF + (w % _NUM_SLOTS) * _PAGE_SIZE
     buf[slot_off : slot_off + _PAGE_SIZE] = payload
     struct.pack_into("<I", buf, _P2C_WRITE_POS, w + 1)
+    _shm_sync_to_cpp(buf)
 
 
 def _open_shm(shm_name):
@@ -146,34 +161,52 @@ def _create_pipeline_block(mesh_device):
 
 
 def _shm_pipeline_bridge(pipeline_block, shm_buf, log):
-    """Read token pages from C++, push through the pipeline, echo input page back.
-    The input page is echoed back unchanged (task_id + token_id preserved) so the
-    C++ server can match results to requests. The pipeline round-trip still exercises
-    all H2D, D2D, and D2H socket paths end-to-end.
+    """Read token pages from C++, push through the pipeline, send output_tensor back.
+    The pipeline output (embedding row, 64 bytes) is sent back so the simulated
+    pipeline returns what was computed from the input page, not the page itself.
     """
     token_elems = TOKEN_SIZE_BYTES // 4
     while not _shutdown:
+        log.write("Rank 0: _shm_recv_from_cpp(shm_buf) start\n")
+        log.flush()
         page = _shm_recv_from_cpp(shm_buf)
         if page is None:
             break
-
+        log.write("Rank 0: _shm_recv_from_cpp(shm_buf) done\n")
+        log.flush()
         token_ints = struct.unpack_from(f"<{token_elems}I", page)
         input_tensor = ttnn.from_torch(
             torch.tensor(token_ints, dtype=torch.uint32).reshape(1, -1),
             dtype=ttnn.uint32,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
+        log.write(f"Rank 0: input_tensor: {input_tensor}")
+        log.flush()
         pipeline_block.write_token(input_tensor)
+        log.write(f"Rank 0: pipeline_block.write_token(input_tensor) done")
+        log.flush()
 
         output_tensor = ttnn.from_torch(
             torch.zeros(1, EMBEDDING_DIM, dtype=EMBEDDING_DTYPE),
             dtype=ttnn_dtype_from_torch_dtype(EMBEDDING_DTYPE),
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
+        log.write(f"Rank 0: output_tensor: {output_tensor}")
+        log.flush()
         pipeline_block.read_output(output_tensor)
+        log.write(f"Rank 0: output_tensor: {output_tensor}\n")
+        log.flush()
 
-        # Echo the original page back so C++ task_id / token_id matching still works.
-        _shm_send_to_cpp(shm_buf, page)
+        # C++ expects p2c page = DecodeResult: task_id (36 B) + token_id (8 B) + pad (20 B).
+        # Echo the received c2p page so the scheduler finds the sequence (same task_id/token_id).
+        payload = bytearray(_PAGE_SIZE)
+        payload[:_TASK_ID_SIZE] = page[:_TASK_ID_SIZE]
+        payload[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE] = page[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE]
+        log.write("Rank 0: _shm_send_to_cpp start\n")
+        log.flush()
+        _shm_send_to_cpp(shm_buf, bytes(payload))
+        log.write("Rank 0: _shm_send_to_cpp done\n")
+        log.flush()
 
     log.write("Rank 0: SHM pipeline bridge exiting\n")
     log.flush()

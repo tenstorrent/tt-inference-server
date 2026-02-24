@@ -115,10 +115,11 @@ class TtRunDeviceBackend : public IDeviceBackend {
       _exit(127);
     }
     child_pid_ = pid;
-    LLM_ENGINE_LOG("model_runner") << "TtRunDeviceBackend: started tt-run pid " << pid << std::endl;
+    std::cout << "TtRunDeviceBackend: started tt-run pid " << pid << std::endl;
   }
 
   void write(const Sequence& seq) override {
+    std::cout << "TtRunDeviceBackend: write start" << std::endl;
     size_t& index = token_index_per_task_[seq.task_id];
     if (index >= kFixedReplySequence.size()) {
       index = 0;
@@ -132,9 +133,11 @@ class TtRunDeviceBackend : public IDeviceBackend {
     char* slot = ch.slots[w % kNumSlots];
     token_to_page(seq.task_id, token_id, slot);
     __atomic_store_n(&ch.write_pos, w + 1, __ATOMIC_RELEASE);
+    std::cout << "TtRunDeviceBackend: write done" << std::endl;
   }
 
   bool read(DecodeResult* result) override {
+    std::cout << "TtRunDeviceBackend: read start" << std::endl;
     ShmChannel& ch = region_->p2c;
     while (!stop_.load(std::memory_order_relaxed)) {
       uint32_t r = __atomic_load_n(&ch.read_pos, __ATOMIC_RELAXED);
@@ -143,6 +146,8 @@ class TtRunDeviceBackend : public IDeviceBackend {
         const char* slot = ch.slots[r % kNumSlots];
         page_to_result(slot, result);
         __atomic_store_n(&ch.read_pos, r + 1, __ATOMIC_RELEASE);
+        std::cout << "TtRunDeviceBackend: read done (r=" << r << " w=" << w << ")"
+                  << std::endl;
         return true;
       }
       CPU_RELAX();
