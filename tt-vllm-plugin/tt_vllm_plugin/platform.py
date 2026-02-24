@@ -214,7 +214,8 @@ class TTPlatform(Platform):
     @staticmethod
     def compat_sampling_required(sampling_params) -> bool:
         # anything beyond top-k top-p sampling requires compat sampling
-        # seed pending https://github.com/tenstorrent/tt-metal/issues/32209
+        # seed routes through compat sampling which has per-request
+        # torch.Generator for true per-request determinism
         return (
             sampling_params.presence_penalty != 0.0
             or sampling_params.frequency_penalty != 0.0

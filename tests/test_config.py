@@ -37,6 +37,18 @@ class TestConfig:
 
 _test_config_list = [
     TestConfig(
+        hf_model_repo="Qwen/Qwen3-8B",
+        tasks=[
+            TestTask(
+                task_name="vllm_params",
+                test_path=Path(
+                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
+                ),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
             TestTask(

@@ -145,13 +145,13 @@ async def test_non_uniform_seeding(report_test, api_client, request):
             # actually forcing the determinism.
             payload = {
                 "messages": [
-                    {"role": "user", "content": "Generate a list of 10 random colors."}
+                    {"role": "user", "content": "Generate a list of 100 random colors."}
                 ],
-                "max_tokens": 50,
+                "max_tokens": 500,
                 "temperature": 0.9,
                 "seed": seed_val,
             }
-            response = await asyncio.to_thread(api_client, payload)
+            response = await asyncio.to_thread(api_client, payload, 300)
             return {
                 "seed": seed_val,
                 "content": response["choices"][0]["message"]["content"].strip(),
