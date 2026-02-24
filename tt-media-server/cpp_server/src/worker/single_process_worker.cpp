@@ -19,7 +19,7 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
     on_token_ = [this](const llm_engine::TokenResult& result) {
         auto token = ipc::SharedToken{
             .token_index = 0,
-            .flags = static_cast<uint32_t>(result.finished ? 1 : 0),
+            .flags = static_cast<uint32_t>(result.finished.value_or(false) ? 1 : 0),
             .token_id = result.token_id,
             .task_id = {},
             .padding = {},
