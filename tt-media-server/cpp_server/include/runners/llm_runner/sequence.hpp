@@ -62,7 +62,7 @@ struct TokenResult {
 
 class Sequence {
  public:
-  static constexpr int block_size = 256;
+  static constexpr int block_size = 32;
 
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
