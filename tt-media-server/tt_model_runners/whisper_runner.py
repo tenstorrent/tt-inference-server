@@ -4,7 +4,7 @@
 
 import asyncio
 import os
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -712,7 +712,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             async def _model_pipeline(
                 audio_data,
                 stream=False,
-                generation_params: Optional[GenerationParams] = None,
+                generation_params: Optional[
+                    Union[GenerationParams, List[GenerationParams]]
+                ] = None,
             ):
                 try:
                     # Validate pipeline inputs
