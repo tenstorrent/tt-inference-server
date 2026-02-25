@@ -57,7 +57,7 @@ struct EmbeddingService::Impl {
     // Shared request queue (all worker dispatch threads pull from this)
     TracyLockable(std::mutex, queue_mutex_);
     std::queue<std::shared_ptr<PendingRequest>> request_queue_;
-    std::condition_variable queue_cv_;
+    std::condition_variable_any queue_cv_;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> is_ready_{false};
