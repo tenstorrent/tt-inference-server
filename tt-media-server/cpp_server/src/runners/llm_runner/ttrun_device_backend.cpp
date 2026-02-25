@@ -48,7 +48,7 @@ static void token_to_page(const TaskID& task_id, int64_t token_id, char* page) {
   std::memcpy(page + TaskID::kSerializedSize, &token_id, sizeof(token_id));
 }
 
-static void page_to_result(const char* page, DecodeResult* result) {
+static void page_to_result(const char* page, TokenResult* result) {
   result->task_id = TaskID::deserialize(page, TaskID::kSerializedSize);
   std::memcpy(&result->token_id, page + TaskID::kSerializedSize, sizeof(result->token_id));
 }
@@ -136,7 +136,7 @@ class TtRunDeviceBackend : public IDeviceBackend {
     std::cout << "TtRunDeviceBackend: write done" << std::endl;
   }
 
-  bool read(DecodeResult* result) override {
+  bool read(TokenResult* result) override {
     std::cout << "TtRunDeviceBackend: read start" << std::endl;
     ShmChannel& ch = region_->p2c;
     while (!stop_.load(std::memory_order_relaxed)) {
