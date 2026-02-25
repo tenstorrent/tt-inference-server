@@ -139,7 +139,6 @@ Bind mount an entire host directory as the container's `cache_root`. All data (w
 docker run \
   ... \
   --mount type=bind,src=$HOST_VOLUME,dst=/home/container_app_user/cache_root \
-  -e PERSISTENT_VOLUME=/home/container_app_user/cache_root \
   <image> --model <model> --tt-device <device>
 ```
 
