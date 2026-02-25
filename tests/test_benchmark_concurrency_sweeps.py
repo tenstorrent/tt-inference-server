@@ -76,5 +76,5 @@ def test_expand_concurrency_sweeps_image_accounts_for_vision_tokens():
         model_name="google/gemma-3-4b-it",
         candidate_concurrencies=[1, 2, 4, 8, 16, 32],
     )
-    got = sorted(p.max_concurrency for p in expanded if p.task_type == "image")
+    got = sorted(p.max_concurrency for p in expanded if p.task_type == "vlm")
     assert got == [1, 2, 4, 8]
