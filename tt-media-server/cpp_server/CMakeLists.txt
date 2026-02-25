@@ -239,6 +239,15 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
+# Galaxy pipeline smoke test (TtRunDeviceBackend end-to-end)
+add_executable(galaxy_pipeline_smoke_test tests/galaxy_pipeline_smoke_test.cpp)
+target_link_libraries(galaxy_pipeline_smoke_test PRIVATE llm_engine)
+target_include_directories(galaxy_pipeline_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME GalaxyPipelineSmoke COMMAND galaxy_pipeline_smoke_test)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
@@ -327,4 +336,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(sequence_test PRIVATE -fsanitize=address)
     target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
+    target_compile_options(galaxy_pipeline_smoke_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(galaxy_pipeline_smoke_test PRIVATE -fsanitize=address)
 endif()

@@ -17,17 +17,19 @@ import torch
 import ttnn
 
 from models.demos.deepseek_v3_b1.micro_ops.pipeline_block.op import PipelineBlock
-from models.demos.deepseek_v3_b1.micro_ops.host_io.utils import ttnn_dtype_from_torch_dtype
+from models.demos.deepseek_v3_b1.micro_ops.host_io.utils import (
+    ttnn_dtype_from_torch_dtype,
+)
 
 # Pipeline sizing: 64-byte end-to-end pages.
 # embedding_dim=32 bfloat16 elements == 64 bytes per row, matching the H2D token page size
 # so the same page size flows unchanged through H2D → D2D → D2H.
 EMBEDDING_DIM = 32
-EMBEDDING_VOCAB = 131072        # covers max token id (~125836) in fixed_reply_sequence
+EMBEDDING_VOCAB = 131072  # covers max token id (~125836) in fixed_reply_sequence
 EMBEDDING_DTYPE = torch.bfloat16
-EMBEDDING_SIZE_BYTES = EMBEDDING_DIM * 2   # 32 × 2 = 64 bytes
-TOKEN_SIZE_BYTES = 64                       # H2D page: task_id (36 B) + token_id (8 B) + pad
-FIFO_SIZE = 128                             # 2 × page size for minimal in-flight buffering
+EMBEDDING_SIZE_BYTES = EMBEDDING_DIM * 2  # 32 × 2 = 64 bytes
+TOKEN_SIZE_BYTES = 64  # H2D page: task_id (36 B) + token_id (8 B) + pad
+FIFO_SIZE = 128  # 2 × page size for minimal in-flight buffering
 PIPELINE_CORE = ttnn.CoreCoord(0, 0)
 FABRIC_MAX_PAYLOAD = 7168
 
@@ -77,6 +79,7 @@ def _shm_recv_from_cpp(buf):
 def _shm_sync_to_cpp(buf):
     try:
         import ctypes
+
         libc = ctypes.CDLL("libc.so.6")
         MS_SYNC = 0x2
         addr = ctypes.addressof(ctypes.c_char.from_buffer(buf))
@@ -105,7 +108,9 @@ def _open_shm(shm_name):
         return None
     fd = os.open(path, os.O_RDWR)
     try:
-        return mmap.mmap(fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+        return mmap.mmap(
+            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
+        )
     finally:
         os.close(fd)
 
@@ -141,8 +146,8 @@ def _create_pipeline_block(mesh_device):
         return PipelineBlock(
             mesh_device,
             PIPELINE_CORE,
-            FIFO_SIZE,             # upstream d2d socket fifo size
-            FIFO_SIZE,             # downstream d2d socket fifo size
+            FIFO_SIZE,  # upstream d2d socket fifo size
+            FIFO_SIZE,  # downstream d2d socket fifo size
             EMBEDDING_SIZE_BYTES,  # upstream d2d socket page size (= d2h page size)
             EMBEDDING_SIZE_BYTES,  # downstream d2d socket page size (= embedding row size)
             h2d_socket_fifo_size=FIFO_SIZE,
@@ -189,7 +194,9 @@ def _shm_pipeline_bridge(pipeline_block, shm_buf):
         # task_id/token_id; C++ page_to_result() and find_sequence() require the original IDs.
         payload = bytearray(_PAGE_SIZE)
         payload[:_TASK_ID_SIZE] = page[:_TASK_ID_SIZE]
-        payload[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE] = page[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE]
+        payload[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE] = page[
+            _TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE
+        ]
         _shm_send_to_cpp(shm_buf, bytes(payload))
 
 
