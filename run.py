@@ -472,6 +472,7 @@ def main():
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
+            image_user=args.image_user,
         )
 
     # step 4: optionally run inference server
