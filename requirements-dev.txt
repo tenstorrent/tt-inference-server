@@ -6,4 +6,7 @@ pyjwt==2.7.0
 requests
 imageio
 imageio-ffmpeg
-requests
+# For tt-media-server tests that import audio_manager -> silero_vad -> torchaudio (libtorchaudio.so)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchaudio
