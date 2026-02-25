@@ -17,8 +17,11 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
+
+# Install PyTorch CPU first to avoid CUDA dependencies
+--extra-index-url https://download.pytorch.org/whl/cpu
+torchaudio>=2.0.0,<3.0.0
+
+# Install WhisperX after PyTorch CPU
 whisperx==3.4.3
 requests
-
-
---extra-index-url https://download.pytorch.org/whl/cpu
