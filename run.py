@@ -54,7 +54,7 @@ def parse_device_ids(value):
 
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
-    valid_devices = {device.name.lower() for device in DeviceTypes} | {"p300x2"}
+    valid_devices = {device.name.lower() for device in DeviceTypes} | {"p300x2", "qbge"}
 
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
