@@ -8,9 +8,7 @@ import logging
 import importlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
-from vllm.v1.metrics.loggers import logger
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOG_PATH = Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"vllm_{LOG_TIMESTAMP}.log"
