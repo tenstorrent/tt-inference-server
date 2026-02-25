@@ -72,6 +72,7 @@ class DeviceTypes(IntEnum):
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
     QBGE = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
+    P300X2 = QBGE  # Alias: runner-type name used by tt-shield CI for QBGE hardware
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
