@@ -1,5 +1,11 @@
+# Force CPU PyTorch FIRST - before anything else
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.7.1
+torchaudio==2.7.1
+numpy>=1.24.4,<2
+
+# Sada whisperx će koristiti već instalirani torch
 aiohttp
-asyncio
 colorama
 fastapi
 faster_fifo
@@ -14,11 +20,8 @@ pydantic-settings
 pytest
 pytest-asyncio
 python-multipart
+requests
 silero_vad
 tqdm
 uvicorn
 whisperx==3.4.3
-requests
-
-
---extra-index-url https://download.pytorch.org/whl/cpu
