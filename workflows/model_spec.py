@@ -1562,8 +1562,14 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x4_mesh_graph_descriptor.textproto",
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
                 },
             ),
         ],
@@ -1789,6 +1795,16 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 48000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 48000000,
                 },

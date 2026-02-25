@@ -184,6 +184,7 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
     QBGE = "qbge"
+    P300X2 = "p300x2"  # alias: matches tt-shield runner-type naming for QBGE hardware
     P300 = "p300"
 
 
@@ -379,6 +380,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300): {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
@@ -401,6 +409,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.QBGE): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
@@ -480,6 +495,13 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.QBGE): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,

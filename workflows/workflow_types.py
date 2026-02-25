@@ -79,8 +79,11 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def from_string(cls, name: str):
+        # Alias: p300x2 is the runner-type name used by tt-shield CI for QBGE hardware
+        _ALIASES = {"P300X2": "QBGE"}
+        normalized = _ALIASES.get(name.upper(), name.upper())
         try:
-            return cls[name.upper()]
+            return cls[normalized]
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 
