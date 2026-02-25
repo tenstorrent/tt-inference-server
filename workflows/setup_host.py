@@ -27,6 +27,7 @@ from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_weights_hf_cache_dir,
 )
+from workflows.validate_setup import _try_fix_path_permissions_for_uid
 from workflows.workflow_types import ModelSource, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -212,6 +213,7 @@ class HostSetupManager:
         host_volume: str = None,
         host_hf_cache: str = None,
         host_weights_dir: str = None,
+        image_user: str = None,
     ):
         self.model_spec = model_spec
         self.automatic = automatic
@@ -223,6 +225,7 @@ class HostSetupManager:
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
+        self.image_user = int(image_user) if image_user else None
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
         if not host_weights_dir or not host_weights_dir.exists():
@@ -592,10 +595,36 @@ class HostSetupManager:
             raise ValueError("⛔ Weights directory does not exist.")
 
     def make_host_dirs(self):
-        if self.setup_config.host_model_volume_root:
-            self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
-        if self.setup_config.host_tt_metal_cache_dir:
-            self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
+        dirs_to_create = [
+            self.setup_config.host_model_volume_root,
+            self.setup_config.host_tt_metal_cache_dir,
+        ]
+        for dir_path in dirs_to_create:
+            if not dir_path:
+                continue
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        if self.image_user is None:
+            return
+        volume_root = self.setup_config.persistent_volume_root
+        if not volume_root:
+            return
+        for dir_path in dirs_to_create:
+            if not dir_path:
+                continue
+            try:
+                rel = dir_path.relative_to(volume_root)
+            except ValueError:
+                _try_fix_path_permissions_for_uid(
+                    dir_path, self.image_user, need_write=True
+                )
+                continue
+            cumulative = volume_root
+            for part in rel.parts:
+                cumulative = cumulative / part
+                _try_fix_path_permissions_for_uid(
+                    cumulative, self.image_user, need_write=True
+                )
 
     def setup_weights(self):
         if not self.check_setup():
@@ -629,6 +658,7 @@ def setup_host(
     host_volume=None,
     host_hf_cache=None,
     host_weights_dir=None,
+    image_user=None,
 ):
     automatic = bool(automatic_setup)
 
@@ -640,6 +670,7 @@ def setup_host(
         host_volume=host_volume,
         host_hf_cache=host_hf_cache,
         host_weights_dir=host_weights_dir,
+        image_user=image_user,
     )
     manager.run_setup()
     return manager.setup_config

@@ -230,18 +230,73 @@ def _check_path_permissions_for_uid(path, uid, need_write=False):
     return True, ""
 
 
+def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
+    """Best-effort chmod to grant the target UID the required access bits.
+
+    Determines which POSIX scope (owner/group/other) the UID falls into and
+    adds read (+execute for directories, +write if need_write) bits for that
+    scope.  Only succeeds when the current process has permission to chmod
+    (i.e. current user owns the path or is root) -- no sudo required.
+
+    Returns True if chmod was applied, False on failure.
+    """
+    path = Path(path)
+    if not path.exists():
+        return False
+
+    st = path.stat()
+    mode = st.st_mode
+    gids = _get_groups_for_uid(uid)
+
+    if uid == st.st_uid:
+        new_bits = stat.S_IRUSR
+        if path.is_dir():
+            new_bits |= stat.S_IXUSR
+        if need_write:
+            new_bits |= stat.S_IWUSR
+    elif st.st_gid in gids:
+        new_bits = stat.S_IRGRP
+        if path.is_dir():
+            new_bits |= stat.S_IXGRP
+        if need_write:
+            new_bits |= stat.S_IWGRP
+    else:
+        new_bits = stat.S_IROTH
+        if path.is_dir():
+            new_bits |= stat.S_IXOTH
+        if need_write:
+            new_bits |= stat.S_IWOTH
+
+    target_mode = mode | new_bits
+    if target_mode == mode:
+        return False
+
+    try:
+        os.chmod(path, target_mode)
+        logger.info(f"Fixed permissions on {path}: {oct(mode)} -> {oct(target_mode)}")
+        return True
+    except OSError as e:
+        logger.debug(f"Cannot chmod {path}: {e}")
+        return False
+
+
 def validate_bind_mount_permissions(args):
     """Validate that --image-user UID can access bind-mounted host paths.
 
     Checks read permission for --host-hf-cache and --host-weights-dir (readonly mounts),
     and read+write permission for --host-volume (read-write mount).
 
-    Raises ValueError with actionable guidance on permission mismatch.
+    If a check fails, attempts to fix permissions via chmod (no sudo).
+    Raises ValueError with actionable guidance if the fix is not possible.
     """
     uid = int(args.image_user)
     checks = []
 
     if args.host_volume:
+        host_volume_path = Path(args.host_volume)
+        if not host_volume_path.exists():
+            logger.info(f"Creating host volume directory: {host_volume_path}")
+            host_volume_path.mkdir(parents=True, exist_ok=True)
         checks.append(("--host-volume", args.host_volume, True))
     if args.host_hf_cache:
         checks.append(("--host-hf-cache", args.host_hf_cache, False))
@@ -252,6 +307,11 @@ def validate_bind_mount_permissions(args):
         ok, reason = _check_path_permissions_for_uid(
             host_path, uid, need_write=need_write
         )
+        if not ok:
+            _try_fix_path_permissions_for_uid(host_path, uid, need_write=need_write)
+            ok, reason = _check_path_permissions_for_uid(
+                host_path, uid, need_write=need_write
+            )
         if not ok:
             access_type = "read+write" if need_write else "read"
             raise ValueError(

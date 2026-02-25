@@ -12,6 +12,7 @@ import pytest
 
 from workflows.validate_setup import (
     _check_path_permissions_for_uid,
+    _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
 )
 
@@ -174,14 +175,32 @@ class TestValidateBindMountPermissions:
         args = self._make_args(host_volume=str(d))
         validate_bind_mount_permissions(args)
 
-    def test_host_volume_not_writable_raises(self, tmp_path):
+    def test_host_volume_not_writable_auto_fixed(self, tmp_path):
+        """Auto-fix adds write permission when current user owns the directory."""
         d = tmp_path / "ro_volume"
         d.mkdir()
         os.chmod(d, 0o500)
         try:
             args = self._make_args(host_volume=str(d))
-            with pytest.raises(ValueError, match="Bind mount permission check failed"):
-                validate_bind_mount_permissions(args)
+            validate_bind_mount_permissions(args)
+            assert os.access(d, os.W_OK)
+        finally:
+            os.chmod(d, 0o700)
+
+    def test_host_volume_not_writable_raises_when_fix_fails(self, tmp_path):
+        d = tmp_path / "ro_volume"
+        d.mkdir()
+        os.chmod(d, 0o500)
+        try:
+            args = self._make_args(host_volume=str(d))
+            with patch(
+                "workflows.validate_setup._try_fix_path_permissions_for_uid",
+                return_value=False,
+            ):
+                with pytest.raises(
+                    ValueError, match="Bind mount permission check failed"
+                ):
+                    validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
 
@@ -191,14 +210,32 @@ class TestValidateBindMountPermissions:
         args = self._make_args(host_hf_cache=str(d))
         validate_bind_mount_permissions(args)
 
-    def test_host_hf_cache_not_readable_raises(self, tmp_path):
+    def test_host_hf_cache_not_readable_auto_fixed(self, tmp_path):
+        """Auto-fix adds read+execute permission for read-only mounts."""
         d = tmp_path / "hf_cache_noperm"
         d.mkdir()
         os.chmod(d, 0o300)
         try:
             args = self._make_args(host_hf_cache=str(d))
-            with pytest.raises(ValueError, match="Bind mount permission check failed"):
-                validate_bind_mount_permissions(args)
+            validate_bind_mount_permissions(args)
+            assert os.access(d, os.R_OK)
+        finally:
+            os.chmod(d, 0o700)
+
+    def test_host_hf_cache_not_readable_raises_when_fix_fails(self, tmp_path):
+        d = tmp_path / "hf_cache_noperm"
+        d.mkdir()
+        os.chmod(d, 0o300)
+        try:
+            args = self._make_args(host_hf_cache=str(d))
+            with patch(
+                "workflows.validate_setup._try_fix_path_permissions_for_uid",
+                return_value=False,
+            ):
+                with pytest.raises(
+                    ValueError, match="Bind mount permission check failed"
+                ):
+                    validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
 
@@ -208,21 +245,46 @@ class TestValidateBindMountPermissions:
         args = self._make_args(host_weights_dir=str(d))
         validate_bind_mount_permissions(args)
 
-    def test_host_weights_dir_not_readable_raises(self, tmp_path):
+    def test_host_weights_dir_not_readable_raises_when_fix_fails(self, tmp_path):
         d = tmp_path / "weights_noperm"
         d.mkdir()
         os.chmod(d, 0o300)
         try:
             args = self._make_args(host_weights_dir=str(d))
-            with pytest.raises(ValueError, match="Bind mount permission check failed"):
-                validate_bind_mount_permissions(args)
+            with patch(
+                "workflows.validate_setup._try_fix_path_permissions_for_uid",
+                return_value=False,
+            ):
+                with pytest.raises(
+                    ValueError, match="Bind mount permission check failed"
+                ):
+                    validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
 
-    def test_nonexistent_host_volume_raises(self, tmp_path):
-        args = self._make_args(host_volume=str(tmp_path / "missing"))
-        with pytest.raises(ValueError, match="does not exist"):
+    def test_nonexistent_host_volume_is_created(self, tmp_path):
+        missing = tmp_path / "missing"
+        args = self._make_args(host_volume=str(missing))
+        validate_bind_mount_permissions(args)
+        assert missing.is_dir()
+
+    def test_nonexistent_nested_host_volume_is_created(self, tmp_path):
+        nested = tmp_path / "a" / "b" / "c"
+        args = self._make_args(host_volume=str(nested))
+        validate_bind_mount_permissions(args)
+        assert nested.is_dir()
+
+    def test_other_uid_volume_auto_fixed(self, tmp_path):
+        """Auto-fix adds other rwx bits when container UID is not owner/group."""
+        d = tmp_path / "other_fix"
+        d.mkdir()
+        os.chmod(d, 0o700)
+        fake_uid = 99999
+        args = self._make_args(image_user=str(fake_uid), host_volume=str(d))
+        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
             validate_bind_mount_permissions(args)
+        mode = os.stat(d).st_mode
+        assert mode & 0o007 == 0o007
 
     def test_error_message_includes_fix_guidance(self, tmp_path):
         d = tmp_path / "noperm"
@@ -230,7 +292,11 @@ class TestValidateBindMountPermissions:
         os.chmod(d, 0o500)
         try:
             args = self._make_args(host_volume=str(d))
-            with pytest.raises(ValueError, match="chmod/chown"):
-                validate_bind_mount_permissions(args)
+            with patch(
+                "workflows.validate_setup._try_fix_path_permissions_for_uid",
+                return_value=False,
+            ):
+                with pytest.raises(ValueError, match="chmod/chown"):
+                    validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
