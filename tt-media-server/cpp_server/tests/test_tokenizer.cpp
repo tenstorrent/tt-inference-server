@@ -243,7 +243,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
     std::string actual = Tokenizer::apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match Llama 3.1 8B format.\n"
+        << "apply_chat_template output should match Llama 3.1 8B Instruct format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
@@ -273,7 +273,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat)
     std::string actual = Tokenizer::apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match Llama 3.1 8B format.\n"
+        << "apply_chat_template output should match Llama 3.1 8B Instruct format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }

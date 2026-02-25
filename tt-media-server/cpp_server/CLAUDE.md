@@ -99,7 +99,7 @@ tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
 the `ITokenizerStrategy` factory pattern (`utils/tokenizer_strategy.hpp`):
 
 - **`llm_test`** (default): CPU-based test runner, uses DeepSeek V3 tokenizer strategy
-- **`llama_runner`**: Python-based runner via pybind11, uses Llama 3.1 8B tokenizer strategy
+- **`llama_runner`**: Python-based runner via pybind11, uses Llama 3.1 8B Instruct tokenizer strategy
 
 ## Configuration System
 
@@ -108,7 +108,7 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `MODEL_RUNNER`: `llm_test` (DeepSeek V3) or `llama_runner` (Llama 3.1 8B) — selects runner + tokenizer strategy (default: `llm_test`)
+- `MODEL_RUNNER`: `llm_test` (DeepSeek V3) or `llama_runner` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `llm_test`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
 - `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
@@ -162,7 +162,7 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 The build script pre-fetches tokenizer files for all supported models into
 per-model subdirectories under `tokenizers/`:
 - `tokenizers/deepseek-ai/DeepSeek-V3/tokenizer.json` + `tokenizer_config.json`
-- `tokenizers/meta-llama/Llama-3.1-8B/tokenizer.json` + `tokenizer_config.json`
+- `tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json` + `tokenizer_config.json`
 
 The active tokenizer is selected at runtime based on `MODEL_RUNNER`. To add a
 new model, manually download tokenizer files into `tokenizers/<org>/<model>/`.

@@ -201,10 +201,10 @@ download_tokenizer \
     "https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main" \
     "false"
 
-# Llama 3.1 8B (gated, requires HF_TOKEN)
+# Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
 download_tokenizer \
-    "meta-llama/Llama-3.1-8B" \
-    "https://huggingface.co/meta-llama/Llama-3.1-8B/raw/main" \
+    "meta-llama/Llama-3.1-8B-Instruct" \
+    "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
     "true"
 
 echo ""

@@ -70,8 +70,8 @@ models from HuggingFace into `tokenizers/<model-name>/`:
 tokenizers/
   deepseek-ai/DeepSeek-V3/tokenizer.json
   deepseek-ai/DeepSeek-V3/tokenizer_config.json
-  meta-llama/Llama-3.1-8B/tokenizer.json
-  meta-llama/Llama-3.1-8B/tokenizer_config.json
+  meta-llama/Llama-3.1-8B-Instruct/tokenizer.json
+  meta-llama/Llama-3.1-8B-Instruct/tokenizer_config.json
 ```
 
 Llama models are gated on HuggingFace — set `HF_TOKEN` (or
@@ -102,7 +102,7 @@ recompilation needed:
 | `MODEL_RUNNER` | Model | Tokenizer |
 |----------------|-------|-----------|
 | `llm_test` (default) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-V3/` |
-| `llama_runner` | Llama 3.1 8B | `tokenizers/meta-llama/Llama-3.1-8B/` |
+| `llama_runner` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
 
 The runtime selection uses an OOP strategy pattern — see
 `include/utils/tokenizer_strategy.hpp` for the `ITokenizerStrategy` interface

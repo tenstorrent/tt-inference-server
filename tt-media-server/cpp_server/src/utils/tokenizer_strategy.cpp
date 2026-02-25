@@ -47,7 +47,7 @@ std::string DeepSeekTokenizerStrategy::apply_chat_template(
 }
 
 // ---------------------------------------------------------------------------
-// Llama 3.1 8B: header/eot tags with knowledge-cutoff preamble
+// Llama 3.1 8B Instruct: header/eot tags with knowledge-cutoff preamble
 // ---------------------------------------------------------------------------
 
 static const char* LLAMA_HEADER_START = "<|start_header_id|>";

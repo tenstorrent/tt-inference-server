@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """
-Llama-3.1-8B runner for cpp_server LLM flow.
+Llama-3.1-8B-Instruct runner for cpp_server LLM flow.
 
 Wraps LlamaForCausalLM from tt-metal (models.tt_transformers.tt.generator_vllm).
 Designed to be run as a subprocess: reads JSON requests from stdin, writes JSON
@@ -19,7 +19,7 @@ Batching:
   "DECODE top-5" with ~35ms between lines).
 
 Requires: PYTHONPATH to include TT_METAL_HOME and tt-media-server root.
-Environment: HF_MODEL (e.g. meta-llama/Llama-3.1-8B), TT_VISIBLE_DEVICES.
+Environment: HF_MODEL (e.g. meta-llama/Llama-3.1-8B-Instruct), TT_VISIBLE_DEVICES.
 """
 
 import json

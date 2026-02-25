@@ -10,7 +10,7 @@
 namespace llm_engine {
 
 /**
- * IModelRunner that runs Llama-3.1-8B via embedded Python interpreter (pybind11).
+ * IModelRunner that runs Llama-3.1-8B-Instruct via embedded Python interpreter (pybind11).
  * Calls tt_model_runners.llama_runner.Llama31_8BRunner methods directly in-process.
  */
 class PybindLlamaModelRunner : public IModelRunner {
