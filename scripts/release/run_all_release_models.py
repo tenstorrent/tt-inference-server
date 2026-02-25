@@ -19,7 +19,7 @@ from workflows.utils import get_repo_root_path
 
 def parse_arguments():
     """Parse command-line arguments."""
-    valid_devices = {device.name.lower() for device in DeviceTypes}
+    valid_devices = {device.name.lower() for device in DeviceTypes} | {"p300x2"}
 
     parser = argparse.ArgumentParser(
         description="Run release workflow for all models on a specified device.",

@@ -465,6 +465,14 @@ class TestDeviceTypeAlias:
         with pytest.raises(ValueError, match="Invalid DeviceType"):
             DeviceTypes.from_string("invalid_device")
 
+    def test_bracket_lookup_p300x2(self):
+        """DeviceTypes['P300X2'] bracket lookup should resolve to QBGE (tt-shield path)."""
+        assert DeviceTypes["P300X2"] == DeviceTypes.QBGE
+
+    def test_p300x2_is_alias_identity(self):
+        """P300X2 should be the same object as QBGE (IntEnum alias identity)."""
+        assert DeviceTypes.P300X2 is DeviceTypes.QBGE
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
