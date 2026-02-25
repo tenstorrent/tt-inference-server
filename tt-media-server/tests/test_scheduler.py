@@ -139,8 +139,8 @@ class TestScheduler:
         assert scheduler.monitor_running
         assert scheduler.result_queues == {}
 
-        # Verify logger was initialized
-        mock_logger.info.assert_not_called()  # No logs yet
+        # Verify logger was used during init (_calculate_worker_count logs)
+        assert mock_logger.info.call_count >= 1
 
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
