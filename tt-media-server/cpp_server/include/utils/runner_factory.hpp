@@ -9,11 +9,8 @@
 #include "config/constants.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/runner_config.hpp"
+#include "runners/runner_result.hpp"
 #include "runners/llm_runner/task_queue.hpp"
-
-namespace llm_engine {
-    using TokenCallback = std::function<void(const TokenResult& result)>;
-}
 
 namespace tt::utils::runner_factory {
 
@@ -22,14 +19,14 @@ namespace tt::utils::runner_factory {
  *
  * @param service Which service (LLM, EMBEDDING, …) to create a runner for
  * @param config Runner configuration data
- * @param on_token Token callback for streaming (used by LLM runner)
+ * @param on_result Generic result callback (used by LLM runner for tokens, embedding runner for vectors, etc.)
  * @param task_queue Task queue for worker communication (used by LLM runner)
  * @return Unique pointer to the created runner
  */
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
     const runners::RunnerConfig& config,
-    llm_engine::TokenCallback on_token,
+    runners::ResultCallback on_result,
     llm_engine::ITaskQueue* task_queue
 );
 

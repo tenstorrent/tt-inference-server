@@ -3,6 +3,7 @@
 
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner.hpp"
+#include "runners/runner_result.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include <gtest/gtest.h>
 #include <unordered_map>
@@ -48,9 +49,12 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   auto task_queue = make_queue();
 
-  tt::runners::LLMRunner engine{config, [&](const TokenResult& result) {
-      received_tokens[result.task_id].push_back(result.token_id);
-      if (result.finished.value_or(false) && ++finished_count == total_requests) {
+  tt::runners::LLMRunner engine{config, [&](const tt::runners::RunnerResult& result) {
+      const auto& tok = std::get<tt::runners::TokenPayload>(result.payload);
+      TaskID tid;
+      tid.id = result.task_id;
+      received_tokens[tid].push_back(tok.token_id);
+      if (tok.finished && ++finished_count == total_requests) {
         engine.stop();
       }
     }, task_queue.get()};

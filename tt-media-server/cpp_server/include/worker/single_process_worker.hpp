@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "runners/runner_interface.hpp"
 #include "runners/runner_config.hpp"
+#include "runners/runner_result.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
 
@@ -43,7 +44,7 @@ public:
 
 private:
     unique_ptr<tt::runners::IRunner> runner_;
-    function<void(const llm_engine::TokenResult& result)> on_token_;
+    tt::runners::ResultCallback on_result_;
 };
 
 } // namespace tt::worker

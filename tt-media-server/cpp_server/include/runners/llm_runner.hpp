@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "runners/runner_interface.hpp"
+#include "runners/runner_result.hpp"
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
@@ -14,11 +15,9 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-using TokenCallback = std::function<void(const TokenResult& result)>;
-
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue);
+  LLMRunner(const Config& config, ResultCallback on_result, ITaskQueue* task_queue);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
@@ -33,7 +32,7 @@ class LLMRunner : public IRunner {
   void exit();
 
   Config config_;
-  TokenCallback on_token_;
+  ResultCallback on_result_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   DecodeQueue decode_queue_;
