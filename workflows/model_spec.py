@@ -1604,8 +1604,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="9b67e09",
-        vllm_commit="a91b644",
+        tt_metal_commit="84b4c53",
+        vllm_commit="222ee06",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1619,6 +1619,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={"num_scheduler_steps": None},
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -3104,25 +3105,43 @@ MODEL_SPECS = get_model_spec_map(spec_templates)
 
 
 def get_runtime_model_spec(args):
-    # Infer the impl from the default for given model_name if not provided
-    if not args.impl:
-        device_type = DeviceTypes.from_string(args.device)
-        for _, model_spec in MODEL_SPECS.items():
-            if (
-                model_spec.model_name == args.model
-                and model_spec.device_type == device_type
-                and model_spec.device_model_spec.default_impl
-            ):
-                args.impl = model_spec.impl.impl_name
-                break
+    device_type = DeviceTypes.from_string(args.device)
+    requested_engine = getattr(args, "engine", None)
+    requested_impl = args.impl
 
-    if not args.impl:
+    candidate_specs = [
+        model_spec
+        for _, model_spec in MODEL_SPECS.items()
+        if model_spec.model_name == args.model
+        and model_spec.device_type == device_type
+        and (not requested_engine or model_spec.inference_engine == requested_engine)
+        and (not requested_impl or model_spec.impl.impl_name == requested_impl)
+    ]
+
+    if not candidate_specs:
+        engine_msg = f", engine={requested_engine}" if requested_engine else ""
+        impl_msg = f", impl={requested_impl}" if requested_impl else ""
         raise ValueError(
-            f"Model:={args.model} does not have a default impl, you must pass --impl"
+            f"Model:={args.model} does not support device:={args.device}{engine_msg}{impl_msg}"
         )
 
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_spec = MODEL_SPECS[model_id]
+    default_spec = next(
+        (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
+        None,
+    )
+    selected_spec = default_spec or (candidate_specs[0] if requested_impl else None)
+
+    if selected_spec is None:
+        raise ValueError(
+            f"Model:={args.model} does not have a default impl for device:={args.device}, "
+            f"engine:={requested_engine}; you must pass --impl"
+        )
+
+    args.impl = selected_spec.impl.impl_name
+    if not requested_engine:
+        args.engine = selected_spec.inference_engine
+
+    model_spec = MODEL_SPECS[selected_spec.model_id]
     model_spec.apply_runtime_args(args)
 
     return model_spec

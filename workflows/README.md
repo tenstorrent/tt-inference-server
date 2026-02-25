@@ -47,7 +47,7 @@ cd tt-inference-server
 
 The workflows automatically create their own virtual environments as needed. You can execute the CLI directly using Python:
 ```
-python run.py --model <model_name> --workflow <workflow_type> --device <device_type>
+python run.py --model <model_name> --workflow <workflow_type> --tt-device <device_type>
 ```
 Dependencies:
 
@@ -73,8 +73,10 @@ Required Arguments:
         reports
         tests
 
-    --device (required):
-    Specifies the device to use. Choices include:
+    --tt-device (optional):
+    Specifies the target device. If omitted, run.py selects the largest supported device available on the host.
+    The legacy alias --device is still supported.
+    Choices include:
         cpu - CPU execution
         n150 - Tenstorrent N150 card  
         n300 - Tenstorrent N300 card
@@ -88,6 +90,9 @@ Optional Arguments:
 
     --impl (optional):
     Implementation option. If not specified, the default implementation for the model and device will be inferred automatically.
+
+    --engine (optional):
+    Inference engine override (vllm, media, forge). If not specified, the model spec default inference_engine is used.
 
     --local-server (optional):
     Run inference server on localhost.
@@ -126,23 +131,23 @@ Example Commands
 
 Run the evals workflow locally:
 
-    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150
+    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150
 
 Run a workflow with a Docker server:
 
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --docker-server
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --docker-server
 
 Run benchmarks workflow:
 
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --device T3K
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K
 
 Run server workflow in Docker with interactive mode:
 
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow server --device T3K --docker-server --interactive
+    python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
 
 Run with custom service port and additional workflow arguments:
 
-    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
+    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
 ```
 
 ## Client Side Scripts
@@ -181,26 +186,26 @@ To use `run.py` with an external vLLM server, you need to configure the server e
 Run benchmarks against an external vLLM server:
 ```bash
 # Server running on localhost:8000
-python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --device T3K --disable-trace-capture
+python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K --disable-trace-capture
 
 # can use --service-port or SERVICE_PORT env var to set another port
-SERVICE_PORT=9000 python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --device N150 --disable-trace-capture
+SERVICE_PORT=9000 python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --tt-device N150 --disable-trace-capture
 ```
 
 Run evaluations against an external vLLM server:
 ```bash
 # Server running on localhost:8000
-python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --device T3K --disable-trace-capture
+python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --disable-trace-capture
 
 # can use --service-port or SERVICE_PORT env var to set another port
-python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --device N150 --disable-trace-capture --service-port 7592
+python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --disable-trace-capture --service-port 7592
 ```
 
 Run multiple model inference servers, each must be on a separate card
 ```bash
 # run model on multiple devices
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 0
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --docker-server --dev-mode --device-id 1
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 0
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 1
 ```
 
 ### Important Notes
@@ -209,7 +214,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --device n300 --d
 
 - **Model Configuration**: The `--model` parameter must match a model defined in `MODEL_SPECS`, and the external server must be serving that exact model or a compatible variant.
 
-- **Device Parameter**: The `--device` parameter is still required but represents the target hardware the model was optimized for, not necessarily the hardware the external server is running on.
+- **Device Parameter**: `--tt-device` selects the target hardware profile. If omitted, `run.py` infers a default from available host hardware. The legacy alias `--device` is still accepted.
 
 - **No Server Management**: When running client-side scripts, `run.py` will not start, stop, or manage any inference servers. It assumes the external server is already running and accessible.
 

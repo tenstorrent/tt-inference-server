@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 
 from workflows.log_setup import clean_log_file
@@ -22,7 +23,6 @@ from workflows.utils import (
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
-    ModelSource,
     ModelType,
     WorkflowType,
 )
@@ -125,14 +125,13 @@ def generate_docker_run_command(
 ):
     """Generate docker run command list.
 
-    When setup_config and json_fpath are None, generates a simplified default
-    command suitable for printing/reference (skips host-dependent bind mounts
-    and their corresponding env vars).
-
     Args:
         model_spec: ModelSpec object
-        setup_config: SetupConfig object (None for print mode)
-        json_fpath: Path to model spec JSON file (None for print mode)
+        setup_config: Optional SetupConfig object. When None, host-dependent
+            bind mounts (cache root, host weights) and their env vars are skipped.
+        json_fpath: Optional path to model spec JSON file. When None, the
+            model spec JSON bind mount and TT_MODEL_SPEC_JSON_PATH env var are skipped.
+        str_cmd: If True, return a formatted string instead of a list.
 
     Returns:
         Tuple of (docker_command: List[str], container_name: str)
@@ -173,9 +172,8 @@ def generate_docker_run_command(
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
 
-    # setup_config-dependent mounts (cache_root volume, json file)
-    if setup_config and json_fpath:
-        docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
+    # setup_config-dependent mounts (cache_root volume)
+    if setup_config:
         # Mount cache_root: Docker named volume or host bind mount
         if setup_config.host_model_volume_root:
             docker_command.extend([
@@ -186,9 +184,6 @@ def generate_docker_run_command(
             docker_command.extend([
                 "--mount", f"type=volume,src={volume_name},dst={setup_config.cache_root}",
             ])
-        docker_command.extend([
-            "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
-        ])
 
     docker_command.extend([
         "--shm-size", "32G",
@@ -210,9 +205,7 @@ def generate_docker_run_command(
         "MESH_DEVICE": mesh_device_str,
     }
     # environment variables that depend on setup_config
-    if setup_config and json_fpath:
-        docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-        docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = docker_json_fpath
+    if setup_config:
         # Only set MODEL_WEIGHTS_DIR when using host-mounted weights
         # (--host-hf-cache, --host-weights-dir, or LOCAL source).
         # For Docker volume mode, ensure_weights_available() sets it inside the container.
@@ -223,11 +216,17 @@ def generate_docker_run_command(
             docker_env_vars["MODEL_WEIGHTS_DIR"] = (
                 setup_config.container_model_weights_path
             )
-        # Only set TT_CACHE_PATH when using host volume
-        if setup_config.host_model_volume_root:
+        # Only set TT_CACHE_PATH when host controls cache_root via --host-volume.
+        # In default Docker volume mode the container sets its own cache paths.
+        if (
+            setup_config.host_model_volume_root
+            and setup_config.container_tt_metal_cache_dir
+        ):
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+        if setup_config.cache_root:
+            docker_env_vars["PERSISTENT_VOLUME"] = setup_config.cache_root
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
@@ -236,53 +235,62 @@ def generate_docker_run_command(
         # Add environment variables for tt-media-server containers (forge and media)
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
 
+    if args.dev_mode:
+        user_home_path = "/home/container_app_user"
+        container_model_spec_dir = (
+            setup_config.container_model_spec_dir
+            if setup_config
+            else Path(f"{user_home_path}/model_spec")
+        )
+        dev_json_fpath = container_model_spec_dir / json_fpath.name
+        docker_command += [
+            "--mount",
+            f"type=bind,src={json_fpath},dst={dev_json_fpath},readonly",
+        ]
+        docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = dev_json_fpath
+
+        # fmt: off
+        # base mounts for dev
+        docker_command += [
+            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+        ]
+        # model type dependent mounts
+        if (
+            model_spec.model_type in (
+                ModelType.CNN,
+                ModelType.IMAGE,
+                ModelType.EMBEDDING,
+                ModelType.VIDEO,
+                ModelType.TEXT_TO_SPEECH,
+                ModelType.AUDIO,
+            )
+        ):
+            # For tt-media-server containers, mount the tt-media-server directory
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+            ]
+        else:
+            # For LLM models (vLLM containers), mount vLLM-related directories
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",                
+            ]
+        # fmt: on
+
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
-    if args.dev_mode:
-        # development mounts
-        # Define the environment file path for the container.
-        user_home_path = "/home/container_app_user"
-        # fmt: off
-        if model_spec.model_type == ModelType.AUDIO:
-            # For audio models (tt-media-server containers), mount the tt-media-server directory
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            ]
-        elif (
-            model_spec.model_type == ModelType.CNN
-            or model_spec.model_type == ModelType.IMAGE
-            or model_spec.model_type == ModelType.EMBEDDING
-            or model_spec.model_type == ModelType.VIDEO
-            or model_spec.model_type == ModelType.TEXT_TO_SPEECH
-        ):
-            # For CNN, IMAGE, EMBEDDING, VIDEO, and TTS models (tt-media-server containers), mount the tt-media-server directory
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            ]
-        else:
-            # For LLM models (vLLM containers), mount vLLM-related directories
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-                "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
-            ]
-        # fmt: on
-
     # add docker image and container arguments at end
     docker_command.append(model_spec.docker_image)
     docker_command.extend(["--model", model_spec.hf_model_repo])
+    # run_vllm_api_server.py requires --tt-device in simplified docker mode.
+    # Keep this in sync with run.py's normalized args.device handling.
+    docker_command.extend(["--tt-device", args.device])
     if args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 
@@ -415,7 +423,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     docker_command, container_name = generate_docker_run_command(
         model_spec, setup_config, json_fpath
     )
-    logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
+    logger.info(f"Docker run command:\n{format_docker_command(docker_command)}\n")
 
     # run
     return run_docker_command(

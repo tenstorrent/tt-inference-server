@@ -10,6 +10,7 @@ import os
 import runpy
 import sys
 from pathlib import Path
+from typing import Optional
 
 from huggingface_hub import snapshot_download
 from vllm import ModelRegistry
@@ -41,9 +42,26 @@ def parse_args():
         help="HuggingFace model repo (e.g., meta-llama/Llama-3.1-8B)",
     )
     parser.add_argument(
+        "--tt-device",
+        type=str,
+        required=True,
+        help="Device type (e.g., n300, t3k, galaxy)",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         help="Device type (e.g., n300, t3k, galaxy)",
+    )
+    parser.add_argument(
+        "--engine",
+        type=str,
+        choices=["vllm", "media", "forge"],
+        help="Inference engine override (vllm/media/forge).",
+    )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation name override (e.g. tt-transformers).",
     )
     # Parse known args to allow vLLM args to pass through
     args, remaining = parser.parse_known_args()
@@ -87,6 +105,17 @@ def normalize_device_type(device_arg: str) -> str:
         Canonical device type name (e.g., "N300", "GALAXY", "T3K")
     """
     return device_arg.upper()
+
+
+def normalize_engine_type(engine_arg: Optional[str]) -> Optional[str]:
+    if not engine_arg:
+        return None
+    engine_map = {
+        "vllm": "vLLM",
+        "media": "media",
+        "forge": "forge",
+    }
+    return engine_map[engine_arg.lower()]
 
 
 def device_to_mesh_str(device_type: str) -> str:
@@ -165,7 +194,13 @@ def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
     )
 
 
-def find_default_impl(all_specs: dict, model_arg: str, device_type: str) -> dict:
+def find_default_impl(
+    all_specs: dict,
+    model_arg: str,
+    device_type: str,
+    engine_arg: Optional[str] = None,
+    impl_arg: Optional[str] = None,
+) -> dict:
     """Find the default implementation spec for a given model and device.
 
     Navigates the nested model spec structure to find the spec with
@@ -191,13 +226,27 @@ def find_default_impl(all_specs: dict, model_arg: str, device_type: str) -> dict
             f"Available devices for {hf_repo}: {available_devices}"
         )
 
+    if engine_arg:
+        device_specs = {engine_arg: device_specs.get(engine_arg, {})}
+
     for engine_specs in device_specs.values():
         for spec in engine_specs.values():
+            spec_impl_name = spec.get("impl", {}).get("impl_name")
+            if impl_arg and spec_impl_name != impl_arg:
+                continue
             if spec.get("device_model_spec", {}).get("default_impl"):
                 return spec
 
+    for engine_specs in device_specs.values():
+        for spec in engine_specs.values():
+            spec_impl_name = spec.get("impl", {}).get("impl_name")
+            if impl_arg and spec_impl_name != impl_arg:
+                continue
+            return spec
+
     raise ValueError(
-        f"No default_impl found for model={model_arg}, device={device_type}. "
+        f"No default_impl found for model={model_arg}, device={device_type}, "
+        f"engine={engine_arg}, impl={impl_arg}. "
         f"Check that at least one impl has default_impl=True."
     )
 
@@ -492,45 +541,54 @@ def start_trace_capture(model_spec_json):
 def main():
     # Step 1: Parse --model argument (if provided)
     args = parse_args()
+    args.device = args.tt_device or args.device
+    args.engine = normalize_engine_type(args.engine)
 
     # Step 2: Load model specs and determine which spec to use
     all_specs = load_all_model_specs()
 
     # Check if we're in legacy single-spec mode (TT_MODEL_SPEC_JSON_PATH set)
-    # or new simplified mode (--model argument provided)
     legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
 
     if legacy_path and Path(legacy_path).exists():
+        logger.warning(
+            "Deprecation warning: setting TT_MODEL_SPEC_JSON_PATH is deprecated. "
+            f"Using model spec from TT_MODEL_SPEC_JSON_PATH: {legacy_path}"
+        )
         # Legacy mode: use the single spec from TT_MODEL_SPEC_JSON_PATH
         # (all_specs will have exactly one entry in this case)
         model_spec = list(all_specs.values())[0]
         logger.info("Legacy mode: using model spec from TT_MODEL_SPEC_JSON_PATH")
 
-        # Validate required env vars are set in legacy mode
-        tt_cache_path = os.getenv("TT_CACHE_PATH")
-        model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
-        if not tt_cache_path or not model_weights_dir:
-            raise RuntimeError(
-                "TT_MODEL_SPEC_JSON_PATH mode requires TT_CACHE_PATH and MODEL_WEIGHTS_DIR "
-                "to be set. Use 'python run.py --docker-server' workflow or switch to simplified "
-                "mode with --model and --device arguments."
-            )
+        # Ensure cache paths and weights are available, setting env vars if
+        # they were not passed in (e.g. default Docker volume mode).
+        if not os.getenv("TT_CACHE_PATH") and args.device:
+            set_cache_paths(model_spec, normalize_device_type(args.device))
+        if not os.getenv("MODEL_WEIGHTS_DIR"):
+            ensure_weights_available(model_spec)
     elif args.model and args.device:
-        # New simplified mode: look up spec by --model and --device
+        # New interface: look up spec by --model and explicit --tt-device/--device
         device_type = normalize_device_type(args.device)
-        model_spec = find_default_impl(all_specs, args.model, device_type)
+        model_spec = find_default_impl(
+            all_specs,
+            args.model,
+            device_type,
+            engine_arg=args.engine,
+            impl_arg=args.impl,
+        )
         logger.info(
-            f"Simplified mode: found model spec for --model={args.model}, --device={device_type}"
+            f"Using default interface: found model spec for --model={args.model}, "
+            f"--device={device_type}, --engine={args.engine}, --impl={args.impl}"
         )
 
-        # Set cache paths and ensure weights are available (new simplified mode only)
+        # Set cache paths and ensure weights are available (new interface only)
         set_cache_paths(model_spec, device_type)
         ensure_weights_available(model_spec)
     else:
         raise RuntimeError(
             "Either set TT_MODEL_SPEC_JSON_PATH env var (for 'python run.py --docker-server' "
-            "workflow) or provide both --model and --device arguments (for direct docker run). "
-            "Example: docker run <image> --model meta-llama/Llama-3.1-8B --device n300"
+            "workflow) or provide --model and --tt-device/--device for direct "
+            "docker run. Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
         )
 
     logger.info(f"Using model spec: {model_spec['model_id']}")

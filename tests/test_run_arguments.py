@@ -22,10 +22,12 @@ from run import (
     get_current_commit_sha,
     validate_local_setup,
 )
+from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_device
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
 )
+from workflows.workflow_types import DeviceTypes
 
 
 @pytest.fixture
@@ -36,7 +38,7 @@ def base_args():
         "Mistral-7B-Instruct-v0.3",
         "--workflow",
         "benchmarks",
-        "--device",
+        "--tt-device",
         "n150",
     ]
 
@@ -48,6 +50,8 @@ def mock_args():
         model="Mistral-7B-Instruct-v0.3",
         workflow="benchmarks",
         device="n150",
+        tt_device="n150",
+        engine=None,
         impl="tt-transformers",
         docker_server=False,
         local_server=False,
@@ -128,16 +132,13 @@ class TestArgumentParsing:
         assert args.model == "Mistral-7B-Instruct-v0.3"
         assert args.workflow == "benchmarks"
         assert args.device == "n150"
+        assert args.tt_device == "n150"
 
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
         [
-            ("--model", ["--workflow", "benchmarks", "--device", "n150"]),
-            ("--workflow", ["--model", "Mistral-7B-Instruct-v0.3", "--device", "n150"]),
-            (
-                "--device",
-                ["--model", "Mistral-7B-Instruct-v0.3", "--workflow", "benchmarks"],
-            ),
+            ("--model", ["--workflow", "benchmarks"]),
+            ("--workflow", ["--model", "Mistral-7B-Instruct-v0.3"]),
         ],
     )
     def test_missing_required_args(self, missing_arg, remaining_args, capsys):
@@ -153,7 +154,7 @@ class TestArgumentParsing:
         [
             ("--model", "invalid-model"),
             ("--workflow", "invalid-workflow"),
-            ("--device", "invalid-device"),
+            ("--tt-device", "invalid-device"),
         ],
     )
     def test_invalid_choices(self, base_args, invalid_arg, invalid_value):
@@ -305,6 +306,32 @@ class TestArgumentParsing:
         assert args.host_volume is None
         assert args.host_hf_cache is None
         assert args.image_user == "1000"
+        assert args.engine is None
+
+    def test_device_alias_compatibility(self):
+        """Test --device alias remains supported."""
+        with patch(
+            "sys.argv",
+            [
+                "run.py",
+                "--model",
+                "Mistral-7B-Instruct-v0.3",
+                "--workflow",
+                "benchmarks",
+                "--device",
+                "n150",
+            ],
+        ):
+            args = parse_arguments()
+
+        assert args.device == "n150"
+        assert args.tt_device == "n150"
+
+    def test_engine_parsing(self, base_args):
+        """Test --engine parsing and normalization."""
+        with patch("sys.argv", ["run.py"] + base_args + ["--engine", "vllm"]):
+            args = parse_arguments()
+        assert args.engine == "vLLM"
 
     def test_docker_volume_args(self, base_args):
         """Test --host-volume, --host-hf-cache, --image-user parsing."""
@@ -327,51 +354,161 @@ class TestArgumentParsing:
 class TestArgsInference:
     """Tests for argument inference and validation."""
 
+    @staticmethod
+    def _build_spec(model_id, impl_name="tt-transformers", default_impl=True):
+        spec = MagicMock()
+        spec.model_id = model_id
+        spec.model_name = "Mistral-7B-Instruct-v0.3"
+        spec.device_type = DeviceTypes.N150
+        spec.inference_engine = "vLLM"
+        spec.impl.impl_name = impl_name
+        spec.device_model_spec.default_impl = default_impl
+        spec.apply_runtime_args = MagicMock()
+        return spec
+
     def test_infer_impl_success(self, mock_args):
         """Test successful impl inference via get_runtime_model_spec."""
         mock_args.impl = None
 
-        # Mock get_model_id and MODEL_SPECS in the correct module
-        mock_model_spec = MagicMock()
-        mock_model_spec.apply_runtime_args = MagicMock()
+        mock_model_spec = self._build_spec(
+            "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+        )
 
-        with patch(
-            "workflows.model_spec.get_model_id", return_value="test-model-id"
-        ), patch.dict(
-            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        with patch.dict(
+            "workflows.model_spec.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
         ):
             result = get_runtime_model_spec(mock_args)
 
-            # Verify that impl was inferred
             assert mock_args.impl == "tt-transformers"
+            assert mock_args.engine == "vLLM"
             assert result == mock_model_spec
 
     def test_infer_impl_already_set(self, mock_args):
         """Test that existing impl is preserved."""
-        mock_args.impl = "existing-impl"
+        mock_args.impl = "tt-transformers"
 
-        # Mock get_model_id and MODEL_SPECS in the correct module
-        mock_model_spec = MagicMock()
-        mock_model_spec.apply_runtime_args = MagicMock()
+        mock_model_spec = self._build_spec(
+            "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+        )
 
-        with patch(
-            "workflows.model_spec.get_model_id", return_value="test-model-id"
-        ), patch.dict(
-            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        with patch.dict(
+            "workflows.model_spec.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
         ):
             result = get_runtime_model_spec(mock_args)
 
-            # Verify that existing impl was preserved
-            assert mock_args.impl == "existing-impl"
+            assert mock_args.impl == "tt-transformers"
             assert result == mock_model_spec
 
     def test_infer_impl_no_default(self, mock_args):
         """Test error when no default impl available."""
-        mock_args.model = "NonExistentModel"
+        mock_args.model = "Mistral-7B-Instruct-v0.3"
         mock_args.impl = None
 
-        with pytest.raises(ValueError, match="does not have a default impl"):
-            get_runtime_model_spec(mock_args)
+        spec = self._build_spec(
+            "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150", default_impl=False
+        )
+        with patch.dict("workflows.model_spec.MODEL_SPECS", {spec.model_id: spec}):
+            with pytest.raises(ValueError, match="does not have a default impl"):
+                get_runtime_model_spec(mock_args)
+
+    def test_engine_filters_selection(self, mock_args):
+        """Test --engine filters runtime model selection."""
+        mock_args.engine = "media"
+        mock_args.impl = None
+
+        vllm_spec = self._build_spec(
+            "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150_vllm"
+        )
+        vllm_spec.inference_engine = "vLLM"
+        media_spec = self._build_spec(
+            "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150_media"
+        )
+        media_spec.inference_engine = "media"
+
+        with patch.dict(
+            "workflows.model_spec.MODEL_SPECS",
+            {
+                vllm_spec.model_id: vllm_spec,
+                media_spec.model_id: media_spec,
+            },
+        ):
+            result = get_runtime_model_spec(mock_args)
+            assert result == media_spec
+
+    def test_infer_default_device_uses_tt_smi_counts_for_n300(self):
+        """Infer N300 from tt-smi board counts."""
+        with patch(
+            "workflows.device_utils._collect_supported_devices_for_model",
+            return_value={DeviceTypes.N150, DeviceTypes.N300, DeviceTypes.T3K},
+        ), patch(
+            "workflows.device_utils._get_tt_smi_board_type_counts",
+            return_value={"n300": 1},
+        ):
+            inferred = infer_default_device("Mistral-7B-Instruct-v0.3")
+            assert inferred == "n300"
+
+    def test_infer_default_device_uses_tt_smi_counts_for_t3k(self):
+        """Infer T3K from tt-smi board counts."""
+        with patch(
+            "workflows.device_utils._collect_supported_devices_for_model",
+            return_value={DeviceTypes.N300, DeviceTypes.T3K},
+        ), patch(
+            "workflows.device_utils._get_tt_smi_board_type_counts",
+            return_value={"n300": 4},
+        ):
+            inferred = infer_default_device("Mistral-7B-Instruct-v0.3")
+            assert inferred == "t3k"
+
+    def test_infer_default_device_fails_for_unmapped_tt_smi_counts(self):
+        """Raise when tt-smi board counts are unmapped."""
+        with patch(
+            "workflows.device_utils._collect_supported_devices_for_model",
+            return_value={DeviceTypes.N300, DeviceTypes.T3K},
+        ), patch(
+            "workflows.device_utils._get_tt_smi_board_type_counts",
+            return_value={"n300 l": 3, "n300 r": 3},
+        ):
+            with pytest.raises(ValueError, match="Unable to map tt-smi board counts"):
+                infer_default_device("Mistral-7B-Instruct-v0.3")
+
+    def test_tt_smi_counts_n300_chips_converted_to_boards(self):
+        """n300 L/R chip entries are collapsed and halved to board count."""
+        tt_smi_output = """{
+            "device_info": [
+                {"board_info": {"board_type": "n300 L"}},
+                {"board_info": {"board_type": "n300 R"}}
+            ]
+        }"""
+        with patch("subprocess.check_output", return_value=tt_smi_output):
+            counts = _get_tt_smi_board_type_counts()
+        assert counts == {"n300": 1}
+
+    def test_tt_smi_counts_n300_odd_chip_count_raises(self):
+        """Odd n300 chip counts raise a validation error."""
+        tt_smi_output = """{
+            "device_info": [
+                {"board_info": {"board_type": "n300 L"}},
+                {"board_info": {"board_type": "n300 R"}},
+                {"board_info": {"board_type": "n300 L"}}
+            ]
+        }"""
+        with patch("subprocess.check_output", return_value=tt_smi_output):
+            with pytest.raises(ValueError, match="Expected an even number of chips"):
+                _get_tt_smi_board_type_counts()
+
+    def test_infer_default_device_tt_galaxy_wh_32_chips(self):
+        """Galaxy WH boards map from 32 reported tt-galaxy-wh chips."""
+        with patch(
+            "workflows.device_utils._collect_supported_devices_for_model",
+            return_value={DeviceTypes.T3K, DeviceTypes.GALAXY},
+        ), patch(
+            "workflows.device_utils._get_tt_smi_board_type_counts",
+            return_value={"tt-galaxy-wh": 32},
+        ):
+            inferred = infer_default_device("Mistral-7B-Instruct-v0.3")
+            assert inferred == "galaxy"
 
 
 class TestRuntimeValidation:
@@ -449,6 +586,7 @@ class TestOverrideArgsIntegration:
         mock_args.impl = "tt-transformers"
         mock_args.model = "Mistral-7B-Instruct-v0.3"
         mock_args.device = "n150"
+        mock_args.engine = None
         mock_args.dev_mode = False
         mock_args.override_docker_image = None
 
@@ -462,14 +600,18 @@ class TestOverrideArgsIntegration:
         )
         setattr(mock_args, other_arg, None)
 
-        # Mock get_model_id and MODEL_SPECS in the correct module
         mock_model_spec = MagicMock()
+        mock_model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+        mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        mock_model_spec.device_type = DeviceTypes.N150
+        mock_model_spec.inference_engine = "vLLM"
+        mock_model_spec.impl.impl_name = "tt-transformers"
+        mock_model_spec.device_model_spec.default_impl = True
         mock_model_spec.apply_runtime_args = MagicMock()
 
-        with patch(
-            "workflows.model_spec.get_model_id", return_value="test-model-id"
-        ), patch.dict(
-            "workflows.model_spec.MODEL_SPECS", {"test-model-id": mock_model_spec}
+        with patch.dict(
+            "workflows.model_spec.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
         ):
             result = get_runtime_model_spec(mock_args)
 
@@ -506,8 +648,9 @@ class TestOverrideArgsIntegration:
     def test_generate_docker_run_command_mounts_model_spec_json(
         self, mock_setup_config
     ):
-        """Test that generate_docker_run_command mounts the model_spec JSON file into the container."""
+        """Test that generate_docker_run_command mounts the model_spec JSON file in dev mode."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_model_spec.cli_args.dev_mode = True
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -667,6 +810,35 @@ class TestOverrideArgsIntegration:
                         "Default mode should not have separate readonly weights mount"
                     )
 
+    def test_dev_mode_does_not_duplicate_model_spec_mount(self, mock_setup_config):
+        """Test dev mode mounts model_spec JSON exactly once."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_model_spec.cli_args.dev_mode = True
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            json_fpath = Path("/tmp/test-model-spec.json")
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_setup_config, json_fpath
+            )
+
+            json_mount_count = 0
+            for i, arg in enumerate(docker_command):
+                if arg == "--mount" and i + 1 < len(docker_command):
+                    mount_spec = docker_command[i + 1]
+                    if (
+                        "test-model-spec.json" in mount_spec
+                        and "readonly" in mount_spec
+                    ):
+                        json_mount_count += 1
+
+            assert json_mount_count == 1, (
+                "Dev mode should not duplicate model spec JSON mount"
+            )
+
     def test_generate_docker_run_command_without_setup_config(self):
         """Test that generate_docker_run_command works without setup_config for --print-docker-cmd."""
         mock_model_spec = self._make_mock_model_spec()
@@ -687,6 +859,9 @@ class TestOverrideArgsIntegration:
             assert "--rm" in docker_command
             assert "test:image" in docker_command
             assert "--shm-size" in docker_command
+            assert "--tt-device" in docker_command
+            tt_device_index = docker_command.index("--tt-device")
+            assert docker_command[tt_device_index + 1] == "n150"
             # Should NOT contain setup_config-dependent mounts or env vars
             for i, arg in enumerate(docker_command):
                 if arg == "-e" and i + 1 < len(docker_command):
