@@ -1630,6 +1630,7 @@ llm_templates = [
         ],
         env_vars={"VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1},
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
