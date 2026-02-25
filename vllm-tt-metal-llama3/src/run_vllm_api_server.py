@@ -498,44 +498,45 @@ def start_trace_capture(model_spec_json):
         "disable_trace_capture", False
     )
 
-    if not disable_trace_capture:
-        # Start background trace capture process
-        service_port = model_spec_json.get("cli_args", {}).get(
-            "service_port", int(os.getenv("SERVICE_PORT", "8000"))
-        )
-        supported_modalities = model_spec_json.get("supported_modalities", ["text"])
-
-        # Get max_context from device_model_spec for trace calculation
-        max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
-        if max_context is None:
-            # Fallback to vllm_args if not in device_model_spec
-            max_model_len_str = (
-                model_spec_json.get("device_model_spec", {})
-                .get("vllm_args", {})
-                .get("max_model_len")
-            )
-            if max_model_len_str:
-                max_context = int(max_model_len_str)
-
-        logger.info("Starting background trace capture process...")
-        trace_process = multiprocessing.Process(
-            target=run_background_trace_capture,
-            args=(
-                model_spec_json["hf_model_repo"],
-                service_port,
-                supported_modalities,
-                max_context,
-            ),
-            daemon=True,
-            name="trace_capture",
-        )
-        trace_process.start()
-        logger.info(
-            f"Background trace capture process started (PID: {trace_process.pid}, "
-            f"max_context: {max_context})"
-        )
-    else:
+    if disable_trace_capture:
         logger.info("Trace capture is disabled via cli_args.disable_trace_capture")
+        return
+
+    # Start background trace capture process
+    service_port = model_spec_json.get("cli_args", {}).get(
+        "service_port", int(os.getenv("SERVICE_PORT", "8000"))
+    )
+    supported_modalities = model_spec_json.get("supported_modalities", ["text"])
+
+    # Get max_context from device_model_spec for trace calculation
+    max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
+    if max_context is None:
+        # Fallback to vllm_args if not in device_model_spec
+        max_model_len_str = (
+            model_spec_json.get("device_model_spec", {})
+            .get("vllm_args", {})
+            .get("max_model_len")
+        )
+        if max_model_len_str:
+            max_context = int(max_model_len_str)
+
+    logger.info("Starting background trace capture process...")
+    trace_process = multiprocessing.Process(
+        target=run_background_trace_capture,
+        args=(
+            model_spec_json["hf_model_repo"],
+            service_port,
+            supported_modalities,
+            max_context,
+        ),
+        daemon=True,
+        name="trace_capture",
+    )
+    trace_process.start()
+    logger.info(
+        f"Background trace capture process started (PID: {trace_process.pid}, "
+        f"max_context: {max_context})"
+    )
 
 
 def main():

@@ -715,11 +715,12 @@ class TestOverrideArgsIntegration:
                 mock_model_spec, mock_setup_config, json_fpath
             )
 
-            cmd_str = " ".join(str(c) for c in docker_command)
-            assert "type=volume" in cmd_str, (
+            assert "--volume" in docker_command, (
                 "Default mode should use Docker named volume"
             )
-            assert "--user 1000" in cmd_str, "Default mode should pass --user 1000"
+            assert "--user" not in docker_command, (
+                "Default image_user=1000 should not emit --user (Dockerfile default)"
+            )
             # Should NOT have CACHE_ROOT env var (baked into Dockerfile)
             for i, arg in enumerate(docker_command):
                 if arg == "-e" and i + 1 < len(docker_command):
@@ -869,7 +870,7 @@ class TestOverrideArgsIntegration:
             assert "run" in docker_command
             assert "--rm" in docker_command
             assert "test:image" in docker_command
-            assert "--shm-size" in docker_command
+            assert "--ipc" in docker_command
             assert "--tt-device" in docker_command
             tt_device_index = docker_command.index("--tt-device")
             assert docker_command[tt_device_index + 1] == "n150"

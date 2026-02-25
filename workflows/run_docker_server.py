@@ -104,6 +104,12 @@ def format_docker_command(docker_command):
     """Format a docker command list as a multi-line string with key-value pairs on the same line."""
     lines = []
     i = 0
+    # Keep the base command (e.g. "docker run") on one line
+    if len(docker_command) >= 2 and not docker_command[1].startswith("-"):
+        lines.append(
+            f"{shlex.quote(docker_command[0])} {shlex.quote(docker_command[1])}"
+        )
+        i = 2
     while i < len(docker_command):
         quoted = shlex.quote(docker_command[i])
         if (
@@ -165,9 +171,10 @@ def generate_docker_run_command(
         "run",
         "--rm",
         "--name", container_name,
-        *( ["--user", str(args.image_user)] if getattr(args, "image_user", None) else []),
+        *( ["--user", str(args.image_user)] if getattr(args, "image_user", None) and str(args.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--cap-add", "SYS_NICE",
+        "--ipc", "host",  # replace shm-size estimation with full ipc host default
+        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -182,13 +189,8 @@ def generate_docker_run_command(
         else:
             volume_name = generate_docker_volume_name(model_spec)
             docker_command.extend([
-                "--mount", f"type=volume,src={volume_name},dst={setup_config.cache_root}",
+                "--volume", f"{volume_name}:{setup_config.cache_root}",
             ])
-
-    docker_command.extend([
-        "--shm-size", "32G",
-        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
-    ])
 
     # Mount host weights readonly when --host-hf-cache, --host-weights-dir, or LOCAL source
     if setup_config and setup_config.host_model_weights_mount_dir:

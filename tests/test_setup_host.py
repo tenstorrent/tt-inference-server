@@ -509,8 +509,7 @@ class TestSetupHostDockerCommand:
 
         docker_command, _ = self._generate_cmd(tiny_model_spec, config, json_fpath)
 
-        cmd_str = _join_docker_cmd(docker_command)
-        assert "type=volume" in cmd_str
+        assert "--volume" in docker_command
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
         assert _find_env_var(docker_command, "TT_CACHE_PATH") is None
 
@@ -597,7 +596,7 @@ class TestSetupHostDockerCommand:
         assert model_weights_dir is not None
         assert "readonly_weights_mount" in model_weights_dir
         # Docker named volume used for cache_root (not host volume)
-        assert "type=volume" in cmd_str
+        assert "--volume" in docker_command
 
 
 class TestSetupHostValidation:
