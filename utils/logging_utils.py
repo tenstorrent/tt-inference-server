@@ -9,7 +9,6 @@ import importlib
 from datetime import datetime
 from pathlib import Path
 
-
 LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 LOG_PATH = Path(os.getenv("CACHE_ROOT", ".")) / "logs" / f"vllm_{LOG_TIMESTAMP}.log"
 
