@@ -197,6 +197,127 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
             with patch("asyncio.run", return_value=([mock_status], 2.0)):
                 strategy.run_eval()
 
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("pathlib.Path.mkdir")
+    def test_run_eval_dict_result_flux(self, mock_mkdir, mock_file):
+        """Test run_eval with dict result from ImageGenerationEvalsTest (Flux/Motif path)."""
+        strategy = self._create_strategy()
+
+        eval_result = {
+            "success": True,
+            "eval_results": {
+                "fid_score": 12.3,
+                "average_clip": 0.88,
+                "deviation_clip_score": 0.02,
+                "accuracy_check": 2,
+            },
+        }
+
+        with patch.object(strategy, "get_health", return_value=(True, "tt-flux.1-dev")):
+            with patch("asyncio.run", return_value=eval_result):
+                strategy.run_eval()
+
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        result = report_data[0]
+
+        assert result["model"] == "test_model"
+        assert result["device"] == "test_device"
+        assert result["task_type"] == "image"
+        assert result["fid_score"] == 12.3
+        assert result["average_clip"] == 0.88
+        assert result["deviation_clip_score"] == 0.02
+        assert result["accuracy_check"] == 2
+        assert result["score"] is None  # no TTFT for ImageGenerationEvalsTest
+        assert "tput_user" not in result  # not calculated for dict path
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("pathlib.Path.mkdir")
+    def test_run_eval_dict_result_motif(self, mock_mkdir, mock_file):
+        """Test run_eval routes correctly for motif runner."""
+        strategy = self._create_strategy()
+
+        eval_result = {
+            "success": True,
+            "eval_results": {
+                "fid_score": 14.0,
+                "average_clip": 0.82,
+                "deviation_clip_score": 0.04,
+                "accuracy_check": 2,
+            },
+        }
+
+        with patch.object(
+            strategy,
+            "get_health",
+            return_value=(True, "tt-motif-image-6b-preview"),
+        ):
+            with patch("asyncio.run", return_value=eval_result):
+                strategy.run_eval()
+
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+        assert report_data[0]["fid_score"] == 14.0
+
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=5
+    )
+    def test_run_image_generation_eval_test_success(self, mock_num_prompts):
+        """Test _run_image_generation_eval_test calls ImageGenerationEvalsTest."""
+        import asyncio
+
+        strategy = self._create_strategy()
+
+        mock_result = {
+            "success": True,
+            "eval_results": {
+                "fid_score": 10.0,
+                "average_clip": 0.9,
+                "deviation_clip_score": 0.01,
+                "accuracy_check": 2,
+            },
+        }
+
+        with patch(
+            "utils.media_clients.image_client.ImageGenerationEvalsTest"
+        ) as MockTest:
+            mock_instance = MagicMock()
+            mock_instance._run_specific_test_async = AsyncMock(return_value=mock_result)
+            MockTest.return_value = mock_instance
+
+            result = asyncio.run(strategy._run_image_generation_eval_test())
+
+        assert result["success"] is True
+        assert result["eval_results"]["fid_score"] == 10.0
+
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=5
+    )
+    def test_run_image_generation_eval_test_failure(self, mock_num_prompts):
+        """Test _run_image_generation_eval_test raises on failure."""
+        import asyncio
+
+        strategy = self._create_strategy()
+
+        mock_result = {"success": False, "error": "FID score too high"}
+
+        with patch(
+            "utils.media_clients.image_client.ImageGenerationEvalsTest"
+        ) as MockTest:
+            mock_instance = MagicMock()
+            mock_instance._run_specific_test_async = AsyncMock(return_value=mock_result)
+            MockTest.return_value = mock_instance
+
+            with pytest.raises(RuntimeError, match="FID score too high"):
+                asyncio.run(strategy._run_image_generation_eval_test())
+
 
 class TestImageClientStrategyRunBenchmark(unittest.TestCase):
     """Tests for run_benchmark method."""

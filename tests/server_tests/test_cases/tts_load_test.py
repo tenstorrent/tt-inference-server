@@ -61,7 +61,7 @@ class TTSLoadTest(BaseTest):
 
     async def _run_specific_test_async(self):
         test_start_time = time.time()
-        self.url = f"http://localhost:{self.service_port}/audio/speech"
+        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
         devices = self.targets.get("num_of_devices", 1)
         tts_target_time = self.targets.get("tts_generation_time", 10)

@@ -599,7 +599,7 @@ Example commands:
     python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy
     python tests/server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
     python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy
-    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/cnn/search-image
+    python tests/server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/v1/cnn/search-image
     python tests/server_tests/test_cases/vision_evals_test.py --compare_results
 """
 
