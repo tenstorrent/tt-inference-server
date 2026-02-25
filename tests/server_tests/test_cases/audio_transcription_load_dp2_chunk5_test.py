@@ -10,8 +10,8 @@ More segments per request (60/5 ≈ 12) → more tasks in queue.
 
 import logging
 
-from server_tests.test_cases.audio_transcription_load_dp2_test import (
-    AudioTranscriptionLoadDp2Test,
+from server_tests.test_cases.audio_transcription_load_test import (
+    AudioTranscriptionLoadTest,
 )
 from utils.test_payloads.audio_payload_60s import dataset as dataset60s
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 CHUNK_DURATION_SECONDS = 5
 
 
-class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadDp2Test):
+class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
     """DP2 burst load, 60s audio, chunk 5s. Server: AUDIO_CHUNK_DURATION_SECONDS=5."""
 
     async def _run_specific_test_async(self):
@@ -38,7 +38,6 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadDp2Test):
         (
             requests_duration,
             avg_duration,
-            results,
             num_ok,
         ) = await self._run_burst_concurrent(num_concurrent, payload)
 
