@@ -59,7 +59,7 @@ model weights download, docker image download, and Python environment may take a
 
 ```bash
 # run inference server with docker
-python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow server --docker-server
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
 ```
 
 See documentation in [Model Readiness Workflows](../docs/workflows_user_guide.md#docker-server)

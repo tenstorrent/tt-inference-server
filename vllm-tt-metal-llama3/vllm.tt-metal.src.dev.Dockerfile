@@ -13,6 +13,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -29,6 +30,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
     vllm_dir=${HOME_DIR}/vllm \
+    TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     # Rust build dependencies, for backward compatibility with tt-metal 
     # versions where build Docker image does not have these defined
@@ -95,6 +97,17 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && uv pip install --upgrade pip \
     && uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -rf ${vllm_dir}/.git"
+
+# Build tt-smi in separate venv to avoid conflicts with tt-metal venv
+RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
+    && cd ${TT_SMI_DIR} \
+    && git checkout ${TT_SMI_COMMIT_SHA_OR_TAG} \
+    && python3 -m venv .venv \
+    && source .venv/bin/activate \
+    && pip3 install --upgrade pip \
+    && source ${CARGO_HOME}/env \
+    && pip3 install . \
+    && rm -rf ${TT_SMI_DIR}/.git"
 
 # ==============================================================================
 # RUNTIME STAGE - Minimal dependencies for running the application
@@ -164,6 +177,10 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 # Copy complete vllm installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${vllm_dir} ${vllm_dir}
+
+# Copy complete tt-smi installation  
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${TT_SMI_DIR} ${TT_SMI_DIR}
 
 # Copy application files
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

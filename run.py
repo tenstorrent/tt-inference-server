@@ -12,14 +12,20 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
 from workflows.bootstrap_uv import bootstrap_uv
+from workflows.device_utils import infer_default_device
 from workflows.log_setup import setup_run_logger
 from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
-from workflows.run_docker_server import run_docker_server, generate_docker_run_command
+from workflows.run_docker_server import (
+    format_docker_command,
+    generate_docker_run_command,
+    run_docker_server,
+)
 from workflows.run_workflows import run_workflows
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -31,10 +37,27 @@ from workflows.utils import (
     run_command,
     write_dotenv,
 )
-from workflows.workflow_types import DeviceTypes, WorkflowType, WorkflowVenvType
+from workflows.workflow_types import (
+    DeviceTypes,
+    InferenceEngine,
+    WorkflowType,
+    WorkflowVenvType,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _normalize_engine_arg(engine: Optional[str]) -> Optional[str]:
+    if not engine:
+        return None
+    try:
+        return InferenceEngine.from_string(engine).value
+    except (KeyError, ValueError):
+        valid_engines = ", ".join(engine.to_string() for engine in InferenceEngine)
+        raise ValueError(
+            f"Invalid --engine value '{engine}'. Valid values: {valid_engines}"
+        )
 
 
 def parse_device_ids(value):
@@ -55,6 +78,7 @@ def parse_device_ids(value):
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
+    valid_engines = {engine.to_string() for engine in InferenceEngine}
 
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
@@ -78,16 +102,30 @@ def parse_arguments():
         help=f"Workflow to run (choices: {', '.join(valid_workflows)})",
     )
     parser.add_argument(
-        "--device",
-        required=True,
+        "--tt-device",
+        required=False,
         choices=valid_devices,
-        help=f"Device option (choices: {', '.join(valid_devices)})",
+        help=f"Tenstorrent device option (choices: {', '.join(valid_devices)}). "
+        "Defaults to the largest supported device available on the host.",
+    )
+    parser.add_argument(
+        "--device",
+        required=False,
+        choices=valid_devices,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--impl",
         required=False,
         choices=valid_impls,
         help=f"Implementation option (choices: {', '.join(valid_impls)})",
+    )
+    parser.add_argument(
+        "--engine",
+        required=False,
+        choices=valid_engines,
+        help=f"Inference engine override (choices: {', '.join(valid_engines)}). "
+        "Defaults to the model spec default inference_engine.",
     )
     # optional
     parser.add_argument(
@@ -244,6 +282,18 @@ def parse_arguments():
 
     args = parser.parse_args()
 
+    if args.tt_device and args.device and args.tt_device != args.device:
+        parser.error(
+            "--tt-device and --device were both provided with different values. "
+            "Use only one of them."
+        )
+    args.device = args.tt_device or args.device
+
+    args.engine = _normalize_engine_arg(args.engine)
+    if not args.device:
+        args.device = infer_default_device(args.model, args.engine)
+    args.tt_device = args.device
+
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
         if "--limit-samples-mode" not in args:
@@ -352,8 +402,9 @@ def format_cli_args_summary(args, model_spec):
         "",
         "Model Options:",
         f"  model:                      {args.model}",
-        f"  device:                     {args.device}",
+        f"  tt_device:                  {args.tt_device}",
         f"  impl:                       {args.impl}",
+        f"  engine:                     {args.engine}",
         f"  workflow:                   {args.workflow}",
         f"  tools:                      {args.tools}",
         "",
@@ -510,10 +561,6 @@ def main():
     model_id = model_spec.model_id
 
     # step 2: validate runtime
-    if args.print_docker_cmd:
-        docker_command, _ = generate_docker_run_command(model_spec, str_cmd=True)
-        print(f"Docker run command:\n\n{docker_command}\n")
-        return
     validate_runtime_args(model_spec)
     handle_secrets(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
@@ -543,12 +590,19 @@ def main():
     # write model spec to json file
     json_fpath = model_spec.to_json(run_id, run_model_spec_path)
     logger.info(f"Model spec saved to: {json_fpath}")
+    docker_json_fpath = json_fpath
+    if model_spec.cli_args.docker_server and args.dev_mode:
+        dev_model_spec_path = log_path / "dev_model_specs"
+        ensure_readwriteable_dir(dev_model_spec_path)
+        docker_json_run_id = f"{run_id}_docker"
+        docker_json_fpath = model_spec.to_json(docker_json_run_id, dev_model_spec_path)
+        logger.info(f"Docker model spec saved to: {docker_json_fpath}")
 
     # validate local setup after run logger has been initialized
     # and ModelSpec JSON has been written
     validate_local_setup(model_spec, json_fpath)
 
-    # step 4: optionally run inference server
+    setup_config = None
     if model_spec.cli_args.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
@@ -560,7 +614,17 @@ def main():
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
         )
-        run_docker_server(model_spec, setup_config, json_fpath)
+
+    # step 4: optionally run inference server
+    if model_spec.cli_args.docker_server:
+        logger.info("Running inference server in Docker container ...")
+        if args.print_docker_cmd:
+            docker_command, _ = generate_docker_run_command(
+                model_spec, setup_config, docker_json_fpath
+            )
+            print(f"Docker run command:\n\n{format_docker_command(docker_command)}\n")
+            return 0
+        run_docker_server(model_spec, setup_config, docker_json_fpath)
     elif model_spec.cli_args.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
