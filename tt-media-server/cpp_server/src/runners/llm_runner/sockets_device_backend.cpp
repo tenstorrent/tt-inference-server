@@ -136,7 +136,7 @@ class SocketsDeviceBackend : public IDeviceBackend {
     h2d_socket_->write(page.data(), 1);
   }
 
-  bool read(DecodeResult* result) override {
+  bool read(TokenResult* result) override {
     std::vector<char> buf(kSocketPageSizeInBytes, 0);
     d2h_socket_->read(buf.data(), 1);
     result->task_id = TaskID::deserialize(buf.data(), TaskID::kSerializedSize);

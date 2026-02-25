@@ -32,7 +32,7 @@ headers = {
 
 class AudioTranscriptionLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/audio/transcriptions"
+        self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         audio_transcription_time = self.targets.get(

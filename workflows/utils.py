@@ -250,7 +250,7 @@ def run_command(
         )
         stderr_thread = threading.Thread(
             target=stream_subprocess_output,
-            args=(process.stderr, logger, logging.ERROR),
+            args=(process.stderr, logger, logging.INFO),
         )
 
         stdout_thread.start()

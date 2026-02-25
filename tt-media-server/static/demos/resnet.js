@@ -148,7 +148,7 @@ function loadImageFromUrl(url) {
 
 // Make API call to classify image
 async function callClassificationAPI(base64Image) {
-    const apiUrl = "/cnn/search-image";
+    const apiUrl = "/v1/cnn/search-image";
     const apiKey = document.getElementById('apiKey').value;
     const requestBody = {
         prompt: base64Image

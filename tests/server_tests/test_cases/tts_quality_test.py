@@ -52,7 +52,7 @@ class TTSQualityTest(BaseTest):
 
     async def _run_specific_test_async(self):
         test_start_time = time.time()
-        self.url = f"http://localhost:{self.service_port}/audio/speech"
+        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
         # Configuration
         sample_count = self.targets.get("sample_count", 10)

@@ -8,8 +8,8 @@
 namespace llm_engine {
 
 /**
- * Abstraction for host–device communication (init, write sequence, read decode result).
- * Real implementation uses TT device and sockets; mock queues DecodeResult without serialization.
+ * Abstraction for host–device communication (init, write sequence, read token result).
+ * Real implementation uses TT device and sockets; mock queues TokenResult without serialization.
  */
 class IDeviceBackend {
  public:
@@ -17,7 +17,7 @@ class IDeviceBackend {
   virtual void init() = 0;
   virtual void write(const Sequence& seq) = 0;
   /** Returns true if result was filled, false on shutdown or no data. */
-  virtual bool read(DecodeResult* result) = 0;
+  virtual bool read(TokenResult* result) = 0;
   virtual void terminate() = 0;
 };
 
