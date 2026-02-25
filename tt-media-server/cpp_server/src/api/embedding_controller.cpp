@@ -79,7 +79,7 @@ namespace {
         std::vector<std::thread> workers_;
         std::queue<std::function<void()>> tasks_;
         TracyLockable(std::mutex, mutex_);
-        std::condition_variable cv_;
+        std::condition_variable_any cv_;
         bool stop_;
     };
 
