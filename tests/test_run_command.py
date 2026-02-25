@@ -339,17 +339,22 @@ class TestSystemSoftwareValidationCheckFalse:
 
     def test_system_validation_uses_check_false(self):
         """Test system software validation command uses check=False (default)."""
-        from run import validate_local_setup
+        from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
         mock_model_spec.cli_args.workflow = "server"
         mock_model_spec.cli_args.skip_system_sw_validation = False
 
-        with patch("run.get_default_workflow_root_log_dir") as mock_log_dir, patch(
-            "run.ensure_readwriteable_dir"
-        ), patch("run.VENV_CONFIGS") as mock_venv_configs, patch(
-            "run.run_command", return_value=0
-        ) as mock_run, patch("run.get_repo_root_path", return_value=Path("/fake/repo")):
+        with patch(
+            "workflows.validate_setup.get_default_workflow_root_log_dir"
+        ) as mock_log_dir, patch(
+            "workflows.validate_setup.ensure_readwriteable_dir"
+        ), patch("workflows.validate_setup.VENV_CONFIGS") as mock_venv_configs, patch(
+            "workflows.validate_setup.run_command", return_value=0
+        ) as mock_run, patch(
+            "workflows.validate_setup.get_repo_root_path",
+            return_value=Path("/fake/repo"),
+        ):
             mock_log_dir.return_value = Path("/fake/logs")
             mock_venv_config = MagicMock()
             mock_venv_config.venv_python = "/fake/python"
@@ -364,17 +369,22 @@ class TestSystemSoftwareValidationCheckFalse:
 
     def test_system_validation_raises_valueerror_on_failure(self):
         """Test system software validation failure raises ValueError."""
-        from run import validate_local_setup
+        from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
         mock_model_spec.cli_args.workflow = "server"
         mock_model_spec.cli_args.skip_system_sw_validation = False
 
-        with patch("run.get_default_workflow_root_log_dir") as mock_log_dir, patch(
-            "run.ensure_readwriteable_dir"
-        ), patch("run.VENV_CONFIGS") as mock_venv_configs, patch(
-            "run.run_command", return_value=1
-        ), patch("run.get_repo_root_path", return_value=Path("/fake/repo")):
+        with patch(
+            "workflows.validate_setup.get_default_workflow_root_log_dir"
+        ) as mock_log_dir, patch(
+            "workflows.validate_setup.ensure_readwriteable_dir"
+        ), patch("workflows.validate_setup.VENV_CONFIGS") as mock_venv_configs, patch(
+            "workflows.validate_setup.run_command", return_value=1
+        ), patch(
+            "workflows.validate_setup.get_repo_root_path",
+            return_value=Path("/fake/repo"),
+        ):
             mock_log_dir.return_value = Path("/fake/logs")
             mock_venv_config = MagicMock()
             mock_venv_config.venv_python = "/fake/python"

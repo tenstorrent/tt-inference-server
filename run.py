@@ -14,9 +14,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from evals.eval_config import EVAL_CONFIGS
-from tests.test_config import TEST_CONFIGS
 from workflows.bootstrap_uv import bootstrap_uv
 from workflows.device_utils import infer_default_device
 from workflows.log_setup import setup_run_logger
@@ -31,19 +28,16 @@ from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
-    get_repo_root_path,
     get_run_id,
     load_dotenv,
-    run_command,
     write_dotenv,
 )
+from workflows.validate_setup import validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     WorkflowType,
-    WorkflowVenvType,
 )
-from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -253,10 +247,12 @@ def parse_arguments():
     )
     parser.add_argument(
         "--host-volume",
-        type=str,
+        nargs="?",
+        const=str(Path(__file__).resolve().parent / "persistent_volume"),
         default=None,
         help="Host directory for persistent cache volume (bind mount). "
-        "If not provided, a Docker named volume is used instead (recommended).",
+        "If flag is given without a path, defaults to persistent_volume/ in the repo root. "
+        "If not provided, a Docker named volume is used instead.",
     )
     parser.add_argument(
         "--host-hf-cache",
@@ -358,40 +354,6 @@ def get_current_commit_sha() -> str:
     )
 
 
-def validate_local_setup(model_spec, json_fpath):
-    logger.info("Starting local setup validation")
-    workflow_root_log_dir = get_default_workflow_root_log_dir()
-    ensure_readwriteable_dir(workflow_root_log_dir)
-
-    if (
-        WorkflowType.from_string(model_spec.cli_args.workflow)
-        in (WorkflowType.SERVER, WorkflowType.RELEASE)
-    ) and (not model_spec.cli_args.skip_system_sw_validation):
-        # check, and enforce if necessary, system software dependency versions
-        venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
-        venv_config.setup(model_spec=model_spec)
-
-        # fmt: off
-        cmd = [
-            str(venv_config.venv_python),
-            str(get_repo_root_path() / "workflows" / "run_system_software_validation.py"),
-            "--model-spec-json", str(json_fpath),
-        ]
-        # fmt: on
-
-        return_code = run_command(cmd, logger=logger)
-
-        if return_code != 0:
-            raise ValueError(
-                "⛔ validating system software dependencies failed. See errors above for "
-                "required version, and System Info section above for current system versions."
-                "\nTo skip system software validation, use the flag: --skip-system-sw-validation"
-            )
-        logger.info("✅ validating system software dependencies completed")
-
-    logger.info("✅ validating local setup completed")
-
-
 def format_cli_args_summary(args, model_spec):
     """Format CLI arguments and runtime info in a clean, readable format."""
     lines = [
@@ -440,97 +402,6 @@ def format_cli_args_summary(args, model_spec):
     return "\n".join(lines)
 
 
-def validate_runtime_args(model_spec):
-    args = model_spec.cli_args
-    workflow_type = WorkflowType.from_string(args.workflow)
-
-    if not args.device:
-        # TODO: detect phy device
-        raise NotImplementedError("Device detection not implemented yet")
-
-    model_id = model_spec.model_id
-
-    # Check if the model_id exists in MODEL_SPECS (this validates device support)
-    if model_id not in MODEL_SPECS:
-        raise ValueError(f"model:={args.model} does not support device:={args.device}")
-
-    if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
-    if workflow_type == WorkflowType.BENCHMARKS:
-        if os.getenv("OVERRIDE_BENCHMARKS"):
-            logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
-    if workflow_type == WorkflowType.STRESS_TESTS:
-        pass  # Model support already validated via MODEL_SPECS check at line 342
-
-    if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
-    if workflow_type == WorkflowType.REPORTS:
-        pass
-    if workflow_type == WorkflowType.SERVER:
-        if args.local_server:
-            raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
-            )
-        if not (args.docker_server or args.local_server):
-            raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server argument"
-            )
-
-        # For partitioning Galaxy per tray as T3K
-        # TODO: Add a check to verify whether these devices belong to the same tray
-        if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
-            if not args.device_id or len(args.device_id) != 8:
-                raise ValueError(
-                    "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
-                )
-
-    if workflow_type == WorkflowType.RELEASE:
-        # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_SPECS
-        # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
-        # a run_*.log fill will be made for the failed combination indicating this
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
-
-    if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
-        if args.docker_server or args.local_server:
-            raise NotImplementedError(
-                "GPU support for running inference server not implemented yet"
-            )
-
-    assert not (args.docker_server and args.local_server), (
-        "Cannot run --docker-server and --local-server"
-    )
-
-    # Validate mutual exclusivity of weight source options
-    weight_source_args = [
-        args.host_volume,
-        args.host_hf_cache,
-        getattr(args, "host_weights_dir", None),
-    ]
-    if sum(1 for a in weight_source_args if a) > 1:
-        raise ValueError(
-            "Only one of --host-volume, --host-hf-cache, --host-weights-dir can be specified."
-        )
-
-    if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
-        raise AssertionError(
-            "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
-            'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
-        )
-
-
 def handle_maintenance_args(args):
     if args.reset_venvs:
         venvs_dir = Path(os.path.dirname(os.path.abspath(__file__))) / ".workflow_venvs"
@@ -560,8 +431,7 @@ def main():
         model_spec = get_runtime_model_spec(args)
     model_id = model_spec.model_id
 
-    # step 2: validate runtime
-    validate_runtime_args(model_spec)
+    # step 2: handle secrets
     handle_secrets(model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
@@ -598,9 +468,9 @@ def main():
         docker_json_fpath = model_spec.to_json(docker_json_run_id, dev_model_spec_path)
         logger.info(f"Docker model spec saved to: {docker_json_fpath}")
 
-    # validate local setup after run logger has been initialized
+    # validate setup after run logger has been initialized
     # and ModelSpec JSON has been written
-    validate_local_setup(model_spec, json_fpath)
+    validate_setup(model_spec, json_fpath)
 
     setup_config = None
     if model_spec.cli_args.docker_server:

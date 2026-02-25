@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from run import validate_runtime_args
+from workflows.validate_setup import validate_runtime_args
 from workflows.model_spec import (
     DeviceModelSpec,
     ImplSpec,
@@ -636,7 +636,9 @@ class TestSetupHostValidation:
             host_volume="/tmp/vol",
             host_hf_cache="/tmp/hf",
         )
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             with pytest.raises(
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
@@ -649,7 +651,9 @@ class TestSetupHostValidation:
             host_volume="/tmp/vol",
             host_weights_dir="/tmp/weights",
         )
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             with pytest.raises(
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
@@ -662,7 +666,9 @@ class TestSetupHostValidation:
             host_hf_cache="/tmp/hf",
             host_weights_dir="/tmp/weights",
         )
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             with pytest.raises(
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
@@ -676,7 +682,9 @@ class TestSetupHostValidation:
             host_hf_cache="/tmp/hf",
             host_weights_dir="/tmp/weights",
         )
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             with pytest.raises(
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
@@ -688,14 +696,18 @@ class TestSetupHostValidation:
         mock_spec = self._make_mock_model_spec(
             host_weights_dir="/tmp/weights",
         )
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             # Should not raise (benchmarks workflow passes validation)
             validate_runtime_args(mock_spec)
 
     def test_no_options_passes_validation(self):
         """Setting none of the weight source options should pass."""
         mock_spec = self._make_mock_model_spec()
-        with patch.dict("run.MODEL_SPECS", {mock_spec.model_id: mock_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
             validate_runtime_args(mock_spec)
 
     def test_host_weights_dir_nonexistent_directory(self, tiny_model_spec):
