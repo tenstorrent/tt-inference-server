@@ -29,7 +29,7 @@ def get_task_queue(queue_type: str, size: int) -> TTQueueInterface:
     """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
     if queue_type == QueueType.FasterFifo.value:
         return TTFasterFifoQueue(size)
-    if queue_type == QueueType.BatchFifo.value:
+    elif queue_type == QueueType.BatchFifo.value:
         settings = get_settings()
         return TTBatchFifoQueue(max_size=size, batch_size=settings.max_batch_size)
     return TTQueue(size)
