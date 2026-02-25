@@ -1216,12 +1216,27 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
@@ -1529,8 +1544,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1540,6 +1555,9 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 30000000,
+                },
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x4_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
@@ -1563,12 +1581,24 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 52000000,
+                },
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
@@ -1717,8 +1747,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="c3bebd59",
+        vllm_commit="39a80dd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1742,8 +1772,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1754,7 +1784,7 @@ llm_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 48000000,
                 },
             ),
         ],
@@ -1773,8 +1803,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="a53b825",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1786,6 +1816,12 @@ llm_templates = [
                     "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
