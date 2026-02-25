@@ -157,6 +157,8 @@ class TtRunDeviceBackend : public IDeviceBackend {
 
   void terminate() override {
     stop_.store(true);
+    auto command = "pkill -SIGINT prterun";
+    std::system(command);
     if (child_pid_ > 0) {
       kill(child_pid_, SIGTERM);
       waitpid(child_pid_, nullptr, 0);
