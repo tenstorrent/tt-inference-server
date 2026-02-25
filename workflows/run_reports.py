@@ -1587,9 +1587,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_audio_display_dict,
         create_display_dict,
         create_embedding_display_dict,
-        create_vlm_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
+        create_vlm_display_dict,
         get_markdown_table,
         save_markdown_table,
         save_to_csv,
@@ -3276,6 +3276,8 @@ def calculate_target_metrics(metrics_config):
     def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
         if not ref_metric:
             return "Undefined", "Undefined"
+        if not avg_metric:
+            return 0.0, 1
         ratio = avg_metric / ref_metric
         if is_ascending_metric:
             check = 2 if ratio > 1.0 else 3
