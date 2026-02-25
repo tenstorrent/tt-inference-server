@@ -109,7 +109,7 @@ headers = {
 
 class AudioTranscriptionParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/audio/transcriptions"
+        self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
         logger.info(f"Testing audio transcription parameters at {self.url}")
 
         # Create list of payloads to test different parameters

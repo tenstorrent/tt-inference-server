@@ -10,7 +10,7 @@ import torch
 from tqdm import tqdm
 import torch_xla
 import torch_xla.runtime as xr
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, PeftModel
 
 
 from domain.training_request import TrainingRequest
@@ -59,6 +59,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         # Get the first request
         request = training_requests[0]
 
+        if request._start_event:
+            request._start_event.set()
+            self.logger.info(f"Device {self.device_id}: Start event set")
+
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
             model_name=self.model_name,
@@ -87,16 +91,27 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             task_type=request.lora_task_type,
         )
 
-        self.model = get_peft_model(self.hf_model, lora_config)
+        # If we call run multiple times, we need to unload the model from the previous lora adapter
+        if hasattr(self, "_peft_model") and isinstance(self._peft_model, PeftModel):
+            self.logger.info(
+                f"Device {self.device_id}: Unloading previous lora adapter"
+            )
+            self.hf_model = self._peft_model.unload()
+            if hasattr(self.hf_model, "peft_config"):
+                delattr(self.hf_model, "peft_config")
 
-        self.model.to(eval(request.dtype))
-        self.model.to(self.device)
+        self._peft_model = get_peft_model(self.hf_model, lora_config)
+
+        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(self.device)
 
         model_path = request._output_model_path
 
         # use torch compile
         self.model = torch.compile(
-            self.model, backend="tt", options={"tt_enable_torch_fx_fusion_pass": False}
+            self._peft_model,
+            backend="tt",
+            options={"tt_enable_torch_fx_fusion_pass": False},
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -177,6 +192,14 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info("Model checkpoint saved.")
 
+                    # Check for cancellation at the end of each training step
+                    if request._cancel_event and request._cancel_event.is_set():
+                        self.logger.info(
+                            f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
+                            f"Model checkpoint saved: {model_path}"
+                        )
+                        break
+
                     if do_validation:
                         avg_val_loss = self.run_validation()
                         self.logger.info(
@@ -186,13 +209,27 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     global_step += 1
 
+                # Break outer epoch loop if cancelled
+                if request._cancel_event and request._cancel_event.is_set():
+                    break
+
         except Exception as e:
             self.logger.error(f"Training failed with error: {str(e)}")
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
         finally:
-            self.logger.debug(f"Device {self.device_id}: Training completed")
-            return model_path
+            del self.optimizer
+            del self.model
+            del self.loss_fn
+            del self.train_dataset
+            del self.eval_dataset
+            del self.train_dataloader
+            del self.eval_dataloader
+            self.logger.info(
+                f"Device {self.device_id}: Training completed - memory cleaned up"
+            )
+
+        return [model_path]
 
     def run_validation(self):
         self.logger.info("\n=== Starting Validation ===")

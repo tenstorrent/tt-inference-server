@@ -31,7 +31,7 @@ headers = {
 
 class CnnLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/cnn/search-image"
+        self.url = f"http://localhost:{self.service_port}/v1/cnn/search-image"
         logger.info(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         cnn_target_time = self.targets.get("cnn_time", 5)  # in seconds

@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loading tokenizer from: " << tokenizer_file_path << "\n";
-    auto& tokenizer = Tokenizer::instance(tokenizer_file_path);
+    Tokenizer tokenizer(tokenizer_file_path);
 
     // Check if tokenizer loaded successfully
     if (!tokenizer.is_loaded()) {

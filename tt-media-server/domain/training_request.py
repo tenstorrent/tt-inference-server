@@ -6,6 +6,7 @@
 from domain.base_request import BaseRequest
 from config.constants import DatasetLoaders
 from pydantic import PrivateAttr
+from multiprocessing import Event
 
 
 class TrainingRequest(BaseRequest):
@@ -28,3 +29,5 @@ class TrainingRequest(BaseRequest):
     ignored_index: int = -100
 
     _output_model_path: str = PrivateAttr(default=None)
+    _start_event: Event = PrivateAttr(default=None)
+    _cancel_event: Event = PrivateAttr(default=None)

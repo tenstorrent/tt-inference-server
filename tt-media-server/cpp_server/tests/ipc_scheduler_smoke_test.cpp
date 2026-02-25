@@ -9,12 +9,14 @@
 //              calls schedule(), and verifies the deserialized batch.
 //
 // Exit code 0 = PASS.
-
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/boost_ipc_task_queue.hpp"
-#include "llm_engine/engine/scheduler.hpp"
-#include "llm_engine/engine/sequence.hpp"
-#include "llm_engine/sampling_params.hpp"
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include "runners/llm_runner/config.hpp"
+#include "ipc/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 
@@ -44,19 +46,22 @@ int main() {
   Sequence seq1({1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
   Sequence seq2({10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
-  int seq1_id = seq1.seq_id;
-  int seq2_id = seq2.seq_id;
+
+  std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());
+  seq1.task_id.id = seq1_id;
+  std::string seq2_id = boost::uuids::to_string(boost::uuids::random_generator()());
+  seq2.task_id.id = seq2_id;
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {
-    BoostIpcTaskQueue producer(QUEUE_NAME);
+    tt::ipc::BoostIpcTaskQueue producer(QUEUE_NAME);
     producer.push(seq1);
     producer.push(seq2);
   }
 
-  std::cout << "[parent] pushed seq_id=" << seq1_id
+  std::cout << "[parent] pushed task_id=" << seq1_id
             << " tokens=[1,2,3,4] max_tokens=10\n";
-  std::cout << "[parent] pushed seq_id=" << seq2_id
+  std::cout << "[parent] pushed task_id=" << seq2_id
             << " tokens=[10,20,30] max_tokens=5 temperature=0.7\n";
 
   // --- Fork ---
@@ -75,8 +80,8 @@ int main() {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<BoostIpcTaskQueue>(QUEUE_NAME);
-    Scheduler sched(config, std::move(queue));
+    auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
+    Scheduler sched(config, queue.get());
 
     auto [batch, is_prefill] = sched.schedule();
 
@@ -84,10 +89,10 @@ int main() {
               << " sequences, is_prefill=" << is_prefill << "\n";
 
     for (auto* s : batch) {
-      std::cout << "[child]    seq_id=" << s->seq_id
+      std::cout << "[child]    task_id=" << s->task_id
                 << " size=" << s->size()
-                << " max_tokens=" << s->max_tokens
-                << " temperature=" << s->temperature
+                << " max_tokens=" << s->sampling_params->max_tokens
+                << " temperature=" << s->sampling_params->temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -107,9 +112,9 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->seq_id != seq1_id) fail("seq1 seq_id mismatch");
+      if (batch[0]->task_id.id != seq1_id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->max_tokens != 10) fail("seq1 max_tokens mismatch");
+      if (batch[0]->sampling_params->max_tokens != 10) fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 ||
           (*batch[0])[2] != 3 || (*batch[0])[3] != 4)
         fail("seq1 token values mismatch");
