@@ -20,8 +20,14 @@ uvicorn
 
 # Install PyTorch CPU first to avoid CUDA dependencies
 --extra-index-url https://download.pytorch.org/whl/cpu
-torchaudio>=2.0.0,<3.0.0
+torch>=2.0.0,<2.5.0
+torchaudio>=2.0.0,<2.5.0
+torchvision>=0.15.0,<0.20.0
 
-# Install WhisperX after PyTorch CPU
-whisperx==3.4.3
+# WhisperX dependencies (install manually to control PyTorch version)
+openai-whisper
+pyannote.audio
+
+# Note: Install WhisperX with --no-deps after installing requirements:
+# pip install whisperx==3.4.3 --no-deps
 requests

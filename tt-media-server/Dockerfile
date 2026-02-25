@@ -122,8 +122,10 @@ WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${TT_METAL_HOME}/server"
 COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
+COPY "tt-media-server/install_requirements.sh" "${TT_METAL_HOME}/install_requirements.sh"
+RUN chmod +x "${TT_METAL_HOME}/install_requirements.sh"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
+    && cd ${TT_METAL_HOME} && ./install_requirements.sh || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
