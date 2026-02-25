@@ -56,6 +56,7 @@ def device_worker(
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
+            loop.close()
             break
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")

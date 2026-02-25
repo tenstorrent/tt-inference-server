@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from config.constants import QueueType
+from config.settings import get_settings
 from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
 from model_services.queues.tt_batch_fifo_queue import TTBatchFifoQueue
 from model_services.queues.tt_queue import TTQueue
@@ -15,6 +16,9 @@ def get_queue(
 ) -> TTQueueInterface:
     if queue_type == QueueType.FasterFifo.value:
         return TTFasterFifoQueue(size)
+    elif queue_type == QueueType.BatchFifo.value:
+        settings = get_settings()
+        return TTBatchFifoQueue(max_size=size, batch_size=settings.max_batch_size)
     elif queue_type == QueueType.TTQueue.value:
         return TTQueue(size)
     elif queue_type == QueueType.MemoryQueue.value:
@@ -24,11 +28,8 @@ def get_queue(
 def get_task_queue(queue_type: str, size: int) -> TTQueueInterface:
     """Get a queue suitable for task objects (must serialize arbitrary Python objects)."""
     if queue_type == QueueType.FasterFifo.value:
-        from config.settings import get_settings
-
+        return TTFasterFifoQueue(size)
+    if queue_type == QueueType.BatchFifo.value:
         settings = get_settings()
-        # Use batch-aware queue for better worker utilization
         return TTBatchFifoQueue(max_size=size, batch_size=settings.max_batch_size)
-    else:
-        # SharedMemoryChunkQueue cannot hold arbitrary objects, use standard Queue
-        return TTQueue(size)
+    return TTQueue(size)

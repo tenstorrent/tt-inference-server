@@ -14,6 +14,13 @@ class TestGetQueue:
         queue = get_queue(QueueType.FasterFifo.value, size=10)
         assert isinstance(queue, TTFasterFifoQueue)
 
+    def test_batch_fifo(self):
+        from config.settings import get_settings
+
+        queue = get_queue(QueueType.BatchFifo.value, size=10)
+        assert isinstance(queue, TTBatchFifoQueue)
+        assert queue._batch_size == get_settings().max_batch_size
+
     def test_tt_queue(self):
         queue = get_queue(QueueType.TTQueue.value, size=10)
         assert isinstance(queue, TTQueue)
@@ -31,10 +38,14 @@ class TestGetQueue:
 
 
 class TestGetTaskQueue:
-    def test_faster_fifo_returns_batch_queue(self):
+    def test_faster_fifo_returns_faster_fifo_queue(self):
+        queue = get_task_queue(QueueType.FasterFifo.value, size=10)
+        assert isinstance(queue, TTFasterFifoQueue)
+
+    def test_batch_fifo_returns_batch_queue(self):
         from config.settings import get_settings
 
-        queue = get_task_queue(QueueType.FasterFifo.value, size=10)
+        queue = get_task_queue(QueueType.BatchFifo.value, size=10)
         assert isinstance(queue, TTBatchFifoQueue)
         assert queue._batch_size == get_settings().max_batch_size
 

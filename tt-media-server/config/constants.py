@@ -197,6 +197,7 @@ class DeviceTypes(Enum):
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"
     FasterFifo = "FasterFifo"
+    BatchFifo = "BatchFifo"
     TTQueue = "TTQueue"
 
 
