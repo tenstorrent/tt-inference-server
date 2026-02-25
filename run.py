@@ -12,7 +12,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from workflows.bootstrap_uv import bootstrap_uv
 from workflows.device_utils import infer_default_device
@@ -40,18 +39,6 @@ from workflows.workflow_types import (
 )
 
 logger = logging.getLogger("run_log")
-
-
-def _normalize_engine_arg(engine: Optional[str]) -> Optional[str]:
-    if not engine:
-        return None
-    try:
-        return InferenceEngine.from_string(engine).value
-    except (KeyError, ValueError):
-        valid_engines = ", ".join(engine.to_string() for engine in InferenceEngine)
-        raise ValueError(
-            f"Invalid --engine value '{engine}'. Valid values: {valid_engines}"
-        )
 
 
 def parse_device_ids(value):
@@ -285,7 +272,9 @@ def parse_arguments():
         )
     args.device = args.tt_device or args.device
 
-    args.engine = _normalize_engine_arg(args.engine)
+    args.engine = (
+        InferenceEngine.from_string(args.engine).value if args.engine else None
+    )
     if not args.device:
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
