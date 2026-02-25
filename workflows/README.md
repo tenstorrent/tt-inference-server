@@ -1,29 +1,37 @@
 # tt-inference-server workflow runner
 
 This project provides a command-line interface (CLI) to run various workflows related to the Tenstorrent inference server. It supports executing workflows locally or via Docker, handling environment setup, dependency management, and logging for multiple models and workflow types.
-Table of Contents
+
+## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [run.py CLI Usage](#runpy-cli-usage)
+  - [Docker Volume Options](#docker-volume-options)
+  - [Print Docker Command](#print-docker-command)
+- [Container Interface](#container-interface)
 - [Client Side Scripts](#client-side-scripts)
 - [Workflow Setup](#workflow-setup)
 - [Project Structure](#project-structure)
 - [Error Handling](#error-handling)
 
-# Overview
+## Overview
 
-The main entry point of the project is `run.py`. This script enables you to execute different workflows—such as benchmarks, evals, server, release, or report—by specifying the model and workflow type. Depending on your configuration, workflows can run on your host system or inside a Docker container.
+The inference server has two independent interfaces:
 
-The module workflows/run_local.py is responsible for setting up the local execution environment. It handles tasks such as bootstrapping a virtual environment, installing dependencies, configuring workflow-specific settings, and finally launching the workflow script.
-Features
+1. **`run.py`** (host-side) -- optionally used to template the `docker run` command, validate the runtime, configure host setup, and run client-side workflows (`benchmarks`, `evals`).
+2. **Container interface** (`run_vllm_api_server.py`) -- can be used independently from `run.py` via a direct `docker run` command, accepting `--model` and `--tt-device` to self-resolve the model spec from a bundled JSON. See the [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run).
 
-    Multiple Workflows: Run benchmarks, evals, server, release, and report workflows.
-    Execution Modes: Choose between running workflows locally or in Docker mode.
-    Automatic Setup: Manages environment setup, including virtual environments and dependency installation.
-    Logging: Detailed logging for tracking execution, errors, and debugging.
+The module `workflows/run_local.py` is responsible for setting up the local execution environment. It handles tasks such as bootstrapping a virtual environment, installing dependencies, configuring workflow-specific settings, and finally launching the workflow script.
+
+## Features
+
+- **Multiple Workflows**: Run benchmarks, evals, server, release, and report workflows.
+- **Execution Modes**: Choose between running workflows locally or in Docker mode.
+- **Automatic Setup**: Manages environment setup, including virtual environments and dependency installation.
+- **Logging**: Detailed logging for tracking execution, errors, and debugging.
 
 ## Example diagram for benchmarks workflow
 
@@ -55,100 +63,158 @@ Required dependencies are installed during the workflow setup process. Ensure yo
 
 ## run.py CLI Usage
 
-Execute the CLI using run.py with the appropriate command-line arguments.
+`run.py` is the host-side automation CLI. It can optionally be used to:
+1. Template the `docker run` command for the [container interface](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run)
+2. Validate the runtime environment
+3. Configure the host setup (weights download, volume creation)
+4. Run client-side workflows (`benchmarks`, `evals`)
+
 ```
-Command-line Arguments
+Usage: python3 run.py --model <model> --workflow <workflow> [options]
+```
 
-Required Arguments:
+### Command-line Arguments
 
-    --model (required):
-    Specifies the model to run. The available models are defined in MODEL_SPECS.
+**Required Arguments:**
 
-    --workflow (required):
-    Specifies the workflow to run. Valid options include:
-        benchmarks
-        evals
-        server
-        release
-        reports
-        tests
+| Argument | Description |
+|---|---|
+| `--model` | Model to run. Available models are defined in `MODEL_SPECS`. |
+| `--workflow` | Workflow to run: `benchmarks`, `evals`, `server`, `release`, `reports`, `tests`. |
 
-    --tt-device (optional):
-    Specifies the target device. If omitted, run.py selects the largest supported device available on the host.
-    The legacy alias --device is still supported.
-    Choices include:
-        cpu - CPU execution
-        n150 - Tenstorrent N150 card  
-        n300 - Tenstorrent N300 card
-        p100 - Tenstorrent P100 card (Blackhole)
-        p150 - Tenstorrent P150 card (Blackhole)
-        t3k - TT-QuietBox/TT-LoudBox systems
-        galaxy - Tenstorrent Galaxy systems
-        gpu - GPU execution
+**Model and Device Arguments:**
 
-Optional Arguments:
+| Argument | Default | Description |
+|---|---|---|
+| `--tt-device` | Largest supported device on host | Target device: `n150`, `n300`, `p100`, `p150`, `t3k`, `galaxy`. The legacy alias `--device` is still supported. |
+| `--impl` | Model spec default | Implementation option. If not specified, the default implementation for the model and device is inferred. |
+| `--engine` | Model spec default | Inference engine override: `vllm`, `media`, `forge`. |
 
-    --impl (optional):
-    Implementation option. If not specified, the default implementation for the model and device will be inferred automatically.
+**Server Arguments:**
 
-    --engine (optional):
-    Inference engine override (vllm, media, forge). If not specified, the model spec default inference_engine is used.
+| Argument | Default | Description |
+|---|---|---|
+| `--docker-server` | false | Run inference server in a Docker container. |
+| `--local-server` | false | Run inference server on localhost. |
+| `-it`, `--interactive` | false | Run Docker in interactive mode. |
+| `--service-port` | `8000` | Service port. Also reads from `SERVICE_PORT` env var. |
+| `--no-auth` | false | Disable vLLM API key authorization (skips `JWT_SECRET` requirement). |
+| `--print-docker-cmd` | false | Print the Docker run command and exit without starting the server. |
 
-    --local-server (optional):
-    Run inference server on localhost.
+**Docker Volume Options:**
 
-    --docker-server (optional):
-    Run inference server in Docker container.
+| Argument | Default | Description |
+|---|---|---|
+| `--host-volume` | None (Docker named volume) | Host directory for persistent cache volume (bind mount). |
+| `--host-hf-cache` | None | Host HuggingFace cache directory to mount readonly for model weights. |
+| `--host-weights-dir` | None | Host directory with pre-downloaded model weights to mount into the container. |
+| `--image-user` | `1000` | UID passed to `docker run --user`. Set to match host user UID for correct bind mount permissions. |
 
-    -it, --interactive (optional):
-    Run docker in interactive mode.
+Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified. See [Docker Volume Options](#docker-volume-options) for details.
 
-    --workflow-args (optional):
-    Additional workflow arguments (e.g., 'param1=value1 param2=value2').
+**Advanced Arguments:**
 
-    --service-port (optional):
-    SERVICE_PORT. Defaults to 8000 or the SERVICE_PORT environment variable.
+| Argument | Description |
+|---|---|
+| `--dev-mode` | Enable developer mode (bind mounts source code into container). |
+| `--override-docker-image` | Override the Docker image used by `--docker-server`. |
+| `--device-id` | Tenstorrent device IDs, comma-separated PCI indices (e.g. `0` or `0,1,2`). |
+| `--override-tt-config` | Override TT config as JSON string (e.g., `'{"data_parallel": 16}'`). |
+| `--vllm-override-args` | Override vLLM arguments as JSON string (e.g., `'{"max_model_len": 4096}'`). |
+| `--disable-trace-capture` | Disable trace capture requests to speed up execution. |
+| `--workflow-args` | Additional workflow arguments (e.g., `'param1=value1 param2=value2'`). |
 
-    --disable-trace-capture (optional):
-    Disables trace capture requests, use to speed up execution if inference server already running and traces captured.
+### Secrets
 
-    --dev-mode (optional):
-    Enable developer mode.
+Secrets can be provided via a `.env` file in the repository root or as environment variables:
 
-    --override-docker-image (optional):
-    Override the Docker image used by --docker-server, ignoring the model config.
+```bash
+# Option 1: .env file (automatically loaded by run.py)
+HF_TOKEN=hf_...
+JWT_SECRET=my-secret-string
 
-    --device-id (optional):
-    Tenstorrent device ID (e.g. '0' for /dev/tenstorrent/0). Specifies which Tenstorrent device to use when multiple devices are available.
+# Option 2: environment variables
+export HF_TOKEN=hf_...
+export JWT_SECRET=my-secret-string
+```
 
-    --override-tt-config (optional):
-    Override TT config as JSON string (e.g., '{"data_parallel": 16}'). This allows you to override Tenstorrent-specific configuration parameters that control model execution behavior on TT hardware. Common parameters include data_parallel settings, dispatch configurations, and memory allocation options.
+### Docker Volume Options
 
-    --vllm-override-args (optional):
-    Override vLLM arguments as JSON string (e.g., '{"max_model_len": 4096, "enable_chunked_prefill": true}'). This allows you to override vLLM server configuration parameters such as max_model_len, max_num_seqs, enable_chunked_prefill, and other vLLM-specific settings that control inference behavior.
+When running with `--docker-server`, `run.py` supports three mutually exclusive strategies for how model weights and caches are persisted. Only one can be specified at a time.
 
-Example Commands
+**1. Docker named volume (default)**
 
-Run the evals workflow locally:
+No flags needed. A Docker named volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start.
 
-    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
+```
+
+**2. Host persistent volume (`--host-volume`)**
+
+Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+  --host-volume /mnt/data/tt-cache
+```
+
+**3. Host HuggingFace cache (`--host-hf-cache`)**
+
+Mounts the host's existing HuggingFace cache directory readonly into the container. Other persistent data (TT Metal caches) uses a Docker named volume.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+  --host-hf-cache ~/.cache/huggingface
+```
+
+**4. Host weights directory (`--host-weights-dir`)**
+
+Mounts a host directory containing pre-downloaded model weights readonly into the container. Other persistent data uses a Docker named volume.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+  --host-weights-dir /mnt/models/Llama-3.1-8B-Instruct
+```
+
+### Print Docker Command
+
+Use `--print-docker-cmd` to output the generated `docker run` command without starting the server. This is useful for inspecting or customizing the command before running it manually.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server --print-docker-cmd
+```
+
+### Example Commands
+
+Run the evals workflow:
+```bash
+python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150
+```
 
 Run a workflow with a Docker server:
-
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --docker-server
+```bash
+python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --docker-server
+```
 
 Run benchmarks workflow:
-
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K
+```bash
+python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K
+```
 
 Run server workflow in Docker with interactive mode:
-
-    python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
+```bash
+python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
+```
 
 Run with custom service port and additional workflow arguments:
-
-    python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
+```bash
+python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
 ```
+
+## Container Interface
+
+The inference server container can be used independently from `run.py` via a direct `docker run` command. See the full [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run) for details, including CLI args, secrets, and persistent volume overrides.
 
 ## Client Side Scripts
 
