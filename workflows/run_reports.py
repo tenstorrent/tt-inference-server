@@ -2130,34 +2130,24 @@ def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    extracted = []
-
     results = data.get("results", {})
     configs = data.get("configs", {})
 
     first_key = list(results.keys())[0]
 
-    for result_key, result_metrics in results.items():
-        extracted_metrics = {
-            k: v
-            for k, v in result_metrics.items()
-            if "alias" not in k and "_stderr" not in k
-        }
+    # extract first results' metrics
+    first_results = results[first_key]
+    extracted = [{first_key: {k: v}} for k, v in first_results.items() if "alias" not in k and "_stderr" not in k]
 
-        extracted.append({result_key: extracted_metrics})
     config = configs.get(first_key, {})
-    task_name = config.get("task")
-    if task_name is None:
-        group_subtasks = data.get("group_subtasks")
-        if group_subtasks:
-            task_name = list(group_subtasks.keys())[0]
-            config = configs.get(group_subtasks[task_name][0], {})
+    task_name = config.get("task", first_key)
+    
+    # assert that all configs have the same dataset path
+    dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
+    for config in configs.values():
+        config_dataset_path = config.get("dataset_path")
+        assert dataset_path == config_dataset_path
 
-    if task_name != first_key:
-        if first_key == "mmmu_val":
-            task_name = "mmmu_val"
-
-    dataset_path = config.get("dataset_path", "N/A")
     assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}

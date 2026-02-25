@@ -2685,9 +2685,9 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.15,  # 15% of 15,902 samples ~= 42 samples per sub-task
                 },
                 score=EvalTaskScore(
-                    published_score=90.0,  # MMLU score (without tools)
+                    published_score=85.9,  # MMLU score "low" reasoning level (without tools)
                     published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=90.0,  # TODO: MEASURE THIS
+                    gpu_reference_score=85.9,  # TODO: MEASURE THIS
                     gpu_reference_score_ref="DUMMY VALUE",
                     score_func=score_task_single_key,
                     score_func_kwargs={
