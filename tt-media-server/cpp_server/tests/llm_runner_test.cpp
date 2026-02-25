@@ -50,11 +50,11 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   auto task_queue = make_queue();
 
   tt::runners::LLMRunner engine{config, [&](const tt::runners::RunnerResult& result) {
-      const auto& tok = std::get<tt::runners::TokenPayload>(result.payload);
+      const auto& token = std::get<tt::ipc::SharedToken>(result.payload);
       TaskID tid;
       tid.id = result.task_id;
-      received_tokens[tid].push_back(tok.token_id);
-      if (tok.finished && ++finished_count == total_requests) {
+      received_tokens[tid].push_back(static_cast<int64_t>(token.token_id));
+      if (token.is_final() && ++finished_count == total_requests) {
         engine.stop();
       }
     }, task_queue.get()};

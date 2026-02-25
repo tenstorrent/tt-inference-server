@@ -3,21 +3,15 @@
 
 #pragma once
 
-#include <cstdint>
 #include <functional>
 #include <string>
 #include <variant>
 
+#include "ipc/shared_memory.hpp"
+
 namespace tt::runners {
 
-struct TokenPayload {
-    uint64_t token_id;
-    bool finished;
-};
-
-struct EmbeddingPayload {};
-
-using ResultPayload = std::variant<TokenPayload, EmbeddingPayload>;
+using ResultPayload = std::variant<ipc::SharedToken, ipc::SharedEmbedding>;
 
 struct RunnerResult {
     std::string task_id;

@@ -18,19 +18,10 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 
     on_result_ = [this](const runners::RunnerResult& result) {
         std::visit(runners::overloaded{
-            [&](const runners::TokenPayload& tok) {
-                auto shared = ipc::SharedToken{
-                    .token_index = 0,
-                    .flags = static_cast<uint32_t>(tok.finished ? 1 : 0),
-                    .token_id = tok.token_id,
-                    .task_id = {},
-                    .padding = {},
-                };
-                strncpy(shared.task_id, result.task_id.c_str(), sizeof(shared.task_id) - 1);
-                shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-                this->cfg.result_queue->push(shared);
+            [&](const ipc::SharedToken& token) {
+                this->cfg.result_queue->push(token);
             },
-            [&](const runners::EmbeddingPayload&) {
+            [&](const ipc::SharedEmbedding&) {
                 // TODO: Embedding IPC transport
             },
         }, result.payload);

@@ -69,10 +69,16 @@ void LLMRunner::drain_decode_results() {
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    RunnerResult runner_result;
-    runner_result.task_id = dr.task_id.id;
-    runner_result.payload = TokenPayload{static_cast<uint64_t>(dr.token_id), finished};
-    on_result_(runner_result);
+    auto shared = ipc::SharedToken{
+        .token_index = 0,
+        .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
+        .token_id = dr.token_id,
+        .task_id = {},
+        .padding = {},
+    };
+    strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+    shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+    on_result_(RunnerResult{dr.task_id.id, shared});
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
