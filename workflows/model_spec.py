@@ -1554,6 +1554,15 @@ llm_templates = [
                     "trace_region_size": 30000000,
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
     ),
@@ -1779,6 +1788,16 @@ llm_templates = [
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 33000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.QBGE,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 48000000,
                 },
             ),
         ],

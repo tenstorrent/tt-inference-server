@@ -79,8 +79,11 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def from_string(cls, name: str):
+        # Alias: "QBGE" is the legacy name; P300X2 is the canonical member
+        _ALIASES = {"QBGE": "P300X2"}
+        normalized = _ALIASES.get(name.upper(), name.upper())
         try:
-            return cls[name.upper()]
+            return cls[normalized]
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 
