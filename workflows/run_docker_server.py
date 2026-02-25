@@ -200,11 +200,7 @@ def generate_docker_run_command(
         docker_command.append("-itd")
     # fmt: on
 
-    # environment variables always included
-    docker_env_vars = {
-        "MESH_DEVICE": mesh_device_str,
-    }
-    # environment variables that depend on setup_config
+    docker_env_vars = {}
     if setup_config:
         # Only set MODEL_WEIGHTS_DIR when using host-mounted weights
         # (--host-hf-cache, --host-weights-dir, or LOCAL source).
@@ -225,8 +221,6 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
-        if setup_config.cache_root:
-            docker_env_vars["PERSISTENT_VOLUME"] = setup_config.cache_root
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
