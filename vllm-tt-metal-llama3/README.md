@@ -8,7 +8,11 @@ This implementation supports the following models in the [LLM model list](../REA
   - [1. Docker Install](#1-docker-install)
   - [2. Ensure System Dependencies Installed](#2-ensure-system-dependencies-installed)
   - [3. CPU Performance Setting](#3-cpu-performance-setting)
-  - [4. Run Model in Docker with `run.py` Automation](#4-run-model-in-docker-with-runpy-automation)
+  - [4. Run Model in Docker](#4-run-model-in-docker)
+- [Container Interface (Direct Docker Run)](#container-interface-direct-docker-run)
+  - [Container CLI Arguments](#container-cli-arguments)
+  - [Secrets](#secrets)
+  - [Persistent Volume Overrides](#persistent-volume-overrides)
 - [Example Clients](#example-clients)
   - [Run Example Clients from Within Docker Container](#run-example-clients-from-within-docker-container)
 
@@ -50,19 +54,120 @@ sudo cpupower frequency-set -g performance
 # sudo cpupower frequency-set -g ondemand
 ```
 
-### 4. Run model in Docker with `run.py` automation
+### 4. Run model in Docker
 
-The `run.py` automation will setup the model
+There are two ways to run the inference server in Docker:
 
-model weights download, docker image download, and Python environment may take a long time on low-bandwidth network.
+**Option A: Using `run.py` automation (recommended for first-time setup)**
 
+`run.py` handles model weights download, Docker image pull, host setup, and secret management automatically. Model weights download, Docker image download, and Python environment setup may take a long time on low-bandwidth networks.
 
 ```bash
-# run inference server with docker
 python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
 ```
 
-See documentation in [Model Readiness Workflows](../docs/workflows_user_guide.md#docker-server)
+See the full [run.py CLI documentation](../workflows/README.md#runpy-cli-usage) for all options including Docker volume strategies and `--print-docker-cmd`.
+
+**Option B: Direct `docker run` (container interface)**
+
+The container can be used independently from `run.py`. See the [Container Interface](#container-interface-direct-docker-run) section below.
+
+## Container Interface (Direct Docker Run)
+
+The inference server container can be run directly with `docker run`, without `run.py`. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec JSON.
+
+### Minimal Example
+
+```bash
+docker run \
+  --rm \
+  --device /dev/tenstorrent \
+  --cap-add SYS_NICE \
+  --shm-size 32G \
+  --publish 8000:8000 \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_tt_transformers-Llama-3.1-8B-Instruct:/home/container_app_user/cache_root \
+  -e HF_TOKEN=$HF_TOKEN \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:latest \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --tt-device n300
+```
+
+Required Docker flags:
+- `--device /dev/tenstorrent` -- passes the Tenstorrent device into the container
+- `--cap-add SYS_NICE` -- required for thread priority management
+- `--shm-size 32G` -- shared memory for model loading
+- `--mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G` -- hugepages for TT Metal
+
+### Container CLI Arguments
+
+These arguments are passed after the Docker image name:
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--model` | Yes | -- | HuggingFace model repo (e.g., `meta-llama/Llama-3.1-8B-Instruct`). |
+| `--tt-device` | Yes | -- | Device type: `n150`, `n300`, `t3k`, `galaxy`, etc. |
+| `--engine` | No | Model spec default | Inference engine override: `vllm`, `media`, `forge`. |
+| `--impl` | No | Model spec default | Implementation name override (e.g., `tt-transformers`). |
+
+### Secrets
+
+Secrets are passed to the container via Docker environment variables or an env file:
+
+```bash
+# Option 1: env file
+docker run ... --env-file ./.env ...
+
+# Option 2: individual environment variables
+docker run ... -e HF_TOKEN=$HF_TOKEN -e JWT_SECRET=$JWT_SECRET ...
+```
+
+- `HF_TOKEN` -- required for downloading model weights from HuggingFace (gated models).
+- `JWT_SECRET` -- optional. When set, HTTP requests to the vLLM API require a bearer token in the `Authorization` header.
+
+### Persistent Volume Overrides
+
+By default, the container downloads model weights and stores TT Metal caches in a Docker named volume mounted at `/home/container_app_user/cache_root`. The following overrides change how persistent data is managed.
+
+Only one strategy should be used at a time.
+
+**1. Host persistent volume**
+
+Bind mount an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. This is equivalent to `run.py --host-volume`.
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HOST_VOLUME,dst=/home/container_app_user/cache_root \
+  -e PERSISTENT_VOLUME=/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
+
+**2. Host HuggingFace cache**
+
+Mount the host's existing HuggingFace cache readonly. The container uses the mounted weights instead of downloading them. Other persistent data (TT Metal caches) uses a Docker named volume. This is equivalent to `run.py --host-hf-cache`.
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HF_CACHE,dst=/home/container_app_user/readonly_weights_mount/<model-name>,readonly \
+  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<model-name> \
+  --volume <volume-name>:/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
+
+**3. Host model weights directory**
+
+Mount a host directory containing pre-downloaded model weights readonly. Other persistent data uses a Docker named volume. This is equivalent to `run.py --host-weights-dir`.
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HOST_WEIGHTS_DIR,dst=/home/container_app_user/readonly_weights_mount/<dir-name>,readonly \
+  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<dir-name> \
+  --volume <volume-name>:/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
 
 ### Example clients
 
