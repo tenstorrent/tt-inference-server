@@ -48,7 +48,7 @@ def device_worker(
         requests: list[object] = task_queue.get_many(
             max_messages_to_get=settings.max_batch_size,
             block=True,
-            timeout=0.2,  # 1 second timeout - the batch queue will handle optimal batching
+            timeout=0.2,  # 200ms timeout - the batch queue will handle optimal batching
         )
         if requests is None or len(requests) == 0:
             continue

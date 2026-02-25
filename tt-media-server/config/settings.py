@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_WHISPER.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -53,11 +53,11 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 2
+    max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
     use_queue_per_worker: bool = False
-    queue_for_multiprocessing: str = QueueType.FasterFifo.value
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Worker management settings
     new_device_delay_seconds: int = 0
