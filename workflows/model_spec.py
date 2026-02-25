@@ -1791,7 +1791,7 @@ llm_templates = [
                 },
             ),
             DeviceModelSpec(
-                device=DeviceTypes.QBGE,
+                device=DeviceTypes.P300X2,
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
