@@ -17,9 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from run import (
     parse_arguments,
-    validate_runtime_args,
     handle_secrets,
     get_current_commit_sha,
+)
+from workflows.validate_setup import (
+    validate_runtime_args,
     validate_local_setup,
 )
 from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_device
@@ -527,7 +529,10 @@ class TestRuntimeValidation:
     def test_workflow_validation(self, mock_model_spec, workflow, should_pass):
         """Test validation for different workflows."""
         mock_model_spec.cli_args.workflow = workflow
-        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
+        ):
             if should_pass:
                 validate_runtime_args(mock_model_spec)
             else:
@@ -538,7 +543,10 @@ class TestRuntimeValidation:
         """Test server workflow specific validation."""
         mock_model_spec.cli_args.workflow = "server"
 
-        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
+        ):
             # Should fail without docker or local server
             with pytest.raises(ValueError, match="requires --docker-server"):
                 validate_runtime_args(mock_model_spec)
@@ -559,7 +567,10 @@ class TestRuntimeValidation:
         """Test that both docker and local server raises error."""
         mock_model_spec.cli_args.docker_server = True
         mock_model_spec.cli_args.local_server = True
-        with patch.dict("run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
+        ):
             with pytest.raises(
                 AssertionError, match="Cannot run --docker-server and --local-server"
             ):
@@ -957,8 +968,8 @@ class TestUtilityFunctions:
         with pytest.raises(subprocess.CalledProcessError):
             get_current_commit_sha()
 
-    @patch("run.ensure_readwriteable_dir")
-    @patch("run.get_default_workflow_root_log_dir")
+    @patch("workflows.validate_setup.ensure_readwriteable_dir")
+    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
     def test_validate_local_setup(
         self,
         mock_get_log_dir,
@@ -971,7 +982,8 @@ class TestUtilityFunctions:
 
         # Create a temporary directory for the model spec JSON
         with patch.dict(
-            "run.MODEL_SPECS", {mock_model_spec.model_id: mock_model_spec}
+            "workflows.validate_setup.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
         ), tempfile.TemporaryDirectory() as tempdir:
             # dump the ModelSpec to a tempdir
             model_spec_path = mock_model_spec.to_json(run_id="temp", output_dir=tempdir)
