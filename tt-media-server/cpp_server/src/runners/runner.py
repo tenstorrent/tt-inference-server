@@ -160,119 +160,73 @@ def _create_pipeline_block(mesh_device):
     )
 
 
-def _shm_pipeline_bridge(pipeline_block, shm_buf, log):
+def _shm_pipeline_bridge(pipeline_block, shm_buf):
     """Read token pages from C++, push through the pipeline, send output_tensor back.
     The pipeline output (embedding row, 64 bytes) is sent back so the simulated
     pipeline returns what was computed from the input page, not the page itself.
     """
     token_elems = TOKEN_SIZE_BYTES // 4
     while not _shutdown:
-        log.write("Rank 0: _shm_recv_from_cpp(shm_buf) start\n")
-        log.flush()
         page = _shm_recv_from_cpp(shm_buf)
         if page is None:
             break
-        log.write("Rank 0: _shm_recv_from_cpp(shm_buf) done\n")
-        log.flush()
         token_ints = struct.unpack_from(f"<{token_elems}I", page)
         input_tensor = ttnn.from_torch(
             torch.tensor(token_ints, dtype=torch.uint32).reshape(1, -1),
             dtype=ttnn.uint32,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
-        log.write(f"Rank 0: input_tensor: {input_tensor}")
-        log.flush()
         pipeline_block.write_token(input_tensor)
-        log.write(f"Rank 0: pipeline_block.write_token(input_tensor) done")
-        log.flush()
 
         output_tensor = ttnn.from_torch(
             torch.zeros(1, EMBEDDING_DIM, dtype=EMBEDDING_DTYPE),
             dtype=ttnn_dtype_from_torch_dtype(EMBEDDING_DTYPE),
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
-        log.write(f"Rank 0: output_tensor: {output_tensor}")
-        log.flush()
         pipeline_block.read_output(output_tensor)
-        log.write(f"Rank 0: output_tensor: {output_tensor}\n")
-        log.flush()
 
-        # C++ expects p2c page = DecodeResult: task_id (36 B) + token_id (8 B) + pad (20 B).
-        # Echo the received c2p page so the scheduler finds the sequence (same task_id/token_id).
+        # Loop the page back, not the output tensor: pipeline D2H returns embedding rows, not
+        # task_id/token_id; C++ page_to_result() and find_sequence() require the original IDs.
         payload = bytearray(_PAGE_SIZE)
         payload[:_TASK_ID_SIZE] = page[:_TASK_ID_SIZE]
         payload[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE] = page[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE]
-        log.write("Rank 0: _shm_send_to_cpp start\n")
-        log.flush()
         _shm_send_to_cpp(shm_buf, bytes(payload))
-        log.write("Rank 0: _shm_send_to_cpp done\n")
-        log.flush()
-
-    log.write("Rank 0: SHM pipeline bridge exiting\n")
-    log.flush()
 
 
 def main():
-    log_dir = "/tmp/tt-run"
-    os.makedirs(log_dir, exist_ok=True)
-    pid = os.getpid()
-    rank = _rank()
-    log_path = f"{log_dir}/{pid}_{rank}.log"
-    try:
-        log = open(log_path, "a", encoding="utf-8")
-    except OSError as e:
-        print(f"ttrun_hello_world: could not open {log_path}: {e}", file=sys.stderr)
-        sys.exit(1)
-
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
-    with log:
-        log.write(f"Rank {rank}: opening 4×2 mesh device\n")
-        log.flush()
+    rank = _rank()
 
-        try:
-            mesh_device = _open_mesh_device()
-        except Exception as e:
-            log.write(f"Rank {rank}: failed to open mesh device: {e}\n")
-            sys.exit(1)
+    try:
+        mesh_device = _open_mesh_device()
+    except Exception as e:
+        print(f"Rank {rank}: failed to open mesh device: {e}", file=sys.stderr)
+        sys.exit(1)
 
-        ttnn.enable_asynchronous_slow_dispatch(mesh_device)
-        my_mesh_id = mesh_device.get_system_mesh_id()
-        log.write(f"Rank {rank}: mesh_id={my_mesh_id}\n")
-        log.flush()
+    ttnn.enable_asynchronous_slow_dispatch(mesh_device)
 
-        try:
-            pipeline_block = _create_pipeline_block(mesh_device)
-            pipeline_block.run()
-            log.write(f"Rank {rank}: pipeline running\n")
-            log.flush()
+    try:
+        pipeline_block = _create_pipeline_block(mesh_device)
+        pipeline_block.run()
 
-            if pipeline_block.is_first_pipeline_stage():
-                shm_name = os.environ.get("TT_IPC_SHM")
-                if shm_name:
-                    shm_buf = _open_shm(shm_name)
-                    if shm_buf:
-                        log.write("Rank 0: entering SHM pipeline bridge\n")
-                        log.flush()
-                        try:
-                            _shm_pipeline_bridge(pipeline_block, shm_buf, log)
-                        finally:
-                            shm_buf.close()
-                    else:
-                        log.write(f"Rank 0: SHM region '{shm_name}' not found\n")
-                else:
-                    log.write("Rank 0: TT_IPC_SHM not set – pipeline up, terminating\n")
-                log.flush()
+        if pipeline_block.is_first_pipeline_stage():
+            shm_name = os.environ.get("TT_IPC_SHM")
+            if shm_name:
+                shm_buf = _open_shm(shm_name)
+                if shm_buf:
+                    try:
+                        _shm_pipeline_bridge(pipeline_block, shm_buf)
+                    finally:
+                        shm_buf.close()
 
-            # It seems like terminate() will immediatelly terminate the other processes but that will not happen
-            # This is because in order for them to terminate, they all need to meet at this barrier
-            # And the rank 0 will not reach it since it's in busy loop
-            pipeline_block.terminate()
-        finally:
-            ttnn.close_mesh_device(mesh_device)
-            ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-
-        log.write(f"Rank {rank}: done\n")
+        # It seems like terminate() will immediatelly terminate the other processes but that will not happen
+        # This is because in order for them to terminate, they all need to meet at this barrier
+        # And the rank 0 will not reach it since it's in busy loop
+        pipeline_block.terminate()
+    finally:
+        ttnn.close_mesh_device(mesh_device)
+        ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 
 
 if __name__ == "__main__":
