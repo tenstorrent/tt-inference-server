@@ -4,6 +4,8 @@
 
 import os
 from contextlib import asynccontextmanager
+import signal
+from this import d
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -17,8 +19,23 @@ env = os.getenv("ENVIRONMENT", "production")
 env = "development"
 
 
+def modify_signals():
+    original_sigint = signal.getsignal(signal.SIGINT)
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def on_shutdown_signal(sig, frame):
+        get_job_manager().signal_shutdown()
+        print("\nShutting down gracefully, please wait...")
+        original = original_sigint if sig == signal.SIGINT else original_sigterm
+        if callable(original):
+            original(sig, frame)
+
+    signal.signal(signal.SIGINT, on_shutdown_signal)
+    signal.signal(signal.SIGTERM, on_shutdown_signal)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    modify_signals()
     service_resolver().start_workers()
     yield
     service_resolver().stop_workers()

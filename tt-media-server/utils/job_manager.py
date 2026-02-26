@@ -237,6 +237,9 @@ class JobManager:
             self._logger.info(f"Job {job_id} cancellation initiated.")
             return job.to_public_dict()
 
+    def signal_shutdown(self):
+        self._shutdown_event.set()
+
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
