@@ -339,7 +339,7 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     choice.finish_reason = finish_reason;
     response.choices.push_back(std::move(choice));
 
-    response.usage = {prompt_tokens, completion_tokens, prompt_tokens + completion_tokens};
+    response.usage = {prompt_tokens, completion_tokens, prompt_tokens + completion_tokens, std::nullopt, std::nullopt};
 
     return response;
 }
