@@ -1217,7 +1217,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="1a6cf27",
-        vllm_commit="380eda9",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1242,6 +1242,7 @@ llm_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -1542,7 +1543,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="1a6cf27",
-        vllm_commit="380eda9",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1565,6 +1566,9 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1585,7 +1589,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="1a6cf27",
-        vllm_commit="380eda9",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1608,6 +1612,9 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1776,7 +1783,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="1a6cf27",
-        vllm_commit="380eda9",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1802,6 +1809,9 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1817,7 +1827,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="1a6cf27",
-        vllm_commit="380eda9",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1838,6 +1848,9 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
