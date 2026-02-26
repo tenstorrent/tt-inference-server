@@ -35,8 +35,6 @@ ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
 # derived vars
 ENV PYTHONPATH=${TT_METAL_HOME}
-# note: PYTHON_ENV_DIR is used by create_venv.sh
-ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
@@ -83,35 +81,31 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     && /usr/local/bin/cmake --version
 
 # build tt-metal
-RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+# Note: base image provides /opt/venv with uv in PATH; no need to create a new venv.
+RUN git clone --depth 1 https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
     && uv pip install --upgrade cmake \
-    && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && hash -r
+RUN find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
 # install tt-smi
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
+RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true
 
 WORKDIR ${HOME_DIR}
 
@@ -123,31 +117,27 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${TT_METAL_HOME}/server"
 COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 COPY "tt-media-server/fix_dependencies.sh" "${TT_METAL_HOME}/fix_dependencies.sh"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
+RUN cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
     uv pip install --no-cache-dir -r requirements_no_pyluwen.txt) \
     && echo 'Running dependency fixes...' \
     && chmod +x fix_dependencies.sh \
-    && ./fix_dependencies.sh"
+    && ./fix_dependencies.sh
 
 # Install tt-vllm-plugin
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+RUN cd ${TT_METAL_HOME}/tt-vllm-plugin && uv pip install .
 
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
 
 # Build C++ server (requires Rust for tokenizers-cpp)
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
+RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh"
+    && ./build.sh
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
@@ -203,7 +193,6 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
     VLLM_USE_V1=1 \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
@@ -227,19 +216,17 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-# Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
+# Copy the builder's venv (with all installed packages) over the base image's venv
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy uv's Python installation (venv links to /usr/local/share/uv/python)
+COPY --from=builder /usr/local/share/uv /usr/local/share/uv
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+RUN chmod -R +x /opt/venv/bin
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
-
-# Set up bashrc
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 # Switch back to root for entrypoint (it will drop to non-root user via gosu)
 USER root
@@ -251,4 +238,4 @@ EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
 # Default to uvicorn
 ENV SERVER_MODE=uvicorn
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
+CMD ["/bin/bash", "-c", "cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
