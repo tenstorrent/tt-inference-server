@@ -316,7 +316,6 @@ class DeviceModelSpec:
             "max_model_len": str(self.max_context),
             "max_num_seqs": str(max_concurrency),
             "max_num_batched_tokens": str(self.max_context),
-            "num_scheduler_steps": "10",
             "max-log-len": "32",
             "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
@@ -482,11 +481,6 @@ class ModelSpec:
                 "subdevice_type",
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
-
-        # infer changes to vllm_args based on env_vars
-        if "VLLM_USE_V1" in self.env_vars:
-            # remove args that are not supported by V1
-            self.device_model_spec.vllm_args.pop("num_scheduler_steps", None)
 
     def _validate_data(self):
         """Validate that required specification is present."""
@@ -973,7 +967,6 @@ llm_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -1003,7 +996,6 @@ llm_templates = [
                 },
                 vllm_args={
                     "data_parallel_size": 4,
-                    "num_scheduler_steps": 1,
                 }
             ),
         ],
@@ -1011,7 +1003,6 @@ llm_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -1071,10 +1062,6 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
-                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -1151,12 +1138,10 @@ llm_templates = [
                 max_context=128 * 1024,  # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
                 default_impl=True,
                 env_vars={
-                    "VLLM_USE_V1": 1,
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 },
                 vllm_args={
                     "data_parallel_size": 4,
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "dispatch_core_axis": "col",
@@ -1217,10 +1202,8 @@ llm_templates = [
                 },
                 vllm_args={
                     "data_parallel_size": 4,
-                    "num_scheduler_steps": 1,
                 },
                 env_vars={
-                    "VLLM_USE_V1": 1,
                     "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
@@ -1427,10 +1410,8 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={"VLLM_USE_V1": 1},
                 vllm_args={
                     "data_parallel_size": 4,
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "dispatch_core_axis": "col",
@@ -1468,36 +1449,18 @@ llm_templates = [
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
         ],
         env_vars={
@@ -1836,14 +1799,12 @@ llm_templates = [
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 4,
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "trace_region_size": 50000000,
                     "sample_on_device_mode": "all",
                 },
                 env_vars={
-                    "VLLM_USE_V1": 1,
                     "TT_MM_THROTTLE_PERF": 5,
                 },
             ),
@@ -1928,12 +1889,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1947,12 +1904,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1981,12 +1934,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -2002,13 +1951,11 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -2024,12 +1971,10 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                     "data_parallel_size": 4,
                     "disable_mm_preprocessor_cache": True,
                 },
