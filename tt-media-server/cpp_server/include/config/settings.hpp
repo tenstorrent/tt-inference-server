@@ -55,7 +55,15 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
+/** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
+LLMMode llm_mode();
+
+/**
+ * Socket role, auto-configured from LLM_MODE:
+ *   decode  -> SERVER (listens for prefill clients)
+ *   prefill -> CLIENT (connects to decode server)
+ *   regular -> falls back to SOCKET_ROLE env var
+ */
 SocketRole socket_role();
 
 /** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */

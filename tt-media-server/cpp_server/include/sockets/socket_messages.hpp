@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <cereal/types/string.hpp>
@@ -16,13 +17,14 @@ namespace tt::sockets {
 struct TaskForwardMessage {
     std::string task_id;
     std::string prompt;
+    std::vector<int64_t> token_ids;
     int max_tokens;
     float temperature;
     std::vector<std::string> stop_sequences;
 
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(task_id, prompt, max_tokens, temperature, stop_sequences);
+        ar(task_id, prompt, token_ids, max_tokens, temperature, stop_sequences);
     }
 };
 

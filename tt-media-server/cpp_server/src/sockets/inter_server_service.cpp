@@ -72,6 +72,7 @@ bool InterServerService::isEnabled() const {
 
 bool InterServerService::forwardTask(const std::string& task_id,
                                     const std::string& prompt,
+                                    const std::vector<int64_t>& token_ids,
                                     int max_tokens,
                                     float temperature,
                                     const std::vector<std::string>& stop_sequences) {
@@ -82,6 +83,7 @@ bool InterServerService::forwardTask(const std::string& task_id,
     TaskForwardMessage message;
     message.task_id = task_id;
     message.prompt = prompt;
+    message.token_ids = token_ids;
     message.max_tokens = max_tokens;
     message.temperature = temperature;
     message.stop_sequences = stop_sequences;
@@ -125,7 +127,7 @@ bool InterServerService::sendHealthCheck(const std::string& server_id,
     return socket_manager_.sendObject("health_check", message);
 }
 
-void InterServerService::setTaskForwardCallback(TaskCallback callback) {
+void InterServerService::setTaskForwardCallback(TaskForwardCallback callback) {
     task_forward_callback_ = callback;
 }
 
@@ -153,9 +155,9 @@ void InterServerService::setupMessageHandlers() {
     socket_manager_.registerHandler<TaskForwardMessage>("task_forward",
         [this](const TaskForwardMessage& message) {
             std::cout << "[InterServerService] Received task forward: " << message.task_id
-                      << " - " << message.prompt.substr(0, 50) << "..." << std::endl;
+                      << " (tokens: " << message.token_ids.size() << ")" << std::endl;
             if (task_forward_callback_) {
-                task_forward_callback_(message.task_id, message.prompt, false);
+                task_forward_callback_(message);
             }
         });
 

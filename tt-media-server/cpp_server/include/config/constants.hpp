@@ -73,6 +73,32 @@ inline SocketRole socket_role_from_string(const std::string& v) {
     return SocketRole::NONE;
 }
 
+enum class LLMMode {
+    REGULAR,
+    PREFILL_ONLY,
+    DECODE_ONLY,
+};
+
+/** String value for env LLM_MODE (e.g. "regular", "prefill", "decode"). */
+inline std::string to_string(LLMMode m) {
+    switch (m) {
+        case LLMMode::PREFILL_ONLY:
+            return "prefill";
+        case LLMMode::DECODE_ONLY:
+            return "decode";
+        case LLMMode::REGULAR:
+        default:
+            return "regular";
+    }
+}
+
+/** Parse LLM_MODE; empty or unknown -> REGULAR. */
+inline LLMMode llm_mode_from_string(const std::string& v) {
+    if (v == "prefill") return LLMMode::PREFILL_ONLY;
+    if (v == "decode") return LLMMode::DECODE_ONLY;
+    return LLMMode::REGULAR;
+}
+
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& /*v*/) {
     return RunnerType::LLM_TEST;
@@ -85,10 +111,13 @@ inline RunnerType runner_type_from_string(const std::string& /*v*/) {
 namespace defaults {
     constexpr const char* DEVICE_IDS = "(0)";
     constexpr const char* MODEL_SERVICE = "llm";
+    // constexpr const char* MODEL_SERVICE = "embedding";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
-    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
+    // constexpr const char* TT_PYTHON_PATH = "/localdev/ztorlak/tt-inference-server/tt-media-server";
+    constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
+    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "server", "client"
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
 }
