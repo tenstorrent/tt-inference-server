@@ -2,15 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import subprocess
 from utils.logger import TTLogger
 
 
 class DeviceManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = TTLogger()
 
-    def get_tray_mapping_from_system(self):
+    def get_tray_mapping_from_system(self) -> dict[int, list[int]]:
         """Execute tt-smi command and return tray mapping dictionary"""
         try:
             # Execute the system command
@@ -46,8 +48,8 @@ class DeviceManager:
             return {}
 
     @staticmethod
-    def parse_tray_mapping(table_text):
-        """Parse the tray mapping table and return a dictionary of tray -> device IDs"""
+    def parse_tray_mapping(table_text: str) -> dict[int, list[int]]:
+        """(DOVLA IS FIXING)Parse the tray mapping table and return a dictionary of tray -> device IDs"""
 
         lines = table_text.strip().split("\n")
         tray_mapping = {}
@@ -82,7 +84,9 @@ class DeviceManager:
 
         return tray_mapping
 
-    def create_device_pairs(self, tray_mapping):
+    def create_device_pairs(
+        self, tray_mapping: dict[int, list[int]]
+    ) -> list[tuple[int, int]]:
         """Create device pairs from tray mapping. Each pair contains adjacent device IDs from the same tray"""
         device_pairs = []
 
@@ -105,7 +109,7 @@ class DeviceManager:
 
         return device_pairs
 
-    def get_device_pairs_from_system(self):
+    def get_device_pairs_from_system(self) -> list[tuple[int, int]]:
         """Convenience method to get tray mapping and create device pairs in one call"""
         tray_mapping = self.get_tray_mapping_from_system()
         if not tray_mapping:
@@ -114,7 +118,7 @@ class DeviceManager:
 
         return self.create_device_pairs(tray_mapping)
 
-    def create_single_devices(self, tray_mapping):
+    def create_single_devices(self, tray_mapping: dict[int, list[int]]) -> list[int]:
         """Create single devices from tray mapping. Each device is returned as individual integer"""
         single_devices = []
 
@@ -130,7 +134,7 @@ class DeviceManager:
         )
         return single_devices
 
-    def get_single_devices_from_system(self):
+    def get_single_devices_from_system(self) -> list[int]:
         """Convenience method to get tray mapping and create single device tuples in one call"""
         tray_mapping = self.get_tray_mapping_from_system()
         if not tray_mapping:
@@ -141,7 +145,9 @@ class DeviceManager:
 
         return self.create_single_devices(tray_mapping)
 
-    def create_device_groups_of_eight(self, tray_mapping):
+    def create_device_groups_of_eight(
+        self, tray_mapping: dict[int, list[int]]
+    ) -> list[tuple[int, ...]]:
         """Create device groups from tray mapping. Each group contains 8 device IDs from the same tray"""
         device_groups = []
 
@@ -173,7 +179,7 @@ class DeviceManager:
         )
         return device_groups
 
-    def get_device_groups_of_eight_from_system(self):
+    def get_device_groups_of_eight_from_system(self) -> list[tuple[int, ...]]:
         """Convenience method to get tray mapping and create device groups of 8 in one call"""
         tray_mapping = self.get_tray_mapping_from_system()
         if not tray_mapping:
