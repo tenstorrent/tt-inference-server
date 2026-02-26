@@ -1771,8 +1771,10 @@ llm_templates = [
                 max_concurrency=32 * 8,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 8,
+                }
                 override_tt_config={
-                    "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
                 },
             ),
