@@ -65,7 +65,8 @@ private:
     bool check_worker_alive(size_t worker_idx);
 
     void handle_socket_task_forward(const tt::sockets::TaskForwardMessage& message);
-    void handle_socket_task_result(const std::string& task_id, const std::string& result, bool finished);
+    void handle_socket_task_result(const tt::sockets::TaskResultMessage& result);
+    void continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result);
 
     tt::config::LLMMode mode_;
 

@@ -95,7 +95,11 @@ bool InterServerService::sendTaskResult(const std::string& task_id,
                                        const std::string& result,
                                        bool finished,
                                        int tokens_generated,
-                                       double processing_time_ms) {
+                                       double processing_time_ms,
+                                       const std::vector<int64_t>& token_ids,
+                                       int remaining_tokens,
+                                       float temperature,
+                                       const std::vector<std::string>& stop_sequences) {
     if (!enabled_) {
         return false;
     }
@@ -106,6 +110,10 @@ bool InterServerService::sendTaskResult(const std::string& task_id,
     message.finished = finished;
     message.tokens_generated = tokens_generated;
     message.processing_time_ms = processing_time_ms;
+    message.token_ids = token_ids;
+    message.remaining_tokens = remaining_tokens;
+    message.temperature = temperature;
+    message.stop_sequences = stop_sequences;
 
     return socket_manager_.sendObject("task_result", message);
 }
@@ -165,9 +173,11 @@ void InterServerService::setupMessageHandlers() {
     socket_manager_.registerHandler<TaskResultMessage>("task_result",
         [this](const TaskResultMessage& message) {
             std::cout << "[InterServerService] Received task result: " << message.task_id
-                      << " - " << message.generated_text.substr(0, 50) << "..." << std::endl;
+                      << " - text: '" << message.generated_text.substr(0, 50)
+                      << "', remaining: " << message.remaining_tokens
+                      << ", token_ids: " << message.token_ids.size() << std::endl;
             if (task_result_callback_) {
-                task_result_callback_(message.task_id, message.generated_text, message.finished);
+                task_result_callback_(message);
             }
         });
 

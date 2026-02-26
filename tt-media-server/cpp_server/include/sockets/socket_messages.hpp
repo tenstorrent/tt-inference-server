@@ -30,6 +30,10 @@ struct TaskForwardMessage {
 
 /**
  * @brief Task result message - receive results from remote server
+ *
+ * In prefill/decode split mode:
+ * - Prefill server sends the first token along with the updated sequence
+ * - Decode server continues generating remaining tokens using token_ids
  */
 struct TaskResultMessage {
     std::string task_id;
@@ -37,10 +41,15 @@ struct TaskResultMessage {
     bool finished;
     int tokens_generated;
     double processing_time_ms;
+    std::vector<int64_t> token_ids;
+    int remaining_tokens;
+    float temperature;
+    std::vector<std::string> stop_sequences;
 
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(task_id, generated_text, finished, tokens_generated, processing_time_ms);
+        ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
+           token_ids, remaining_tokens, temperature, stop_sequences);
     }
 };
 

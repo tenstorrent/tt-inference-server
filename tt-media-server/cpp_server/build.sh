@@ -88,6 +88,7 @@ fi
 
 # Check for Drogon
 DROGON_FOUND=0
+LOCAL_PREFIX=""
 if pkg-config --exists drogon 2>/dev/null; then
     DROGON_FOUND=1
 elif [ -f "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
@@ -96,6 +97,10 @@ elif [ -f "/usr/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
 elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
+elif [ -f "${HOME}/.local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
+    DROGON_FOUND=1
+    LOCAL_PREFIX="${HOME}/.local"
+    echo "Found Drogon in ${LOCAL_PREFIX}"
 fi
 
 if [ "${DROGON_FOUND}" -eq 0 ]; then
@@ -215,6 +220,7 @@ CMAKE_ARGS=(
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
+[ -n "${LOCAL_PREFIX}" ] && CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="${LOCAL_PREFIX}")
 
 # Compiler/toolchain: --cxx-compiler-path overrides --toolchain-path overrides auto-detection (match build_metal.sh)
 if [ -n "${CXX_COMPILER_PATH}" ]; then

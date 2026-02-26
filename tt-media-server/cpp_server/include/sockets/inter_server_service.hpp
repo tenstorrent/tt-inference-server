@@ -24,9 +24,9 @@ namespace tt::sockets {
 class InterServerService {
 public:
     /**
-     * @brief Task result callback type
+     * @brief Task result callback type (extended for prefill/decode split)
      */
-    using TaskCallback = std::function<void(const std::string& task_id, const std::string& result, bool finished)>;
+    using TaskCallback = std::function<void(const TaskResultMessage& result)>;
 
     /**
      * @brief Task forward callback type (includes token_ids for pre-tokenized prompts)
@@ -86,13 +86,21 @@ public:
      * @param finished Whether task is complete
      * @param tokens_generated Number of tokens generated
      * @param processing_time_ms Processing time in milliseconds
+     * @param token_ids Updated token sequence (prompt + generated tokens) for decode continuation
+     * @param remaining_tokens Remaining tokens to generate
+     * @param temperature Sampling temperature for continuation
+     * @param stop_sequences Stop sequences for continuation
      * @return true if sent successfully
      */
     bool sendTaskResult(const std::string& task_id,
                        const std::string& result,
                        bool finished,
                        int tokens_generated,
-                       double processing_time_ms);
+                       double processing_time_ms,
+                       const std::vector<int64_t>& token_ids = {},
+                       int remaining_tokens = 0,
+                       float temperature = 0.7f,
+                       const std::vector<std::string>& stop_sequences = {});
 
     /**
      * @brief Send health check information
