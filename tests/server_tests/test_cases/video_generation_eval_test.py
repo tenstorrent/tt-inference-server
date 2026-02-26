@@ -47,7 +47,7 @@ class VideoGenConfig:
     POLLING_INTERVAL_SECONDS: int = 5
     JOB_TIMEOUT_SECONDS: int = 1200
     ACCURACY_REFERENCE_PATH: str = "evals/eval_targets/model_accuracy_reference.json"
-    ENDPOINT: str = "video/generations"
+    ENDPOINT: str = "v1/videos/generations"
     DATASET_DIR: str = "tests/server_tests/datasets/videos"
     REQUEST_TIMEOUT: int = 90
     DOWNLOAD_TIMEOUT: int = 300
