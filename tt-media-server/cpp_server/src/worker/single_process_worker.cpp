@@ -15,17 +15,6 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 
     pid = getpid();
     worker_id = cfg.worker_id;
-
-    on_result_ = [this](const runners::RunnerResult& result) {
-        std::visit(runners::overloaded{
-            [&](const ipc::SharedToken& token) {
-                this->cfg.result_queue->push(token);
-            },
-            [&](const ipc::SharedEmbedding&) {
-                // TODO: Embedding IPC transport
-            },
-        }, result.payload);
-    };
     is_ready = true;
 }
 
@@ -46,7 +35,7 @@ void SingleProcessWorker::start() {
         runner_ = tt::utils::runner_factory::create_runner(
             tt::config::model_service(),
             cfg.runner_config,
-            on_result_,
+            cfg.result_queue.get(),
             cfg.task_queue.get()
         );
     }

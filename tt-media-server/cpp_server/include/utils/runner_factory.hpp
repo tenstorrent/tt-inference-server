@@ -9,8 +9,8 @@
 #include "config/constants.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/runner_config.hpp"
-#include "runners/runner_result.hpp"
 #include "runners/llm_runner/task_queue.hpp"
+#include "ipc/shared_memory.hpp"
 
 namespace tt::utils::runner_factory {
 
@@ -19,14 +19,14 @@ namespace tt::utils::runner_factory {
  *
  * @param service Which service (LLM, EMBEDDING, …) to create a runner for
  * @param config Runner configuration data
- * @param on_result Generic result callback (used by LLM runner for tokens, embedding runner for vectors, etc.)
+ * @param result_queue Result queue for the runner to push results into
  * @param task_queue Task queue for worker communication (used by LLM runner)
  * @return Unique pointer to the created runner
  */
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
     const runners::RunnerConfig& config,
-    runners::ResultCallback on_result,
+    ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue
 );
 

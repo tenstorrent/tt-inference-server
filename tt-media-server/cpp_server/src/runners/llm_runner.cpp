@@ -6,8 +6,8 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, ResultCallback on_result, ITaskQueue* task_queue)
-    : config_(config), on_result_(std::move(on_result)) {
+LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
+    : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
@@ -78,7 +78,7 @@ void LLMRunner::drain_decode_results() {
     };
     strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
     shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-    on_result_(RunnerResult{dr.task_id.id, shared});
+    result_queue_->push(shared);
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
