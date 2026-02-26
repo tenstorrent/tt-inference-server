@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 """Eval test for image generation models (Flux, Motif, SD3.5, etc.)."""
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional, Union
 
+import aiohttp
 import requests
 
 from tests.server_tests.base_test import BaseTest
@@ -37,7 +39,7 @@ class AccuracyResult(IntEnum):
 class ImageGenConfig:
     """Image generation configuration."""
 
-    ENDPOINT: str = "image/generations"
+    ENDPOINT: str = "v1/images/generations"
     DEFAULT_INFERENCE_STEPS: int = 20
     DEFAULT_NUM_PROMPTS: int = 100
     NEGATIVE_PROMPT: str = (
@@ -45,7 +47,9 @@ class ImageGenConfig:
     )
     GUIDANCE_SCALE: float = 8.0
     SEED: int = 0
-    REQUEST_TIMEOUT: int = 300
+    IMAGE_RETURN_FORMAT: str = "PNG"
+    IMAGE_QUALITY: int = 100
+    REQUEST_TIMEOUT: int = 5000
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,7 @@ class ImageGenerationEvalsTestRequest:
     start_from: int = 0
     num_inference_steps: int = CONFIG.DEFAULT_INFERENCE_STEPS
     server_url: Optional[str] = None
+    request_timeout: Optional[int] = None
 
 
 @dataclass
@@ -79,6 +84,7 @@ class ImageGenContext:
     base_url: str
     headers: dict
     num_inference_steps: int
+    request_timeout_sec: int
 
 
 class ImageGenerationEvalsTest(BaseTest):
@@ -94,17 +100,25 @@ class ImageGenerationEvalsTest(BaseTest):
         if isinstance(request, dict):
             return request
 
+        timeout_sec = self._request_timeout_from_config()
         logger.info(
-            "Running eval: model=%s, prompts=%s",
+            "Running eval - request parameters: model_name=%s, num_prompts=%s, "
+            "start_from=%s, num_inference_steps=%s, server_url=%s, timeout=%s (from config)",
             request.model_name,
             request.num_prompts,
+            request.start_from,
+            request.num_inference_steps,
+            request.server_url,
+            timeout_sec,
         )
 
         prompts = self._load_prompts(request)
         if isinstance(prompts, dict):
             return prompts
 
-        status_list = self._generate_all_images(request, prompts)
+        status_list = await self._generate_all_images_async(
+            request, prompts, timeout_sec
+        )
         if len(status_list) < request.num_prompts:
             return self._error(
                 f"ImageGenerationEvalTest only {len(status_list)}/{request.num_prompts} images generated"
@@ -137,13 +151,35 @@ class ImageGenerationEvalsTest(BaseTest):
             "accuracy_check": accuracy_check,
         }
 
+        success = accuracy_check == AccuracyResult.PASS
+        result_name = (
+            AccuracyResult(accuracy_check).name
+            if accuracy_check in AccuracyResult._value2member_map_
+            else f"UNKNOWN({accuracy_check})"
+        )
+        logger.info(
+            f"Eval summary for {request.model_name}:\n"
+            f"  num_prompts={request.num_prompts}, num_inference_steps={request.num_inference_steps}\n"
+            f"  FID={fid_score:.4f}, CLIP={avg_clip:.4f} ± {std_clip:.4f}\n"
+            f"  accuracy_check={accuracy_check} ({result_name}), success={success}"
+        )
+
         return {
-            "success": accuracy_check == AccuracyResult.PASS,
+            "success": success,
             "eval_results": self.eval_results,
         }
 
+    def _request_timeout_from_config(self) -> int:
+        """Single source for timeout: config or default."""
+        return (
+            self.timeout
+            or self.config.get("test_timeout")
+            or self.config.get("timeout")
+            or CONFIG.REQUEST_TIMEOUT
+        )
+
     def _parse_request(self) -> Union[ImageGenerationEvalsTestRequest, dict]:
-        """Parse and validate request from targets."""
+        """Parse and validate request from targets. Timeout comes from config only."""
         raw = self.targets.get("request")
 
         if raw is None:
@@ -181,13 +217,14 @@ class ImageGenerationEvalsTest(BaseTest):
 
         return prompts
 
-    def _generate_all_images(
+    async def _generate_all_images_async(
         self,
         request: ImageGenerationEvalsTestRequest,
         prompts: list[str],
+        timeout_sec: int,
     ) -> list[ImageGenerationTestStatus]:
-        """Generate images for all prompts."""
-        logger.info("Step 2: Generating %s images", len(prompts))
+        """Generate images for all prompts concurrently."""
+        logger.info("Step 2: Generating %s images concurrently", len(prompts))
 
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed")
@@ -196,59 +233,103 @@ class ImageGenerationEvalsTest(BaseTest):
             base_url=request.server_url or f"http://localhost:{self.service_port}",
             headers=self._build_headers(),
             num_inference_steps=request.num_inference_steps,
+            request_timeout_sec=timeout_sec,
         )
 
-        status_list = [
-            status
-            for idx, prompt in enumerate(prompts, start=1)
-            if (status := self._generate_single_image(ctx, prompt, idx, len(prompts)))
-        ]
+        completion_counter = {"count": 0, "last_time": 0.0}
+        total_start = time.perf_counter()
+        completion_counter["last_time"] = total_start
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                self._generate_single_image_async(
+                    session,
+                    ctx,
+                    prompt,
+                    idx,
+                    len(prompts),
+                    total_start,
+                    completion_counter,
+                )
+                for idx, prompt in enumerate(prompts, start=1)
+            ]
+            results = await asyncio.gather(*tasks)
+        total_elapsed = time.perf_counter() - total_start
 
+        status_list = [status for status in results if status is not None]
         logger.info("Generated %s/%s images", len(status_list), len(prompts))
+        logger.info("✅ Image generation for eval succeeded in %.2fs", total_elapsed)
         return status_list
 
-    def _generate_single_image(
+    async def _generate_single_image_async(
         self,
+        session: aiohttp.ClientSession,
         ctx: ImageGenContext,
         prompt: str,
         idx: int,
         total: int,
+        total_start: float,
+        completion_counter: dict,
     ) -> Optional[ImageGenerationTestStatus]:
-        """Generate a single image."""
-        logger.info("Generating image %s/%s: %.50s...", idx, total, prompt)
+        """Generate a single image asynchronously."""
+        logger.info("🌅 Generating image %s/%s: %.50s...", idx, total, prompt)
 
         try:
             start = time.perf_counter()
-            response = requests.post(
+            payload = self._build_payload(prompt, ctx.num_inference_steps)
+            logger.debug(
+                "Request for image %s/%s: url=%s, payload_keys=%s",
+                idx,
+                total,
                 f"{ctx.base_url}/{CONFIG.ENDPOINT}",
-                json=self._build_payload(prompt, ctx.num_inference_steps),
-                headers=ctx.headers,
-                timeout=CONFIG.REQUEST_TIMEOUT,
+                list(payload.keys()),
             )
-            elapsed = time.perf_counter() - start
+            async with session.post(
+                f"{ctx.base_url}/{CONFIG.ENDPOINT}",
+                json=payload,
+                headers=ctx.headers,
+                timeout=aiohttp.ClientTimeout(total=ctx.request_timeout_sec),
+            ) as response:
+                now = time.perf_counter()
+                elapsed = now - start
+                result = await self._parse_image_response_async(
+                    response, elapsed, prompt, idx
+                )
+                if result is not None:
+                    completion_counter["count"] += 1
+                    order = completion_counter["count"]
+                    since_last = now - completion_counter["last_time"]
+                    elapsed_total = now - total_start
+                    completion_counter["last_time"] = now
+                    logger.info(
+                        "✅ %s/%s image generated in %.2fs | elapsed %.2fs",
+                        order,
+                        total,
+                        since_last,
+                        elapsed_total,
+                    )
+                return result
 
-            return self._parse_image_response(response, elapsed, prompt, idx)
-
-        except requests.Timeout:
+        except asyncio.TimeoutError:
             logger.error("Timeout generating image %s", idx)
-        except requests.RequestException as e:
+        except aiohttp.ClientError as e:
             logger.error("Request error for prompt %s: %s", idx, e)
 
         return None
 
-    def _parse_image_response(
+    async def _parse_image_response_async(
         self,
-        response: requests.Response,
+        response: aiohttp.ClientResponse,
         elapsed: float,
         prompt: str,
         idx: int,
     ) -> Optional[ImageGenerationTestStatus]:
         """Parse image response."""
-        if response.status_code != 200:
-            logger.error("Failed: status %s", response.status_code)
+        if response.status != 200:
+            logger.error("Failed: status %s", response.status)
             return None
 
-        images = response.json().get("images", [])
+        data = await response.json()
+        images = data.get("images", [])
         if not images:
             logger.warning("No image in response for prompt %s", idx)
             return None
@@ -309,6 +390,8 @@ class ImageGenerationEvalsTest(BaseTest):
             "num_inference_steps": num_inference_steps,
             "seed": CONFIG.SEED,
             "guidance_scale": CONFIG.GUIDANCE_SCALE,
+            "image_return_format": CONFIG.IMAGE_RETURN_FORMAT,
+            "image_quality": CONFIG.IMAGE_QUALITY,
             "number_of_images": 1,
         }
 

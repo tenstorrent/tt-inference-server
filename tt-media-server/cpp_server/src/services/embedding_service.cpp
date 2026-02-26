@@ -4,7 +4,9 @@
 #include "services/embedding_service.hpp"
 #include "config/settings.hpp"
 #include "runners/embedding_runner.hpp"
+#include "profiling/tracy.hpp"
 
+#include <future>
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -16,6 +18,7 @@
 #include <memory>
 #include <sys/wait.h>
 #include <signal.h>
+#include <unistd.h>
 #include <cstring>
 
 namespace tt::services {
@@ -52,9 +55,9 @@ struct EmbeddingService::Impl {
     size_t num_workers_ = 3;  // Default 3 workers for devices 1, 2, 3
 
     // Shared request queue (all worker dispatch threads pull from this)
-    std::mutex queue_mutex_;
+    TracyLockable(std::mutex, queue_mutex_);
     std::queue<std::shared_ptr<PendingRequest>> request_queue_;
-    std::condition_variable queue_cv_;
+    std::condition_variable_any queue_cv_;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> is_ready_{false};
@@ -192,8 +195,7 @@ struct EmbeddingService::Impl {
         std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_devices << "\n";
         std::cout << "[Worker " << worker_id << "] read_fd=" << read_fd << ", write_fd=" << write_fd << "\n";
 
-        std::string device_id = "device_" + visible_devices;
-        runners::EmbeddingRunner runner(device_id, static_cast<int>(wid));
+        runners::EmbeddingRunner runner(visible_devices, static_cast<int>(wid));
 
         // Warmup
         if (!runner.warmup()) {
@@ -341,7 +343,7 @@ struct EmbeddingService::Impl {
 
             auto queue_start = std::chrono::steady_clock::now();
             {
-                std::unique_lock<std::mutex> lock(queue_mutex_);
+                std::unique_lock lock(queue_mutex_);
 
                 // Wait for at least one request (with timeout to check running flag)
                 auto wait_result = queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, &worker] {
@@ -604,6 +606,7 @@ struct EmbeddingService::Impl {
         // Always log timing for every batch
         std::cout << "[TIMING] Worker " << worker.worker_id
                   << " batch=" << batch.size()
+                  << " check=" << check_ms << "ms"
                   << " build=" << build_json_ms << "ms"
                   << " write=" << write_pipe_ms << "ms"
                   << " wait=" << wait_worker_ms << "ms"
@@ -631,7 +634,7 @@ struct EmbeddingService::Impl {
         auto future = pending->promise.get_future();
 
         {
-            std::lock_guard<std::mutex> lock(queue_mutex_);
+            std::lock_guard lock(queue_mutex_);
             request_queue_.push(pending);
         }
         queue_cv_.notify_all();  // Wake all workers so they can compete for work
@@ -655,26 +658,48 @@ void EmbeddingService::stop() {
     impl_->stop();
 }
 
-bool EmbeddingService::is_ready() const {
+bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-std::future<domain::EmbeddingResponse> EmbeddingService::process_request(domain::EmbeddingRequest request) {
-    return impl_->submit_request(std::move(request));
+void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
+    // no-op
 }
 
-EmbeddingService::SystemStatus EmbeddingService::get_system_status() const {
+void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
+    // no-op
+}
+
+domain::EmbeddingResponse EmbeddingService::process_request(
+    domain::EmbeddingRequest request) {
+    auto future = impl_->submit_request(std::move(request));
+    return future.get();
+}
+
+SystemStatus EmbeddingService::get_system_status() const {
     SystemStatus status;
     status.model_ready = impl_->is_ready_.load();
 
     {
-        std::lock_guard<std::mutex> lock(impl_->queue_mutex_);
+        std::lock_guard lock(impl_->queue_mutex_);
         status.queue_size = impl_->request_queue_.size();
     }
 
     status.max_queue_size = 10000;
     status.device = "tenstorrent";
-    status.num_workers = impl_->num_workers_;
+
+    for (size_t i = 0; i < impl_->num_workers_; ++i) {
+        WorkerInfo info;
+        info.worker_id = std::to_string(i);
+        info.is_ready = (i < impl_->workers_.size()) && impl_->workers_[i]->is_ready.load();
+        info.processed_requests = 0;
+        status.worker_info.push_back(info);
+        status.worker_info.push_back({
+            "embedding-worker-" + std::to_string(i),
+            impl_->is_ready_.load(),
+            0
+        });
+    }
 
     return status;
 }

@@ -72,11 +72,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
-    # Drogon dependencies
-    libjsoncpp-dev \
-    uuid-dev \
-    zlib1g-dev \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
@@ -139,19 +134,16 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
-# Install Drogon from GitHub
-RUN git clone --depth 1 --recurse-submodules https://github.com/drogonframework/drogon.git /tmp/drogon \
-    && cd /tmp/drogon \
-    && mkdir build && cd build \
-    && cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release \
-    && make -j$(nproc) \
-    && make install \
-    && cd / && rm -rf /tmp/drogon
+# cpp_server deps (apt + Rust if needed + Drogon)
+RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
 
-# Build C++ server
+# Build C++ server (requires Rust for tokenizers-cpp)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh --ttnn"
+    && ./build.sh"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
@@ -202,6 +194,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     TT_METAL_HOME=${HOME_DIR}/tt-metal \
+    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \

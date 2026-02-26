@@ -136,20 +136,24 @@ class VisionEvalsTest(BaseTest):
         """Handle the measure_accuracy action."""
         logger.info(f"Measuring accuracy for models: {target_models}")
 
+        server_url = request.server_url or (
+            f"http://localhost:{self.service_port}/v1/cnn/search-image"
+        )
+
         logger.info("Step 1: Downloading samples")
         self._download_samples(count=request.download_count)
 
         logger.info("Step 2: Measuring CPU accuracy")
         self._measure_accuracy(
             models=target_models,
-            server_url=request.server_url,
+            server_url=server_url,
             mode="cpu",
         )
 
         logger.info("Step 3: Measuring device accuracy")
         self._measure_accuracy(
             models=target_models,
-            server_url=request.server_url,
+            server_url=server_url,
             mode="device",
         )
 

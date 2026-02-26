@@ -200,7 +200,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -365,7 +365,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -476,7 +476,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -691,7 +691,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -947,7 +947,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1705,7 +1705,9 @@
         ]
     },
     {
-        "weights": ["flux.1-dev"],
+        "weights": [
+            "FLUX.1-dev"
+        ],
         "device": "t3k",
         "test_cases": [
             {
@@ -1720,7 +1722,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1734,7 +1738,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1748,7 +1756,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1762,7 +1774,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -1780,7 +1796,9 @@
         ]
     },
     {
-        "weights": ["flux.1-dev"],
+        "weights": [
+            "FLUX.1-dev"
+        ],
         "device": "galaxy",
         "test_cases": [
             {
@@ -1795,7 +1813,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1809,7 +1829,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 20, "image_generation_time": 11}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 11
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1823,7 +1847,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 30, "image_generation_time": 15}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 15
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1837,7 +1865,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 50, "image_generation_time": 25}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 25
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -1855,7 +1887,9 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
+        "weights": [
+            "FLUX.1-schnell"
+        ],
         "device": "t3k",
         "test_cases": [
             {
@@ -1870,7 +1904,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1884,7 +1920,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1898,7 +1938,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1912,7 +1956,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -1930,7 +1978,9 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
+        "weights": [
+            "FLUX.1-schnell"
+        ],
         "device": "galaxy",
         "test_cases": [
             {
@@ -1945,7 +1995,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1959,7 +2011,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 20, "image_generation_time": 11}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 11
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1973,7 +2029,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 30, "image_generation_time": 15}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 15
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -1987,7 +2047,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 50, "image_generation_time": 25}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 25
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2005,7 +2069,9 @@
         ]
     },
     {
-        "weights": ["motif-image-6b-preview"],
+        "weights": [
+            "Motif-Image-6B-Preview"
+        ],
         "device": "t3k",
         "test_cases": [
             {
@@ -2020,7 +2086,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2034,7 +2102,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2048,7 +2120,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2062,7 +2138,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2080,7 +2160,9 @@
         ]
     },
     {
-        "weights": ["motif-image-6b-preview"],
+        "weights": [
+            "Motif-Image-6B-Preview"
+        ],
         "device": "galaxy",
         "test_cases": [
             {
@@ -2095,7 +2177,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32}
+                "targets": {
+                    "num_of_devices": 1
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2109,7 +2193,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 20, "image_generation_time": 11}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 11
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2123,7 +2211,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 30, "image_generation_time": 15}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 15
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2137,7 +2229,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 32, "num_inference_steps": 50, "image_generation_time": 25}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 25
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2151,11 +2247,13 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 }
-            } 
+            }
         ]
     },
     {
-        "weights": ["flux.1-dev"],
+        "weights": [
+            "FLUX.1-dev"
+        ],
         "device": "p150x4",
         "test_cases": [
             {
@@ -2170,7 +2268,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 4
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2184,7 +2284,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2198,7 +2302,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2212,7 +2320,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2230,7 +2342,9 @@
         ]
     },
     {
-        "weights": ["flux.1-dev"],
+        "weights": [
+            "FLUX.1-dev"
+        ],
         "device": "p150x8",
         "test_cases": [
             {
@@ -2245,7 +2359,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8}
+                "targets": {
+                    "num_of_devices": 8
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2259,7 +2375,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2273,7 +2393,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2287,7 +2411,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2305,7 +2433,9 @@
         ]
     },
     {
-        "weights": ["flux.1-dev"],
+        "weights": [
+            "FLUX.1-dev"
+        ],
         "device": "p300",
         "test_cases": [
             {
@@ -2320,7 +2450,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2}
+                "targets": {
+                    "num_of_devices": 2
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2334,7 +2466,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2348,7 +2484,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2362,7 +2502,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2380,8 +2524,10 @@
         ]
     },
     {
-        "weights": ["flux.1-dev"],
-        "device": "qbge",
+        "weights": [
+            "FLUX.1-dev"
+        ],
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2395,7 +2541,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 4
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2409,7 +2557,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2423,7 +2575,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2437,7 +2593,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2455,7 +2615,9 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
+        "weights": [
+            "FLUX.1-schnell"
+        ],
         "device": "p150x4",
         "test_cases": [
             {
@@ -2470,7 +2632,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 4
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2484,7 +2648,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2498,7 +2666,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2512,7 +2684,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2530,7 +2706,9 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
+        "weights": [
+            "FLUX.1-schnell"
+        ],
         "device": "p150x8",
         "test_cases": [
             {
@@ -2545,7 +2723,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8}
+                "targets": {
+                    "num_of_devices": 8
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2559,8 +2739,12 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 20, "image_generation_time": 10}
-            },
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+                },
             {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
@@ -2573,7 +2757,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2587,7 +2775,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 8,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2605,7 +2797,9 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
+        "weights": [
+            "FLUX.1-schnell"
+        ],
         "device": "p300",
         "test_cases": [
             {
@@ -2620,7 +2814,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2}
+                "targets": {
+                    "num_of_devices": 2
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2634,7 +2830,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2648,7 +2848,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2662,7 +2866,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 2, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2680,8 +2888,10 @@
         ]
     },
     {
-        "weights": ["flux.1-schnell"],
-        "device": "qbge",
+        "weights": [
+            "FLUX.1-schnell"
+        ],
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2695,7 +2905,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 4
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2709,7 +2921,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2723,7 +2939,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2737,7 +2957,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 4,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2755,7 +2979,9 @@
         ]
     },
     {
-        "weights": ["motif-image-6b-preview"],
+        "weights": [
+            "Motif-Image-6B-Preview"
+        ],
         "device": "p150x4",
         "test_cases": [
             {
@@ -2770,7 +2996,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4}
+                "targets": {
+                    "num_of_devices": 4
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2784,7 +3012,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2798,7 +3030,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2812,7 +3048,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 4, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",
@@ -2830,7 +3070,9 @@
         ]
     },
     {
-        "weights": ["motif-image-6b-preview"],
+        "weights": [
+            "Motif-Image-6B-Preview"
+        ],
         "device": "p150x8",
         "test_cases": [
             {
@@ -2845,7 +3087,9 @@
                     "break_on_failure": true,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8}
+                "targets": {
+                    "num_of_devices": 8
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2859,7 +3103,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 20, "image_generation_time": 10}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2873,7 +3121,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 30, "image_generation_time": 14}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
             },
             {
                 "name": "ImageGenerationLoadTest",
@@ -2887,7 +3139,11 @@
                     "break_on_failure": false,
                     "mock_mode": false
                 },
-                "targets": {"num_of_devices": 8, "num_inference_steps": 50, "image_generation_time": 23}
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
             },
             {
                 "name": "ImageGenerationParamTest",

@@ -42,10 +42,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 128 |
 | Max Context Length | 65536 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers) |
-| tt-metal Commit | `a9b09e0` |
-| vLLM Commit | `a186bf4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
+| tt-metal Commit | `65718bb` |
+| vLLM Commit | `409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |
 
 ---
 
@@ -67,7 +67,7 @@ python3 run.py --model Llama-3.1-8B --device galaxy_t3k --workflow server --dock
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/tt_transformers) |
-| tt-metal Commit | `a9b09e0` |
-| vLLM Commit | `a186bf4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-a9b09e0-a186bf4` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
+| tt-metal Commit | `65718bb` |
+| vLLM Commit | `409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |

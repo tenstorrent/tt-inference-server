@@ -4,15 +4,18 @@
 #include <drogon/drogon.h>
 #include <iostream>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <sys/stat.h>
+#include <netinet/tcp.h>
 
-#include "api/llm_controller.hpp"
-#ifndef TEST
-#include "api/embedding_controller.hpp"
-#endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
-#include "runners/runner_factory.hpp"
+#include "filters/security_filter.hpp"
+#include "profiling/tracy.hpp"
+#include "services/llm_service.hpp"
+#include "utils/service_factory.hpp"
+#include "worker/single_process_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -27,10 +30,20 @@ namespace {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+        int worker_id = std::atoi(argv[2]);
+        tracy_config::TracyStartupWorker(worker_id);
+        tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
+        tt::worker::SingleProcessWorker worker(cfg);
+        worker.start();
+        _exit(0);
+    }
+
     // Parse command line arguments
     std::string host = "0.0.0.0";
     uint16_t port = 8000;
     int threads = std::thread::hardware_concurrency();
+    tt::utils::service_factory::register_services();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -49,7 +62,7 @@ int main(int argc, char* argv[]) {
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
                       << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default) or 'ttnn_test'\n";
+                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
             return 0;
         }
     }
@@ -61,9 +74,6 @@ int main(int argc, char* argv[]) {
     auto model_svc = tt::config::model_service();
     std::string service_name = tt::config::to_string(model_svc);
 
-    auto runner_ty = tt::runners::RunnerFactory::get_runner_type();
-    std::string runner_name = tt::runners::RunnerFactory::get_runner_name(runner_ty);
-
     std::cout << "=================================================\n"
               << "  TT Media Server (C++ Drogon Implementation)\n"
               << "=================================================\n"
@@ -71,25 +81,69 @@ int main(int argc, char* argv[]) {
               << "  Port: " << port << "\n"
               << "  IO Threads: " << threads << "\n"
               << "  Model Service: " << service_name << "\n";
-
-    if (model_svc == tt::config::ModelService::LLM) {
-        std::cout << "  Runner: " << runner_name << "\n";
-    } else {
-        std::cout << "  Runner: BGELargeENRunner (Python)\n";
-    }
-
     std::cout << "=================================================\n"
               << std::endl;
 
     // Ensure log directory exists (Drogon requires it)
     mkdir("./logs", 0755);
 
+    // Initialize the security token (lazy init happens on first check)
+    SecurityFilter::initToken();
+
+    // Register pre-handling advice for bearer token authentication
+    drogon::app().registerPreHandlingAdvice(
+        [](const drogon::HttpRequestPtr& req,
+           drogon::AdviceCallback&& callback,
+           drogon::AdviceChainCallback&& chainCallback) {
+
+            const std::string& path = req->path();
+
+            // Skip authentication for health, tt-liveness, docs, and openapi endpoints
+            if (path == "/health" || path == "/tt-liveness" ||
+                path == "/docs" || path == "/swagger" || path == "/openapi.json") {
+                chainCallback();
+                return;
+            }
+
+            // Check for Bearer token on protected endpoints
+            const std::string& authHeader = req->getHeader("Authorization");
+            constexpr std::string_view bearerPrefix = "Bearer ";
+
+            if (authHeader.size() <= bearerPrefix.size() ||
+                authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                    Json::Value("Missing or invalid Authorization header. Expected: Bearer <token>"));
+                resp->setStatusCode(drogon::k401Unauthorized);
+                resp->addHeader("WWW-Authenticate", "Bearer");
+                callback(resp);
+                return;
+            }
+
+            std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                           authHeader.size() - bearerPrefix.size());
+
+            if (providedToken != SecurityFilter::getExpectedToken()) {
+                auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                    Json::Value("Invalid API key"));
+                resp->setStatusCode(drogon::k401Unauthorized);
+                resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+                callback(resp);
+                return;
+            }
+
+            chainCallback();
+        });
+
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kWarn)
+        .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
+        .setAfterAcceptSockOptCallback([](int fd) {
+            int one = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
         .setIdleConnectionTimeout(60)
@@ -104,16 +158,16 @@ int main(int argc, char* argv[]) {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
                   << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
+                  << "  GET  /tt-liveness     - Liveness check\n"
                   << std::endl;
     } else {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions - OpenAI-compatible chat completions\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
-                  << "  GET  /docs            - Swagger UI\n"
-                  << "  GET  /openapi.json    - OpenAPI specification\n"
+                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
+                  << "  GET  /health               - Health check\n"
+                  << "  GET  /tt-liveness          - Liveness check\n"
+                  << "  GET  /docs                 - Swagger UI\n"
+                  << "  GET  /openapi.json         - OpenAPI specification\n"
                   << std::endl;
     }
 

@@ -161,7 +161,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         payload = {"prompt": imagePayload}
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/cnn/search-image",
+            f"{self.base_url}/v1/cnn/search-image",
             json=payload,
             headers=headers,
             timeout=90,
@@ -247,7 +247,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             action="measure_accuracy",
             mode="device",
             models=[CNN_MOBILENETV2_RUNNER],
-            server_url=f"{self.base_url}/cnn/search-image",
+            server_url=f"{self.base_url}/v1/cnn/search-image",
         )
         logger.info(f"Running VisionEvalsTest with request: {request}")
 

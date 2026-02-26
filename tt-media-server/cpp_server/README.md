@@ -15,11 +15,9 @@ The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
-### Run the demo
+**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
 
-```bash
-./build/engine_demo
-```
+### Run unit tests
 
 Run scheduler unit tests (Google Test):
 
@@ -90,8 +88,29 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MODEL_RUNNER` | Runner: `llm_test` or `ttnn_test` (C++ uses these; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `MODEL_RUNNER` | Runner: `llm_test` (C++ uses this; tt-media-server has more). Same as tt-media-server. | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
+| `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
+| `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+
+### Tracy profiling (Tracy build only)
+
+When built with Tracy, use the **C++ Server [CodeLLDB + Tracy]** launch config, then connect the Tracy Profiler UI to **localhost:8086** (main) or **localhost:8087**, **8088**, … (workers). Workers are started via fork+exec so each runs in a fresh process and starts its own Tracy listener.
+
+See [TRACY.md](TRACY.md) for building the GUI, remote port forwarding, and launch configs.
+
+## Authentication
+
+The server uses Bearer token authentication for protected API endpoints. The token is read from the `OPENAI_API_KEY` environment variable at startup. If not set, it defaults to `your-secret-key`.
+
+### Unprotected Endpoints
+
+The following endpoints do not require authentication:
+- `GET /health`
+- `GET /tt-liveness`
+- `GET /docs`
+- `GET /swagger`
+- `GET /openapi.json`
 
 ### Running in Background
 
@@ -127,13 +146,14 @@ pkill -9 -f tt_media_server_cpp
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/completions` | POST | OpenAI-compatible text completion |
-| `/health` | GET | Health check |
-| `/ready` | GET | Readiness check with system status |
-| `/docs` | GET | Swagger UI documentation |
-| `/openapi.json` | GET | OpenAPI specification |
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|---------------|-------------|
+| `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
+| `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
+| `/health` | GET | ❌ No | Health check |
+| `/tt-liveness` | GET | ❌ No | Liveness check with system status |
+| `/docs` | GET | ❌ No | Swagger UI documentation |
+| `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
 ## Usage Examples
 
@@ -141,6 +161,7 @@ pkill -9 -f tt_media_server_cpp
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
@@ -175,6 +196,7 @@ curl -X POST http://localhost:8001/v1/completions \
 
 ```bash
 curl -X POST http://localhost:8001/v1/completions \
+  -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello, world!",
@@ -208,10 +230,10 @@ curl http://localhost:8001/health
 }
 ```
 
-### Readiness Check
+### Liveness Check
 
 ```bash
-curl http://localhost:8001/ready
+curl http://localhost:8001/tt-liveness
 ```
 
 **Response:**
@@ -248,9 +270,6 @@ cpp_server/
 │   │   ├── completion_request.hpp  # Request domain object
 │   │   └── completion_response.hpp # Response domain objects
 │   ├── runners/
-│   │   ├── base_device_runner.hpp  # Base runner interface
-│   │   ├── llm_test_runner.hpp     # Test runner (120k tokens/sec)
-│   │   ├── ttnn_test_runner.hpp    # TTNN device I/O runner
 │   │   └── runner_factory.hpp      # Runner factory (env-based selection)
 │   ├── scheduler/
 │   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
@@ -285,9 +304,6 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- `BaseDeviceRunner`: Abstract base class for model runners
-- `LLMTestRunner`: Test runner generating **120,000 tokens/second**
-- `TTNNTestRunner`: TTNN device I/O runner (reads tensor from device per token)
 - `RunnerFactory`: Creates appropriate runner based on `TT_RUNNER_TYPE` environment variable
 
 ### API
@@ -295,34 +311,15 @@ cpp_server/
 
 ## Runner Types
 
-The server supports multiple runner types, selected via the `TT_RUNNER_TYPE` environment variable:
+The server supports the following runner type, selected via the `TT_RUNNER_TYPE` environment variable:
 
 | Runner | Value | Description |
 |--------|-------|-------------|
 | LLMTestRunner | `llm_test` (default) | Pure CPU benchmark, generates 120k tokens/sec |
-| TTNNTestRunner | `ttnn_test` | TTNN device I/O, reads tensor from device per token |
 
 ### LLMTestRunner (Default)
 
 Generates tokens at 120,000 tokens/second using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of any device I/O.
-
-### TTNNTestRunner (TTNN Build Required)
-
-Interfaces with the TTNN Python library via embedded Python to measure device I/O overhead:
-- Opens a mesh device with shape (1,1)
-- Writes a tensor to the device on initialization
-- Reads the tensor from the device for each token generated
-- Measures real device read latency per token
-
-To use the TTNN runner:
-
-```bash
-# Build with TTNN support
-./build.sh --ttnn
-
-# Start with TTNN runner
-TT_RUNNER_TYPE=ttnn_test ./build/tt_media_server_cpp -p 8001
-```
 
 ## API Endpoints
 
@@ -330,7 +327,7 @@ TT_RUNNER_TYPE=ttnn_test ./build/tt_media_server_cpp -p 8001
 |----------|--------|-------------|
 | `/v1/completions` | POST | OpenAI-compatible text completion |
 | `/health` | GET | Health check |
-| `/ready` | GET | Readiness check with system status |
+| `/tt-liveness` | GET | Liveness check with system status |
 
 ## Performance
 
@@ -348,13 +345,15 @@ Token generation timing:
 1. **CMake** >= 3.16
 2. **Drogon Framework** >= 1.8
 3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
+4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue).
+5. **JsonCpp** (used for tokenizer_config parsing).
 
 ### Install Drogon (Ubuntu/Debian)
 
 ```bash
 # Install dependencies
 sudo apt install git gcc g++ cmake libjsoncpp-dev uuid-dev \
-     openssl libssl-dev zlib1g-dev libbrotli-dev
+     openssl libssl-dev zlib1g-dev libbrotli-dev libboost-dev
 
 # Clone and build Drogon
 git clone https://github.com/drogonframework/drogon
@@ -373,8 +372,45 @@ cd cpp_server
 chmod +x build.sh
 ./build.sh           # Release build
 ./build.sh --debug   # Debug build
-./build.sh --ttnn    # Enable TTNN test runner (requires Python + ttnn)
+./build.sh --asan    # AddressSanitizer + LeakSanitizer (memory/leak detection)
+./build.sh --tsan    # ThreadSanitizer (data-race detection; cannot combine with --asan)
 ```
+
+### Memory leak detection
+
+1. **AddressSanitizer (ASan) + LeakSanitizer (LSan)** — recommended on macOS and Linux:
+   ```bash
+   ./build.sh --asan
+   cd build && ctest --output-on-failure
+   # Or run the server and exit; at exit ASan will report leaks and address errors.
+   ./tt_media_server_cpp -p 8001
+   ```
+   Leak reports appear at process exit. Use `LSAN_OPTIONS=verbosity=1` for more detail.
+
+2. **Valgrind** (Linux only; not supported on current macOS):
+   ```bash
+   valgrind --leak-check=full --show-leak-kinds=all ./build/tt_media_server_cpp -p 8001
+   # Or for unit tests:
+   valgrind --leak-check=full ./build/scheduler_test
+   ```
+   Build a normal (non-ASan) binary; Valgrind instruments at runtime.
+### Tokenizer (mlc-ai/tokenizers-cpp)
+
+The server includes tokenizer support for encode/decode:
+
+1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
+2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
+3. Build the server:
+   ```bash
+   ./build.sh
+   ```
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
+   To fetch DeepSeek V3 tokenizer and config from Hugging Face into `tokenizers/`:
+   ```bash
+   mkdir -p cpp_server/tokenizers
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer_config.json
+   ```
 
 ## Performance
 
