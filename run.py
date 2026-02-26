@@ -16,13 +16,19 @@ from pathlib import Path
 from workflows.bootstrap_uv import bootstrap_uv
 from workflows.device_utils import infer_default_device
 from workflows.log_setup import setup_run_logger
-from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
+from workflows.model_spec import (
+    MODEL_SPECS,
+    ModelSpec,
+    export_model_specs_json,
+    get_runtime_model_spec,
+)
 from workflows.run_docker_server import (
     format_docker_command,
     generate_docker_run_command,
     run_docker_server,
 )
 from workflows.run_workflows import run_workflows
+from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -170,9 +176,9 @@ def parse_arguments():
         help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated.",
     )
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
     )
     parser.add_argument(
         "--tt-metal-python-venv-dir",
@@ -289,23 +295,23 @@ def parse_arguments():
     return args
 
 
-def handle_secrets(model_spec):
-    args = model_spec.cli_args
+def handle_secrets(runtime_config):
     # JWT_SECRET is only required for --workflow server --docker-server
-    workflow_type = WorkflowType.from_string(args.workflow)
-    jwt_secret_required = workflow_type == WorkflowType.SERVER and args.docker_server
+    workflow_type = WorkflowType.from_string(runtime_config.workflow)
+    jwt_secret_required = (
+        workflow_type == WorkflowType.SERVER and runtime_config.docker_server
+    )
     # if interactive, user can enter secrets manually or it should not be a production deployment
-    jwt_secret_required = jwt_secret_required and not args.interactive
+    jwt_secret_required = jwt_secret_required and not runtime_config.interactive
     # --no-auth disables authorization, so JWT_SECRET is not required
-    jwt_secret_required = jwt_secret_required and not args.no_auth
-
+    jwt_secret_required = jwt_secret_required and not runtime_config.no_auth
     # HF_TOKEN is optional for client-side scripts workflows
     client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
-        workflow_type not in client_side_workflows or args.docker_server
+        workflow_type not in client_side_workflows or runtime_config.docker_server
     )
-    huggingface_required = huggingface_required and not args.interactive
+    huggingface_required = huggingface_required and not runtime_config.interactive
 
     required_env_vars = []
     if jwt_secret_required:
@@ -343,7 +349,7 @@ def get_current_commit_sha() -> str:
     )
 
 
-def format_cli_args_summary(args, model_spec):
+def format_cli_args_summary(runtime_config):
     """Format CLI arguments and runtime info in a clean, readable format."""
     lines = [
         "",
@@ -352,43 +358,56 @@ def format_cli_args_summary(args, model_spec):
         "=" * 60,
         "",
         "Model Options:",
-        f"  model:                      {args.model}",
-        f"  tt_device:                  {args.tt_device}",
-        f"  impl:                       {args.impl}",
-        f"  engine:                     {args.engine}",
-        f"  workflow:                   {args.workflow}",
-        f"  tools:                      {args.tools}",
+        f"  model:                      {runtime_config.model}",
+        f"  device:                     {runtime_config.device}",
+        f"  impl:                       {runtime_config.impl}",
+        f"  engine:                     {runtime_config.engine}",
+        f"  workflow:                   {runtime_config.workflow}",
+        f"  tools:                      {runtime_config.tools}",
         "",
         "Optional args:",
-        f"  dev_mode:                   {args.dev_mode}",
-        f"  docker_server:              {args.docker_server}",
-        f"  local_server:               {args.local_server}",
-        f"  no_auth:                    {args.no_auth}",
-        f"  tt_metal_python_venv_dir:   {args.tt_metal_python_venv_dir}",
-        f"  service_port:               {args.service_port}",
-        f"  docker_override_image:      {args.override_docker_image}",
-        f"  docker_interactive:         {args.interactive}",
-        f"  device_id:                  {args.device_id}",
-        f"  disable_trace_capture:      {args.disable_trace_capture}",
-        f"  override_tt_config:         {args.override_tt_config}",
-        f"  vllm_override_args:         {args.vllm_override_args}",
-        f"  model_spec_json:            {args.model_spec_json}",
-        f"  workflow_args:              {args.workflow_args}",
-        f"  reset_venvs:                {args.reset_venvs}",
-        f"  limit-samples-mode:         {args.limit_samples_mode}",
-        f"  skip_system_sw_validation:  {args.skip_system_sw_validation}",
-        f"  tools:                      {args.tools}",
+        f"  dev_mode:                   {runtime_config.dev_mode}",
+        f"  docker_server:              {runtime_config.docker_server}",
+        f"  local_server:               {runtime_config.local_server}",
+        f"  no_auth:                    {runtime_config.no_auth}",
+        f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
+        f"  service_port:               {runtime_config.service_port}",
+        f"  docker_override_image:      {runtime_config.override_docker_image}",
+        f"  docker_interactive:         {runtime_config.interactive}",
+        f"  device_id:                  {runtime_config.device_id}",
+        f"  disable_trace_capture:      {runtime_config.disable_trace_capture}",
+        f"  override_tt_config:         {runtime_config.override_tt_config}",
+        f"  vllm_override_args:         {runtime_config.vllm_override_args}",
+        f"  workflow_args:              {runtime_config.workflow_args}",
+        f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
+        f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Docker Volume Options:",
-        f"  host_volume:                {args.host_volume}",
-        f"  host_hf_cache:              {args.host_hf_cache}",
-        f"  host_weights_dir:           {args.host_weights_dir}",
-        f"  image_user:                 {args.image_user}",
+        f"  host_volume:                {runtime_config.host_volume}",
+        f"  host_hf_cache:              {runtime_config.host_hf_cache}",
+        f"  host_weights_dir:           {runtime_config.host_weights_dir}",
+        f"  image_user:                 {runtime_config.image_user}",
         "",
         "=" * 60,
     ]
 
     return "\n".join(lines)
+
+
+def populate_model_spec_cli_args(model_spec, runtime_config):
+    """Backfill model_spec.cli_args from RuntimeConfig for compatibility.
+
+    TODO: Remove when tt-media-server no longer depends on model_spec.cli_args.
+    """
+    if not hasattr(model_spec, "cli_args") or model_spec.cli_args is None:
+        return
+
+    cli_args = runtime_config.to_dict()
+    # Legacy callers still look up tt_device from cli_args.
+    cli_args["tt_device"] = runtime_config.device
+
+    model_spec.cli_args.clear()
+    model_spec.cli_args.update(cli_args)
 
 
 def handle_maintenance_args(args):
@@ -410,18 +429,26 @@ def main():
     # step 0: bootstrap uv
     bootstrap_uv()
 
-    # step 1: determine model spec
-    if args.model_spec_json:
+    # Export repo-root default_model_spec.json from pristine MODEL_SPECS
+    repo_root = Path(__file__).resolve().parent
+    export_model_specs_json(MODEL_SPECS, repo_root / "default_model_spec.json")
+
+    # step 1: build runtime config, then resolve the runtime model spec
+    runtime_config = RuntimeConfig.from_args(args)
+
+    if args.runtime_model_spec_json:
         logger.warning(
-            f"No validation is done, model_spec loading from JSON file: {args.model_spec_json}"
+            f"No validation is done, loading runtime model spec from JSON: "
+            f"{args.runtime_model_spec_json}"
         )
-        model_spec = ModelSpec.from_json(args.model_spec_json)
+        model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     else:
-        model_spec = get_runtime_model_spec(args)
+        model_spec = get_runtime_model_spec(runtime_config)
+
     model_id = model_spec.model_id
 
     # step 2: handle secrets
-    handle_secrets(model_spec)
+    handle_secrets(runtime_config)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging
@@ -429,63 +456,73 @@ def main():
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
-        workflow=model_spec.cli_args.workflow,
+        workflow=runtime_config.workflow,
     )
+    runtime_config.run_id = run_id
+    populate_model_spec_cli_args(model_spec, runtime_config)
+    runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
+
     log_path = get_default_workflow_root_log_dir()
     run_logs_path = log_path / "run_logs"
-    run_model_spec_path = log_path / "run_specs"
+    runtime_model_spec_dir = log_path / "runtime_model_specs"
     ensure_readwriteable_dir(run_logs_path)
-    ensure_readwriteable_dir(run_model_spec_path)
+    ensure_readwriteable_dir(runtime_model_spec_dir)
     run_log_path = run_logs_path / f"run_{run_id}.log"
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
 
-    # Log CLI arguments and runtime info in a clean format
+    # Log CLI arguments and runtime info
     version = Path("VERSION").read_text().strip()
     logger.info(f"TT-Inference version: {version}")
     logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
-    logger.info(format_cli_args_summary(args, model_spec))
+    logger.info(format_cli_args_summary(runtime_config))
 
-    # write model spec to json file
-    json_fpath = model_spec.to_json(run_id, run_model_spec_path)
-    logger.info(f"Model spec saved to: {json_fpath}")
+    # Write runtime model spec + runtime config for subprocess scripts
+    json_fpath = runtime_config.to_json(
+        model_spec, run_timestamp, model_id, runtime_model_spec_dir
+    )
+    logger.info(f"Runtime model spec saved to: {json_fpath}")
+
     docker_json_fpath = json_fpath
-    if model_spec.cli_args.docker_server and args.dev_mode:
-        dev_model_spec_path = log_path / "dev_model_specs"
-        ensure_readwriteable_dir(dev_model_spec_path)
-        docker_json_run_id = f"{run_id}_docker"
-        docker_json_fpath = model_spec.to_json(docker_json_run_id, dev_model_spec_path)
-        logger.info(f"Docker model spec saved to: {docker_json_fpath}")
+    if runtime_config.docker_server and runtime_config.dev_mode:
+        runtime_model_spec_dir = log_path / "runtime_configs"
+        ensure_readwriteable_dir(runtime_model_spec_dir)
+        docker_json_fpath = runtime_config.to_json(
+            model_spec,
+            run_timestamp,
+            f"{model_id}_docker",
+            runtime_model_spec_dir,
+        )
+        logger.info(f"Docker runtime model spec saved to: {docker_json_fpath}")
 
     # validate setup after run logger has been initialized
-    # and ModelSpec JSON has been written
-    validate_setup(model_spec, json_fpath)
+    validate_setup(model_spec, runtime_config, json_fpath)
 
     setup_config = None
-    if model_spec.cli_args.docker_server:
+    if runtime_config.docker_server:
         logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
             hf_token=os.getenv("HF_TOKEN"),
             automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
-            host_volume=args.host_volume,
-            host_hf_cache=args.host_hf_cache,
-            host_weights_dir=args.host_weights_dir,
-            image_user=args.image_user,
+            host_volume=runtime_config.host_volume,
+            host_hf_cache=runtime_config.host_hf_cache,
+            host_weights_dir=runtime_config.host_weights_dir,
+            image_user=runtime_config.image_user,
         )
 
     # step 4: optionally run inference server
-    if model_spec.cli_args.docker_server:
+    if runtime_config.docker_server:
         logger.info("Running inference server in Docker container ...")
         if args.print_docker_cmd:
             docker_command, _ = generate_docker_run_command(
-                model_spec, setup_config, docker_json_fpath
+                model_spec, runtime_config, setup_config, docker_json_fpath
             )
             print(f"Docker run command:\n\n{format_docker_command(docker_command)}\n")
             return 0
-        run_docker_server(model_spec, setup_config, docker_json_fpath)
-    elif model_spec.cli_args.local_server:
+        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+    elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
@@ -493,26 +530,28 @@ def main():
     main_return_code = 0
 
     skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(model_spec.cli_args.workflow) not in skip_workflows:
-        model_spec.cli_args.run_id = run_id
-        return_codes = run_workflows(model_spec, json_fpath)
+    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
+        return_codes = run_workflows(model_spec, runtime_config, json_fpath)
         if all(return_code == 0 for return_code in return_codes):
-            logger.info("✅ Completed run.py successfully.")
+            logger.info("Completed run.py successfully.")
         else:
             main_return_code = 1
             logger.error(
-                f"⛔ run.py failed with return codes: {return_codes}. See logs above for details."
+                f"run.py failed with return codes: {return_codes}. "
+                "See logs above for details."
             )
     else:
         logger.info(
-            f"Completed {model_spec.cli_args.workflow} workflow, skipping run_workflows()."
+            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
         )
 
     logger.info(
-        "The output of the workflows is not checked and any errors will be in the logs above and in the saved log file."
+        "The output of the workflows is not checked and any errors will be "
+        "in the logs above and in the saved log file."
     )
     logger.info(
-        "If you encounter any issues please share the log file in a GitHub issue and server log if available."
+        "If you encounter any issues please share the log file in a GitHub "
+        "issue and server log if available."
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
 

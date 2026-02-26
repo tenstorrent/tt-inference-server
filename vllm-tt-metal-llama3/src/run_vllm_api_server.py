@@ -63,6 +63,22 @@ def parse_args():
         type=str,
         help="Implementation name override (e.g. tt-transformers).",
     )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help="Disable vLLM API key authorization (skips JWT_SECRET requirement)",
+    )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disable automatic trace capture requests on server startup",
+    )
+    parser.add_argument(
+        "--service-port",
+        type=int,
+        default=None,
+        help="Service port for trace capture (defaults to vllm_args port or 8000)",
+    )
     # Parse known args to allow vLLM args to pass through
     args, remaining = parser.parse_known_args()
 
@@ -157,7 +173,7 @@ def load_all_model_specs() -> dict:
     # New multi-spec mode
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
-        "/home/container_app_user/model_specs/model_spec.json",
+        "/home/container_app_user/model_specs/default_model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
@@ -392,8 +408,7 @@ def model_setup(model_spec_json):
             del os.environ[key]
 
 
-def handle_secrets(model_spec_json):
-    # Check if HF_TOKEN is set
+def handle_secrets(no_auth=False):
     hf_token = os.getenv("HF_TOKEN")
     if hf_token:
         logger.info("HF_TOKEN is set")
@@ -402,8 +417,6 @@ def handle_secrets(model_spec_json):
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
 
-    # Check if --no-auth was passed via CLI args
-    no_auth = model_spec_json.get("cli_args", {}).get("no_auth", False)
     if no_auth:
         # Remove VLLM_API_KEY if present to disable authorization
         if "VLLM_API_KEY" in os.environ:
@@ -436,9 +449,9 @@ def handle_secrets(model_spec_json):
         )
 
 
-def runtime_settings(model_spec_json):
+def runtime_settings(model_spec_json, no_auth=False):
     logger.info(f"using model: {model_spec_json['model_id']}")
-    handle_secrets(model_spec_json)
+    handle_secrets(no_auth=no_auth)
 
     # TODO: check HF repo access with HF_TOKEN supplied
     model_setup(model_spec_json)
@@ -492,20 +505,15 @@ def set_runtime_env_vars(model_spec_json):
         os.environ[key] = value
 
 
-def start_trace_capture(model_spec_json):
-    # Check if trace capture should be disabled
-    disable_trace_capture = model_spec_json.get("cli_args", {}).get(
-        "disable_trace_capture", False
-    )
-
+def start_trace_capture(
+    model_spec_json, disable_trace_capture=False, service_port=None
+):
     if disable_trace_capture:
-        logger.info("Trace capture is disabled via cli_args.disable_trace_capture")
+        logger.info("Trace capture is disabled via --disable-trace-capture")
         return
 
-    # Start background trace capture process
-    service_port = model_spec_json.get("cli_args", {}).get(
-        "service_port", int(os.getenv("SERVICE_PORT", "8000"))
-    )
+    if service_port is None:
+        service_port = int(os.getenv("SERVICE_PORT", "8000"))
     supported_modalities = model_spec_json.get("supported_modalities", ["text"])
 
     # Get max_context from device_model_spec for trace calculation
@@ -600,8 +608,12 @@ def main():
 
     # Step 4: Set runtime environment variables and run setup
     set_runtime_env_vars(model_spec)
-    runtime_settings(model_spec)
-    start_trace_capture(model_spec)
+    runtime_settings(model_spec, no_auth=args.no_auth)
+    start_trace_capture(
+        model_spec,
+        disable_trace_capture=args.disable_trace_capture,
+        service_port=args.service_port,
+    )
 
     # Step 5: Add vLLM CLI arguments
     logger.info(

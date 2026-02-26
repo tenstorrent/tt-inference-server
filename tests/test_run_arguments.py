@@ -19,6 +19,7 @@ from run import (
     parse_arguments,
     handle_secrets,
     get_current_commit_sha,
+    populate_model_spec_cli_args,
 )
 from workflows.validate_setup import (
     validate_runtime_args,
@@ -29,6 +30,7 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
 )
+from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 
 
@@ -47,7 +49,7 @@ def base_args():
 
 @pytest.fixture
 def mock_args():
-    """Create a mock args object with default values."""
+    """Create a mock args object with default values for parse_arguments tests."""
     return argparse.Namespace(
         model="Mistral-7B-Instruct-v0.3",
         workflow="benchmarks",
@@ -67,13 +69,22 @@ def mock_args():
         vllm_override_args=None,
         device_id=None,
         reset_venvs=False,
-        model_spec_json=None,
+        runtime_model_spec_json=None,
         tt_metal_python_venv_dir=None,
         no_auth=False,
         concurrency_sweeps=False,
         host_volume=None,
         host_hf_cache=None,
         image_user="1000",
+    )
+
+
+@pytest.fixture
+def mock_runtime_config():
+    return RuntimeConfig(
+        model="Mistral-7B-Instruct-v0.3",
+        workflow="benchmarks",
+        device="n150",
     )
 
 
@@ -86,20 +97,6 @@ def mock_model_spec():
     mock_spec.tt_metal_commit = "test-commit"
     mock_spec.vllm_commit = "test-vllm-commit"
     mock_spec.to_json.return_value = "/tmp/test-model-spec.json"
-
-    # Create mock cli_args
-    mock_cli_args = MagicMock()
-    mock_cli_args.workflow = "benchmarks"
-    mock_cli_args.docker_server = False
-    mock_cli_args.local_server = False
-    mock_cli_args.interactive = False
-    mock_cli_args.device = "n150"
-    mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
-    mock_cli_args.no_auth = False
-    mock_cli_args.host_volume = None
-    mock_cli_args.host_hf_cache = None
-    mock_cli_args.host_weights_dir = None
-    mock_spec.cli_args = mock_cli_args
 
     return mock_spec
 
@@ -179,6 +176,41 @@ class TestArgumentParsing:
                     "invalid choice" in stderr_output.lower()
                     or "error" in stderr_output.lower()
                 )
+
+
+class TestModelSpecCliArgsCompatibility:
+    def test_populate_model_spec_cli_args_uses_runtime_config_values(self):
+        runtime_config = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="benchmarks",
+            device="n150",
+            docker_server=True,
+            override_docker_image="ghcr.io/example/image:latest",
+            streaming="true",
+            preprocessing="false",
+            sdxl_num_prompts="42",
+        )
+        runtime_config.run_id = "run-123"
+
+        model_spec = MagicMock()
+        model_spec.cli_args = {"stale_key": "stale_value"}
+
+        populate_model_spec_cli_args(model_spec, runtime_config)
+
+        assert "stale_key" not in model_spec.cli_args
+        assert model_spec.cli_args["model"] == "Mistral-7B-Instruct-v0.3"
+        assert model_spec.cli_args["workflow"] == "benchmarks"
+        assert model_spec.cli_args["device"] == "n150"
+        assert model_spec.cli_args["tt_device"] == "n150"
+        assert model_spec.cli_args["docker_server"] is True
+        assert (
+            model_spec.cli_args["override_docker_image"]
+            == "ghcr.io/example/image:latest"
+        )
+        assert model_spec.cli_args["streaming"] == "true"
+        assert model_spec.cli_args["preprocessing"] == "false"
+        assert model_spec.cli_args["sdxl_num_prompts"] == "42"
+        assert model_spec.cli_args["run_id"] == "run-123"
 
     @pytest.mark.parametrize(
         "device_ids,expected",
@@ -365,12 +397,18 @@ class TestArgsInference:
         spec.inference_engine = "vLLM"
         spec.impl.impl_name = impl_name
         spec.device_model_spec.default_impl = default_impl
-        spec.apply_runtime_args = MagicMock()
+        spec.apply_overrides = MagicMock()
         return spec
 
-    def test_infer_impl_success(self, mock_args):
+    def test_infer_impl_success(self):
         """Test successful impl inference via get_runtime_model_spec."""
-        mock_args.impl = None
+        rc = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="benchmarks",
+            device="n150",
+            impl=None,
+            engine=None,
+        )
 
         mock_model_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
@@ -380,15 +418,21 @@ class TestArgsInference:
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(mock_args)
+            result = get_runtime_model_spec(rc)
 
-            assert mock_args.impl == "tt-transformers"
-            assert mock_args.engine == "vLLM"
+            assert rc.impl == "tt-transformers"
+            assert rc.engine == "vLLM"
             assert result == mock_model_spec
 
-    def test_infer_impl_already_set(self, mock_args):
+    def test_infer_impl_already_set(self):
         """Test that existing impl is preserved."""
-        mock_args.impl = "tt-transformers"
+        rc = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="benchmarks",
+            device="n150",
+            impl="tt-transformers",
+            engine=None,
+        )
 
         mock_model_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
@@ -398,27 +442,37 @@ class TestArgsInference:
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(mock_args)
+            result = get_runtime_model_spec(rc)
 
-            assert mock_args.impl == "tt-transformers"
+            assert rc.impl == "tt-transformers"
             assert result == mock_model_spec
 
-    def test_infer_impl_no_default(self, mock_args):
+    def test_infer_impl_no_default(self):
         """Test error when no default impl available."""
-        mock_args.model = "Mistral-7B-Instruct-v0.3"
-        mock_args.impl = None
+        rc = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="benchmarks",
+            device="n150",
+            impl=None,
+            engine=None,
+        )
 
         spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150", default_impl=False
         )
         with patch.dict("workflows.model_spec.MODEL_SPECS", {spec.model_id: spec}):
             with pytest.raises(ValueError, match="does not have a default impl"):
-                get_runtime_model_spec(mock_args)
+                get_runtime_model_spec(rc)
 
-    def test_engine_filters_selection(self, mock_args):
+    def test_engine_filters_selection(self):
         """Test --engine filters runtime model selection."""
-        mock_args.engine = "media"
-        mock_args.impl = None
+        rc = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="benchmarks",
+            device="n150",
+            impl=None,
+            engine="media",
+        )
 
         vllm_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150_vllm"
@@ -436,7 +490,7 @@ class TestArgsInference:
                 media_spec.model_id: media_spec,
             },
         ):
-            result = get_runtime_model_spec(mock_args)
+            result = get_runtime_model_spec(rc)
             assert result == media_spec
 
     def test_infer_default_device_uses_tt_smi_counts_for_n300(self):
@@ -483,7 +537,9 @@ class TestArgsInference:
                 {"board_info": {"board_type": "n300 R"}}
             ]
         }"""
-        with patch("subprocess.check_output", return_value=tt_smi_output):
+        with patch("workflows.device_utils._ensure_tt_smi_venv_setup"), patch(
+            "subprocess.check_output", return_value=tt_smi_output
+        ):
             counts = _get_tt_smi_board_type_counts()
         assert counts == {"n300": 1}
 
@@ -496,7 +552,9 @@ class TestArgsInference:
                 {"board_info": {"board_type": "n300 L"}}
             ]
         }"""
-        with patch("subprocess.check_output", return_value=tt_smi_output):
+        with patch("workflows.device_utils._ensure_tt_smi_venv_setup"), patch(
+            "subprocess.check_output", return_value=tt_smi_output
+        ):
             with pytest.raises(ValueError, match="Expected an even number of chips"):
                 _get_tt_smi_board_type_counts()
 
@@ -526,22 +584,24 @@ class TestRuntimeValidation:
             ("stress_tests", True),
         ],
     )
-    def test_workflow_validation(self, mock_model_spec, workflow, should_pass):
+    def test_workflow_validation(
+        self, mock_model_spec, mock_runtime_config, workflow, should_pass
+    ):
         """Test validation for different workflows."""
-        mock_model_spec.cli_args.workflow = workflow
+        mock_runtime_config.workflow = workflow
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
             if should_pass:
-                validate_runtime_args(mock_model_spec)
+                validate_runtime_args(mock_model_spec, mock_runtime_config)
             else:
                 with pytest.raises(AssertionError):
-                    validate_runtime_args(mock_model_spec)
+                    validate_runtime_args(mock_model_spec, mock_runtime_config)
 
-    def test_server_workflow_validation(self, mock_model_spec):
+    def test_server_workflow_validation(self, mock_model_spec, mock_runtime_config):
         """Test server workflow specific validation."""
-        mock_model_spec.cli_args.workflow = "server"
+        mock_runtime_config.workflow = "server"
 
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS",
@@ -549,24 +609,24 @@ class TestRuntimeValidation:
         ):
             # Should fail without docker or local server
             with pytest.raises(ValueError, match="requires --docker-server"):
-                validate_runtime_args(mock_model_spec)
+                validate_runtime_args(mock_model_spec, mock_runtime_config)
 
             # Should pass with docker server
-            mock_model_spec.cli_args.docker_server = True
-            validate_runtime_args(mock_model_spec)
+            mock_runtime_config.docker_server = True
+            validate_runtime_args(mock_model_spec, mock_runtime_config)
 
             # Should fail with local server (not implemented)
-            mock_model_spec.cli_args.docker_server = False
-            mock_model_spec.cli_args.local_server = True
+            mock_runtime_config.docker_server = False
+            mock_runtime_config.local_server = True
             with pytest.raises(
                 NotImplementedError, match="not implemented for --local-server"
             ):
-                validate_runtime_args(mock_model_spec)
+                validate_runtime_args(mock_model_spec, mock_runtime_config)
 
-    def test_conflicting_server_options(self, mock_model_spec):
+    def test_conflicting_server_options(self, mock_model_spec, mock_runtime_config):
         """Test that both docker and local server raises error."""
-        mock_model_spec.cli_args.docker_server = True
-        mock_model_spec.cli_args.local_server = True
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.local_server = True
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
@@ -574,7 +634,7 @@ class TestRuntimeValidation:
             with pytest.raises(
                 AssertionError, match="Cannot run --docker-server and --local-server"
             ):
-                validate_runtime_args(mock_model_spec)
+                validate_runtime_args(mock_model_spec, mock_runtime_config)
 
 
 class TestOverrideArgsIntegration:
@@ -591,25 +651,19 @@ class TestOverrideArgsIntegration:
         self, override_type, cli_arg_name, test_value
     ):
         """Test that get_runtime_model_spec correctly applies override arguments."""
-        # Create args with override values using argparse.Namespace instead of MagicMock
-        # to avoid issues with mutable defaults in dataclass creation
-        mock_args = argparse.Namespace()
-        mock_args.impl = "tt-transformers"
-        mock_args.model = "Mistral-7B-Instruct-v0.3"
-        mock_args.device = "n150"
-        mock_args.engine = None
-        mock_args.dev_mode = False
-        mock_args.override_docker_image = None
-
-        # Set the specific override arg being tested
-        setattr(mock_args, cli_arg_name, test_value)
-        # Set the other one to None
-        other_arg = (
-            "vllm_override_args"
-            if cli_arg_name == "override_tt_config"
-            else "override_tt_config"
-        )
-        setattr(mock_args, other_arg, None)
+        rc_kwargs = {
+            "model": "Mistral-7B-Instruct-v0.3",
+            "workflow": "benchmarks",
+            "device": "n150",
+            "impl": "tt-transformers",
+            "engine": None,
+            "dev_mode": False,
+            "override_docker_image": None,
+            "override_tt_config": None,
+            "vllm_override_args": None,
+        }
+        rc_kwargs[cli_arg_name] = test_value
+        rc = RuntimeConfig(**rc_kwargs)
 
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
@@ -618,16 +672,15 @@ class TestOverrideArgsIntegration:
         mock_model_spec.inference_engine = "vLLM"
         mock_model_spec.impl.impl_name = "tt-transformers"
         mock_model_spec.device_model_spec.default_impl = True
-        mock_model_spec.apply_runtime_args = MagicMock()
+        mock_model_spec.apply_overrides = MagicMock()
 
         with patch.dict(
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(mock_args)
+            result = get_runtime_model_spec(rc)
 
-            # Verify that apply_runtime_args was called with the args
-            mock_model_spec.apply_runtime_args.assert_called_once_with(mock_args)
+            mock_model_spec.apply_overrides.assert_called_once_with(rc)
             assert result == mock_model_spec
 
     def _make_mock_model_spec(self):
@@ -641,27 +694,23 @@ class TestOverrideArgsIntegration:
         mock_model_spec.impl.impl_id = "tt-transformers"
         mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.subdevice_type = None
-
-        mock_cli_args = MagicMock()
-        mock_cli_args.model = "Mistral-7B-Instruct-v0.3"
-        mock_cli_args.device = "n150"
-        mock_cli_args.workflow = "server"
-        mock_cli_args.service_port = "8000"
-        mock_cli_args.interactive = False
-        mock_cli_args.dev_mode = False
-        mock_cli_args.device_id = None
-        mock_cli_args.impl = "tt-transformers"
-        mock_cli_args.override_docker_image = None
-        mock_cli_args.image_user = "1000"
-        mock_model_spec.cli_args = mock_cli_args
         return mock_model_spec
+
+    def _make_mock_runtime_config(self):
+        return RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="server",
+            device="n150",
+            service_port="8000",
+        )
 
     def test_generate_docker_run_command_mounts_model_spec_json(
         self, mock_setup_config
     ):
         """Test that generate_docker_run_command mounts the model_spec JSON file in dev mode."""
         mock_model_spec = self._make_mock_model_spec()
-        mock_model_spec.cli_args.dev_mode = True
+        mock_runtime_config = self._make_mock_runtime_config()
+        mock_runtime_config.dev_mode = True
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -670,7 +719,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, container_name = generate_docker_run_command(
-                mock_model_spec, mock_setup_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_setup_config, json_fpath
             )
 
             assert container_name == "tt-inference-server-test123"
@@ -704,6 +753,7 @@ class TestOverrideArgsIntegration:
     def test_default_mode_uses_docker_volume_and_user(self, mock_setup_config):
         """Test default mode emits type=volume mount and --user 1000."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -712,7 +762,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, _ = generate_docker_run_command(
-                mock_model_spec, mock_setup_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_setup_config, json_fpath
             )
 
             assert "--volume" in docker_command, (
@@ -731,6 +781,7 @@ class TestOverrideArgsIntegration:
     def test_host_volume_mode_uses_bind_mount(self):
         """Test --host-volume mode emits type=bind mount."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
         mock_config = MagicMock()
         mock_config.cache_root = Path("/tmp/cache")
         mock_config.container_model_spec_dir = Path(
@@ -750,7 +801,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, _ = generate_docker_run_command(
-                mock_model_spec, mock_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_config, json_fpath
             )
 
             cmd_str = " ".join(str(c) for c in docker_command)
@@ -761,6 +812,7 @@ class TestOverrideArgsIntegration:
     def test_host_hf_cache_mode_mounts_weights_readonly(self):
         """Test --host-hf-cache mode emits separate readonly weights mount."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
         mock_config = MagicMock()
         mock_config.cache_root = Path("/tmp/cache")
         mock_config.container_model_spec_dir = Path(
@@ -786,7 +838,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, _ = generate_docker_run_command(
-                mock_model_spec, mock_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_config, json_fpath
             )
 
             # Should have readonly weights mount
@@ -803,6 +855,7 @@ class TestOverrideArgsIntegration:
     def test_default_mode_no_separate_weights_mount(self, mock_setup_config):
         """Test default mode (no --host-hf-cache) does NOT emit separate weights mount."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -811,7 +864,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, _ = generate_docker_run_command(
-                mock_model_spec, mock_setup_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_setup_config, json_fpath
             )
 
             # Should NOT have readonly weights mount (host_model_weights_mount_dir is None)
@@ -825,7 +878,8 @@ class TestOverrideArgsIntegration:
     def test_dev_mode_does_not_duplicate_model_spec_mount(self, mock_setup_config):
         """Test dev mode mounts model_spec JSON exactly once."""
         mock_model_spec = self._make_mock_model_spec()
-        mock_model_spec.cli_args.dev_mode = True
+        mock_runtime_config = self._make_mock_runtime_config()
+        mock_runtime_config.dev_mode = True
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -834,7 +888,7 @@ class TestOverrideArgsIntegration:
         ):
             json_fpath = Path("/tmp/test-model-spec.json")
             docker_command, _ = generate_docker_run_command(
-                mock_model_spec, mock_setup_config, json_fpath
+                mock_model_spec, mock_runtime_config, mock_setup_config, json_fpath
             )
 
             json_mount_count = 0
@@ -854,6 +908,7 @@ class TestOverrideArgsIntegration:
     def test_generate_docker_run_command_without_setup_config(self):
         """Test that generate_docker_run_command works without setup_config for --print-docker-cmd."""
         mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
 
         with patch(
             "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
@@ -861,7 +916,7 @@ class TestOverrideArgsIntegration:
             "workflows.run_docker_server.short_uuid", return_value="test123"
         ):
             docker_command, container_name = generate_docker_run_command(
-                mock_model_spec
+                mock_model_spec, mock_runtime_config
             )
 
             assert container_name == "tt-inference-server-test123"
@@ -900,7 +955,7 @@ class TestSecretsHandling:
     )
     def test_secrets_requirements(
         self,
-        mock_model_spec,
+        mock_runtime_config,
         workflow,
         docker_server,
         interactive,
@@ -909,10 +964,10 @@ class TestSecretsHandling:
         hf_required,
     ):
         """Test secret requirements for different configurations."""
-        mock_model_spec.cli_args.workflow = workflow
-        mock_model_spec.cli_args.docker_server = docker_server
-        mock_model_spec.cli_args.interactive = interactive
-        mock_model_spec.cli_args.no_auth = no_auth
+        mock_runtime_config.workflow = workflow
+        mock_runtime_config.docker_server = docker_server
+        mock_runtime_config.interactive = interactive
+        mock_runtime_config.no_auth = no_auth
 
         env_vars = {}
         if jwt_required:
@@ -927,28 +982,28 @@ class TestSecretsHandling:
                         with pytest.raises(
                             AssertionError, match="is not set in .env file"
                         ):
-                            handle_secrets(mock_model_spec)
+                            handle_secrets(mock_runtime_config)
                     else:
-                        handle_secrets(mock_model_spec)
+                        handle_secrets(mock_runtime_config)
                 else:
-                    handle_secrets(mock_model_spec)
+                    handle_secrets(mock_runtime_config)
 
     @patch("run.load_dotenv")
     @patch("run.write_dotenv")
     @patch("getpass.getpass")
     def test_secrets_prompting(
-        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_model_spec
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
     ):
         """Test prompting for missing secrets."""
-        mock_model_spec.cli_args.workflow = "server"
-        mock_model_spec.cli_args.docker_server = True
-        mock_model_spec.cli_args.interactive = False
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
 
         mock_load_dotenv.side_effect = [False, True]
         mock_getpass.side_effect = ["test-jwt", "test-hf"]
 
         with patch.dict(os.environ, {}, clear=True):
-            handle_secrets(mock_model_spec)
+            handle_secrets(mock_runtime_config)
 
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()
@@ -976,6 +1031,7 @@ class TestUtilityFunctions:
         mock_get_log_dir,
         mock_ensure_dir,
         mock_model_spec,
+        mock_runtime_config,
     ):
         """Test local setup validation."""
         mock_log_dir = Path("/tmp/test_logs")
@@ -988,7 +1044,7 @@ class TestUtilityFunctions:
         ), tempfile.TemporaryDirectory() as tempdir:
             # dump the ModelSpec to a tempdir
             model_spec_path = mock_model_spec.to_json(run_id="temp", output_dir=tempdir)
-            validate_local_setup(mock_model_spec, model_spec_path)
+            validate_local_setup(mock_model_spec, mock_runtime_config, model_spec_path)
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)

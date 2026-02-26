@@ -684,9 +684,9 @@ def main():
         help="Replicate release workflow: run check_model_weights_dir and exit (for local/CI debug).",
     )
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Path to model spec JSON file (required for --check-weights or full setup).",
+        help="Path to runtime model spec JSON file (required for --check-weights or full setup).",
         default=None,
     )
     parser.add_argument(
@@ -729,14 +729,14 @@ def main():
     args = parser.parse_args()
 
     if args.check_weights:
-        if not args.model_spec_json:
+        if not args.runtime_model_spec_json:
             print(
-                "[setup_host] --check-weights requires --model-spec-json",
+                "[setup_host] --check-weights requires --runtime-model-spec-json",
                 file=sys.stderr,
                 flush=True,
             )
             sys.exit(2)
-        model_spec = ModelSpec.from_json(args.model_spec_json)
+        model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         manager = HostSetupManager(
             model_spec=model_spec,
             jwt_secret=args.jwt_secret or "",
@@ -774,9 +774,11 @@ def main():
         )
         sys.exit(0 if ok else 1)
 
-    if not args.model_spec_json:
-        parser.error("Full setup requires --model-spec-json (or use --check-weights).")
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    if not args.runtime_model_spec_json:
+        parser.error(
+            "Full setup requires --runtime-model-spec-json (or use --check-weights)."
+        )
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(
         model_spec=model_spec,

@@ -28,8 +28,8 @@ from workflows.workflow_venvs import VENV_CONFIGS
 logger = logging.getLogger("run_log")
 
 
-def validate_runtime_args(model_spec):
-    args = model_spec.cli_args
+def validate_runtime_args(model_spec, runtime_config):
+    args = runtime_config
     workflow_type = WorkflowType.from_string(args.workflow)
 
     if not args.device:
@@ -40,7 +40,9 @@ def validate_runtime_args(model_spec):
 
     # Check if the model_id exists in MODEL_SPECS (this validates device support)
     if model_id not in MODEL_SPECS:
-        raise ValueError(f"model:={args.model} does not support device:={args.device}")
+        raise ValueError(
+            f"model:={runtime_config.model} does not support device:={runtime_config.device}"
+        )
 
     if workflow_type == WorkflowType.EVALS:
         assert model_spec.model_name in EVAL_CONFIGS, (
@@ -119,15 +121,15 @@ def validate_runtime_args(model_spec):
         )
 
 
-def validate_local_setup(model_spec, json_fpath):
+def validate_local_setup(model_spec, runtime_config, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
     ensure_readwriteable_dir(workflow_root_log_dir)
 
     if (
-        WorkflowType.from_string(model_spec.cli_args.workflow)
+        WorkflowType.from_string(runtime_config.workflow)
         in (WorkflowType.SERVER, WorkflowType.RELEASE)
-    ) and (not model_spec.cli_args.skip_system_sw_validation):
+    ) and (not runtime_config.skip_system_sw_validation):
         # check, and enforce if necessary, system software dependency versions
         venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
         venv_config.setup(model_spec=model_spec)
@@ -136,7 +138,7 @@ def validate_local_setup(model_spec, json_fpath):
         cmd = [
             str(venv_config.venv_python),
             str(get_repo_root_path() / "workflows" / "run_system_software_validation.py"),
-            "--model-spec-json", str(json_fpath),
+            "--runtime-model-spec-json", str(json_fpath),
         ]
         # fmt: on
 
@@ -327,7 +329,7 @@ def validate_bind_mount_permissions(args):
         )
 
 
-def validate_setup(model_spec, json_fpath):
+def validate_setup(model_spec, runtime_config, json_fpath):
     """Top-level validation orchestrator called from run.py main().
 
     Runs all pre-flight validation checks in order:
@@ -335,7 +337,7 @@ def validate_setup(model_spec, json_fpath):
     2. validate_local_setup - system software dependencies
     3. validate_bind_mount_permissions - Docker bind mount UID access (docker-server only)
     """
-    validate_runtime_args(model_spec)
-    validate_local_setup(model_spec, json_fpath)
-    if getattr(model_spec.cli_args, "docker_server", False):
-        validate_bind_mount_permissions(model_spec.cli_args)
+    validate_runtime_args(model_spec, runtime_config)
+    validate_local_setup(model_spec, runtime_config, json_fpath)
+    if runtime_config.docker_server:
+        validate_bind_mount_permissions(runtime_config)

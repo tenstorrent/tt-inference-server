@@ -511,7 +511,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
 
         # Get performance targets using the shared utility
-        device_str = self.model_spec.cli_args.get("device")
+        device_str = self.model_spec.device_type.name.lower()
         targets = get_performance_targets(
             self.model_spec.model_name,
             device_str,

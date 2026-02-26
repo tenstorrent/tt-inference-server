@@ -30,6 +30,7 @@ from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_EVALS_CONFIG,
@@ -121,9 +122,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM evals")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -166,6 +167,7 @@ def build_eval_command(
     device,
     output_path,
     service_port,
+    runtime_config=None,
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -292,8 +294,9 @@ def build_eval_command(
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
-    # Check if limit_samples_mode is set in CLI args and get the corresponding limit
-    limit_samples_mode_str = model_spec.cli_args.get("limit_samples_mode")
+    limit_samples_mode_str = (
+        runtime_config.limit_samples_mode if runtime_config else None
+    )
     if limit_samples_mode_str:
         limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
         limit_arg = task.limit_samples_map.get(limit_mode)
@@ -311,12 +314,12 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    disable_trace_capture = cli_args.get("disable_trace_capture", False)
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    disable_trace_capture = runtime_config.disable_trace_capture
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
@@ -361,7 +364,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = cli_args.get("service_port")
+    env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
     if (
@@ -373,7 +376,7 @@ def main():
             model_spec,
             device,
             args.output_path,
-            cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000")),
+            runtime_config.service_port,
         )
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
@@ -387,9 +390,7 @@ def main():
             model_spec=model_spec,
             device=device,
             output_path=args.output_path,
-            service_port=cli_args.get(
-                "service_port", os.getenv("SERVICE_PORT", "8000")
-            ),
+            service_port=runtime_config.service_port,
         )
 
         return_codes = []
@@ -403,7 +404,8 @@ def main():
                 model_spec,
                 device_str,
                 args.output_path,
-                cli_args.get("service_port"),
+                runtime_config.service_port,
+                runtime_config=runtime_config,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -450,7 +452,8 @@ def main():
                 model_spec,
                 device_str,
                 args.output_path,
-                cli_args.get("service_port"),
+                runtime_config.service_port,
+                runtime_config=runtime_config,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)

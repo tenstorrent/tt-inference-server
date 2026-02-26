@@ -11,12 +11,12 @@ Each test verifies SetupConfig fields, setup_host() completion, and docker comma
 import json
 import os
 import tempfile
-from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
+from workflows.runtime_config import RuntimeConfig
 from workflows.validate_setup import validate_runtime_args
 from workflows.model_spec import (
     DeviceModelSpec,
@@ -148,8 +148,8 @@ def mock_ram_check():
 
 @pytest.fixture
 def mock_cli_args(tiny_model_spec):
-    """Create minimal CLI args that generate_docker_run_command reads."""
-    args = Namespace(
+    """Create minimal RuntimeConfig that generate_docker_run_command reads."""
+    return RuntimeConfig(
         model=TINY_MODEL_NAME,
         device="n150",
         workflow="server",
@@ -165,9 +165,6 @@ def mock_cli_args(tiny_model_spec):
         host_hf_cache=None,
         host_weights_dir=None,
     )
-    # apply_runtime_args would normally do this; we set it directly
-    object.__setattr__(tiny_model_spec, "cli_args", args)
-    return args
 
 
 def _join_docker_cmd(docker_command):
@@ -490,7 +487,7 @@ class TestSetupHostDockerCommand:
         json_fpath.write_text("{}")
         return json_fpath
 
-    def _generate_cmd(self, tiny_model_spec, config, json_fpath):
+    def _generate_cmd(self, tiny_model_spec, runtime_config, config, json_fpath):
         """Helper to call generate_docker_run_command with standard mocks."""
         with patch(
             "workflows.run_docker_server.get_repo_root_path",
@@ -498,7 +495,9 @@ class TestSetupHostDockerCommand:
         ), patch(
             "workflows.run_docker_server.DeviceTypes",
         ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
-            return generate_docker_run_command(tiny_model_spec, config, json_fpath)
+            return generate_docker_run_command(
+                tiny_model_spec, runtime_config, config, json_fpath
+            )
 
     def test_default_mode_docker_command(
         self, tiny_model_spec, mock_cli_args, temp_dir
@@ -507,7 +506,9 @@ class TestSetupHostDockerCommand:
         config = SetupConfig(model_spec=tiny_model_spec)
         json_fpath = self._make_json_fpath(temp_dir)
 
-        docker_command, _ = self._generate_cmd(tiny_model_spec, config, json_fpath)
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, mock_cli_args, config, json_fpath
+        )
 
         assert "--volume" in docker_command
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
@@ -524,7 +525,9 @@ class TestSetupHostDockerCommand:
         )
         json_fpath = self._make_json_fpath(temp_dir)
 
-        docker_command, _ = self._generate_cmd(tiny_model_spec, config, json_fpath)
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, mock_cli_args, config, json_fpath
+        )
 
         cmd_str = _join_docker_cmd(docker_command)
         assert f"type=bind,src={config.host_model_volume_root}" in cmd_str
@@ -562,7 +565,9 @@ class TestSetupHostDockerCommand:
 
         json_fpath = self._make_json_fpath(temp_dir)
 
-        docker_command, _ = self._generate_cmd(tiny_model_spec, config, json_fpath)
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, mock_cli_args, config, json_fpath
+        )
 
         cmd_str = _join_docker_cmd(docker_command)
         # Readonly weights mount present
@@ -585,7 +590,9 @@ class TestSetupHostDockerCommand:
         )
         json_fpath = self._make_json_fpath(temp_dir)
 
-        docker_command, _ = self._generate_cmd(tiny_model_spec, config, json_fpath)
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, mock_cli_args, config, json_fpath
+        )
 
         cmd_str = _join_docker_cmd(docker_command)
         # Readonly weights mount present
@@ -602,8 +609,8 @@ class TestSetupHostDockerCommand:
 class TestSetupHostValidation:
     """Test validation: mutual exclusivity of weight source options."""
 
-    def _make_mock_model_spec(self, **cli_overrides):
-        """Create a mock model_spec with cli_args for validate_runtime_args."""
+    def _make_mock_model_spec_and_config(self, **cli_overrides):
+        """Create a mock model_spec and RuntimeConfig for validate_runtime_args."""
         mock_spec = MagicMock()
         mock_spec.model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         mock_spec.model_name = "Llama-3.1-8B-Instruct"
@@ -622,16 +629,12 @@ class TestSetupHostValidation:
         }
         cli_defaults.update(cli_overrides)
 
-        mock_cli = MagicMock()
-        for key, val in cli_defaults.items():
-            setattr(mock_cli, key, val)
-        mock_spec.cli_args = mock_cli
-
-        return mock_spec
+        runtime_config = RuntimeConfig(**cli_defaults)
+        return mock_spec, runtime_config
 
     def test_mutual_exclusivity_host_volume_and_hf_cache(self):
         """Setting both --host-volume and --host-hf-cache should raise."""
-        mock_spec = self._make_mock_model_spec(
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_hf_cache="/tmp/hf",
         )
@@ -642,11 +645,11 @@ class TestSetupHostValidation:
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
             ):
-                validate_runtime_args(mock_spec)
+                validate_runtime_args(mock_spec, runtime_config)
 
     def test_mutual_exclusivity_host_volume_and_weights_dir(self):
         """Setting both --host-volume and --host-weights-dir should raise."""
-        mock_spec = self._make_mock_model_spec(
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_weights_dir="/tmp/weights",
         )
@@ -657,11 +660,11 @@ class TestSetupHostValidation:
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
             ):
-                validate_runtime_args(mock_spec)
+                validate_runtime_args(mock_spec, runtime_config)
 
     def test_mutual_exclusivity_hf_cache_and_weights_dir(self):
         """Setting both --host-hf-cache and --host-weights-dir should raise."""
-        mock_spec = self._make_mock_model_spec(
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_hf_cache="/tmp/hf",
             host_weights_dir="/tmp/weights",
         )
@@ -672,11 +675,11 @@ class TestSetupHostValidation:
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
             ):
-                validate_runtime_args(mock_spec)
+                validate_runtime_args(mock_spec, runtime_config)
 
     def test_all_three_set_raises(self):
         """Setting all three weight source options should raise."""
-        mock_spec = self._make_mock_model_spec(
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_hf_cache="/tmp/hf",
             host_weights_dir="/tmp/weights",
@@ -688,26 +691,25 @@ class TestSetupHostValidation:
                 ValueError,
                 match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
             ):
-                validate_runtime_args(mock_spec)
+                validate_runtime_args(mock_spec, runtime_config)
 
     def test_single_option_passes_validation(self):
         """Setting only --host-weights-dir should pass mutual exclusivity check."""
-        mock_spec = self._make_mock_model_spec(
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_weights_dir="/tmp/weights",
         )
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            # Should not raise (benchmarks workflow passes validation)
-            validate_runtime_args(mock_spec)
+            validate_runtime_args(mock_spec, runtime_config)
 
     def test_no_options_passes_validation(self):
         """Setting none of the weight source options should pass."""
-        mock_spec = self._make_mock_model_spec()
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config()
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            validate_runtime_args(mock_spec)
+            validate_runtime_args(mock_spec, runtime_config)
 
     def test_host_weights_dir_nonexistent_directory(self, tiny_model_spec):
         """check_setup() returns False when host_weights_dir does not exist."""
