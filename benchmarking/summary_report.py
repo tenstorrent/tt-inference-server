@@ -97,7 +97,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     aiperf_image_pattern = r"""
         ^aiperf_benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|P300X2|P300x2|p300x2|P300|p300|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -140,7 +140,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     aiperf_text_pattern = r"""
         ^aiperf_benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|P300X2|P300x2|p300x2|P300|p300|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -168,7 +168,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|P300X2|P300x2|p300x2|P300|p300|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -213,7 +213,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|P300X2|P300x2|p300x2|P300|p300|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
