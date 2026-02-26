@@ -2,9 +2,11 @@
 tt-forge==0.8.0
 torchvision
 
+tabulate
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
+tabulate
 
 datasets # model training
 peft # model training

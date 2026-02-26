@@ -30,6 +30,46 @@ This server is built to serve non-LLM models. Currently supported models:
 
 More details about each folder will be provided below
 
+# API Versioning
+
+All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy paths without the `/v1` prefix are still supported during a deprecation period but will be removed after **2026-06-30**.
+
+## Versioned vs legacy paths
+
+| Primary (use this)             | Legacy (deprecated)        |
+|--------------------------------|----------------------------|
+| `/v1/images/generations`        | `/image/generations`       |
+| `/v1/audio/transcriptions`     | `/audio/transcriptions`    |
+| `/v1/audio/speech`             | `/audio/speech`            |
+| `/v1/videos/generations`        | `/video/generations`       |
+| `/v1/cnn/search-image`         | `/cnn/search-image`        |
+| `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
+| `/v1/tokenize`                 | `/tokenize`                |
+
+The following endpoints were already on `/v1` and have no legacy path:
+
+| Endpoint                       |
+|--------------------------------|
+| `/v1/completions`              |
+| `/v1/chat/completions`         |
+| `/v1/embeddings`               |
+
+## Deprecation headers
+
+Requests to legacy paths return three extra HTTP headers per RFC 8594 and RFC 8288:
+
+```
+Deprecation: true
+Sunset: 2026-06-30
+Link: </v1/images/generations>; rel="successor-version"
+```
+
+- **`Deprecation: true`** -- signals the endpoint is deprecated.
+- **`Sunset: 2026-06-30`** -- the date after which the legacy path will be removed.
+- **`Link`** -- points to the replacement `/v1/...` endpoint.
+
+Maintenance endpoints (`/tt-liveness`, `/tt-deep-reset`, `/tt-reset-device`) are internal and do not use the `/v1` prefix.
+
 # Installation instructions
 
 To just run a server build a docker file and run it.
@@ -198,7 +238,7 @@ If server is running in development mode (ENVIRONMENT=development), OpenAPI endp
 Sample for calling the endpoint for image generation via curl:
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/image/generations' \
+  'http://127.0.0.1:8000/v1/images/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -218,11 +258,11 @@ curl -X 'POST' \
 
 The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
 
-- Base64 JSON Request: Send a JSON POST request to `/audio/transcriptions` or `/audio/translations`
+- Base64 JSON Request: Send a JSON POST request to `/v1/audio/transcriptions` or `/v1/audio/translations`
 Sample for calling the audio transcription/translations endpoint via curl:
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/audio/transcriptions' \
+  'http://127.0.0.1:8000/v1/audio/transcriptions' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -238,10 +278,10 @@ test_data.json file example:
 }
 ```
 
-- File Upload (WAV/MP3): Send a multipart form data POST request to `/audio/transcriptions` or `/audio/translations`
+- File Upload (WAV/MP3): Send a multipart form data POST request to `/v1/audio/transcriptions` or `/v1/audio/translations`
 ```bash
 # WAV file upload
-curl -X POST "http://localhost:8000/audio/transcriptions" \
+curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
   -H "Authorization: Bearer your-secret-key" \
   -F "file=@/path/to/audio.wav" \
   -F "stream=true" \
@@ -265,7 +305,7 @@ curl -X POST "http://localhost:8000/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model. The response is binary audio (WAV, MP3, OGG) or JSON with base64 audio and metadata.
 
-**Endpoint:** `POST /audio/speech`  
+**Endpoint:** `POST /v1/audio/speech`  
 **Content-Type:** `application/json`
 
 ## Request parameters
@@ -295,7 +335,7 @@ The server sends `Content-Disposition: attachment; filename=speech.<format>` (e.
 **Default (WAV):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system."}' \
@@ -307,7 +347,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **MP3:**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "mp3"}' \
@@ -319,7 +359,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **OGG (or use -J -O to save as speech.ogg from Content-Disposition):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "ogg"}' \
@@ -329,7 +369,7 @@ curl -X POST 'http://127.0.0.1:8000/audio/speech' \
 **JSON response (base64 audio + metadata):**
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/audio/speech' \
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
   -d '{"text": "Hello, this is a test of the text to speech system.", "response_format": "verbose_json"}' \
@@ -381,9 +421,9 @@ curl -X 'POST' \
 }'
 ```
 
-- File Upload: Send a multipart form data POST request to `/search-image`
+- File Upload: Send a multipart form data POST request to `/v1/cnn/search-image`
 ```bash
-curl -X POST "http://localhost:8000/search-image" \
+curl -X POST "http://localhost:8000/v1/cnn/search-image" \
   -H "Authorization: Bearer your-secret-key" \
   -F "file=@/path/to/image.jpg" \
   -F "response_format=json" \
@@ -408,7 +448,7 @@ curl -X POST "http://localhost:8000/search-image" \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/video/generations' \
+  'http://127.0.0.1:8000/v1/videos/generations' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -436,18 +476,18 @@ Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
 
 ## Download generated video
 
-The `/video/generations/{video_id}/download` endpoint for downloading a video file
+The `/v1/videos/generations/{video_id}/download` endpoint for downloading a video file
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/download' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}/download' \
   -H 'Authorization: Bearer your-secret-key' \
   -o output.mp4
 ```
@@ -456,7 +496,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/video/generations/{video_id}/cancel' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -469,7 +509,7 @@ curl -X 'POST' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -501,7 +541,7 @@ Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -510,7 +550,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -519,7 +559,7 @@ curl -X 'GET' \
 
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/cancel' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -528,7 +568,7 @@ curl -X 'POST' \
 
 ```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/fine_tuning/jobs/{job_id}/checkpoints' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/checkpoints' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```

@@ -4,7 +4,7 @@
 
 import asyncio
 import os
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -16,7 +16,6 @@ from domain.audio_text_response import (
     AudioTextResponse,
     AudioTextSegment,
 )
-from models.demos.utils.common_demo_utils import get_mesh_mappers
 from models.demos.audio.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
@@ -28,6 +27,7 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
     AutoFeatureExtractor,
@@ -87,13 +87,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
-                # Warmup with batch matching max_batch_size
+                await self.pipeline(dummy_audio)
                 if self.settings.max_batch_size > 1:
-                    # Create batch of dummy audio to match expected batch size
-                    warmup_batch = [dummy_audio] * self.settings.max_batch_size
+                    warmup_batch = [dummy_audio, dummy_audio]
                     await self.pipeline(warmup_batch)
-                else:
-                    await self.pipeline(dummy_audio)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -131,7 +128,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             if requests.__len__() > 1 or self.settings.max_batch_size > 1:
                 return await self._execute_pipeline_batch(
-                    requests, self._create_generation_params(requests[0])
+                    requests, [self._create_generation_params(req) for req in requests]
                 )
 
             request = self._validate_and_extract_request(requests)
@@ -247,41 +244,25 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
     async def _execute_pipeline_batch(self, requests, generation_params):
         """Main pipeline execution method for batch processing.
 
-        Args:
-            requests: List of AudioProcessingRequest objects
-            generation_params: Parameters for generation
-
-        Note: Pipeline expects batch size of 2. If only 1 request, duplicate it.
-              If 2 requests, pad audio arrays to the same size.
+        Supports 1 or 2 requests. When 2 requests are provided, audio arrays
+        are padded to the same tensor size. Generator handles both batch sizes
+        natively using separate pre-warmed traces (trace_key=1 and trace_key=2).
         """
         try:
-            # Extract audio arrays from requests
             audio_arrays = [req._audio_array for req in requests]
             durations = [req._duration for req in requests]
 
-            if len(audio_arrays) == 1:
-                # Pipeline expects batch size of 2, duplicate the single audio
-                audio_data = [audio_arrays[0], audio_arrays[0]]
-                durations = [durations[0], durations[0]]
-            elif len(audio_arrays) == 2:
-                # Pad audio arrays to the same length
-                max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
-                padded_arrays = []
-                for arr in audio_arrays:
-                    if len(arr) < max_len:
-                        # Pad with zeros to match the longer audio
-                        padded_arr = np.pad(
-                            arr,
-                            (0, max_len - len(arr)),
-                            mode="constant",
-                            constant_values=0,
-                        )
-                    else:
-                        padded_arr = arr
-                    padded_arrays.append(padded_arr)
-                audio_data = padded_arrays
-            else:
+            if len(audio_arrays) > 2:
                 raise ValueError(f"Expected 1 or 2 requests, got {len(audio_arrays)}")
+
+            if len(audio_arrays) == 2:
+                max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
+                audio_data = [
+                    np.pad(arr, (0, max_len - len(arr))) if len(arr) < max_len else arr
+                    for arr in audio_arrays
+                ]
+            else:
+                audio_data = audio_arrays
 
             result = await self.pipeline(
                 audio_data,
@@ -289,23 +270,19 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 generation_params=generation_params,
             )
 
-            # Format results - result[0] is a list of transcription strings (one per batch item)
-            # Each request is a separate audio file, so return separate AudioTextResponse for each
             responses = []
             if result and result[0]:
                 for index, text in enumerate(result[0]):
-                    # Only return results for actual requests (not duplicated ones)
-                    if index < len(requests):
-                        cleaned_text, start, end = TextUtils.extract_text(text)
-
-                        response = AudioTextResponse(
+                    cleaned_text, start, end = TextUtils.extract_text(text)
+                    responses.append(
+                        AudioTextResponse(
                             text=cleaned_text,
                             duration=durations[index],
                             start=start,
                             end=end,
-                            segments=[],  # Empty list to avoid None iteration errors
+                            segments=[],
                         )
-                        responses.append(response)
+                    )
 
             return responses
 
@@ -661,17 +638,24 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return init_kv_cache(
                     config,
                     self.ttnn_device,
-                    self.settings.max_batch_size,
                     max_seq_len=max_seq_len,
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
 
-            kv_cache, cross_attn_cache = await asyncio.to_thread(_init_kv_cache)
+            (
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            ) = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully initialized TTNN model components"
             )
-            return parameters, ttnn_linear_weight, kv_cache, cross_attn_cache
+            return (
+                parameters,
+                ttnn_linear_weight,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            )
 
         except Exception as e:
             self.logger.error(
@@ -703,8 +687,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             (
                 parameters,
                 ttnn_linear_weight,
-                kv_cache,
-                cross_attn_cache,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )
@@ -720,15 +704,17 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 input_mesh_mapper=input_mesh_mapper,
                 output_mesh_composer=output_mesh_composer,
                 weights_mesh_mapper=weights_mesh_mapper,
-                kv_cache=kv_cache,
-                cross_attn_cache=cross_attn_cache,
+                kv_cache_per_batch_size=kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size=cross_attn_cache_per_batch_size,
                 max_batch_size=self.settings.max_batch_size,
             )
 
             async def _model_pipeline(
                 audio_data,
                 stream=False,
-                generation_params: Optional[GenerationParams] = None,
+                generation_params: Optional[
+                    Union[GenerationParams, List[GenerationParams]]
+                ] = None,
             ):
                 try:
                     # Validate pipeline inputs

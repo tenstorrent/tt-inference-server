@@ -7,13 +7,15 @@
 #include <string>
 #include <json/json.h>
 
+#include "domain/base_response.hpp"
+
 namespace tt::domain {
 
 /**
  * OpenAI-compatible embedding response.
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/object
  */
-struct EmbeddingResponse {
+struct EmbeddingResponse : BaseResponse {
     // The embedding vector
     std::vector<float> embedding;
 
@@ -22,9 +24,6 @@ struct EmbeddingResponse {
 
     // Model used
     std::string model;
-
-    // Task ID for tracking
-    std::string task_id;
 
     // Error message (if any)
     std::string error;

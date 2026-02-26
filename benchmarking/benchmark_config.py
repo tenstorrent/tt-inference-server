@@ -484,6 +484,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                     device: [
                         expanded_params
                         for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                        if isl + osl <= max_context
                         for expanded_params in _expand_text_sweep_params(
                             isl=isl,
                             osl=osl,
