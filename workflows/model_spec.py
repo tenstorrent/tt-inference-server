@@ -1561,7 +1561,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30000000,
+                    "trace_region_size": 56000000,
                 },
             ),
         ],
@@ -1598,7 +1598,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 52000000,
+                    "trace_region_size": 56000000,
                 },
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto",
@@ -1794,17 +1794,17 @@ llm_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 56000000,
                 },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
-                max_concurrency=32 * 4,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 48000000,
+                    "trace_region_size": 56000000,
                 },
             ),
         ],
@@ -1832,7 +1832,7 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
-                max_concurrency=32 * 8,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
