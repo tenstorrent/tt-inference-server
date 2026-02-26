@@ -2137,7 +2137,12 @@ def extract_eval_json_data(json_path: Path):
 
     # extract first results' metrics
     first_results = results[first_key]
-    extracted = [{first_key: {k: v}} for k, v in first_results.items() if "alias" not in k and "_stderr" not in k]
+    extracted_metrics = {
+        k: v
+        for k, v in first_results.items()
+        if "alias" not in k and "_stderr" not in k
+    }
+    extracted = [{first_key: extracted_metrics}]
 
     config = configs.get(first_key, {})
     task_name = config.get("task", first_key)
