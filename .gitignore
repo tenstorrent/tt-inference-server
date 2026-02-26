@@ -32,6 +32,7 @@ generated_modules
 *.ipynb
 *_params.pt
 *.json
+!.github/workflows/*.json
 *.jsonl
 *.pt
 *.tti
