@@ -47,7 +47,6 @@ class SetupConfig:
     host_tt_metal_cache_dir: Path = None
     host_model_weights_snapshot_dir: Path = None
     host_model_weights_mount_dir: Path = None
-    host_tt_metal_logs_dir: Path = None
     containter_user_home: Path = Path("/home/container_app_user/")
     cache_root: Path = containter_user_home / "cache_root"
     container_model_spec_dir: Path = containter_user_home / "model_spec"
@@ -55,7 +54,6 @@ class SetupConfig:
     container_model_weights_snapshot_dir: Path = None
     container_model_weights_mount_dir: Path = None
     container_model_weights_path: Path = None
-    container_tt_metal_logs_dir: Path = containter_user_home / "logs"
     repo_root: str = ""
     repacked_str: str = ""
     model_weights_format: str = ""
@@ -81,9 +79,6 @@ class SetupConfig:
             self.host_model_volume_root
             / "tt_metal_cache"
             / f"cache_{self.model_spec.model_name}"
-        )
-        self.host_tt_metal_logs_dir = (
-            self.host_model_volume_root / "tt_metal_logs"
         )
         # container paths
         self.container_tt_metal_cache_dir = (
@@ -516,7 +511,6 @@ class HostSetupManager:
     def make_host_dirs(self):
         self.setup_config.host_model_volume_root.mkdir(parents=True, exist_ok=True)
         self.setup_config.host_tt_metal_cache_dir.mkdir(parents=True, exist_ok=True)
-        self.setup_config.host_tt_metal_logs_dir.mkdir(parents=True, exist_ok=True)
 
     def setup_weights(self):
         if not self.check_setup():

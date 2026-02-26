@@ -72,7 +72,6 @@ class DeviceTypes(IntEnum):
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
     P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
-    QBGE = P300X2  # Alias: legacy name for QBGE hardware
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -80,11 +79,8 @@ class DeviceTypes(IntEnum):
 
     @classmethod
     def from_string(cls, name: str):
-        # Alias: "QBGE" is the legacy name; P300X2 is the canonical member
-        _ALIASES = {"QBGE": "P300X2"}
-        normalized = _ALIASES.get(name.upper(), name.upper())
         try:
-            return cls[normalized]
+            return cls[name.upper()]
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 

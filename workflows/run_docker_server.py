@@ -4,7 +4,6 @@
 
 import atexit
 import logging
-import os
 import shlex
 import subprocess
 import time
@@ -144,32 +143,6 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # Add environment variables for tt-media-server containers (forge and media)
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
 
-    # Hang detection: set container env vars from CLI flag or host env vars
-    if getattr(args, "hang_detection", False):
-        timeout = getattr(args, "hang_detection_timeout", 30.0)
-        docker_env_vars["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = str(timeout)
-        docker_env_vars["TT_METAL_LOGS_PATH"] = str(setup_config.container_tt_metal_logs_dir)
-        docker_env_vars["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = (
-            "/home/container_app_user/tt-metal/python_env/bin/python3"
-            " /home/container_app_user/tt-metal/tools/tt-triage.py"
-            " --disable-progress 1>&2"
-        )
-        logger.info(f"Hang detection enabled: timeout={timeout}s")
-    else:
-        # Fallback: forward host env vars if set (Solution A compatibility)
-        for env_var in [
-            "TT_METAL_OPERATION_TIMEOUT_SECONDS",
-            "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE",
-        ]:
-            env_value = os.getenv(env_var)
-            if env_value:
-                docker_env_vars[env_var] = env_value
-                logger.info(f"Forwarding hang detection env var: {env_var}={env_value}")
-        # Always ensure TT_METAL_LOGS_PATH is set for hang detection
-        if "TT_METAL_OPERATION_TIMEOUT_SECONDS" in docker_env_vars or "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" in docker_env_vars:
-            if "TT_METAL_LOGS_PATH" not in docker_env_vars:
-                docker_env_vars["TT_METAL_LOGS_PATH"] = str(setup_config.container_tt_metal_logs_dir)
-
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
@@ -184,7 +157,6 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # note: order of mounts matters, model_volume_root must be mounted before nested mounts
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
         "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
-        "--mount", f"type=bind,src={setup_config.host_tt_metal_logs_dir},dst={setup_config.container_tt_metal_logs_dir}",
         "--shm-size", "32G",
         "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]

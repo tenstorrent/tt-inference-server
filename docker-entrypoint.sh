@@ -62,12 +62,6 @@ umask 0002
 
 # only set permisssions for cache_root
 set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
-
-# Set permissions for tt-metal logs directory if it exists and is mounted
-if [ -n "${TT_METAL_LOGS_PATH}" ] && [ -d "${TT_METAL_LOGS_PATH}" ]; then
-    set_group_permissions "$TT_METAL_LOGS_PATH" "$SHARED_GROUP_NAME"
-fi
-
 # NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
 echo "Mounted volume permissions setup completed."
 

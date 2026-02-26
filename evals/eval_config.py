@@ -993,7 +993,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                max_concurrent=8,
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-32B",

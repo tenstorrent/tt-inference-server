@@ -23,7 +23,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
 )
 from workflows.workflow_config import WORKFLOW_CONFIGS
-from workflows.workflow_types import DeviceTypes, ModelSource, WorkflowType
+from workflows.workflow_types import ModelSource, WorkflowType
 
 
 class TestWorkflowUtils:
@@ -439,39 +439,6 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args):
             with pytest.raises(SystemExit):  # argparse should exit on invalid choice
                 main()
-
-
-class TestDeviceTypeAlias:
-    """Tests for DeviceTypes p300x2/QBGE alias support."""
-
-    def test_from_string_p300x2_returns_qbge(self):
-        """p300x2 (tt-shield runner-type) should resolve to QBGE DeviceType."""
-        assert DeviceTypes.from_string("p300x2") == DeviceTypes.QBGE
-
-    def test_from_string_p300x2_uppercase(self):
-        """P300X2 (uppercase) should also resolve to QBGE."""
-        assert DeviceTypes.from_string("P300X2") == DeviceTypes.QBGE
-
-    def test_from_string_qbge_unchanged(self):
-        """qbge should still work as before (backward compat)."""
-        assert DeviceTypes.from_string("qbge") == DeviceTypes.QBGE
-
-    def test_from_string_qbge_uppercase_unchanged(self):
-        """QBGE (uppercase) should still work."""
-        assert DeviceTypes.from_string("QBGE") == DeviceTypes.QBGE
-
-    def test_from_string_invalid_raises(self):
-        """Unknown device strings should still raise ValueError."""
-        with pytest.raises(ValueError, match="Invalid DeviceType"):
-            DeviceTypes.from_string("invalid_device")
-
-    def test_bracket_lookup_p300x2(self):
-        """DeviceTypes['P300X2'] bracket lookup should resolve to QBGE (tt-shield path)."""
-        assert DeviceTypes["P300X2"] == DeviceTypes.QBGE
-
-    def test_p300x2_is_alias_identity(self):
-        """P300X2 should be the same object as QBGE (IntEnum alias identity)."""
-        assert DeviceTypes.P300X2 is DeviceTypes.QBGE
 
 
 if __name__ == "__main__":

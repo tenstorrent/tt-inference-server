@@ -293,8 +293,7 @@ def get_mesh_grid(dp_rank=0):
         "T3K": (1, 8),
         "P150x8": (1, 8),
         "TG": (8, 4),
-        "QBGE": (2, 2),    # 2x P300 cards = 4 chips (2,2 mesh)
-        "P300X2": (2, 2),  # alias: matches tt-shield runner-type naming
+        "P300X2": (1, 4),  # alias: matches tt-shield runner-type naming
     }
     mesh_device_env = os.environ.get("MESH_DEVICE")
     if mesh_device_env is not None:

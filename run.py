@@ -54,7 +54,7 @@ def parse_device_ids(value):
 
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
-    valid_devices = {device.name.lower() for device in DeviceTypes} | {"p300x2", "qbge"}
+    valid_devices = {device.name.lower() for device in DeviceTypes}
 
     # Build valid models set, including full HF repo names for whisper models
     valid_models = set()
@@ -208,17 +208,6 @@ def parse_arguments():
         "--concurrency-sweeps",
         action="store_true",
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
-    )
-    parser.add_argument(
-        "--hang-detection",
-        action="store_true",
-        help="Enable hang detection: automatically runs tt-triage on dispatch timeout",
-    )
-    parser.add_argument(
-        "--hang-detection-timeout",
-        type=float,
-        default=30.0,
-        help="Hang detection timeout in seconds (default: 30.0)",
     )
 
     args = parser.parse_args()

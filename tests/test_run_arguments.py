@@ -636,31 +636,5 @@ class TestUtilityFunctions:
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
 
 
-class TestP300X2DeviceAlias:
-    """Tests that --device p300x2 is accepted as a valid alias for qbge."""
-
-    def test_p300x2_accepted_as_device(self):
-        """--device p300x2 should be accepted by argparse (not 'invalid choice')."""
-        args = [
-            "--model", "Qwen3-32B",
-            "--workflow", "release",
-            "--device", "p300x2",
-        ]
-        with patch("sys.argv", ["run.py"] + args):
-            parsed = parse_arguments()
-        assert parsed.device == "p300x2"
-
-    def test_qbge_still_accepted_as_device(self):
-        """--device qbge should still work (backward compat)."""
-        args = [
-            "--model", "Qwen3-32B",
-            "--workflow", "release",
-            "--device", "qbge",
-        ]
-        with patch("sys.argv", ["run.py"] + args):
-            parsed = parse_arguments()
-        assert parsed.device == "qbge"
-
-
 if __name__ == "__main__":
     pytest.main([__file__])
