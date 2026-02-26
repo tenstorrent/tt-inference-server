@@ -932,8 +932,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="60ffb199",
-        vllm_commit="3499ffa1",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1122,13 +1122,13 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="08bcd06",
-        vllm_commit="47be1ca",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
                 max_context=128 * 1024,  # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
                 default_impl=True,
                 env_vars={
@@ -1187,7 +1187,7 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=128,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=False,
                 override_tt_config={
@@ -1395,13 +1395,13 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="08bcd06",
-        vllm_commit="47be1ca",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
@@ -1788,7 +1788,7 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=128,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
@@ -1961,7 +1961,7 @@ vlm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={

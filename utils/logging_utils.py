@@ -8,7 +8,6 @@ import logging
 import importlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 
 LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
