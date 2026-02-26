@@ -19,7 +19,7 @@ from PIL import Image
 from tests.server_tests.base_test import BaseTest
 from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
-    SERVER_DEFAULT_URL,
+    SERVER_BASE_URL,
 )
 from tests.server_tests.test_classes import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
@@ -228,7 +228,7 @@ class VideoGenerationEvalsTest(BaseTest):
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed - server not ready")
 
-        base_url = server_url or SERVER_DEFAULT_URL
+        base_url = server_url or SERVER_BASE_URL
         videos_info = []
 
         headers = {

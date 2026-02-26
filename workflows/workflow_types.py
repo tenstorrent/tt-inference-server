@@ -203,8 +203,13 @@ class SystemTopology(Enum):
     @classmethod
     def from_topology_string(cls, value: str):
         """Instantiates a SystemTopology from the result string from the `tt-topology -ls` command"""
+        if value is None:
+            raise ValueError(
+                "Topology configuration value is None (tt-topology may have failed)"
+            )
+        value_lower = value.lower()
         for member in cls:
-            if member.value.lower() == value.lower():  # case-insensitive match
+            if member.value is not None and member.value.lower() == value_lower:
                 return member
         raise ValueError(f"Unknown topology configuration: {value}")
 

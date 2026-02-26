@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <functional>
 #include <unistd.h>
 #include "runners/runner_interface.hpp"
 #include "runners/runner_config.hpp"
@@ -43,7 +42,6 @@ public:
 
 private:
     unique_ptr<tt::runners::IRunner> runner_;
-    function<void(const llm_engine::TokenResult& result)> on_token_;
 };
 
 } // namespace tt::worker
