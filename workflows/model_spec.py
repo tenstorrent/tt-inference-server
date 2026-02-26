@@ -1523,16 +1523,6 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.5.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.3.0",
-                mode=VersionMode.STRICT,
-            ),
-        ),
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
@@ -1545,37 +1535,32 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.3.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
-        ],
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        ],
-        impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.12.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.4.1",
-                mode=VersionMode.STRICT,
-            ),
-        ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.12.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.4.1",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
