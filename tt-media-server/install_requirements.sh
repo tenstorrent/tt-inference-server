@@ -7,10 +7,10 @@ set -eo pipefail
 echo "Installing requirements with CPU-only PyTorch..."
 
 # Install main requirements
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Install WhisperX without dependencies to avoid PyTorch conflicts
 echo "Installing WhisperX without dependencies..."
-pip install whisperx==3.4.3 --no-deps
+uv pip install whisperx==3.4.3 --no-deps
 
 echo "Installation complete!"
