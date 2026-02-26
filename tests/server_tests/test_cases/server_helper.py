@@ -11,7 +11,10 @@ from typing import Optional
 
 SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
-SERVER_DEFAULT_URL = "http://127.0.0.1:8000/v1/cnn/search-image"
+# Base URL (host:port only) for building v1 API paths in eval tests
+SERVER_BASE_URL = "http://127.0.0.1:8000"
+# Full URL to CNN search-image endpoint
+SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
 TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[3] / "tt-media-server"
 READY_LOG_TEXT = "All devices are warmed up and ready"

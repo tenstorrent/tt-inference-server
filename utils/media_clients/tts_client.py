@@ -305,7 +305,9 @@ class TtsClientStrategy(BaseMediaStrategy):
                     url,
                     json=payload,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=90),
+                    timeout=aiohttp.ClientTimeout(
+                        total=120
+                    ),  # cold start can exceed 90s
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -369,7 +371,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             return True, total_duration, ttft_ms, rtr, audio_duration
 
         except Exception as e:
-            logger.error(f"TTS generation failed: {e}")
+            logger.error(f"TTS generation failed: {type(e).__name__}: {e}")
             return False, 0.0, None, None, None
 
     def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
