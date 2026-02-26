@@ -81,7 +81,8 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     && /usr/local/bin/cmake --version
 
 # build tt-metal
-# Note: base image provides /opt/venv with uv in PATH; no need to create a new venv.
+# Note: base image provides /opt/venv with uv in PATH; no need to create a separate venv.
+# However, 'uv pip install -e .' is required after build to register the ttnn package (including compiled submodules).
 RUN git clone --depth 1 https://github.com/tenstorrent/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -90,6 +91,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent/tt-metal.git ${TT_METAL_H
     && ./install_dependencies.sh --docker \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
+    && uv pip install -e . \
     && uv pip install --upgrade cmake \
     && hash -r
 RUN find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
