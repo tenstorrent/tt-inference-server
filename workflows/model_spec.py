@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import json
 import os
 import re
-from dataclasses import asdict, dataclass, field, make_dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -22,6 +24,9 @@ from workflows.workflow_types import (
     ModelType,
     VersionMode,
 )
+
+if TYPE_CHECKING:
+    from workflows.runtime_config import RuntimeConfig
 
 VERSION = get_version()
 
@@ -583,6 +588,10 @@ class ModelSpec:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # Handle combined format: {"runtime_model_spec": …, "runtime_config": …}
+        if "runtime_model_spec" in data and "runtime_config" in data:
+            data = data["runtime_model_spec"]
+
         def deserialize_enum(enum_class, value):
             """Helper to deserialize enum values."""
             if isinstance(value, str):
@@ -688,87 +697,66 @@ class ModelSpec:
         # Create and return the ModelSpec instance
         return cls(**data)
 
-    def apply_runtime_args(self, args):
-        # handle runtime model spec overrides
-        def is_mutable(obj):
-            return isinstance(obj, (list, dict, set))
+    def apply_overrides(self, runtime_config: RuntimeConfig):
+        """Apply spec-mutating runtime overrides from RuntimeConfig.
 
-        def _build_field(key, value):
-            typ = type(value)
-            if is_mutable(value):
-                return (key, typ, field(default_factory=lambda v=value: v.copy()))
-            else:
-                return (key, typ, value)
+        Only modifies fields that are part of the model specification itself
+        (vllm_args, override_tt_config, docker_image, commits).  Orchestration
+        and workflow state belong in RuntimeConfig, not here.
+        """
+        if runtime_config.override_tt_config:
+            override_config_from_cli = json.loads(runtime_config.override_tt_config)
 
-        fields = [_build_field(key, value) for key, value in args.__dict__.items()]
-        CliArgsClass = make_dataclass("cli_args", fields)
-        cli_args = CliArgsClass(**args.__dict__)
-        object.__setattr__(self, "cli_args", cli_args)
-
-        if args.override_tt_config:
-            # Parse the override config from CLI
-            override_config_from_cli = json.loads(args.override_tt_config)
-
-            # Start with existing override_tt_config
             merged_override_config = dict(self.device_model_spec.override_tt_config)
 
-            # Apply overrides from CLI, removing keys with null values
             for key, value in override_config_from_cli.items():
                 if value is None:
-                    # Remove the key if it exists
                     merged_override_config.pop(key, None)
                 else:
-                    # Add or update the key
                     merged_override_config[key] = value
 
-            # Set the merged config
             object.__setattr__(
                 self.device_model_spec,
                 "override_tt_config",
                 merged_override_config,
             )
-            # Update vllm_args to include the new override_tt_config
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
                 "override_tt_config": json.dumps(merged_override_config),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
-        if args.vllm_override_args:
-            # Parse the vllm override args from CLI
-            vllm_override_args_from_cli = json.loads(args.vllm_override_args)
 
-            # Start with existing vllm_args
+        if runtime_config.vllm_override_args:
+            vllm_override_args_from_cli = json.loads(runtime_config.vllm_override_args)
+
             merged_vllm_args = dict(self.device_model_spec.vllm_args)
 
-            # Apply overrides from CLI, removing keys with null values
             for key, value in vllm_override_args_from_cli.items():
                 if value is None:
-                    # Remove the key if it exists
                     merged_vllm_args.pop(key, None)
                 else:
-                    # Add or update the key
                     merged_vllm_args[key] = value
 
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if args.service_port:
-            # Add service port to vllm_args
+        if runtime_config.service_port:
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port},
+                "port": runtime_config.service_port,
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if args.dev_mode:
+        if runtime_config.dev_mode:
             object.__setattr__(
                 self, "docker_image", self.docker_image.replace("-release-", "-dev-")
             )
 
-        if args.override_docker_image:
-            object.__setattr__(self, "docker_image", args.override_docker_image)
-            # Parse commits from docker image tag and update model_spec
+        if runtime_config.override_docker_image:
+            object.__setattr__(
+                self, "docker_image", runtime_config.override_docker_image
+            )
             tt_metal_commit, vllm_commit = parse_commits_from_docker_image(
-                args.override_docker_image
+                runtime_config.override_docker_image
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
@@ -3105,15 +3093,20 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
 
-def get_runtime_model_spec(args):
-    device_type = DeviceTypes.from_string(args.device)
-    requested_engine = getattr(args, "engine", None)
-    requested_impl = args.impl
+def get_runtime_model_spec(runtime_config: RuntimeConfig) -> ModelSpec:
+    """Select and override a ModelSpec based on RuntimeConfig CLI values.
+
+    Updates ``runtime_config.impl`` and ``runtime_config.engine`` in-place
+    when they are inferred from the selected spec.
+    """
+    device_type = DeviceTypes.from_string(runtime_config.device)
+    requested_engine = runtime_config.engine
+    requested_impl = runtime_config.impl
 
     candidate_specs = [
         model_spec
         for _, model_spec in MODEL_SPECS.items()
-        if model_spec.model_name == args.model
+        if model_spec.model_name == runtime_config.model
         and model_spec.device_type == device_type
         and (not requested_engine or model_spec.inference_engine == requested_engine)
         and (not requested_impl or model_spec.impl.impl_name == requested_impl)
@@ -3123,7 +3116,8 @@ def get_runtime_model_spec(args):
         engine_msg = f", engine={requested_engine}" if requested_engine else ""
         impl_msg = f", impl={requested_impl}" if requested_impl else ""
         raise ValueError(
-            f"Model:={args.model} does not support device:={args.device}{engine_msg}{impl_msg}"
+            f"Model:={runtime_config.model} does not support "
+            f"device:={runtime_config.device}{engine_msg}{impl_msg}"
         )
 
     default_spec = next(
@@ -3134,15 +3128,16 @@ def get_runtime_model_spec(args):
 
     if selected_spec is None:
         raise ValueError(
-            f"Model:={args.model} does not have a default impl for device:={args.device}, "
-            f"engine:={requested_engine}; you must pass --impl"
+            f"Model:={runtime_config.model} does not have a default impl for "
+            f"device:={runtime_config.device}, engine:={requested_engine}; "
+            f"you must pass --impl"
         )
 
-    args.impl = selected_spec.impl.impl_name
+    runtime_config.impl = selected_spec.impl.impl_name
     if not requested_engine:
-        args.engine = selected_spec.inference_engine
+        runtime_config.engine = selected_spec.inference_engine
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
-    model_spec.apply_runtime_args(args)
+    model_spec.apply_overrides(runtime_config)
 
     return model_spec

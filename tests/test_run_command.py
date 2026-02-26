@@ -29,6 +29,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 
 
@@ -342,8 +343,12 @@ class TestSystemSoftwareValidationCheckFalse:
         from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
-        mock_model_spec.cli_args.workflow = "server"
-        mock_model_spec.cli_args.skip_system_sw_validation = False
+        mock_runtime_config = RuntimeConfig(
+            model="test",
+            workflow="server",
+            device="n150",
+            skip_system_sw_validation=False,
+        )
 
         with patch(
             "workflows.validate_setup.get_default_workflow_root_log_dir"
@@ -361,7 +366,9 @@ class TestSystemSoftwareValidationCheckFalse:
             mock_venv_config.setup.return_value = True
             mock_venv_configs.__getitem__.return_value = mock_venv_config
 
-            validate_local_setup(mock_model_spec, "/fake/json/path")
+            validate_local_setup(
+                mock_model_spec, mock_runtime_config, "/fake/json/path"
+            )
 
             # Verify run_command was called with check=False (default)
             mock_run.assert_called_once()
@@ -372,8 +379,12 @@ class TestSystemSoftwareValidationCheckFalse:
         from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
-        mock_model_spec.cli_args.workflow = "server"
-        mock_model_spec.cli_args.skip_system_sw_validation = False
+        mock_runtime_config = RuntimeConfig(
+            model="test",
+            workflow="server",
+            device="n150",
+            skip_system_sw_validation=False,
+        )
 
         with patch(
             "workflows.validate_setup.get_default_workflow_root_log_dir"
@@ -394,7 +405,9 @@ class TestSystemSoftwareValidationCheckFalse:
             with pytest.raises(
                 ValueError, match="validating system software dependencies failed"
             ):
-                validate_local_setup(mock_model_spec, "/fake/json/path")
+                validate_local_setup(
+                    mock_model_spec, mock_runtime_config, "/fake/json/path"
+                )
 
 
 # =============================================================================
@@ -521,8 +534,11 @@ class TestWorkflowExecutionCheckFalse:
         mock_model_spec = MagicMock()
         mock_model_spec.model_name = "test-model"
         mock_model_spec.model_id = "test-model-id"
-        mock_model_spec.cli_args.workflow = "tests"
-        mock_model_spec.cli_args.device = "n150"
+        mock_runtime_config = RuntimeConfig(
+            model="test-model",
+            workflow="tests",
+            device="n150",
+        )
 
         with patch("workflows.run_workflows.WorkflowType") as mock_wf_type, patch(
             "workflows.run_workflows.WORKFLOW_CONFIGS"
@@ -543,7 +559,7 @@ class TestWorkflowExecutionCheckFalse:
             mock_venv_config.venv_python = "/fake/python"
             mock_venvs.__getitem__.return_value = mock_venv_config
 
-            setup = WorkflowSetup(mock_model_spec, "/fake/json")
+            setup = WorkflowSetup(mock_model_spec, mock_runtime_config, "/fake/json")
 
             # This should NOT raise - just return non-zero code
             return_code = setup.run_workflow_script()

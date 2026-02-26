@@ -64,10 +64,21 @@ def _normalize_board_type(board_type: str) -> str:
     return " ".join(board_type.strip().lower().split())
 
 
+def _ensure_tt_smi_venv_setup() -> None:
+    venv_config = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
+    model_spec = next(iter(MODEL_SPECS.values()), None)
+    if model_spec is None:
+        raise ValueError(
+            "No model specs available to setup TT_SMI virtual environment."
+        )
+    venv_config.setup(model_spec=model_spec)
+
+
 def _get_tt_smi_board_type_counts() -> Dict[str, int]:
-    venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
-    activate_script = venv_config.venv_path / "bin" / "activate"
-    command = f"source '{activate_script}' && tt-smi -s"
+    _ensure_tt_smi_venv_setup()
+    venv_config = VENV_CONFIGS[WorkflowVenvType.TT_SMI]
+    tt_smi_executable = str(venv_config.venv_path / "bin" / "tt-smi")
+    command = f"{tt_smi_executable} -s"
     tt_smi_output = subprocess.check_output(
         ["bash", "-lc", command],
         stderr=subprocess.DEVNULL,

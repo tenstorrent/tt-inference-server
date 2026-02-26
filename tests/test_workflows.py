@@ -18,6 +18,7 @@ from workflows.model_spec import (
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
+from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -166,32 +167,31 @@ class TestWorkflowExecution:
 
     def test_release_workflow_sequence(self):
         """Test release workflow sequence logic."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="release",
-            run_id="test",
-            disable_trace_capture=False,
-        )
         model_spec = Namespace(
-            cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
+        runtime_config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow="release",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
         )
 
         # Track workflow calls in order
         workflow_calls = []
 
-        def mock_run_single(model_spec_arg, json_fpath):
-            # Capture workflow name at time of call
-            workflow_calls.append(model_spec_arg.cli_args.workflow)
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_calls.append(runtime_config_arg.workflow)
             return 0
 
         # Mock run_single_workflow to return success codes
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(model_spec, "test_json_path.json")
+            return_codes = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
 
             # Verify all expected workflows were called
             assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests

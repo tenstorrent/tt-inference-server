@@ -282,7 +282,8 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         model_spec.model_name = "test"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -342,7 +343,8 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         model_spec.model_name = "speecht5_tts"
         model_spec.hf_model_repo = "microsoft/speecht5_tts"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -537,7 +539,8 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
@@ -618,7 +621,8 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp/output", 8000)
