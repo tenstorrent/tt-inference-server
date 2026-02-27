@@ -3,9 +3,9 @@
 
 #include "utils/tokenizer.hpp"
 #include "config/settings.hpp"
-
 #include <fstream>
 #include <sstream>
+#include <mutex>
 #include <json/json.h>
 
 namespace tt::utils {
@@ -55,23 +55,30 @@ bool load_from_path(const std::string& path, TokenizerConfig& out) {
 }  // namespace
 
 TokenizerConfig get_tokenizer_config() {
-    TokenizerConfig c;
-    std::string config_path = tt::config::tokenizer_config_path();
-    if (config_path.empty()) {
-        throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
-    }
-    if (!load_from_path(config_path, c)) {
-        throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + config_path);
-    }
-    if (c.add_bos_token && c.bos_token.empty()) {
-        throw std::runtime_error(
-            "[TokenizerUtil] add_bos_token is true but bos_token is missing in tokenizer_config.json");
-    }
-    if (c.add_eos_token && c.eos_token.empty()) {
-        throw std::runtime_error(
-            "[TokenizerUtil] add_eos_token is true but eos_token is missing in tokenizer_config.json");
-    }
-    return c;
+    static std::once_flag initialized;
+    static TokenizerConfig cached_config;
+    static bool config_loaded = false;
+
+    std::call_once(initialized, []() {
+        std::string config_path = tt::config::tokenizer_config_path();
+        if (config_path.empty()) {
+            throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
+        }
+        if (!load_from_path(config_path, cached_config)) {
+            throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + config_path);
+        }
+        if (cached_config.add_bos_token && cached_config.bos_token.empty()) {
+            throw std::runtime_error(
+                "[TokenizerUtil] add_bos_token is true but bos_token is missing in tokenizer_config.json");
+        }
+        if (cached_config.add_eos_token && cached_config.eos_token.empty()) {
+            throw std::runtime_error(
+                "[TokenizerUtil] add_eos_token is true but eos_token is missing in tokenizer_config.json");
+        }
+        config_loaded = true;
+    });
+
+    return cached_config;
 }
 
 }  // namespace tt::utils
