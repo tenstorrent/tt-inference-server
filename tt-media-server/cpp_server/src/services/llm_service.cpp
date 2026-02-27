@@ -269,8 +269,6 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             callback(response, token.is_final());
             if (token.is_final()) {
                 last_token_ids_.erase(std::string(token.task_id));
-            }
-            if (token.is_final()) {
                 TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
             }
         }
