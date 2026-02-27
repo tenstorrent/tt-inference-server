@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import json
-
 from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -83,8 +81,9 @@ async def get_fine_tuning_job_metadata(
     return JSONResponse(content=job_data)
 
 @router.get("/jobs/{job_id}/metrics")
-async def stream_training_metrics(
+async def get_training_metrics(
     job_id: str,
+    after: int = 0,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -92,16 +91,14 @@ async def stream_training_metrics(
     if not job_data:
         raise HTTPException(404, "Job not found")
 
-    async def event_stream():
-        async for metric in service.stream_job_metrics(job_id):
-            yield f"data: {json.dumps(metric)}\n\n"
-        yield "data: [DONE]\n\n"
+    metrics = service.get_job_metrics(job_id, after)
+    is_final = job_data.get("status") in ("completed", "failed", "cancelled")
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-    )
+    return JSONResponse(content={
+        "data": metrics,
+        "next_after": after + len(metrics),
+        "is_final": is_final,
+    })
 
 
 @router.post("/jobs/{job_id}/cancel")

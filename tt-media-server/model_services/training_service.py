@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import asyncio
 import os
 from multiprocessing import Manager
 
@@ -43,6 +42,8 @@ class TrainingService(BaseJobService):
             training_context=training_ctx,
         )
 
-    async def stream_job_metrics(self, job_id: str):
-        async for metric in self._job_manager.poll_training_metrics(job_id):
-            yield metric
+    def get_job_metrics(self, job_id: str, after: int = 0) -> list:
+        metrics_list = self._job_manager.get_training_metrics(job_id)
+        if metrics_list is None:
+            return []
+        return list(metrics_list[after:])
