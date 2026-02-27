@@ -1,0 +1,47 @@
+name: Validate Models CI Config
+
+on:
+  pull_request:
+    branches: ["main", "dev"]
+    paths:
+      - ".github/workflows/models-ci-config.json"
+
+jobs:
+  validate:
+    name: Validate models-ci-config.json
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install jsonschema
+        run: pip install jsonschema
+
+      - name: Validate against schema
+        run: |
+          python - <<'EOF'
+          import json
+          import jsonschema
+          import sys
+
+          with open(".github/workflows/models-ci-config-schema.json") as f:
+              schema = json.load(f)
+
+          with open(".github/workflows/models-ci-config.json") as f:
+              config = json.load(f)
+
+          try:
+              jsonschema.validate(instance=config, schema=schema)
+              print("✅ models-ci-config.json is valid")
+          except jsonschema.ValidationError as e:
+              print(f"❌ Validation failed: {e.message}")
+              print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path)}")
+              sys.exit(1)
+          EOF
