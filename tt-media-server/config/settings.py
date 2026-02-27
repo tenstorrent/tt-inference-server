@@ -188,6 +188,11 @@ class Settings(BaseSettings):
                 devices = device_manager.get_single_devices_from_system()
             if self.device_mesh_shape == (2, 1):
                 devices = device_manager.get_device_pairs_from_system()
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP2 (2,1): device discovery failed or returned no pairs. "
+                        "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds."
+                    )
             elif self.device_mesh_shape == (2, 4):
                 devices = device_manager.get_device_groups_of_eight_from_system()
             if devices:
