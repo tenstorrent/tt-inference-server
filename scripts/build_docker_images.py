@@ -24,7 +24,7 @@ if project_root not in sys.path:
 
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS
-from workflows.utils import get_repo_root_path
+from workflows.utils import get_repo_root_path, resolve_commit_to_full_sha
 
 logger = logging.getLogger(__file__)
 
@@ -620,79 +620,6 @@ def get_image_tags(
         "release": release_image_tag,
         "tt_metal_base": tt_metal_base_tag,
     }
-
-
-def resolve_commit_to_full_sha(tt_metal_commit):
-    """
-    Resolve a commit reference (tag, branch, or short SHA) to a full SHA using git commands.
-    Returns the full SHA if found, otherwise returns the original reference.
-    """
-    try:
-        # Try to resolve using ls-remote to get the full SHA from origin
-        # need to use shell=True and cmd string because of the pipe
-        result = subprocess.run(
-            f"git ls-remote https://github.com/tenstorrent/tt-metal.git | grep {tt_metal_commit}",
-            shell=True,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            # Parse the output: "SHA\trefs/..."
-            lines = result.stdout.strip().split("\n")
-
-            # First, look for a line that ends with ^{} (actual commit object)
-            for line in lines:
-                if line and line.endswith("^{}"):
-                    sha, ref = line.split("\t", 1)
-                    logger.info(
-                        f"Resolved {tt_metal_commit} to full SHA via ls-remote (^{{}}): {sha}"
-                    )
-                    return sha
-
-            # If no line with ^{} found, use the first line
-            for line in lines:
-                if line:
-                    sha, ref = line.split("\t", 1)
-                    logger.info(
-                        f"Resolved {tt_metal_commit} to full SHA via ls-remote (first match): {sha}"
-                    )
-                    return sha
-    except Exception as e:
-        logger.debug(f"ls-remote failed for {tt_metal_commit}: {e}")
-
-    # Fallback: Try GitHub API for short SHA resolution
-    try:
-        logger.info(f"Trying GitHub commits API fallback for {tt_metal_commit}...")
-        api_url = f"https://api.github.com/repos/tenstorrent/tt-metal/commits/{tt_metal_commit}"
-
-        with urllib.request.urlopen(api_url, timeout=10) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode())
-                full_sha = data["sha"]
-                logger.info(
-                    f"Resolved {tt_metal_commit} to full SHA via GitHub API: {full_sha}"
-                )
-                return full_sha
-            else:
-                logger.debug(
-                    f"GitHub API returned status {response.status} for {tt_metal_commit}"
-                )
-
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            logger.debug(f"GitHub API: commit {tt_metal_commit} not found (404)")
-        else:
-            logger.debug(f"GitHub API HTTP error for {tt_metal_commit}: {e.code}")
-    except urllib.error.URLError as e:
-        logger.debug(f"GitHub API URL error for {tt_metal_commit}: {e}")
-    except json.JSONDecodeError as e:
-        logger.debug(f"GitHub API JSON decode error for {tt_metal_commit}: {e}")
-    except Exception as e:
-        logger.debug(f"GitHub API fallback failed for {tt_metal_commit}: {e}")
-
-    # If we can't resolve it, return the original reference
-    logger.info(f"Could not resolve {tt_metal_commit} to full SHA, using as-is")
-    return tt_metal_commit
 
 
 def build_tt_metal_base_image(

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -12,6 +13,8 @@ import shlex
 import subprocess
 import tempfile
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -33,6 +36,96 @@ def get_repo_root_path(marker: str = ".git") -> Path:
     raise FileNotFoundError(
         f"Repository root not found. No '{marker}' found in parent directories."
     )
+
+
+def resolve_commit_to_full_sha(
+    commit_ref,
+    repo_url="https://github.com/tenstorrent/tt-metal.git",
+):
+    """
+    Resolve a commit reference (tag, branch, or short SHA) to a full SHA.
+
+    Tries git ls-remote first, then falls back to the GitHub API.
+    Returns the full SHA if found, otherwise returns the original reference.
+
+    Args:
+        commit_ref: The commit reference to resolve (short SHA, tag, or branch).
+        repo_url: The remote git repository URL (default: tt-metal on GitHub).
+    """
+    try:
+        # Try to resolve using ls-remote to get the full SHA from origin
+        # need to use shell=True and cmd string because of the pipe
+        result = subprocess.run(
+            f"git ls-remote {repo_url} | grep {commit_ref}",
+            shell=True,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Parse the output: "SHA\trefs/..."
+            lines = result.stdout.strip().split("\n")
+
+            # First, look for a line that ends with ^{} (actual commit object)
+            for line in lines:
+                if line and line.endswith("^{}"):
+                    sha, ref = line.split("\t", 1)
+                    logger.info(
+                        f"Resolved {commit_ref} to full SHA via ls-remote (^{{}}): {sha}"
+                    )
+                    return sha
+
+            # If no line with ^{} found, use the first line
+            for line in lines:
+                if line:
+                    sha, ref = line.split("\t", 1)
+                    logger.info(
+                        f"Resolved {commit_ref} to full SHA via ls-remote (first match): {sha}"
+                    )
+                    return sha
+    except Exception as e:
+        logger.debug(f"ls-remote failed for {commit_ref}: {e}")
+
+    # Fallback: Try GitHub API for short SHA resolution
+    # Derive the GitHub API URL from the repo_url
+    # e.g. https://github.com/tenstorrent/tt-metal.git -> tenstorrent/tt-metal
+    try:
+        repo_path = repo_url.rstrip("/").removesuffix(".git")
+        # Strip scheme and host to get org/repo
+        # Works for https://github.com/org/repo[.git]
+        parts = repo_path.split("github.com/", 1)
+        if len(parts) == 2:
+            org_repo = parts[1]
+            logger.info(f"Trying GitHub commits API fallback for {commit_ref}...")
+            api_url = f"https://api.github.com/repos/{org_repo}/commits/{commit_ref}"
+
+            with urllib.request.urlopen(api_url, timeout=10) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode())
+                    full_sha = data["sha"]
+                    logger.info(
+                        f"Resolved {commit_ref} to full SHA via GitHub API: {full_sha}"
+                    )
+                    return full_sha
+                else:
+                    logger.debug(
+                        f"GitHub API returned status {response.status} for {commit_ref}"
+                    )
+
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            logger.debug(f"GitHub API: commit {commit_ref} not found (404)")
+        else:
+            logger.debug(f"GitHub API HTTP error for {commit_ref}: {e.code}")
+    except urllib.error.URLError as e:
+        logger.debug(f"GitHub API URL error for {commit_ref}: {e}")
+    except json.JSONDecodeError as e:
+        logger.debug(f"GitHub API JSON decode error for {commit_ref}: {e}")
+    except Exception as e:
+        logger.debug(f"GitHub API fallback failed for {commit_ref}: {e}")
+
+    # If we can't resolve it, return the original reference
+    logger.info(f"Could not resolve {commit_ref} to full SHA, using as-is")
+    return commit_ref
 
 
 def get_version() -> str:
