@@ -76,6 +76,22 @@ def mock_audio_performance_targets():
                 "task_type": "audio",
             },
         ),
+        (
+            "whisper-large-v3",
+            "p150",
+            "AUDIO",
+            {
+                "ttft_ms": 400.0,
+                "ttft_streaming_ms": None,
+                "tput_user": 65.0,
+                "tput": None,
+                "rtr": 17.0,
+                "tolerance": 0.05,
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+            },
+        ),
     ],
 )
 def test_get_performance_targets(
