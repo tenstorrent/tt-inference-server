@@ -2599,7 +2599,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                 },
             ),
             EvalTask(
@@ -2630,7 +2630,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                 },
             ),
             EvalTask(
@@ -2661,7 +2661,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                     "until": ["</s>"],
                 },
             ),
@@ -2698,7 +2698,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                 },
             ),
             EvalTask(
@@ -2729,7 +2729,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                 },
             ),
             EvalTask(
@@ -2760,7 +2760,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32*1024,
+                    "max_gen_toks": 32 * 1024,
                     "until": ["</s>"],
                 },
             ),

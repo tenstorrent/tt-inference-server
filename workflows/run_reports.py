@@ -1783,7 +1783,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     perf_refs = [
         cap_benchmark_params(
-            params, _max_context, _max_num_batched_tokens, _model_max_concurrency, model_spec.model_name
+            params,
+            _max_context,
+            _max_num_batched_tokens,
+            _model_max_concurrency,
+            model_spec.model_name,
         )
         for params in raw_perf_refs
     ]
@@ -2146,7 +2150,7 @@ def extract_eval_json_data(json_path: Path):
 
     config = configs.get(first_key, {})
     task_name = config.get("task", first_key)
-    
+
     # assert that all configs have the same dataset path
     dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
     for config in configs.values():

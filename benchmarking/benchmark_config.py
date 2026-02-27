@@ -225,7 +225,12 @@ def calculate_vision_tokens(
 
 
 def get_benchmark_max_concurrency(
-    isl, osl, max_context, max_tokens_all_users, model_max_concurrency=32, vision_tokens=0
+    isl,
+    osl,
+    max_context,
+    max_tokens_all_users,
+    model_max_concurrency=32,
+    vision_tokens=0,
 ):
     """
     Calculate the maximum concurrency for benchmarks based on context limits.
@@ -392,7 +397,12 @@ def cap_benchmark_params(
 
     # Calculate the allowed max_concurrency based on sequence length (including vision tokens)
     calculated_max_concurrency = get_benchmark_max_concurrency(
-        params.isl, params.osl, max_context, max_tokens_all_users, model_max_concurrency, vision_tokens
+        params.isl,
+        params.osl,
+        max_context,
+        max_tokens_all_users,
+        model_max_concurrency,
+        vision_tokens,
     )
 
     # Cap the max_concurrency if it exceeds the calculated limit
@@ -441,7 +451,11 @@ for model_id, model_spec in MODEL_SPECS.items():
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
         cap_benchmark_params(
-            params, max_context, max_tokens_all_users, model_max_concurrency, model_spec.model_name
+            params,
+            max_context,
+            max_tokens_all_users,
+            model_max_concurrency,
+            model_spec.model_name,
         )
         for params in perf_reference
     ]

@@ -997,7 +997,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "data_parallel_size": 4,
-                }
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -1136,7 +1136,8 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=8 * 4,
-                max_context=128 * 1024,  # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
+                # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
+                max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
