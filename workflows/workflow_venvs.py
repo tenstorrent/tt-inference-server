@@ -362,7 +362,7 @@ def setup_evals_gpt_oss(
     logger.info("running setup_evals_gpt_oss() ...")
     run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
-        f"git+https://github.com/bgoelTT/gpt-oss.git@evals-tt#egg=gpt_oss[eval] pyjwt==2.7.0",
+        f"git+https://github.com/stisiTT/gpt-oss.git@9b9231601e86874e92cc892757da9a6d96873a9d#egg=gpt_oss[eval] pyjwt==2.7.0",
         logger=logger,
     )
     return True

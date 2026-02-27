@@ -82,7 +82,9 @@ class StressTestsArgs:
             device=cli_args.get("device"),
             service_port=cli_args.get("service_port", "8000"),
             # From model_spec.cli_args (stress tests configuration)
-            disable_trace_capture=cli_args.get("disable_trace_capture", False),
+            # Auto-disable trace capture if model has builtin warmup and user hasn't explicitly overridden
+            disable_trace_capture=cli_args.get("disable_trace_capture", False)
+            or getattr(model_spec, "has_builtin_warmup", False),
             run_mode=parsed_workflow_args.get("run_mode", "multiple"),
             max_context_length=parsed_workflow_args.get("max_context_length"),
             endurance_mode=parsed_workflow_args.get("endurance_mode", False),
