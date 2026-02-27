@@ -2,13 +2,19 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import pytest
-import numpy as np
 import io
 import wave
+
+import numpy as np
+import pytest
 from unittest.mock import patch
 
-from utils.audio_manager import AudioManager
+# Avoid loading silero_vad/torchaudio (needs libtorchaudio.so in CI). audio_manager
+# only imports them when settings.model_service == AUDIO; patch so that branch is skipped.
+import config.settings
+
+with patch.object(config.settings.settings, "model_service", None):
+    from utils.audio_manager import AudioManager
 
 
 class DummySettings:
@@ -63,9 +69,7 @@ def test_to_audio_array_invalid_type():
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_validate_file_size():
     manager = AudioManager()
-    # Should not raise
     manager._validate_file_size(b"\x00" * 100)
-    # Should raise
     with pytest.raises(ValueError):
         manager._validate_file_size(b"\x00" * (DummySettings.max_audio_size_bytes + 1))
 
@@ -95,6 +99,3 @@ def test_normalize_speaker_ids():
     assert norm[0]["speaker"] == "SPEAKER_00"
     assert norm[1]["speaker"] == "SPEAKER_01"
     assert norm[2]["speaker"] == "SPEAKER_00"
-
-
-# You can add more tests for chunk merging, audio decoding, etc.

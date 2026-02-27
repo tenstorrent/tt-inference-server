@@ -104,3 +104,35 @@ class AudioTranscriptionLoadTest(BaseTest):
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
         print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+
+    async def _run_burst_concurrent(self, num_concurrent: int, payload: dict):
+        """Fire num_concurrent POST requests; return (requests_duration, avg_duration, num_ok)."""
+        session_timeout = aiohttp.ClientTimeout(total=2000)
+
+        async def one_request(session: aiohttp.ClientSession, index: int):
+            start = time.perf_counter()
+            try:
+                async with session.post(
+                    self.url, json=payload, headers=headers
+                ) as response:
+                    duration = time.perf_counter() - start
+                    if response.status == 200:
+                        await response.json()
+                        return duration, True
+                    return duration, False
+            except Exception as e:
+                duration = time.perf_counter() - start
+                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                return duration, False
+
+        async with aiohttp.ClientSession(
+            headers=headers, timeout=session_timeout
+        ) as session:
+            tasks = [one_request(session, i) for i in range(num_concurrent)]
+            results = await asyncio.gather(*tasks)
+
+        durations = [r[0] for r in results]
+        num_ok = sum(1 for r in results if r[1])
+        requests_duration = max(durations)
+        avg_duration = sum(durations) / num_concurrent if num_concurrent else 0
+        return requests_duration, avg_duration, num_ok
