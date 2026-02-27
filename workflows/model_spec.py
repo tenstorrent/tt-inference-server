@@ -2468,9 +2468,9 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="9f4867bdbc",
+        tt_metal_commit="63988eeadf",
         impl=speecht5_impl,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-9f4867bdbc",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.TEXT_TO_SPEECH,
