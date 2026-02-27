@@ -98,13 +98,15 @@ class TtRunDeviceBackend : public IDeviceBackend {
     std::cout << "TtRunDeviceBackend: started tt-run pid " << pid << std::endl;
   }
 
-  void write(const Sequence& seq) override {
-    size_t& index = tokenIndexForSequence[seq.task_id];
-    if (index >= kFixedReplySequence.size()) {
-      index = 0;
-    }
-    int64_t token_id = kFixedReplySequence[index++];
-    deviceInput.write(seq.task_id.id, static_cast<uint64_t>(token_id));
+  void write(const std::vector<Sequence*>& seqs) override {
+    for (Sequence* seq : seqs) {
+      size_t& index = tokenIndexForSequence[seq->task_id];
+      if (index >= kFixedReplySequence.size()) {
+        index = 0;
+      }
+      int64_t token_id = kFixedReplySequence[index++];
+      deviceInput.write(seq->task_id.id, static_cast<uint64_t>(token_id));
+  }
   }
 
   bool read(TokenResult* result) override {

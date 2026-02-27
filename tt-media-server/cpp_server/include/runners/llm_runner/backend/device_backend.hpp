@@ -1,9 +1,9 @@
 #pragma once
 
 #include <memory>
-
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/sequence.hpp"
+#include <vector>
 
 namespace llm_engine::backend {
 
@@ -15,7 +15,7 @@ class IDeviceBackend {
  public:
   virtual ~IDeviceBackend() = default;
   virtual void init() = 0;
-  virtual void write(const Sequence& seq) = 0;
+  virtual void write(const std::vector<Sequence*>& seqs) = 0;
   /** Returns true if result was filled, false on shutdown or no data. */
   virtual bool read(TokenResult* result) = 0;
   virtual void terminate() = 0;
@@ -23,4 +23,4 @@ class IDeviceBackend {
 
 std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config);
 
-}  // namespace llm_engine
+}  // namespace llm_engine::backend

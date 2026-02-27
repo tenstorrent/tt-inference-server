@@ -15,10 +15,12 @@ class MockDeviceBackend : public IDeviceBackend {
 
   void init() override {}
 
-  void write(const Sequence& seq) override {
+  void write(const std::vector<Sequence*>& seqs) override {
     std::lock_guard<std::mutex> lock(work_mutex_);
-    work_queue_.push(TokenResult{seq.task_id, static_cast<uint64_t>(seq.last_token + 1)});
-    cv_.notify_one();
+    for (Sequence* seq : seqs) {
+      work_queue_.push(TokenResult{seq->task_id, static_cast<uint64_t>(seq->last_token + 1)});
+      cv_.notify_one();
+    }
   }
 
   bool read(TokenResult* result) override {
