@@ -147,7 +147,7 @@ def _expand_image_sweep_params(
             osl=osl,
             max_concurrency=concurrency,
             num_prompts=get_num_prompts(isl, osl, concurrency),
-            task_type="image",
+            task_type="vlm",
             image_height=image_height,
             image_width=image_width,
             images_per_prompt=images_per_prompt,
@@ -375,7 +375,7 @@ def cap_benchmark_params(
 
     # Calculate vision tokens for VLM models
     vision_tokens = 0
-    if params.task_type == "image" and params.image_height and params.image_width:
+    if params.task_type == "vlm" and params.image_height and params.image_width:
         vision_tokens = calculate_vision_tokens(
             params.image_height,
             params.image_width,
