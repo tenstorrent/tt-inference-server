@@ -375,7 +375,7 @@ def cap_benchmark_params(
 
     # Calculate vision tokens for VLM models
     vision_tokens = 0
-    if params.task_type == "image" and params.image_height and params.image_width:
+    if params.task_type == "vlm" and params.image_height and params.image_width:
         vision_tokens = calculate_vision_tokens(
             params.image_height,
             params.image_width,
