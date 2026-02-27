@@ -3239,19 +3239,19 @@ def add_target_checks_video(metrics):
     logger.info("Calculating target checks")
     target_checks = {
         "functional": {
-            "concurrency": metrics["functional_concurrency"],
-            "concurrency_ratio": metrics["functional_concurrency_ratio"],
-            "concurrency_check": metrics["functional_concurrency_check"],
+            "concurrency": metrics.get("functional_concurrency"),
+            "concurrency_ratio": metrics.get("functional_concurrency_ratio", "Undefined"),
+            "concurrency_check": metrics.get("functional_concurrency_check", "Undefined"),
         },
         "complete": {
-            "concurrency": metrics["complete_concurrency"],
-            "concurrency_ratio": metrics["complete_concurrency_ratio"],
-            "concurrency_check": metrics["complete_concurrency_check"],
+            "concurrency": metrics.get("complete_concurrency"),
+            "concurrency_ratio": metrics.get("complete_concurrency_ratio", "Undefined"),
+            "concurrency_check": metrics.get("complete_concurrency_check", "Undefined"),
         },
         "target": {
-            "concurrency": metrics["target_concurrency"],
-            "concurrency_ratio": metrics["target_concurrency_ratio"],
-            "concurrency_check": metrics["target_concurrency_check"],
+            "concurrency": metrics.get("target_concurrency"),
+            "concurrency_ratio": metrics.get("target_concurrency_ratio", "Undefined"),
+            "concurrency_check": metrics.get("target_concurrency_check", "Undefined"),
         },
     }
 
@@ -3329,21 +3329,21 @@ def add_target_checks_audio(metrics):
     tput_check = 1
     target_checks = {
         "functional": {
-            "ttft": metrics["functional_ttft"],
-            "ttft_ratio": metrics["functional_ttft_ratio"],
-            "ttft_check": metrics["functional_ttft_check"],
+            "ttft": metrics.get("functional_ttft"),
+            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
             "tput_check": tput_check,
         },
         "complete": {
-            "ttft": metrics["complete_ttft"],
-            "ttft_ratio": metrics["complete_ttft_ratio"],
-            "ttft_check": metrics["complete_ttft_check"],
+            "ttft": metrics.get("complete_ttft"),
+            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
             "tput_check": tput_check,
         },
         "target": {
-            "ttft": metrics["target_ttft"],
-            "ttft_ratio": metrics["target_ttft_ratio"],
-            "ttft_check": metrics["target_ttft_check"],
+            "ttft": metrics.get("target_ttft"),
+            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
             "tput_check": tput_check,
         },
     }
