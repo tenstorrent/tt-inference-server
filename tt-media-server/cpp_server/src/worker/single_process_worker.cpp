@@ -18,9 +18,7 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
     is_ready = true;
 }
 
-SingleProcessWorker::~SingleProcessWorker() {
-    stop();
-}
+SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
     tracy_config::TracySetThreadName(

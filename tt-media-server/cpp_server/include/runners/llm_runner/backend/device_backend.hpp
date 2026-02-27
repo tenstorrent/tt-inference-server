@@ -5,7 +5,7 @@
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace llm_engine::backend {
 
 /**
  * Abstraction for host–device communication (init, write sequence, read token result).

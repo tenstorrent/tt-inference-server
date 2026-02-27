@@ -136,8 +136,8 @@ int main(int argc, char* argv[]) {
 
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kInfo)
-        // .setLogPath("./logs")
+        .setLogLevel(trantor::Logger::kDebug)
+        .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
         .setAfterAcceptSockOptCallback([](int fd) {

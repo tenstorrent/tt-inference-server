@@ -6,7 +6,6 @@ namespace llm_engine {
 
 enum class DeviceBackend {
   Mock,
-  Sockets,
   TtRun,
 };
 

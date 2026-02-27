@@ -1,11 +1,11 @@
-#include "runners/llm_runner/device_backend.hpp"
+#include "runners/llm_runner/backend/device_backend.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 #include <condition_variable>
 #include <mutex>
 #include <queue>
 
-namespace llm_engine {
+namespace llm_engine::backend {
 
 namespace {
 

@@ -141,9 +141,7 @@ llm_engine::Config llm_engine_config() {
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
-        if (s == "sockets") {
-            cfg.device = llm_engine::DeviceBackend::Sockets;
-        } else if (s == "ttrun") {
+        if (s == "ttrun") {
             cfg.device = llm_engine::DeviceBackend::TtRun;
         } else {
             cfg.device = llm_engine::DeviceBackend::Mock;
