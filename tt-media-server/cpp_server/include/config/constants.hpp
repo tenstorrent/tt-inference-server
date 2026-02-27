@@ -111,11 +111,9 @@ inline RunnerType runner_type_from_string(const std::string& /*v*/) {
 namespace defaults {
     constexpr const char* DEVICE_IDS = "(0)";
     constexpr const char* MODEL_SERVICE = "llm";
-    // constexpr const char* MODEL_SERVICE = "embedding";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
-    // constexpr const char* TT_PYTHON_PATH = "/localdev/ztorlak/tt-inference-server/tt-media-server";
     constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
     constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "server", "client"
     constexpr const char* SOCKET_HOST = "localhost";
