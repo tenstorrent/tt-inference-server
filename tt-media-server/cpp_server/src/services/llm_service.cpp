@@ -265,7 +265,11 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             }
             response.choices.push_back(std::move(choice));
 
+            last_token_ids_.insert(std::string(token.task_id), static_cast<int64_t>(token.token_id));
             callback(response, token.is_final());
+            if (token.is_final()) {
+                last_token_ids_.erase(std::string(token.task_id));
+            }
             if (token.is_final()) {
                 TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
             }
@@ -358,9 +362,8 @@ void LLMService::process_streaming_request(
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
 
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
-        float temperature = request.temperature.value_or(0.7f);
         bool sent = socket_service_->forwardTask(
-            task_id, "", token_ids, request.max_tokens, temperature, request.stop);
+            task_id, "", token_ids, request.max_tokens);
 
         if (!sent) {
             stream_callbacks_.erase(task_id);
@@ -411,8 +414,8 @@ void LLMService::setup_socket_callbacks() {
 void LLMService::handle_connection_lost() {
     std::cerr << "[LLMService] Connection lost - failing pending tasks\n" << std::flush;
 
-    stream_callbacks_.for_each([this](const std::string& task_id,
-                                      std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
+    stream_callbacks_.for_each([](const std::string& task_id,
+                                   std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
         domain::StreamingChunkResponse error_response;
         error_response.id = task_id;
         error_response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -427,7 +430,6 @@ void LLMService::handle_connection_lost() {
         error_response.error = "Connection to remote server lost";
 
         callback(error_response, true);
-        pending_tasks_.fetch_sub(1);
     });
 
     stream_callbacks_.clear();
@@ -450,10 +452,6 @@ void LLMService::handle_socket_task_forward(const tt::sockets::TaskForwardMessag
 
     const int original_max_tokens = message.max_tokens;
     request.max_tokens = 1;
-    request.temperature = message.temperature;
-    if (!message.stop_sequences.empty()) {
-        request.stop = message.stop_sequences;
-    }
 
     pre_process(request);
 
@@ -461,24 +459,29 @@ void LLMService::handle_socket_task_forward(const tt::sockets::TaskForwardMessag
 
     process_streaming_request(std::move(request),
         [this, task_id = message.task_id, token_ids_ptr,
-         original_max_tokens, temperature = message.temperature,
-         stop_sequences = message.stop_sequences](domain::StreamingChunkResponse& chunk, bool is_final) {
+         original_max_tokens](domain::StreamingChunkResponse& chunk, bool is_final) {
             std::string text;
             if (!chunk.choices.empty()) {
                 text = chunk.choices[0].text;
-                int token_id = tokenizer_.encode(text).front();
-                token_ids_ptr->push_back(static_cast<int64_t>(token_id));
+                auto tid = last_token_ids_.get(task_id);
+                if (tid.has_value()) {
+                    token_ids_ptr->push_back(tid.value());
+                }
             }
 
             int remaining_tokens = original_max_tokens - 1;
-            bool prefill_done = is_final;
-            bool fully_finished = prefill_done && remaining_tokens <= 0;
+            bool fully_finished = is_final && remaining_tokens <= 0;
 
-            socket_service_->sendTaskResult(
-                task_id, text, fully_finished, 1, 0.0,
-                *token_ids_ptr, remaining_tokens, temperature, stop_sequences);
+            tt::sockets::TaskResultMessage result_msg;
+            result_msg.task_id = task_id;
+            result_msg.generated_text = text;
+            result_msg.finished = fully_finished;
+            result_msg.tokens_generated = 1;
+            result_msg.token_ids = *token_ids_ptr;
+            result_msg.remaining_tokens = remaining_tokens;
+            socket_service_->sendTaskResult(result_msg);
 
-            if (prefill_done) {
+            if (is_final) {
                 std::cout << "[LLMService:PREFILL] Sent first token for task " << task_id
                           << " (remaining: " << remaining_tokens << ", token_ids: "
                           << token_ids_ptr->size() << ")\n" << std::flush;
@@ -539,10 +542,6 @@ void LLMService::continue_decode_generation(const tt::sockets::TaskResultMessage
     std::vector<int> tokens(prefill_result.token_ids.begin(), prefill_result.token_ids.end());
     request.prompt = std::move(tokens);
     request.max_tokens = prefill_result.remaining_tokens;
-    request.temperature = prefill_result.temperature;
-    if (!prefill_result.stop_sequences.empty()) {
-        request.stop = prefill_result.stop_sequences;
-    }
 
     std::string task_id = prefill_result.task_id;
     auto sequence = std::make_unique<llm_engine::Sequence>(

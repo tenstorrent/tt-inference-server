@@ -73,9 +73,7 @@ bool InterServerService::isEnabled() const {
 bool InterServerService::forwardTask(const std::string& task_id,
                                     const std::string& prompt,
                                     const std::vector<int64_t>& token_ids,
-                                    int max_tokens,
-                                    float temperature,
-                                    const std::vector<std::string>& stop_sequences) {
+                                    int max_tokens) {
     if (!enabled_) {
         return false;
     }
@@ -85,35 +83,14 @@ bool InterServerService::forwardTask(const std::string& task_id,
     message.prompt = prompt;
     message.token_ids = token_ids;
     message.max_tokens = max_tokens;
-    message.temperature = temperature;
-    message.stop_sequences = stop_sequences;
 
     return socket_manager_.sendObject("task_forward", message);
 }
 
-bool InterServerService::sendTaskResult(const std::string& task_id,
-                                       const std::string& result,
-                                       bool finished,
-                                       int tokens_generated,
-                                       double processing_time_ms,
-                                       const std::vector<int64_t>& token_ids,
-                                       int remaining_tokens,
-                                       float temperature,
-                                       const std::vector<std::string>& stop_sequences) {
+bool InterServerService::sendTaskResult(const TaskResultMessage& message) {
     if (!enabled_) {
         return false;
     }
-
-    TaskResultMessage message;
-    message.task_id = task_id;
-    message.generated_text = result;
-    message.finished = finished;
-    message.tokens_generated = tokens_generated;
-    message.processing_time_ms = processing_time_ms;
-    message.token_ids = token_ids;
-    message.remaining_tokens = remaining_tokens;
-    message.temperature = temperature;
-    message.stop_sequences = stop_sequences;
 
     return socket_manager_.sendObject("task_result", message);
 }

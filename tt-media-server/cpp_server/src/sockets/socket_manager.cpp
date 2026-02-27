@@ -168,8 +168,8 @@ void SocketManager::serverLoop() {
             close(peer_socket_);
             peer_socket_ = -1;
         }
-        connected_ = false;
-        if (connection_lost_callback_) {
+        bool was_connected = connected_.exchange(false);
+        if (was_connected && connection_lost_callback_) {
             connection_lost_callback_();
         }
 

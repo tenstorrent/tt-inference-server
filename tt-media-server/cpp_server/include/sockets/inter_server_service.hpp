@@ -68,39 +68,19 @@ public:
      * @param prompt Task prompt (text)
      * @param token_ids Pre-tokenized prompt token IDs
      * @param max_tokens Maximum tokens to generate
-     * @param temperature Sampling temperature
-     * @param stop_sequences Stop sequences
      * @return true if sent successfully
      */
     bool forwardTask(const std::string& task_id,
                     const std::string& prompt,
                     const std::vector<int64_t>& token_ids,
-                    int max_tokens = 100,
-                    float temperature = 0.7f,
-                    const std::vector<std::string>& stop_sequences = {});
+                    int max_tokens = 100);
 
     /**
      * @brief Send task result to connected server
-     * @param task_id Task identifier
-     * @param result Generated text
-     * @param finished Whether task is complete
-     * @param tokens_generated Number of tokens generated
-     * @param processing_time_ms Processing time in milliseconds
-     * @param token_ids Updated token sequence (prompt + generated tokens) for decode continuation
-     * @param remaining_tokens Remaining tokens to generate
-     * @param temperature Sampling temperature for continuation
-     * @param stop_sequences Stop sequences for continuation
+     * @param message Pre-built TaskResultMessage
      * @return true if sent successfully
      */
-    bool sendTaskResult(const std::string& task_id,
-                       const std::string& result,
-                       bool finished,
-                       int tokens_generated,
-                       double processing_time_ms,
-                       const std::vector<int64_t>& token_ids = {},
-                       int remaining_tokens = 0,
-                       float temperature = 0.7f,
-                       const std::vector<std::string>& stop_sequences = {});
+    bool sendTaskResult(const TaskResultMessage& message);
 
     /**
      * @brief Send health check information

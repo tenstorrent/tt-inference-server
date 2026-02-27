@@ -18,13 +18,11 @@ struct TaskForwardMessage {
     std::string task_id;
     std::string prompt;
     std::vector<int64_t> token_ids;
-    int max_tokens;
-    float temperature;
-    std::vector<std::string> stop_sequences;
+    int max_tokens = 0;
 
     template<class Archive>
     void serialize(Archive& ar) {
-        ar(task_id, prompt, token_ids, max_tokens, temperature, stop_sequences);
+        ar(task_id, prompt, token_ids, max_tokens);
     }
 };
 
@@ -38,18 +36,16 @@ struct TaskForwardMessage {
 struct TaskResultMessage {
     std::string task_id;
     std::string generated_text;
-    bool finished;
-    int tokens_generated;
-    double processing_time_ms;
+    bool finished = false;
+    int tokens_generated = 0;
+    double processing_time_ms = 0.0;
     std::vector<int64_t> token_ids;
-    int remaining_tokens;
-    float temperature;
-    std::vector<std::string> stop_sequences;
+    int remaining_tokens = 0;
 
     template<class Archive>
     void serialize(Archive& ar) {
         ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
-           token_ids, remaining_tokens, temperature, stop_sequences);
+           token_ids, remaining_tokens);
     }
 };
 
@@ -58,9 +54,9 @@ struct TaskResultMessage {
  */
 struct HealthCheckMessage {
     std::string server_id;
-    double cpu_usage;
-    double memory_usage;
-    int active_tasks;
+    double cpu_usage = 0.0;
+    double memory_usage = 0.0;
+    int active_tasks = 0;
 
     template<class Archive>
     void serialize(Archive& ar) {
@@ -73,9 +69,9 @@ struct HealthCheckMessage {
  */
 struct LoadBalanceMessage {
     std::string server_id;
-    int queue_size;
-    double avg_processing_time;
-    bool accepting_tasks;
+    int queue_size = 0;
+    double avg_processing_time = 0.0;
+    bool accepting_tasks = false;
 
     template<class Archive>
     void serialize(Archive& ar) {
