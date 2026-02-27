@@ -47,6 +47,56 @@ def generate_default_docker_link(
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
+def generate_alternate_docker_image(
+    current_docker_image: str,
+    full_tt_metal_sha: str,
+    full_vllm_sha: Optional[str] = None,
+) -> Optional[str]:
+    """Generate an alternate Docker image tag using full-length commit SHAs.
+
+    When a model spec contains a short commit SHA (e.g. ``cce3da6``) the
+    published image on GHCR may use the full 40-character SHA.  This function
+    reconstructs the tag with the provided full SHAs so that the run pipeline
+    can fall back to the alternate tag when the primary one is not found.
+
+    The repo portion of the image (everything before ``:``) is preserved
+    unchanged, including any ``-dev-`` or ``-release-`` substring.  Only the
+    tag portion is replaced.
+
+    Tag format:
+    - media server:  ``<version>-<tt_metal_sha>``
+    - vLLM:          ``<version>-<tt_metal_sha>-<vllm_sha>``
+
+    Args:
+        current_docker_image: Full docker image string (``repo:tag``).
+        full_tt_metal_sha: Full 40-char tt-metal commit SHA.
+        full_vllm_sha: Full vLLM commit SHA, or ``None`` for media-server images.
+
+    Returns:
+        The alternate image string, or ``None`` if it would be identical to
+        ``current_docker_image``.
+    """
+    if not current_docker_image or ":" not in current_docker_image:
+        return None
+
+    repo, tag = current_docker_image.rsplit(":", 1)
+
+    # Extract the version prefix — everything before the first "-"
+    version_prefix = tag.split("-", 1)[0]
+
+    if full_vllm_sha:
+        alternate_tag = f"{version_prefix}-{full_tt_metal_sha}-{full_vllm_sha}"
+    else:
+        alternate_tag = f"{version_prefix}-{full_tt_metal_sha}"
+
+    alternate_image = f"{repo}:{alternate_tag}"
+
+    if alternate_image == current_docker_image:
+        return None
+
+    return alternate_image
+
+
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()

@@ -472,7 +472,7 @@ class TestOverrideArgsIntegration:
 
         # Mock dependencies
         with patch(
-            "workflows.run_docker_server.ensure_docker_image", return_value=True
+            "workflows.run_docker_server.ensure_docker_image", return_value="mock-image:tag"
         ), patch("workflows.run_docker_server.subprocess.Popen") as mock_popen, patch(
             "workflows.run_docker_server.open"
         ), patch(

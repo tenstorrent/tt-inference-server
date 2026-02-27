@@ -12,11 +12,13 @@ from datetime import datetime
 
 
 from workflows.log_setup import clean_log_file
+from workflows.model_spec import generate_alternate_docker_image
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    resolve_commit_to_full_sha,
     run_command,
 )
 from workflows.workflow_types import (
@@ -55,11 +57,15 @@ def get_media_server_docker_env_vars(model_spec):
     return env_vars
 
 
-def ensure_docker_image(image_name):
+def _try_pull_and_inspect(image_name) -> bool:
+    """Attempt to pull and locally inspect a Docker image.
+
+    Returns True if the image is available locally after the pull attempt,
+    False otherwise.
+    """
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
-    cmd = ["docker", "pull", image_name]
-    pull_return_code = run_command(cmd, logger=logger)
+    pull_return_code = run_command(["docker", "pull", image_name], logger=logger)
     if pull_return_code != 0:
         logger.error(
             f"⛔ Docker image pull from ghcr.io failed with return code: {pull_return_code}"
@@ -79,11 +85,71 @@ def ensure_docker_image(image_name):
     if return_code != 0:
         err_str = "⛔ Docker image does not exist locally."
         if "-release-" in image_name:
-            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
+            err_str += " You are running in release mode, use '--dev-mode' CLI arg to run the dev image."
         logger.error(err_str)
         return False
     logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
     return True
+
+
+def ensure_docker_image(image_name, model_spec=None):
+    """Ensure a Docker image is available locally, with optional SHA fallback.
+
+    Tries the primary ``image_name`` first.  If that fails and ``model_spec``
+    is provided, resolves the tt-metal (and vLLM, if present) commits to their
+    full 40-char SHAs, generates an alternate tag, and retries.
+
+    Args:
+        image_name: The Docker image name/tag to pull and inspect.
+        model_spec: Optional model specification.  When provided, enables the
+            full-SHA fallback in case the primary tag is not found.
+
+    Returns:
+        The resolved image name string that was successfully found, or ``None``
+        if no image could be located.
+    """
+    if _try_pull_and_inspect(image_name):
+        return image_name
+
+    if model_spec is None:
+        return None
+
+    # Fallback: resolve short SHAs to full SHAs and retry with alternate tag
+    logger.info(
+        "Primary image not found; attempting full-SHA fallback resolution ..."
+    )
+    tt_metal_commit = getattr(model_spec, "tt_metal_commit", None)
+    vllm_commit = getattr(model_spec, "vllm_commit", None)
+
+    if not tt_metal_commit:
+        logger.info("No tt_metal_commit on model_spec; cannot generate alternate tag.")
+        return None
+
+    full_tt_metal_sha = resolve_commit_to_full_sha(
+        tt_metal_commit,
+        repo_url="https://github.com/tenstorrent/tt-metal.git",
+    )
+    full_vllm_sha = None
+    if vllm_commit:
+        full_vllm_sha = resolve_commit_to_full_sha(
+            vllm_commit,
+            repo_url="https://github.com/tenstorrent/vllm.git",
+        )
+
+    alternate_image = generate_alternate_docker_image(
+        image_name, full_tt_metal_sha, full_vllm_sha
+    )
+    if alternate_image is None:
+        logger.info(
+            "Alternate image tag is identical to primary; no further fallback available."
+        )
+        return None
+
+    logger.info(f"Retrying with alternate image tag: {alternate_image}")
+    if _try_pull_and_inspect(alternate_image):
+        return alternate_image
+
+    return None
 
 
 def run_docker_server(model_spec, setup_config, json_fpath):
@@ -120,7 +186,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
             device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
 
     # ensure docker image is available
-    assert ensure_docker_image(model_spec.docker_image), (
+    resolved_docker_image = ensure_docker_image(model_spec.docker_image, model_spec=model_spec)
+    assert resolved_docker_image is not None, (
         f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
     )
 
@@ -215,7 +282,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         # fmt: on
 
     # add docker image at end
-    docker_command.append(model_spec.docker_image)
+    docker_command.append(resolved_docker_image)
     if args.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
     logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
