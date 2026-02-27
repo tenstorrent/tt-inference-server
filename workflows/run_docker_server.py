@@ -4,6 +4,7 @@
 
 import atexit
 import logging
+import os
 import shlex
 import subprocess
 import time
@@ -203,6 +204,14 @@ def run_docker_server(model_spec, setup_config, json_fpath):
                 "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
                 "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             ]
+            # If a local tt-metal path is provided for TTS, mount its model directory to
+            # override the baked-in tt-metal model code in the container.
+            tt_metal_path = getattr(args, "tt_metal_path", None)
+            if tt_metal_path and model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+                tt_metal_path = os.path.expanduser(tt_metal_path)
+                docker_command += [
+                    "--mount", f"type=bind,src={tt_metal_path}/models/experimental/speecht5_tts,dst={user_home_path}/tt-metal/models/experimental/speecht5_tts",
+                ]
         else:
             # For LLM models (vLLM containers), mount vLLM-related directories
             docker_command += [
