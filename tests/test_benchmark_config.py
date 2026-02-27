@@ -135,7 +135,7 @@ def test_benchmark_configs_selected_models_print_sweeps(
         image_params = [
             p
             for p in sweep_task.param_map[device]
-            if getattr(p, "task_type", "text") == "image"
+            if getattr(p, "task_type", "text") == "vlm"
         ]
         assert len(image_params) > 0
 
