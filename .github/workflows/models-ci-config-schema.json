@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CI Models Configuration",
+  "description": "Schema for models CI configuration",
+  "type": "object",
+  "$defs": {
+    "schedule_config": {
+      "type": "object",
+      "properties": {
+        "devices": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2"]
+              },
+              "minItems": 1,
+              "description": "Array of specific devices to run tests on"
+            },
+            {
+              "type": "string",
+              "enum": ["ALL"],
+              "description": "Run on all devices"
+            }
+          ],
+          "description": "List of devices to run tests on, or 'ALL' for all devices"
+        }
+      },
+      "required": ["devices"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "models": {
+      "type": "object",
+      "description": "Dictionary of model configurations",
+      "patternProperties": {
+        ".*": {
+          "type": "object",
+          "properties": {
+            "inference_engine": {
+              "type": "string",
+              "enum": ["vLLM", "MEDIA", "FORGE"],
+              "description": "The inference engine to use for this model"
+            },
+            "ci": {
+              "type": "object",
+              "description": "CI configuration for different schedules. Must contain at least one schedule.",
+              "properties": {
+                "nightly": {
+                  "$ref": "#/$defs/schedule_config"
+                },
+                "weekly": {
+                  "$ref": "#/$defs/schedule_config"
+                },
+                "bi_weekly": {
+                  "$ref": "#/$defs/schedule_config"
+                },
+                "release": {
+                  "$ref": "#/$defs/schedule_config"
+                }
+              },
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          },
+          "required": ["inference_engine", "ci"]
+        }
+      }
+    }
+  },
+  "required": ["models"],
+  "additionalProperties": false
+}
