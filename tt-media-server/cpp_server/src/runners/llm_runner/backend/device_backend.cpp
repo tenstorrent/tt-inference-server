@@ -8,10 +8,6 @@ namespace llm_engine::backend {
 std::unique_ptr<IDeviceBackend> make_device_backend_mock(const Config& config);
 std::unique_ptr<IDeviceBackend> make_device_backend_ttrun(const Config& config);
 
-#ifdef USE_METAL_CPP_LIB
-std::unique_ptr<IDeviceBackend> make_device_backend_sockets(const Config& config);
-#endif
-
 std::unique_ptr<IDeviceBackend> make_device_backend(const Config& config) {
   switch (config.device) {
     case DeviceBackend::TtRun:

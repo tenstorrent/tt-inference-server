@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -86,14 +87,13 @@ class TtRunDeviceBackend : public IDeviceBackend {
       throw std::runtime_error("TtRunDeviceBackend: fork failed");
     }
     if (pid == 0) {
-      setpgid(0, 0);  // become process group leader so killpg covers all descendants
+      prctl(PR_SET_PDEATHSIG, SIGKILL);
       setenv("TT_IPC_SHM_C2P", deviceInput.getName().c_str(), 1);
       setenv("TT_IPC_SHM_P2C", deviceOutput.getName().c_str(), 1);
       setenv("TT_METAL_SLOW_DISPATCH_MODE", "1", 1);
       execv(argv[0], argv);
-      _exit(127);
+      _exit(127); // this should never happen
     }
-    setpgid(pid, pid);  // also set from parent side to avoid the race before child runs
     childPid = pid;
     std::cout << "TtRunDeviceBackend: started tt-run pid " << pid << std::endl;
   }
@@ -127,14 +127,10 @@ class TtRunDeviceBackend : public IDeviceBackend {
   void terminate() override {
     stop.store(true, std::memory_order_relaxed);
     if (childPid > 0) {
-      killpg(childPid, SIGTERM);
-      std::system("pkill -TERM -f prterun");
-      std::system("pkill -TERM -f runner.py");
+      kill(childPid, SIGTERM);
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      killpg(childPid, SIGKILL);
-      std::system("pkill -KILL -f prterun");
-      std::system("pkill -KILL -f runner.py");
-      waitpid(childPid, nullptr, 0);
+      kill(childPid, SIGKILL);
+      waitpid(childPid, nullptr, WNOHANG);
       childPid = -1;
     }
   }
