@@ -33,21 +33,19 @@ FIFO_SIZE = 128  # 2 × page size for minimal in-flight buffering
 PIPELINE_CORE = ttnn.CoreCoord(0, 0)
 FABRIC_MAX_PAYLOAD = 7168
 
-# SHM page layout for c2p/p2c – must match C++ (token_to_page / page_to_result)
+# SharedMemory layout – must match C++ SharedMemory class (shared_memory.hpp)
+# Message: atomic state (4B) + pad (16B) + payload (44B) = 64B
+_NUM_SLOTS = 1024
+_MESSAGE_SIZE = 64
+_SHM_SIZE = _NUM_SLOTS * _MESSAGE_SIZE
+_STATE_OFF = 0
+_PAYLOAD_OFF = 20  # 4 (state) + 16 (pad)
+_PAYLOAD_SIZE = 44
 _TASK_ID_SIZE = 36
 _TOKEN_ID_OFF = 36
 _TOKEN_ID_SIZE = 8
-_PAGE_SIZE = 64
-_NUM_SLOTS = 1024
-_CHANNEL_HEADER = 64
-_CHANNEL_SIZE = _CHANNEL_HEADER + _NUM_SLOTS * _PAGE_SIZE
-_SHM_SIZE = 2 * _CHANNEL_SIZE
-_C2P_READ_POS = 0
-_C2P_WRITE_POS = 4
-_C2P_SLOTS_OFF = _CHANNEL_HEADER
-_P2C_READ_POS = _CHANNEL_SIZE
-_P2C_WRITE_POS = _CHANNEL_SIZE + 4
-_P2C_SLOTS_OFF = _CHANNEL_SIZE + _CHANNEL_HEADER
+_FREE = 0
+_TAKEN = 1
 
 _shutdown = False
 
@@ -62,44 +60,37 @@ def _rank():
     return int(r) if r is not None else 0
 
 
-def _shm_recv_from_cpp(buf):
-    r = struct.unpack_from("<I", buf, _C2P_READ_POS)[0]
+def _shm_recv(buf, pos):
+    """Read one payload from a SharedMemory ring buffer (wait for TAKEN, read, set FREE)."""
+    msg_off = pos * _MESSAGE_SIZE
+    state_off = msg_off + _STATE_OFF
+    payload_off = msg_off + _PAYLOAD_OFF
     while not _shutdown:
-        w = struct.unpack_from("<I", buf, _C2P_WRITE_POS)[0]
-        if r != w:
+        state = struct.unpack_from("<i", buf, state_off)[0]
+        if state == _TAKEN:
             break
     if _shutdown:
-        return None
-    slot_off = _C2P_SLOTS_OFF + (r % _NUM_SLOTS) * _PAGE_SIZE
-    data = bytes(buf[slot_off : slot_off + _PAGE_SIZE])
-    struct.pack_into("<I", buf, _C2P_READ_POS, r + 1)
-    return data
+        return None, pos
+    data = bytes(buf[payload_off : payload_off + _PAYLOAD_SIZE])
+    struct.pack_into("<i", buf, state_off, _FREE)
+    return data, (pos + 1) % _NUM_SLOTS
 
 
-def _shm_sync_to_cpp(buf):
-    try:
-        import ctypes
-
-        libc = ctypes.CDLL("libc.so.6")
-        MS_SYNC = 0x2
-        addr = ctypes.addressof(ctypes.c_char.from_buffer(buf))
-        libc.msync(ctypes.c_void_p(addr), len(buf), MS_SYNC)
-    except Exception:
-        pass
-
-
-def _shm_send_to_cpp(buf, payload):
+def _shm_send(buf, payload, pos):
+    """Write one payload to a SharedMemory ring buffer (wait for FREE, write, set TAKEN)."""
+    msg_off = pos * _MESSAGE_SIZE
+    state_off = msg_off + _STATE_OFF
+    payload_off = msg_off + _PAYLOAD_OFF
     while not _shutdown:
-        r = struct.unpack_from("<I", buf, _P2C_READ_POS)[0]
-        w = struct.unpack_from("<I", buf, _P2C_WRITE_POS)[0]
-        if (w - r) % (1 << 32) < _NUM_SLOTS:
+        state = struct.unpack_from("<i", buf, state_off)[0]
+        if state == _FREE:
             break
     if _shutdown:
-        return
-    slot_off = _P2C_SLOTS_OFF + (w % _NUM_SLOTS) * _PAGE_SIZE
-    buf[slot_off : slot_off + _PAGE_SIZE] = payload
-    struct.pack_into("<I", buf, _P2C_WRITE_POS, w + 1)
-    _shm_sync_to_cpp(buf)
+        return pos
+    padded = payload[:_PAYLOAD_SIZE].ljust(_PAYLOAD_SIZE, b"\x00")
+    buf[payload_off : payload_off + _PAYLOAD_SIZE] = padded
+    struct.pack_into("<i", buf, state_off, _TAKEN)
+    return (pos + 1) % _NUM_SLOTS
 
 
 def _open_shm(shm_name):
@@ -165,22 +156,29 @@ def _create_pipeline_block(mesh_device):
     )
 
 
-def _shm_pipeline_bridge(pipeline_block, shm_buf):
-    """Read token pages from C++, push through the pipeline, send output_tensor back.
-    The pipeline output (embedding row, 64 bytes) is sent back so the simulated
-    pipeline returns what was computed from the input page, not the page itself.
+def _shm_pipeline_bridge(pipeline_block, c2p_buf, p2c_buf):
+    """Single-thread bridge: recv → tensor conversion → write_token → read_output → send.
+    Avoids Python GIL contention that a two-thread design introduces (~5ms switch interval).
     """
     token_elems = TOKEN_SIZE_BYTES // 4
+    recv_pos = 0
+    send_pos = 0
+
     while not _shutdown:
-        page = _shm_recv_from_cpp(shm_buf)
-        if page is None:
+        payload, recv_pos = _shm_recv(c2p_buf, recv_pos)
+        if payload is None:
             break
+
+        page = bytearray(TOKEN_SIZE_BYTES)
+        page[: len(payload)] = payload
         token_ints = struct.unpack_from(f"<{token_elems}I", page)
+
         input_tensor = ttnn.from_torch(
             torch.tensor(token_ints, dtype=torch.uint32).reshape(1, -1),
             dtype=ttnn.uint32,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
+
         pipeline_block.write_token(input_tensor)
 
         output_tensor = ttnn.from_torch(
@@ -190,14 +188,7 @@ def _shm_pipeline_bridge(pipeline_block, shm_buf):
         )
         pipeline_block.read_output(output_tensor)
 
-        # Loop the page back, not the output tensor: pipeline D2H returns embedding rows, not
-        # task_id/token_id; C++ page_to_result() and find_sequence() require the original IDs.
-        payload = bytearray(_PAGE_SIZE)
-        payload[:_TASK_ID_SIZE] = page[:_TASK_ID_SIZE]
-        payload[_TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE] = page[
-            _TOKEN_ID_OFF : _TOKEN_ID_OFF + _TOKEN_ID_SIZE
-        ]
-        _shm_send_to_cpp(shm_buf, bytes(payload))
+        send_pos = _shm_send(p2c_buf, payload, send_pos)
 
 
 def main():
@@ -218,14 +209,17 @@ def main():
         pipeline_block.run()
 
         if pipeline_block.is_first_pipeline_stage():
-            shm_name = os.environ.get("TT_IPC_SHM")
-            if shm_name:
-                shm_buf = _open_shm(shm_name)
-                if shm_buf:
+            c2p_name = os.environ.get("TT_IPC_SHM_C2P")
+            p2c_name = os.environ.get("TT_IPC_SHM_P2C")
+            if c2p_name and p2c_name:
+                c2p_buf = _open_shm(c2p_name)
+                p2c_buf = _open_shm(p2c_name)
+                if c2p_buf and p2c_buf:
                     try:
-                        _shm_pipeline_bridge(pipeline_block, shm_buf)
+                        _shm_pipeline_bridge(pipeline_block, c2p_buf, p2c_buf)
                     finally:
-                        shm_buf.close()
+                        c2p_buf.close()
+                        p2c_buf.close()
 
         # It seems like terminate() will immediatelly terminate the other processes but that will not happen
         # This is because in order for them to terminate, they all need to meet at this barrier

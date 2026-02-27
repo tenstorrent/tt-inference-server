@@ -3,6 +3,7 @@
 
 cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
+add_compile_options(-g)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,6 +70,7 @@ if(ENABLE_TRACY)
         GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
         GIT_TAG master
     )
+    set(FETCHCONTENT_UPDATES_DISCONNECTED_tracy ON)
     FetchContent_MakeAvailable(tracy)
 endif()
 
@@ -136,6 +138,7 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/device_backend.cpp
     src/runners/llm_runner/mock_device_backend.cpp
     src/runners/llm_runner/ttrun_device_backend.cpp
+    src/runners/llm_runner/shared_memory.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
