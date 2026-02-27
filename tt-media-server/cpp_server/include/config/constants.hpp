@@ -115,7 +115,7 @@ namespace defaults {
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
     constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
-    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "server", "client"
+    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
 }

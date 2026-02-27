@@ -147,6 +147,10 @@ void InterServerService::setHealthCheckCallback(HealthCallback callback) {
     health_check_callback_ = callback;
 }
 
+void InterServerService::setConnectionLostCallback(std::function<void()> callback) {
+    socket_manager_.setConnectionLostCallback(std::move(callback));
+}
+
 bool InterServerService::isConnected() const {
     return enabled_ && socket_manager_.isConnected();
 }

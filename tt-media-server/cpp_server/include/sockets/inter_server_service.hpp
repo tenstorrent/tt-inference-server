@@ -134,6 +134,12 @@ public:
     void setHealthCheckCallback(HealthCallback callback);
 
     /**
+     * @brief Set callback for connection lost events
+     * @param callback Function to call when connection is lost
+     */
+    void setConnectionLostCallback(std::function<void()> callback);
+
+    /**
      * @brief Check if connected to peer server
      */
     bool isConnected() const;

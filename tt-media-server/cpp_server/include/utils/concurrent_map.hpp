@@ -35,6 +35,19 @@ public:
         return map_.find(key) != map_.end();
     }
 
+    void clear() {
+        std::lock_guard lock(mutex_);
+        map_.clear();
+    }
+
+    template<typename Func>
+    void for_each(Func&& func) {
+        std::lock_guard lock(mutex_);
+        for (auto& [key, value] : map_) {
+            func(key, value);
+        }
+    }
+
     ConcurrentMap(const ConcurrentMap&) = delete;
     ConcurrentMap& operator=(const ConcurrentMap&) = delete;
 

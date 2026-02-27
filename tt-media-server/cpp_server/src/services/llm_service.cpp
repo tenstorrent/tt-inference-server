@@ -396,12 +396,41 @@ void LLMService::setup_socket_callbacks() {
             });
     }
 
+    socket_service_->setConnectionLostCallback([this]() {
+        handle_connection_lost();
+    });
+
     socket_service_->setHealthCheckCallback(
         [](const std::string& server_id, double cpu, double memory, int tasks) {
             std::cout << "[LLMService] Health check from " << server_id
                       << " - CPU: " << cpu << "%, Memory: " << memory
                       << "%, Tasks: " << tasks << std::endl;
         });
+}
+
+void LLMService::handle_connection_lost() {
+    std::cerr << "[LLMService] Connection lost - failing pending tasks\n" << std::flush;
+
+    stream_callbacks_.for_each([this](const std::string& task_id,
+                                      std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
+        domain::StreamingChunkResponse error_response;
+        error_response.id = task_id;
+        error_response.created = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        domain::CompletionChoice choice;
+        choice.text = "";
+        choice.index = 0;
+        choice.finish_reason = "error";
+        error_response.choices.push_back(std::move(choice));
+        error_response.error = "Connection to remote server lost";
+
+        callback(error_response, true);
+        pending_tasks_.fetch_sub(1);
+    });
+
+    stream_callbacks_.clear();
 }
 
 void LLMService::handle_socket_task_forward(const tt::sockets::TaskForwardMessage& message) {
