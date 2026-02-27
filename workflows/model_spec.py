@@ -943,13 +943,13 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
@@ -957,11 +957,14 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=128,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
             ),
         ],
@@ -981,7 +984,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
