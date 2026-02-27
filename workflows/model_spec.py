@@ -307,6 +307,7 @@ class DeviceModelSpec:
         max_concurrency = self.max_concurrency
         if data_parallel_size := self.vllm_args.get("data_parallel_size"):
             assert isinstance(data_parallel_size, int)
+            # vllm args need to be set per engine instance, the number of which is the data_parallel_size (# of DP ranks). The variables must be computed and passed to client consumers however that will make requests to the DP engines without needing to know about DP rank.
             max_concurrency = max_concurrency // data_parallel_size
             max_num_batched_tokens = max_num_batched_tokens * data_parallel_size
         object.__setattr__(self, "max_num_batched_tokens", max_num_batched_tokens)
