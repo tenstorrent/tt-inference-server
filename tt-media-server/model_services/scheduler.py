@@ -8,16 +8,16 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
+from config.constants import SHUTDOWN_SIGNAL, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
-from model_services.memory_queue import SharedMemoryChunkQueue
-from model_services.tt_queue import TTQueue
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
+from utils.simple_queue_factory import get_queue, get_task_queue
 
 
 class Scheduler:
@@ -30,25 +30,23 @@ class Scheduler:
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
-        self.task_queue = TTQueue(
-            self.settings.max_queue_size, batch_enabled=self.settings.max_batch_size > 1
+        # Task queue must use a standard queue that can serialize arbitrary objects
+        # SharedMemoryChunkQueue is only for result streaming
+        self.task_queue = get_task_queue(
+            queue_type=self.settings.queue_for_multiprocessing, size=10000
         )
         self.warmup_signals_queue = Queue(worker_count)
 
-        # Create one result queue per worker
+        # Create one result queue per worker (can use SharedMemoryChunkQueue)
         self.result_queues_by_worker = {}
         if self.settings.use_queue_per_worker:
             for i in range(worker_count):
-                self.result_queues_by_worker[i] = (
-                    SharedMemoryChunkQueue(name=f"chunk_queue_{i}", create=True)
-                    if self.settings.use_memory_queue
-                    else Queue()
+                self.result_queues_by_worker[i] = get_queue(
+                    queue_type=self.settings.queue_for_multiprocessing, size=10000
                 )
         else:
-            self.result_queues_by_worker[0] = (
-                SharedMemoryChunkQueue(name="chunk_queue_0", create=True)
-                if self.settings.use_memory_queue
-                else Queue()
+            self.result_queues_by_worker[0] = get_queue(
+                queue_type=self.settings.queue_for_multiprocessing, size=10000
             )
 
         self.error_queue = Queue()
@@ -72,7 +70,6 @@ class Scheduler:
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
 
-    @log_execution_time("Scheduler request processing")
     def process_request(self, request):
         try:
             self.check_is_model_ready()
@@ -105,7 +102,7 @@ class Scheduler:
         return True
 
     @log_execution_time("Scheduler - starting workers")
-    def start_workers(self):
+    async def start_workers(self):
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -117,7 +114,9 @@ class Scheduler:
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
         self.logger.info(f"Workers to start: {self.worker_count}")
-        asyncio.create_task(self._start_workers_in_sequence())
+
+        # Start workers and wait for completion
+        await self._start_workers_in_sequence()
 
     async def _start_workers_in_sequence(self):
         """Start workers one by one with a delay to avoid overload"""
@@ -133,8 +132,11 @@ class Scheduler:
 
         self.logger.info("All workers started in sequence")
 
-    def _start_worker(self, worker_id=None):
-        """Start a single worker process"""
+    def _start_worker(self, worker_id=None, queue_index=None):
+        """Start a single worker process.
+        When restarting, pass queue_index from the worker's existing info so the
+        correct result queue is used (worker_info is not reduced on restart).
+        """
         if worker_id is None:
             worker_id = (
                 self.workers_to_open.pop(0)
@@ -145,8 +147,11 @@ class Scheduler:
 
         self.logger.info(f"Starting worker {worker_id}")
 
-        # Get the queue index for this worker
-        worker_index = len(self.worker_info)
+        # Use existing queue index when restarting; otherwise assign by order
+        if queue_index is not None:
+            worker_index = queue_index
+        else:
+            worker_index = len(self.worker_info)
 
         result_queue = None
         if self.settings.use_queue_per_worker:
@@ -164,7 +169,10 @@ class Scheduler:
                 result_queue,
                 self.warmup_signals_queue,
                 self.error_queue,
-                result_queue.name if self.settings.use_memory_queue else None,
+                result_queue.name
+                if self.settings.queue_for_multiprocessing
+                == QueueType.MemoryQueue.value
+                else None,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -205,45 +213,56 @@ class Scheduler:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
                 self.logger.info(f"Old worker {worker_id} process does not exist")
 
+        # Use same queue index so worker reuses its result queue
+        existing_queue_index = old_info.get("queue_index")
+
         # Start new worker
-        self._start_worker(worker_id)
+        self._start_worker(worker_id, queue_index=existing_queue_index)
         self.worker_info[worker_id]["restart_count"] = restart_count
         # pass the error count from old worker -1 to give it a chance to recover
         self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
 
     async def result_listener(self):
-        """✅ Read from ALL worker queues in parallel"""
+        """✅ Read from ALL worker queues in parallel using batch reads"""
         while self.listener_running:
             try:
-                # Non-blocking reads from all queues
                 result_found = False
 
                 for worker_index, result_queue in self.result_queues_by_worker.items():
                     try:
-                        result = result_queue.get_nowait()
+                        # Batch read - get up to 100 results at once
+                        results = result_queue.get_many(
+                            max_messages_to_get=1000, block=False, timeout=0.001
+                        )
 
-                        if result is None:
+                        if not results:
                             continue
 
                         result_found = True
-                        worker_id, result_key, input_data = result
+                        # Process all results in batch
+                        for result in results:
+                            if result is None:
+                                continue
 
-                        if result_key is None:
-                            self.listener_running = False
-                            break
+                            worker_id, result_key, input_data = result
 
-                        queue_obj = self.result_queues.get(result_key)
+                            if result_key is None:
+                                self.listener_running = False
+                                break
 
-                        if queue_obj:
-                            await queue_obj.put(input_data)
-                        else:
-                            current_queues = list(self.result_queues.keys())
-                            self.logger.warning(
-                                f"No result queue found for task {result_key}. "
-                                f"Current queues: {current_queues}"
-                            )
-                    except:  # noqa: BLE001, E722
-                        self.logger.debug("Queue is currently empty")
+                            queue_obj = self.result_queues.get(result_key)
+
+                            if queue_obj:
+                                await queue_obj.put(input_data)
+                            else:
+                                current_queues = list(self.result_queues.keys())
+                                self.logger.warning(
+                                    f"No result queue found for task {result_key}. "
+                                    f"Current queues: {current_queues}"
+                                )
+
+                    except Exception:
+                        pass  # Queue empty, continue to next
 
                 # Only sleep if no results found
                 if not result_found:
@@ -341,7 +360,7 @@ class Scheduler:
 
             for _ in self.worker_info:
                 try:
-                    self.task_queue.put(None, timeout=2.0)
+                    self.task_queue.put(SHUTDOWN_SIGNAL, timeout=2.0)
                 except Exception:
                     self.logger.warning("Timeout sending shutdown signal to worker")
 
@@ -400,9 +419,16 @@ class Scheduler:
 
     def _calculate_worker_count(self) -> int:
         try:
+            self.logger.info(
+                f"_calculate_worker_count: raw device_ids={self.settings.device_ids!r}"
+            )
             device_ids_cleaned = self.settings.device_ids.replace(" ", "").split("),(")
             worker_count = len(device_ids_cleaned)
             self.workers_to_open = device_ids_cleaned
+            self.logger.info(
+                f"_calculate_worker_count: split into {worker_count} workers, "
+                f"workers_to_open={device_ids_cleaned}"
+            )
             if worker_count < 1:
                 self.logger.error("Worker count is 0")
                 raise ValueError("Worker count must be at least 1")
@@ -456,19 +482,28 @@ class Scheduler:
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
 
-                # Restart dead workers
+                # Restart dead workers (one failure must not block restarting others)
                 for worker_id in dead_workers:
                     restart_count = self.worker_info[worker_id].get("restart_count", 0)
 
                     if restart_count < self.settings.max_worker_restart_count:
-                        self.restart_worker(worker_id)
+                        try:
+                            self.restart_worker(worker_id)
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to restart worker {worker_id}: {e}"
+                            )
+                            # Bump restart_count so we don't infinite-loop on this worker
+                            self.worker_info[worker_id]["restart_count"] = (
+                                self.worker_info[worker_id].get("restart_count", 0) + 1
+                            )
                     else:
                         self.logger.error(
                             f"Worker {worker_id} has died too many times ({restart_count}), restart did not help"
                         )
                         if self.settings.allow_deep_reset:
                             self.logger.info("Trying deep restart of all workers")
-                            self.deep_restart_workers()
+                            await self.deep_restart_workers()
 
                 await asyncio.sleep(self.settings.worker_check_sleep_timeout)
 

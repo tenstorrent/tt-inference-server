@@ -6,9 +6,10 @@ import asyncio
 import os
 import tempfile
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
+from multiprocessing import Event
 from config.constants import JobTypes
 from domain.base_request import BaseRequest
 from utils.job_manager import Job, JobManager, JobStatus, get_job_manager
@@ -19,22 +20,23 @@ class TestJob:
 
     def test_job_initialization(self):
         """Test Job is created with correct initial values"""
-        job = Job(id="test-123", object="video", model="test-model")
+        job = Job(id="test-123", job_type="video", model="test-model")
 
         assert job.id == "test-123"
-        assert job.object == "video"
+        assert job.job_type == "video"
         assert job.model == "test-model"
+        assert job.request_parameters == {}
         assert job.status == JobStatus.QUEUED
         assert job.created_at is not None
         assert job.completed_at is None
-        assert job.result is None
+        assert job.result_path is None
         assert job.error is None
         assert job._task is None
 
     def test_job_auto_timestamp(self):
         """Test Job automatically sets created_at timestamp"""
         before = int(time.time())
-        job = Job(id="test-123", object="video", model="test-model")
+        job = Job(id="test-123", job_type="video", model="test-model")
         after = int(time.time())
 
         assert before <= job.created_at <= after
@@ -44,7 +46,7 @@ class TestJob:
         custom_time = 1000000
         job = Job(
             id="test-123",
-            object="video",
+            job_type="video",
             model="test-model",
             created_at=custom_time,
         )
@@ -53,7 +55,7 @@ class TestJob:
 
     def test_mark_in_progress(self):
         """Test marking job as in progress"""
-        job = Job(id="test-123", object="video", model="test-model")
+        job = Job(id="test-123", job_type="video", model="test-model")
         job.mark_in_progress()
 
         assert job.status == JobStatus.IN_PROGRESS
@@ -61,22 +63,22 @@ class TestJob:
 
     def test_mark_completed(self):
         """Test marking job as completed"""
-        job = Job(id="test-123", object="video", model="test-model")
-        result = b"video data"
+        job = Job(id="test-123", job_type="video", model="test-model")
+        result_path = "videos/test-123.mp4"
 
         before = int(time.time())
-        job.mark_completed(result)
+        job.mark_completed(result_path)
         after = int(time.time())
 
         assert job.status == JobStatus.COMPLETED
-        assert job.result == result
+        assert job.result_path == result_path
         assert before <= job.completed_at <= after
         assert job.is_completed()
         assert job.is_terminal()
 
     def test_mark_failed(self):
         """Test marking job as failed"""
-        job = Job(id="test-123", object="video", model="test-model")
+        job = Job(id="test-123", job_type="video", model="test-model")
 
         before = int(time.time())
         job.mark_failed("processing_error", "Something went wrong")
@@ -91,24 +93,65 @@ class TestJob:
         assert job.is_terminal()
         assert not job.is_completed()
 
+    def test_mark_cancelling(self):
+        """Test marking job as cancelling"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+        job.mark_cancelling()
+
+        assert job.status == JobStatus.CANCELLING
+        assert not job.is_terminal()
+        assert job.completed_at is None
+
+    def test_mark_cancelled(self):
+        """Test marking job as cancelled"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+
+        before = int(time.time())
+        job.mark_cancelled()
+        after = int(time.time())
+
+        assert job.status == JobStatus.CANCELLED
+        assert job.is_terminal()
+        assert before <= job.completed_at <= after
+        assert not job.is_completed()
+        assert not job.is_in_progress()
+
+    def test_is_terminal_with_cancelled_state(self):
+        """Test that is_terminal includes COMPLETED, FAILED, and CANCELLED"""
+        job = Job(id="test-123", job_type="video", model="test-model")
+
+        assert not job.is_terminal()
+
+        job.mark_completed("path/to/result")
+        assert job.is_terminal()
+
+        job.status = JobStatus.QUEUED
+        job.mark_failed("error", "msg")
+        assert job.is_terminal()
+
+        job.status = JobStatus.QUEUED
+        job.mark_cancelled()
+        assert job.is_terminal()
+
     def test_to_public_dict_queued(self):
         """Test converting queued job to public dict"""
-        job = Job(id="test-123", object="video", model="test-model", created_at=1000)
+        job = Job(id="test-123", job_type="video", model="test-model", created_at=1000)
 
         result = job.to_public_dict()
 
         assert result == {
             "id": "test-123",
-            "object": "video",
+            "job_type": "video",
             "status": "queued",
             "created_at": 1000,
             "model": "test-model",
+            "request_parameters": {},
         }
 
     def test_to_public_dict_completed(self):
         """Test converting completed job to public dict"""
-        job = Job(id="test-123", object="video", model="test-model", created_at=1000)
-        job.mark_completed(b"result")
+        job = Job(id="test-123", job_type="video", model="test-model", created_at=1000)
+        job.mark_completed("videos/test-123.mp4")
 
         result = job.to_public_dict()
 
@@ -118,7 +161,7 @@ class TestJob:
 
     def test_to_public_dict_failed(self):
         """Test converting failed job to public dict"""
-        job = Job(id="test-123", object="video", model="test-model", created_at=1000)
+        job = Job(id="test-123", job_type="video", model="test-model", created_at=1000)
         job.mark_failed("test_error", "Test error message")
 
         result = job.to_public_dict()
@@ -134,13 +177,19 @@ class TestJob:
 class TestJobManager:
     """Tests for JobManager class"""
 
-    @pytest.fixture
-    async def job_manager(self):
-        """Create a fresh JobManager instance for each test"""
+    # We run all tests twice, once with persistence off and once with persistence on
+    @pytest.fixture(params=[False, True], ids=["persistence_off", "persistence_on"])
+    async def job_manager(self, request, tmp_path):
+        """
+        Create a fresh JobManager instance for each test
+        toggling persistence based on parametrization.
+        """
         # Reset singleton
         import utils.job_manager
 
         utils.job_manager._job_manager_instance = None
+
+        test_db_file = tmp_path / "test_jobs.db"
 
         with patch("utils.job_manager.get_settings") as mock_settings:
             mock_settings.return_value.job_cleanup_interval_seconds = 1
@@ -148,23 +197,23 @@ class TestJobManager:
             mock_settings.return_value.job_max_stuck_time_seconds = 3
             mock_settings.return_value.max_jobs = 10
 
+            mock_settings.return_value.enable_job_persistence = request.param
+            mock_settings.return_value.job_database_path = str(test_db_file)
+
             manager = JobManager()
             yield manager
 
-            # Cleanup
-            if manager._cleanup_task:
-                manager._cleanup_task.cancel()
-                try:
-                    await manager._cleanup_task
-                except asyncio.CancelledError:
-                    pass
+            await manager.shutdown()
 
     @pytest.fixture
     def mock_request(self):
         """Create a mock BaseRequest"""
-        request = Mock(spec=BaseRequest)
-        request._task_id = "test-task-123"
-        return request
+
+        # Creating mock request this way to ensure model_dump works correctly
+        class MockRequest(BaseRequest):
+            dummy_argument: str = "test-task-123"
+
+        return MockRequest()
 
     @pytest.mark.asyncio
     async def test_create_job(self, job_manager, mock_request):
@@ -172,7 +221,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         job_data = await job_manager.create_job(
             job_id="job-123",
@@ -183,21 +232,35 @@ class TestJobManager:
         )
 
         assert job_data["id"] == "job-123"
-        assert job_data["object"] == "video"
+        assert job_data["job_type"] == "video"
         assert job_data["status"] == "queued"
         assert job_data["model"] == "test-model"
+        assert job_data["request_parameters"] == {"dummy_argument": "test-task-123"}
 
-        # Check job is in storage
         job_metadata = job_manager.get_job_metadata("job-123")
         assert job_metadata is not None
         assert job_metadata["id"] == "job-123"
+
+        # Check that job is correctly persisted to database if persistence is enabled
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is not None
+            assert db_job["id"] == "job-123"
+            assert db_job["job_type"] == "video"
+            assert db_job["status"] == "queued"
+            assert db_job["model"] == "test-model"
+            assert db_job["request_parameters"] == {"dummy_argument": "test-task-123"}
+            assert db_job.get("created_at") is not None
+            assert db_job.get("completed_at") is None
+            assert db_job.get("result_path") is None
+            assert db_job.get("error_message") is None
 
     @pytest.mark.asyncio
     async def test_create_job_max_limit(self, job_manager, mock_request):
         """Test creating job fails when max limit reached"""
 
         async def task_func(req):
-            return b"result"
+            return "videos/test-123.mp4"
 
         # Fill up to max
         for i in range(10):
@@ -231,7 +294,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         # Create multiple jobs
         await job_manager.create_job(
@@ -272,7 +335,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         # Create jobs of different types
         await job_manager.create_job(
@@ -309,7 +372,7 @@ class TestJobManager:
 
         assert len(result) == 2
         for job in result:
-            assert job["object"] == "video"
+            assert job["job_type"] == "video"
         job_ids = [job["id"] for job in result]
         assert "video-1" in job_ids
         assert "video-2" in job_ids
@@ -322,7 +385,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="video-1",
@@ -343,7 +406,7 @@ class TestJobManager:
 
         assert len(result) == 1
         assert result[0]["id"] == "training-1"
-        assert result[0]["object"] == "training"
+        assert result[0]["job_type"] == "training"
 
     @pytest.mark.asyncio
     async def test_get_all_jobs_metadata_filtered_no_matches(
@@ -353,7 +416,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="video-1",
@@ -375,11 +438,11 @@ class TestJobManager:
         """Test get_all_jobs_metadata includes jobs in all statuses"""
 
         async def quick_task(req):
-            return b"result"
+            return "videos/test-123.mp4"
 
         async def slow_task(req):
             await asyncio.sleep(10)
-            return b"result"
+            return "videos/test-123.mp4"
 
         async def failing_task(req):
             raise ValueError("Test error")
@@ -426,7 +489,7 @@ class TestJobManager:
         """Test get_all_jobs_metadata returns public dict format (no private fields)"""
 
         async def task_func(req):
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-1",
@@ -445,7 +508,7 @@ class TestJobManager:
 
         # Check required fields are present
         assert "id" in job_data
-        assert "object" in job_data
+        assert "job_type" in job_data
         assert "status" in job_data
         assert "created_at" in job_data
         assert "model" in job_data
@@ -453,8 +516,8 @@ class TestJobManager:
         # Check private fields are NOT present
         assert "_task" not in job_data
         assert (
-            "result" not in job_data
-        )  # Result not in metadata, only in get_job_result
+            "result_path" not in job_data
+        )  # Result not in metadata, only in get_job_result_path
 
     @pytest.mark.asyncio
     async def test_get_all_jobs_metadata_thread_safety(self, job_manager, mock_request):
@@ -462,7 +525,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         # Create some jobs
         for i in range(5):
@@ -498,7 +561,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(10)  # Long running
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-123",
@@ -508,16 +571,42 @@ class TestJobManager:
             task_function=task_func,
         )
 
-        result = job_manager.get_job_result("job-123")
-        assert result is None
+        result_path = job_manager.get_job_result_path("job-123")
+        assert result_path is None
+
+    @pytest.mark.asyncio
+    async def test_get_job_result_path_set_on_creation(self, job_manager, mock_request):
+        """Test getting result path set on creation"""
+
+        async def task_func(req):
+            await asyncio.sleep(10)  # Long running
+            return "my_model_final_path.pt"
+
+        await job_manager.create_job(
+            job_id="job-with-result-path",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            result_path="my_model_initial_path.pt",
+        )
+
+        assert (
+            job_manager.get_job_result_path("job-with-result-path")
+            == "my_model_initial_path.pt"
+        )
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-with-result-path")
+            assert db_job is not None
+            assert db_job.get("result_path") == "my_model_initial_path.pt"
 
     @pytest.mark.asyncio
     async def test_job_processing_success(self, job_manager, mock_request):
         """Test successful job processing"""
 
         async def task_func(req):
-            await asyncio.sleep(0.1)
-            return b"video data"
+            await asyncio.sleep(0.5)
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-123",
@@ -527,14 +616,28 @@ class TestJobManager:
             task_function=task_func,
         )
 
-        # Wait for processing
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
 
         metadata = job_manager.get_job_metadata("job-123")
-        assert metadata["status"] == "completed"
+        assert metadata is not None
+        assert metadata["status"] == "in_progress"
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is not None
+            assert db_job["status"] == "in_progress"
 
-        result = job_manager.get_job_result("job-123")
-        assert result == b"video data"
+        await asyncio.sleep(0.5)
+
+        metadata = job_manager.get_job_metadata("job-123")
+        assert metadata is not None
+        assert metadata["status"] == "completed"
+        result_path = job_manager.get_job_result_path("job-123")
+        assert result_path == "videos/test-123.mp4"
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is not None
+            assert db_job["status"] == "completed"
+            assert db_job["result_path"] == "videos/test-123.mp4"
 
     @pytest.mark.asyncio
     async def test_job_processing_failure(self, job_manager, mock_request):
@@ -560,34 +663,94 @@ class TestJobManager:
         assert metadata["error"]["code"] == "processing_error"
         assert "Processing failed" in metadata["error"]["message"]
 
-    @pytest.mark.asyncio
-    async def test_cancel_job_success(self, job_manager, mock_request):
-        """Test deleting an existing job"""
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is not None
+            assert db_job["status"] == "failed"
+            assert db_job["error_message"]["code"] == "processing_error"
 
-        async def task_func(req):
-            await asyncio.sleep(10)
-            return b"result"
+    @pytest.mark.asyncio
+    async def test_job_processing_failure_invalid_result_path(
+        self, job_manager, mock_request
+    ):
+        """Test job fails when task function returns non-string result_path"""
+
+        async def task_func_returns_list(req):
+            await asyncio.sleep(0.1)
+            return ["path/one", "path/two"]  # Invalid: should be string
+
+        # Test with list return
+        await job_manager.create_job(
+            job_id="job-list",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_returns_list,
+        )
+
+        # Wait for processing
+        await asyncio.sleep(0.3)
+
+        job_list = job_manager.get_job_metadata("job-list")
+        assert job_list["status"] == "failed"
+        assert "result_path must be str" in job_list["error"]["message"]
+
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-list")
+            assert db_job is not None
+            assert db_job["status"] == "failed"
+            assert "result_path must be str" in db_job["error_message"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_cancel_job_transitions_to_cancelled(self, job_manager, mock_request):
+        """Verify job moves through cancelling then cancelled state."""
+
+        async def long_task_with_slow_cleanup(req):
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.5)
+                raise
 
         await job_manager.create_job(
             job_id="job-123",
             job_type=JobTypes.VIDEO,
             model="test-model",
             request=mock_request,
-            task_function=task_func,
+            task_function=long_task_with_slow_cleanup,
         )
 
-        result = job_manager.cancel_job("job-123")
-        assert result is True
+        await asyncio.sleep(0.1)
 
-        # Job should be gone
+        result = job_manager.cancel_job("job-123")
+        assert result is not None
+        assert isinstance(result, dict)
+        assert result["id"] == "job-123"
+
         metadata = job_manager.get_job_metadata("job-123")
-        assert metadata is None
+        assert metadata is not None
+        assert metadata["status"] == JobStatus.CANCELLING
+        if job_manager.db:
+            db_job_mid = job_manager.db.get_job_by_id("job-123")
+            assert db_job_mid["status"] == "cancelling"
+
+        await asyncio.sleep(0.6)
+
+        # Job should not be deleted, but its status should be CANCELLED
+        metadata = job_manager.get_job_metadata("job-123")
+        assert metadata is not None
+        assert metadata["status"] == JobStatus.CANCELLED
+        assert metadata["completed_at"] is not None
+        if job_manager.db:
+            db_job_final = job_manager.db.get_job_by_id("job-123")
+            assert db_job_final["status"] == "cancelled"
+            assert db_job_final["completed_at"] is not None
 
     @pytest.mark.asyncio
     async def test_cancel_job_not_found(self, job_manager):
         """Test deleting non-existent job"""
         result = job_manager.cancel_job("nonexistent")
-        assert result is False
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_cancel_job_cancels_task(self, job_manager, mock_request):
@@ -616,13 +779,14 @@ class TestJobManager:
         await asyncio.sleep(0.1)  # Let cancellation propagate
 
         assert cancelled is True
+        assert job_manager.get_job_metadata("job-123")["status"] == JobStatus.CANCELLED
 
     @pytest.mark.asyncio
     async def test_cleanup_old_completed_jobs(self, job_manager, mock_request):
         """Test cleanup removes old completed jobs"""
 
         async def task_func(req):
-            return b"result"
+            return "videos/test-123.mp4"
 
         # Create and complete a job
         await job_manager.create_job(
@@ -646,6 +810,9 @@ class TestJobManager:
         # Job should be removed
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is None
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is None
 
     @pytest.mark.asyncio
     async def test_cleanup_stuck_jobs(self, job_manager, mock_request):
@@ -653,7 +820,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(10)
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-123",
@@ -677,6 +844,9 @@ class TestJobManager:
         # Job should be removed
         metadata = job_manager.get_job_metadata("job-123")
         assert metadata is None
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("job-123")
+            assert db_job is None
 
     @pytest.mark.asyncio
     async def test_cleanup_deletes_result_files(self, job_manager, mock_request):
@@ -732,32 +902,52 @@ class TestJobManager:
         assert job_manager._cleanup_task.done()
 
     @pytest.mark.asyncio
-    async def test_shutdown_cancels_running_jobs(self, job_manager, mock_request):
-        """Test shutdown cancels all running jobs"""
+    async def test_shutdown_workflow(self, job_manager, mock_request):
+        """
+        Test shutdown deletes jobs from memory but persists them in the database
+        with the correct statuses.
+        """
 
-        async def task_func(req):
+        async def task_func_long(req):
             await asyncio.sleep(10)
-            return b"result"
+            return "videos/test-long.mp4"
 
-        # Create multiple jobs
-        for i in range(3):
-            await job_manager.create_job(
-                job_id=f"job-{i}",
-                job_type=JobTypes.VIDEO,
-                model="test-model",
-                request=mock_request,
-                task_function=task_func,
-            )
+        async def task_func_short(req):
+            await asyncio.sleep(0.1)
+            return "videos/test-short.mp4"
 
-        await asyncio.sleep(0.1)  # Let jobs start
+        await job_manager.create_job(
+            job_id="job-running",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_long,
+        )
 
+        await job_manager.create_job(
+            job_id="job-finished",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func_short,
+        )
+
+        await asyncio.sleep(0.3)
         await job_manager.shutdown()
+        await asyncio.sleep(0.1)
 
-        # All tasks should be cancelled or done
-        with job_manager._jobs_lock:
-            for job in job_manager._jobs.values():
-                if job._task:
-                    assert job._task.done() or job._task.cancelled()
+        # Verify jobs are not in memory but persisted in the database
+        assert job_manager.get_job_metadata("job-finished") is None
+        assert job_manager.get_job_metadata("job-running") is None
+
+        if job_manager.db:
+            finished_job = job_manager.db.get_job_by_id("job-finished")
+            running_job = job_manager.db.get_job_by_id("job-running")
+
+            assert finished_job is not None
+            assert running_job is not None
+            assert finished_job["status"] == "completed"
+            assert running_job["status"] == "cancelled"
 
     @pytest.mark.asyncio
     async def test_get_job_manager_singleton(self):
@@ -766,12 +956,16 @@ class TestJobManager:
 
         utils.job_manager._job_manager_instance = None
 
-        manager1 = get_job_manager()
-        manager2 = get_job_manager()
+        with patch("utils.job_manager.get_settings") as mock_settings:
+            # disabling persistence to prevent file creation during the test
+            mock_settings.return_value.enable_job_persistence = False
 
-        assert manager1 is manager2
+            manager1 = get_job_manager()
+            manager2 = get_job_manager()
 
-        # Cleanup
+            assert manager1 is manager2
+
+        # Manual cleanup since no fixture is used
         if manager1._cleanup_task:
             manager1._cleanup_task.cancel()
             try:
@@ -785,7 +979,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         async def create_jobs(prefix):
             for i in range(5):
@@ -819,7 +1013,7 @@ class TestJobManager:
 
         async def task_func(req):
             await asyncio.sleep(0.1)
-            return b"result"
+            return "videos/test-123.mp4"
 
         await job_manager.create_job(
             job_id="job-123",
@@ -835,3 +1029,255 @@ class TestJobManager:
             job = job_manager._jobs.get("job-123")
             assert job is not None
             assert job._task is None  # Should be cleared
+
+    @pytest.mark.asyncio
+    async def test_cooperative_cancel_via_cancel_event(self, job_manager, mock_request):
+        """Test cooperative cancellation where task checks cancel_event and returns normally."""
+
+        cancel_event = Event()
+        start_event = Event()
+
+        async def cooperative_task(req):
+            start_event.set()
+            # Simulates a training loop checking cancel_event — same as the real runner
+            while not cancel_event.is_set():
+                await asyncio.sleep(0.05)
+            return "models_save/result.pt"
+
+        await job_manager.create_job(
+            job_id="job-coop",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=cooperative_task,
+            result_path="models_save/result.pt",
+            start_event=start_event,
+            cancel_event=cancel_event,
+        )
+
+        await asyncio.sleep(0.3)
+
+        job_metadata1 = job_manager.get_job_metadata("job-coop")
+        assert job_metadata1["status"] == "in_progress"
+
+        job_metadata2 = job_manager.cancel_job("job-coop")
+        assert job_metadata2["status"] == "cancelling"
+
+        if job_manager.db:
+            db_job2 = job_manager.db.get_job_by_id("job-coop")
+            assert db_job2["status"] == "cancelling"
+
+        # _cleanup_job should set the event, NOT cancel the task
+        assert cancel_event.is_set()
+
+        await asyncio.sleep(0.5)
+
+        job_metadata3 = job_manager.get_job_metadata("job-coop")
+        assert job_metadata3["status"] == "cancelled"
+        assert job_metadata3["completed_at"] is not None
+
+        if job_manager.db:
+            db_job3 = job_manager.db.get_job_by_id("job-coop")
+            assert db_job3["status"] == "cancelled"
+            assert db_job3["completed_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_force_cancels_cooperative_job(
+        self, job_manager, mock_request
+    ):
+        """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
+        cancel_event = Event()
+        start_event = Event()
+
+        async def cooperative_task(req):
+            start_event.set()
+            while not cancel_event.is_set():
+                await asyncio.sleep(0.05)
+            return "models_save/result.pt"
+
+        await job_manager.create_job(
+            job_id="job-shutdown",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=cooperative_task,
+            result_path="models_save/result.pt",
+            start_event=start_event,
+            cancel_event=cancel_event,
+        )
+
+        await asyncio.sleep(0.3)
+        await job_manager.shutdown()
+
+        # Task should have been force-cancelled, not waiting for cooperative exit
+        assert not cancel_event.is_set()  # force=True skips the event
+
+    @pytest.mark.asyncio
+    async def test_queued_job_starts_after_in_progress_job_cancelled(
+        self, job_manager, mock_request
+    ):
+        """When a running job is cancelled, the next queued job should start processing."""
+
+        start_event_1 = Event()
+        start_event_2 = Event()
+        cancel_event = Event()
+
+        runner_available = asyncio.Event()
+
+        async def task_1(req):
+            start_event_1.set()
+            while not cancel_event.is_set():
+                await asyncio.sleep(0.05)
+            runner_available.set()
+            return "result_1.pt"
+
+        async def task_2(req):
+            await runner_available.wait()
+            start_event_2.set()
+            await asyncio.sleep(5)
+            return "result_2.pt"
+
+        await job_manager.create_job(
+            job_id="job-1",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_1,
+            result_path="result_1.pt",
+            start_event=start_event_1,
+            cancel_event=cancel_event,
+        )
+
+        await asyncio.sleep(0.3)
+
+        assert job_manager.get_job_metadata("job-1")["status"] == "in_progress"
+
+        # Second job should stay queued while job-1 is running
+        await job_manager.create_job(
+            job_id="job-2",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_2,
+            start_event=start_event_2,
+        )
+
+        await asyncio.sleep(0.1)
+
+        assert job_manager.get_job_metadata("job-2")["status"] == "queued"
+
+        if job_manager.db:
+            db_job2 = job_manager.db.get_job_by_id("job-2")
+            assert db_job2["status"] == "queued"
+
+        # Cancel job-1
+        job_manager.cancel_job("job-1")
+        await asyncio.sleep(0.5)
+
+        assert job_manager.get_job_metadata("job-1")["status"] == "cancelled"
+        assert job_manager.get_job_metadata("job-2")["status"] == "in_progress"
+
+        if job_manager.db:
+            db_job2 = job_manager.db.get_job_by_id("job-2")
+            assert db_job2["status"] == "in_progress"
+
+    # ------------------------------------------------------------------------------------------------
+    # database-only tests
+    @pytest.mark.asyncio
+    async def test_restore_jobs_workflow(self, job_manager, mock_request):
+        """Verify that multiple jobs are correctly restored upon manager restart."""
+        if not job_manager.db:
+            assert True  # skip and assert True if persistence is disabled
+            return
+        job_ids = ["job-1", "job-2", "job-3"]
+        db_path = job_manager.db.db_path
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return "videos/test-123.mp4"
+
+        for jid in job_ids:
+            await job_manager.create_job(
+                job_id=jid,
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=task_func,
+            )
+
+        await asyncio.sleep(0.2)
+        await job_manager.shutdown()
+
+        # Reset Singleton for the second instance
+        import utils.job_manager
+
+        utils.job_manager._job_manager_instance = None
+
+        # Start the second manager pointing to the same DB
+        with patch("utils.job_manager.get_settings") as mock_settings:
+            mock_settings.return_value.enable_job_persistence = True
+            mock_settings.return_value.job_database_path = str(db_path)
+
+            m2 = JobManager()
+            try:
+                assert len(m2._jobs) == len(job_ids)
+
+                for jid in job_ids:
+                    assert jid in m2._jobs
+                    metadata = m2.get_job_metadata(jid)
+                    assert metadata["id"] == jid
+                    assert metadata["status"] == "completed"
+
+            finally:
+                await m2.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_restore_stuck_jobs_from_db(self, job_manager):
+        """Verify stuck jobs are synced to terminal states and completed jobs stay completed."""
+        if not job_manager.db:
+            assert True  # skip and assert True if persistence is disabled
+            return
+
+        db_path = job_manager.db.db_path
+
+        job_manager.db.insert_job("job-done", "video", "m1", {}, "completed", 1000)
+        job_manager.db.insert_job("job-stuck", "video", "m1", {}, "in_progress", 1001)
+        job_manager.db.insert_job("job-aborting", "video", "m1", {}, "cancelling", 1002)
+        job_manager.db.insert_job("job-stuck2", "video", "m1", {}, "queued", 1003)
+
+        # Reset Singleton to simulate a fresh server start
+        import utils.job_manager
+
+        utils.job_manager._job_manager_instance = None
+
+        # Start a new manager and verify its auto-restore behavior
+        with patch("utils.job_manager.get_settings") as mock_settings:
+            mock_settings.return_value.enable_job_persistence = True
+            mock_settings.return_value.job_database_path = str(db_path)
+
+            m2 = JobManager()
+            try:
+                assert "job-done" in m2._jobs
+                assert m2._jobs["job-done"].status == JobStatus.COMPLETED
+
+                assert "job-stuck" in m2._jobs
+                assert m2._jobs["job-stuck"].status == JobStatus.FAILED
+
+                assert "job-stuck2" in m2._jobs
+                assert m2._jobs["job-stuck2"].status == JobStatus.FAILED
+
+                assert "job-aborting" in m2._jobs
+                assert m2._jobs["job-aborting"].status == JobStatus.CANCELLED
+
+                # Verify the database was updated to match the new memory states
+                db_stuck = m2.db.get_job_by_id("job-stuck")
+                db_aborting = m2.db.get_job_by_id("job-aborting")
+                db_stuck2 = m2.db.get_job_by_id("job-stuck2")
+                db_done = m2.db.get_job_by_id("job-done")
+                assert db_stuck.get("status") == "failed"
+                assert db_aborting.get("status") == "cancelled"
+                assert db_stuck2.get("status") == "failed"
+                assert db_done.get("status") == "completed"
+
+            finally:
+                await m2.shutdown()

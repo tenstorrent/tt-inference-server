@@ -16,11 +16,15 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     ModelServices,
+    QueueType,
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
+from utils.logger import TTLogger
+
+logger = TTLogger()
 
 
 class Settings(BaseSettings):
@@ -45,15 +49,15 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = True
-    use_queue_per_worker: bool = False
-    use_memory_queue: bool = False
+    download_weights_from_service: bool = False
 
     # Queue and batch settings
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
+    use_queue_per_worker: bool = False
+    queue_for_multiprocessing: str = QueueType.TTQueue.value
 
     # Worker management settings
     new_device_delay_seconds: int = 0
@@ -72,6 +76,7 @@ class Settings(BaseSettings):
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
     enable_job_persistence: bool = False
+    job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
 
@@ -97,9 +102,26 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
 
         model_to_run = os.getenv("MODEL")
+        logger.info(
+            f"Settings init: MODEL={model_to_run!r}, DEVICE={self.device!r}, "
+            f"model_runner(default)={self.model_runner!r}, "
+            f"device_ids(default)={self.device_ids!r}, "
+            f"is_galaxy(default)={self.is_galaxy}, "
+            f"device_mesh_shape(default)={self.device_mesh_shape}"
+        )
         if model_to_run and self.device:
             self._set_config_overrides(model_to_run, self.device)
+        else:
+            logger.warning(
+                f"Skipping config overrides: MODEL={model_to_run!r}, DEVICE={self.device!r}"
+            )
+        logger.info(
+            f"After config overrides: model_runner={self.model_runner!r}, "
+            f"device_ids={self.device_ids!r}, is_galaxy={self.is_galaxy}, "
+            f"device_mesh_shape={self.device_mesh_shape}"
+        )
         self._set_mesh_overrides()
+        logger.info(f"After mesh overrides: device_mesh_shape={self.device_mesh_shape}")
 
         if self.model_service is None:
             found = False
@@ -132,32 +154,55 @@ class Settings(BaseSettings):
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
+
+        logger.info(
+            f"Settings resolved: model_runner={self.model_runner!r}, "
+            f"model_service={self.model_service!r}, "
+            f"device_ids={self.device_ids!r}, "
+            f"is_galaxy={self.is_galaxy}, "
+            f"device_mesh_shape={self.device_mesh_shape}, "
+            f"model_weights_path={self.model_weights_path!r}, "
+            f"max_batch_size={self.max_batch_size}"
+        )
         if (
             self.model_service == ModelServices.AUDIO.value
             and self.audio_chunk_duration_seconds is None
         ):
             self._calculate_audio_chunk_duration()
 
+        if self.max_batch_size < self.vllm.max_num_seqs:
+            logger.warning(
+                f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
+            )
+
     def _set_device_pairs_overrides(self):
+        logger.info(
+            f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
+            f"device_mesh_shape={self.device_mesh_shape}, "
+            f"device_ids(before)={self.device_ids!r}"
+        )
         if self.is_galaxy:
             device_manager = DeviceManager()
             devices = None
             if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
-                # use device manager to use all the available devices
                 devices = device_manager.get_single_devices_from_system()
             if self.device_mesh_shape == (2, 1):
-                # use device manager to pair devices
                 devices = device_manager.get_device_pairs_from_system()
             elif self.device_mesh_shape == (2, 4):
                 devices = device_manager.get_device_groups_of_eight_from_system()
             if devices:
                 self.device_ids = ",".join([f"({device})" for device in devices])
+                logger.info(
+                    f"_set_device_pairs_overrides: galaxy override applied, "
+                    f"device_ids(after)={self.device_ids!r}"
+                )
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
         ]:
@@ -193,7 +238,14 @@ class Settings(BaseSettings):
                 break
 
         if model_runner_enum:
-            matching_config = ModelConfigs.get((model_runner_enum, DeviceTypes(device)))
+            device_type_enum = DeviceTypes(device)
+            config_key = (model_runner_enum, device_type_enum)
+            matching_config = ModelConfigs.get(config_key)
+            logger.info(
+                f"Config lookup: runner={model_runner_enum}, device_type={device_type_enum}, "
+                f"key_exists={config_key in ModelConfigs}, "
+                f"matching_config={matching_config}"
+            )
         else:
             raise ValueError(f"No model runner found for model {model_to_run}.")
 
@@ -207,7 +259,14 @@ class Settings(BaseSettings):
             # Apply all configuration values
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key == "vllm" and isinstance(value, dict):
+                        value = VLLMSettings(**value)
                     setattr(self, key, value)
+        if any(
+            self.model_runner == r.value
+            for r in MODEL_SERVICE_RUNNER_MAP[ModelServices.LLM]
+        ):
+            self.vllm.model = SupportedModels[model_name_enum.name].value
 
 
 settings = Settings()

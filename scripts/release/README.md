@@ -34,7 +34,7 @@ The operational requirement for releasing is a passing Models CI run. Any models
 
 Follow the git workflow for release described below in the diagram and step by step instructions below:
 
-![../../docs/ttis-git-workflows-2025-08-14-1106](../../docs/ttis-git-workflows-2025-08-14-1106.png)
+![../../docs/ttis-git-workflows-2026-02-10](../../docs/ttis-git-workflows-2026-02-10.png)
 
 
 ## Pre-release to `dev`
@@ -78,8 +78,9 @@ python3 scripts/release/update_model_spec.py --output-only
 
 - `workflows/model_spec.py`: diff has updates from Models CI most recent passing runs
 - `model_specs_output.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/release_models_diff.md`: summary of diff with links to specifci Models CI runs
-- `README.md`: updates to the `Model Support` section
+- `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs
+- `docs/model_support/`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
+- `README.md`: updates to the `Model Support` section (links to docs/model_support/)
 
 ## step 3: generate pre-release artifacts
 
@@ -136,6 +137,7 @@ python3 scripts/build_docker_images.py --push
 * include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 * the PR must be merge commit option ("all commits from this branch will be added with a merge commit"), this is done in the case that there are merge conflicts that need to be resolved. The resolution commit is then available in the next release for the changes required on current `dev`.
+* Use `git add -f docs/model_support/**` to commit updates to generated model docs.
 * NOTE: the release will process with `pre-release-vx.x.x` branch which is now "stable" from `dev`
 
 ## Release to `main`

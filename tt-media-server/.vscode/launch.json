@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C++ Server [CodeLLDB]",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/cpp_server/build/tt_media_server_cpp",
+      "args": ["-p", "8001"],
+      "cwd": "${workspaceFolder}/cpp_server",
+      "env": {
+        "DEVICE_IDS": "(0)",
+        "PYTHONPATH": "${workspaceFolder}/../../tt-metal/python_env/lib/python3.10/site-packages:${workspaceFolder}/../../tt-metal:${workspaceFolder}/../../tt-metal/ttnn:${workspaceFolder}/../../tt-metal/tools",
+        "TT_METAL_HOME": "${workspaceFolder}/../../tt-metal"
+      },
+      "initCommands": [
+        "settings set target.process.follow-fork-mode child"
+      ],
+      "preLaunchTask": "Build C++ Server (debug)"
+    },
+    {
+      "name": "C++ Server [CodeLLDB + Tracy]",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/cpp_server/build-tracy/tt_media_server_cpp",
+      "args": ["-p", "8001"],
+      "cwd": "${workspaceFolder}/cpp_server",
+      "env": {
+        "DEVICE_IDS": "(0)",
+        "PYTHONPATH": "${workspaceFolder}/../../tt-metal/python_env/lib/python3.10/site-packages:${workspaceFolder}/../../tt-metal:${workspaceFolder}/../../tt-metal/ttnn:${workspaceFolder}/../../tt-metal/tools",
+        "TT_METAL_HOME": "${workspaceFolder}/../../tt-metal"
+      },
+      "initCommands": [
+        "settings set target.process.follow-fork-mode child"
+      ],
+      "preLaunchTask": "Build C++ Server (debug tracy)"
+    },
+    {
+      "name": "Tracy: Capture to file",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/cpp_server/build-tracy/_deps/tracy-src/capture/build/unix/capture-release",
+      "args": [
+        "-o", "${workspaceFolder}/cpp_server/capture.tracy",
+        "-p", "8086",
+        "-s", "60",
+        "-f"
+      ],
+      "cwd": "${workspaceFolder}/cpp_server",
+      "preLaunchTask": "Build Tracy Capture"
+    }
+  ]
+}

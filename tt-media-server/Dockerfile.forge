@@ -99,6 +99,7 @@ RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
+    && pip3 install --upgrade pip \
     && pip3 install git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}

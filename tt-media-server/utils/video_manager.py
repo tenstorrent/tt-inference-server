@@ -33,8 +33,9 @@ class VideoManager:
 
         # Auto-generate path in videos directory
         video_id = str(uuid.uuid4())
-        os.makedirs("videos", exist_ok=True)
-        output_path = f"videos/{video_id}.mp4"
+        video_dir = "/tmp/videos"
+        os.makedirs(video_dir, exist_ok=True)
+        output_path = f"{video_dir}/{video_id}.mp4"
         self._logger.info(f"Generated output path: {output_path}")
 
         try:
@@ -115,40 +116,6 @@ class VideoManager:
             )
 
         return frame_list
-
-    @staticmethod
-    def parse_range_header(range_header, file_size):
-        """
-        Parse a Range header and return (start, end) byte positions.
-        Raises ValueError if invalid.
-        """
-        range_value = range_header.strip().lower()
-        if not range_value.startswith("bytes="):
-            raise ValueError
-        range_value = range_value.replace("bytes=", "")
-        start_str, end_str = range_value.split("-")
-        start = int(start_str) if start_str else 0
-        end = int(end_str) if end_str else file_size - 1
-        if start > end or end >= file_size:
-            raise ValueError
-        return start, end
-
-    @staticmethod
-    def file_iterator(path, start, end):
-        """
-        Generator that yields chunks of bytes from a file within a specified byte range.
-        """
-        with open(path, "rb") as f:
-            f.seek(start)
-            remaining = end - start + 1
-            chunk = 8192
-            while remaining > 0:
-                read_size = min(chunk, remaining)
-                data = f.read(read_size)
-                if not data:
-                    break
-                yield data
-                remaining -= len(data)
 
     @staticmethod
     def ensure_faststart(input_path, output_path):

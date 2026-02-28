@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
+      cpp-server: ${{ steps.filter.outputs.cpp_server }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -23,6 +24,8 @@ jobs:
               - '**/requirements*.txt'
               - 'pyproject.toml'
               - '.github/workflows/*.yml'
+            cpp_server:
+              - 'tt-media-server/cpp_server/**'
 
   lint:
     needs: detect-changes
@@ -38,7 +41,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.0
 
       - name: Run ruff linter
         run: ruff check .
@@ -434,13 +437,16 @@ jobs:
           pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
           TEST_EXIT_CODE=${PIPESTATUS[0]}
 
-          # Parse CI report metrics
-          TOKENS=$(grep 'tokens_received=' test_output.txt | cut -d= -f2 || echo "N/A")
-          TOTAL_TIME=$(grep 'total_time_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          MEAN_INTERVAL=$(grep 'mean_interval_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          THROUGHPUT=$(grep 'throughput_tps=' test_output.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep 'overhead_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep 'threshold_ms=' test_output.txt | cut -d= -f2 || echo "N/A")
+          # Extract only the CI report section (between markers) to avoid matching source code
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+
+          # Parse CI report metrics from the extracted section
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
 
           # Determine status
           if [ $TEST_EXIT_CODE -eq 0 ]; then
@@ -463,8 +469,223 @@ jobs:
             echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
           } >> $GITHUB_STEP_SUMMARY
 
-          exit $TEST_EXIT_CODE
+          # Store exit code for later
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
 
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          if [ -f performance_tests/server.log ]; then
+            cat performance_tests/server.log
+          else
+            echo "No server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-streaming-server-logs
+          path: tt-media-server/performance_tests/server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
+
+  cpp-server-ttnn-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server TTNN Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+
+  cpp-server-llm-streaming:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server LLM Streaming Performance Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+          cd ..
+
+      - name: Run C++ unit tests
+        run: |
+          cd cpp_server/build
+          ctest --output-on-failure
+          cd ../..
+
+      - name: Start C++ server (test runner mode)
+        run: |
+          cd cpp_server/build
+          ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || exit 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Run vLLM bench serve against C++ server
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          RESULT_FILE="vllm-bench-result.json"
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-V3.2' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "$RESULT_FILE" \
+            2>&1 | tee bench_output.txt
+          echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
+
+      - name: Parse result and check thresholds
+        run: |
+          RESULT_FILE="${{ env.RESULT_FILE }}"
+          if [ ! -f "$RESULT_FILE" ]; then
+            echo "❌ Result file not found: $RESULT_FILE"
+            exit 1
+          fi
+
+          COMPLETED=$(jq -r '.completed // 0' "$RESULT_FILE")
+          FAILED=$(jq -r '.failed // 0' "$RESULT_FILE")
+          if [ "$COMPLETED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+            echo "❌ All requests failed (completed=0, failed=$FAILED)"
+            exit 1
+          fi
+
+          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
+          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
+          TPOT_THRESHOLD_MS="1"
+          TTFT_THRESHOLD_MS="100"
+
+          FAIL=0
+          if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+          if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+
+          echo "MEAN_TPOT_MS=$MEAN_TPOT_MS" >> $GITHUB_ENV
+          echo "MEAN_TTFT_MS=$MEAN_TTFT_MS" >> $GITHUB_ENV
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+
+          {
+            echo "## 🚀 C++ Server vLLM Bench (Completions)"
+            echo ""
+            echo "| Metric | Value | Threshold |"
+            echo "|--------|-------|-----------|"
+            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_THRESHOLD_MS}ms |"
+            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_THRESHOLD_MS}ms |"
+            echo "| **completed** | $COMPLETED | - |"
+            echo "| **failed** | $FAILED | - |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAIL" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Stop C++ server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== C++ Server Logs ==="
+          if [ -f cpp_server.log ]; then
+            cat cpp_server.log
+          else
+            echo "No cpp_server.log file found"
+          fi
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-vllm-bench-result
+          path: tt-media-server/vllm-bench-result.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-llm-streaming-logs
+          path: tt-media-server/cpp_server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        run: exit ${{ env.BENCH_FAIL }}
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
@@ -734,7 +955,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage]
+    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage, cpp-server-ttnn-build, cpp-server-llm-streaming]
     if: always()
     steps:
       - name: Check results
@@ -752,8 +973,20 @@ jobs:
             echo "❌ Forge runner tests failed"
             exit 1
           fi
+          if [[ "${{ needs.llm-streaming-performance.result }}" == "failure" ]]; then
+            echo "❌ LLM streaming performance test failed"
+            exit 1
+          fi
           if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
             echo "❌ Test coverage below 50% threshold - PR blocked"
+            exit 1
+          fi
+          if [[ "${{ needs.cpp-server-ttnn-build.result }}" == "failure" ]]; then
+            echo "❌ C++ server TTNN build failed"
+            exit 1
+          fi
+          if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
+            echo "❌ C++ server LLM streaming test failed"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"

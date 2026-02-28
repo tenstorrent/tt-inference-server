@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+#pragma once
+
+#include <memory>
+#include <atomic>
+#include <drogon/HttpController.h>
+
+#include "services/embedding_service.hpp"
+
+namespace tt::api {
+
+/**
+ * OpenAI-compatible embedding API controller.
+ *
+ * Endpoints:
+ * - POST /v1/embeddings - Create embeddings
+ * - GET /health - Health check
+ * - GET /tt-liveness - Liveness check
+ */
+class EmbeddingController : public drogon::HttpController<EmbeddingController> {
+public:
+    METHOD_LIST_BEGIN
+    ADD_METHOD_TO(EmbeddingController::create_embedding, "/v1/embeddings", drogon::Post);
+    METHOD_LIST_END
+
+    EmbeddingController();
+    ~EmbeddingController();
+
+    /**
+     * POST /v1/embeddings
+     * Create embeddings for the provided input text.
+     */
+    void create_embedding(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+
+private:
+    std::shared_ptr<services::EmbeddingService> service_;
+    std::atomic<uint64_t> request_counter_{0};
+
+    std::string generate_task_id();
+};
+
+} // namespace tt::api

@@ -1,0 +1,75 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Kill C++ Server",
+            "type": "shell",
+            "command": "pkill -9 -f tt_media_server_cpp || true",
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "silent", "panel": "shared" }
+        },
+        {
+            "label": "Build C++ Server (debug)",
+            "type": "shell",
+            "command": "./build.sh",
+            "args": ["--debug"],
+            "options": {
+                "cwd": "${workspaceFolder}/cpp_server",
+                "env": {
+                    "PATH": "${workspaceFolder}/../../tt-metal/python_env/bin:${env:PATH}"
+                }
+            },
+            "group": "build",
+            "dependsOn": ["Kill C++ Server"],
+            "presentation": { "reveal": "silent", "panel": "shared" }
+        },
+        {
+            "label": "Configure C++ Server (tracy)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+            "-S", "${workspaceFolder}/cpp_server",
+            "-B", "${workspaceFolder}/cpp_server/build-tracy",
+            "-DENABLE_TRACY=ON",
+            "-DTEST=ON"
+            ],
+            "options": {
+            "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build C++ Server (debug tracy)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+            "--build", "${workspaceFolder}/cpp_server/build-tracy",
+            "-j"
+            ],
+            "options": {
+            "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": ["Kill C++ Server", "Configure C++ Server (tracy)"],
+            "group": {
+            "kind": "build",
+            "isDefault": false
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build Tracy Capture",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "-C",
+                "${workspaceFolder}/cpp_server/build-tracy/_deps/tracy-src/capture/build/unix",
+                "release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": ["Configure C++ Server (tracy)"],
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

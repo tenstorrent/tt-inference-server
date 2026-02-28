@@ -154,8 +154,10 @@ class TestEmbeddingClientStrategyRunBenchmark(unittest.TestCase):
         model_spec.model_name = "test_model"
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "1024"}
-        model_spec.device_model_spec.max_concurrency = 4
+        model_spec.device_model_spec.env_vars = {
+            "VLLM__MAX_MODEL_LENGTH": "1024",
+            "VLLM__MAX_NUM_SEQS": "4",
+        }
         device = MagicMock()
         device.name = "test_device"
         return EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
@@ -270,8 +272,10 @@ class TestEmbeddingClientStrategyParseBenchmarkOutput(unittest.TestCase):
     def _create_strategy(self):
         model_spec = MagicMock()
         model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "1024"}
-        model_spec.device_model_spec.max_concurrency = 4
+        model_spec.device_model_spec.env_vars = {
+            "VLLM__MAX_MODEL_LENGTH": "1024",
+            "VLLM__MAX_NUM_SEQS": "4",
+        }
         device = MagicMock()
         return EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -371,8 +375,10 @@ class TestEmbeddingClientStrategyGenerateBenchmarkingReport(unittest.TestCase):
         model_spec = MagicMock()
         model_spec.model_name = "test_model"
         model_spec.model_id = "test_id"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "1024"}
-        model_spec.device_model_spec.max_concurrency = 4
+        model_spec.device_model_spec.env_vars = {
+            "VLLM__MAX_MODEL_LENGTH": "1024",
+            "VLLM__MAX_NUM_SEQS": "4",
+        }
         device = MagicMock()
         device.name = "test_device"
         return EmbeddingClientStrategy({}, model_spec, device, "/tmp/output", 8000)
@@ -476,8 +482,10 @@ class TestEmbeddingClientStrategyParseEvalsOutput(unittest.TestCase):
     def _create_strategy(self):
         model_spec = MagicMock()
         model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "1024"}
-        model_spec.device_model_spec.max_concurrency = 4
+        model_spec.device_model_spec.env_vars = {
+            "VLLM__MAX_MODEL_LENGTH": "1024",
+            "VLLM__MAX_NUM_SEQS": "4",
+        }
         device = MagicMock()
         return EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -641,8 +649,10 @@ class TestEmbeddingClientStrategyRunEmbeddingTranscriptionBenchmark(unittest.Tes
     def _create_strategy(self):
         model_spec = MagicMock()
         model_spec.hf_model_repo = "test/model"
-        model_spec.device_model_spec.env_vars = {"MAX_MODEL_LENGTH": "1024"}
-        model_spec.device_model_spec.max_concurrency = 4
+        model_spec.device_model_spec.env_vars = {
+            "VLLM__MAX_MODEL_LENGTH": "1024",
+            "VLLM__MAX_NUM_SEQS": "4",
+        }
         device = MagicMock()
         return EmbeddingClientStrategy({}, model_spec, device, "/tmp", 8000)
 
