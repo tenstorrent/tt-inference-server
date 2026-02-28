@@ -1775,7 +1775,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # to match what benchmarks actually use
     _model_max_concurrency = model_spec.device_model_spec.max_concurrency
     _max_context = model_spec.device_model_spec.max_context
-    _max_num_batched_tokens = model_spec.device_model_spec.max_num_batched_tokens
+    _max_num_batched_tokens = int(model_spec.device_model_spec.vllm_args["max_num_batched_tokens"])
     raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
