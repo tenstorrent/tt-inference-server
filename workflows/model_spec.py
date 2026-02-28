@@ -1351,8 +1351,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1365,6 +1365,7 @@ spec_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -1650,8 +1651,8 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1659,9 +1660,15 @@ spec_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 56000000,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1908,13 +1915,13 @@ spec_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="1a6cf27",
+        vllm_commit="88757f6",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
-                max_concurrency=32 * 8,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
@@ -1924,6 +1931,9 @@ spec_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_USE_V1": "1",
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
