@@ -122,7 +122,7 @@ def generate_docker_run_command(
         setup_config: Optional SetupConfig object. When None, host-dependent
             bind mounts (cache root, host weights) and their env vars are skipped.
         json_fpath: Optional path to run config JSON file. When None, the
-            JSON bind mount and TT_MODEL_SPEC_JSON_PATH env var are skipped.
+            JSON bind mount and RUNTIME_MODEL_SPEC_JSON_PATH env var are skipped.
         str_cmd: If True, return a formatted string instead of a list.
 
     Returns:
@@ -208,19 +208,20 @@ def generate_docker_run_command(
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
 
+    user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
-        user_home_path = "/home/container_app_user"
-        container_model_spec_dir = (
-            setup_config.container_model_spec_dir
-            if setup_config
-            else Path(f"{user_home_path}/model_spec")
-        )
-        dev_json_fpath = container_model_spec_dir / json_fpath.name
-        docker_command += [
-            "--mount",
-            f"type=bind,src={json_fpath},dst={dev_json_fpath},readonly",
-        ]
-        docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = dev_json_fpath
+        if json_fpath:
+            container_model_spec_dir = Path(f"{user_home_path}/model_specs")
+            runtime_json_fpath = container_model_spec_dir / json_fpath.name
+            docker_command += [
+                "--mount",
+                f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
+            ]
+            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+        else:
+            logger.warning(
+                "No runtime model spec JSON path provided while in dev mode, using default model spec."
+            )
 
         # fmt: off
         docker_command += [
@@ -261,7 +262,7 @@ def generate_docker_run_command(
         docker_command.append("--no-auth")
     if runtime_config.disable_trace_capture:
         docker_command.append("--disable-trace-capture")
-    if runtime_config.service_port:
+    if runtime_config.service_port and str(runtime_config.service_port) != "8000":
         docker_command.extend(["--service-port", str(runtime_config.service_port)])
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])

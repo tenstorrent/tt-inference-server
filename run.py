@@ -410,6 +410,36 @@ def populate_model_spec_cli_args(model_spec, runtime_config):
     model_spec.cli_args.update(cli_args)
 
 
+def resolve_runtime(args):
+    """Atomically build RuntimeConfig and resolve ModelSpec.
+
+    Returns ``(runtime_config, model_spec)`` with impl/engine fully resolved.
+    """
+    if args.runtime_model_spec_json:
+        logger.warning(
+            f"No validation is done, loading runtime model spec from JSON: "
+            f"{args.runtime_model_spec_json}"
+        )
+        model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+        runtime_config = RuntimeConfig.from_args(args)
+    else:
+        model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
+            model=args.model,
+            device=args.device,
+            engine=args.engine,
+            impl=args.impl,
+        )
+        runtime_config = RuntimeConfig.from_args(
+            args, impl=resolved_impl, engine=resolved_engine
+        )
+        model_spec.apply_overrides(runtime_config)
+
+    populate_model_spec_cli_args(model_spec, runtime_config)
+    runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
+
+    return runtime_config, model_spec
+
+
 def handle_maintenance_args(args):
     if args.reset_venvs:
         venvs_dir = Path(os.path.dirname(os.path.abspath(__file__))) / ".workflow_venvs"
@@ -425,33 +455,22 @@ def main():
     # step 00: handle maintenance args
     args = parse_arguments()
     handle_maintenance_args(args)
-
-    # step 0: bootstrap uv
-    bootstrap_uv()
-
     # Export repo-root default_model_spec.json from pristine MODEL_SPECS
     repo_root = Path(__file__).resolve().parent
     export_model_specs_json(MODEL_SPECS, repo_root / "default_model_spec.json")
 
-    # step 1: build runtime config, then resolve the runtime model spec
-    runtime_config = RuntimeConfig.from_args(args)
+    # step 0: bootstrap uv
+    bootstrap_uv()
 
-    if args.runtime_model_spec_json:
-        logger.warning(
-            f"No validation is done, loading runtime model spec from JSON: "
-            f"{args.runtime_model_spec_json}"
-        )
-        model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
-    else:
-        model_spec = get_runtime_model_spec(runtime_config)
-
+    # step 1: build runtime config and resolve model spec atomically
+    runtime_config, model_spec = resolve_runtime(args)
     model_id = model_spec.model_id
 
     # step 2: handle secrets
     handle_secrets(runtime_config)
     tt_inference_server_sha = get_current_commit_sha()
 
-    # step 3: setup logging
+    # step 3: setup logging and finalize run_id
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
@@ -459,8 +478,6 @@ def main():
         workflow=runtime_config.workflow,
     )
     runtime_config.run_id = run_id
-    populate_model_spec_cli_args(model_spec, runtime_config)
-    runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
 
     log_path = get_default_workflow_root_log_dir()
     run_logs_path = log_path / "run_logs"
@@ -483,18 +500,6 @@ def main():
     )
     logger.info(f"Runtime model spec saved to: {json_fpath}")
 
-    docker_json_fpath = json_fpath
-    if runtime_config.docker_server and runtime_config.dev_mode:
-        runtime_model_spec_dir = log_path / "runtime_configs"
-        ensure_readwriteable_dir(runtime_model_spec_dir)
-        docker_json_fpath = runtime_config.to_json(
-            model_spec,
-            run_timestamp,
-            f"{model_id}_docker",
-            runtime_model_spec_dir,
-        )
-        logger.info(f"Docker runtime model spec saved to: {docker_json_fpath}")
-
     # validate setup after run logger has been initialized
     validate_setup(model_spec, runtime_config, json_fpath)
 
@@ -514,8 +519,11 @@ def main():
 
     # step 4: optionally run inference server
     if runtime_config.docker_server:
+        docker_json_fpath = None
+        if runtime_config.dev_mode:
+            docker_json_fpath = json_fpath
         logger.info("Running inference server in Docker container ...")
-        if args.print_docker_cmd:
+        if runtime_config.print_docker_cmd:
             docker_command, _ = generate_docker_run_command(
                 model_spec, runtime_config, setup_config, docker_json_fpath
             )

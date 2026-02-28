@@ -64,6 +64,7 @@ def mock_args():
         override_docker_image=None,
         service_port="8000",
         disable_trace_capture=False,
+        percentile_report=False,
         dev_mode=False,
         override_tt_config=None,
         vllm_override_args=None,
@@ -72,9 +73,17 @@ def mock_args():
         runtime_model_spec_json=None,
         tt_metal_python_venv_dir=None,
         no_auth=False,
+        print_docker_cmd=False,
         concurrency_sweeps=False,
+        streaming=None,
+        preprocessing=None,
+        limit_samples_mode=None,
+        sdxl_num_prompts="100",
+        skip_system_sw_validation=False,
+        tools="vllm",
         host_volume=None,
         host_hf_cache=None,
+        host_weights_dir=None,
         image_user="1000",
     )
 
@@ -402,14 +411,6 @@ class TestArgsInference:
 
     def test_infer_impl_success(self):
         """Test successful impl inference via get_runtime_model_spec."""
-        rc = RuntimeConfig(
-            model="Mistral-7B-Instruct-v0.3",
-            workflow="benchmarks",
-            device="n150",
-            impl=None,
-            engine=None,
-        )
-
         mock_model_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
         )
@@ -418,22 +419,16 @@ class TestArgsInference:
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(rc)
+            result, resolved_impl, resolved_engine = get_runtime_model_spec(
+                model="Mistral-7B-Instruct-v0.3", device="n150"
+            )
 
-            assert rc.impl == "tt-transformers"
-            assert rc.engine == "vLLM"
+            assert resolved_impl == "tt-transformers"
+            assert resolved_engine == "vLLM"
             assert result == mock_model_spec
 
     def test_infer_impl_already_set(self):
         """Test that existing impl is preserved."""
-        rc = RuntimeConfig(
-            model="Mistral-7B-Instruct-v0.3",
-            workflow="benchmarks",
-            device="n150",
-            impl="tt-transformers",
-            engine=None,
-        )
-
         mock_model_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
         )
@@ -442,38 +437,26 @@ class TestArgsInference:
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(rc)
+            result, resolved_impl, _ = get_runtime_model_spec(
+                model="Mistral-7B-Instruct-v0.3",
+                device="n150",
+                impl="tt-transformers",
+            )
 
-            assert rc.impl == "tt-transformers"
+            assert resolved_impl == "tt-transformers"
             assert result == mock_model_spec
 
     def test_infer_impl_no_default(self):
         """Test error when no default impl available."""
-        rc = RuntimeConfig(
-            model="Mistral-7B-Instruct-v0.3",
-            workflow="benchmarks",
-            device="n150",
-            impl=None,
-            engine=None,
-        )
-
         spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150", default_impl=False
         )
         with patch.dict("workflows.model_spec.MODEL_SPECS", {spec.model_id: spec}):
             with pytest.raises(ValueError, match="does not have a default impl"):
-                get_runtime_model_spec(rc)
+                get_runtime_model_spec(model="Mistral-7B-Instruct-v0.3", device="n150")
 
     def test_engine_filters_selection(self):
         """Test --engine filters runtime model selection."""
-        rc = RuntimeConfig(
-            model="Mistral-7B-Instruct-v0.3",
-            workflow="benchmarks",
-            device="n150",
-            impl=None,
-            engine="media",
-        )
-
         vllm_spec = self._build_spec(
             "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150_vllm"
         )
@@ -490,8 +473,11 @@ class TestArgsInference:
                 media_spec.model_id: media_spec,
             },
         ):
-            result = get_runtime_model_spec(rc)
+            result, _, resolved_engine = get_runtime_model_spec(
+                model="Mistral-7B-Instruct-v0.3", device="n150", engine="media"
+            )
             assert result == media_spec
+            assert resolved_engine == "media"
 
     def test_infer_default_device_uses_tt_smi_counts_for_n300(self):
         """Infer N300 from tt-smi board counts."""
@@ -647,24 +633,10 @@ class TestOverrideArgsIntegration:
             ("vllm_args", "vllm_override_args", '{"max_model_len": 4096}'),
         ],
     )
-    def test_get_runtime_model_spec_applies_overrides(
+    def test_get_runtime_model_spec_selects_correct_spec(
         self, override_type, cli_arg_name, test_value
     ):
-        """Test that get_runtime_model_spec correctly applies override arguments."""
-        rc_kwargs = {
-            "model": "Mistral-7B-Instruct-v0.3",
-            "workflow": "benchmarks",
-            "device": "n150",
-            "impl": "tt-transformers",
-            "engine": None,
-            "dev_mode": False,
-            "override_docker_image": None,
-            "override_tt_config": None,
-            "vllm_override_args": None,
-        }
-        rc_kwargs[cli_arg_name] = test_value
-        rc = RuntimeConfig(**rc_kwargs)
-
+        """Test that get_runtime_model_spec selects the correct spec (caller applies overrides)."""
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
         mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
@@ -672,16 +644,20 @@ class TestOverrideArgsIntegration:
         mock_model_spec.inference_engine = "vLLM"
         mock_model_spec.impl.impl_name = "tt-transformers"
         mock_model_spec.device_model_spec.default_impl = True
-        mock_model_spec.apply_overrides = MagicMock()
 
         with patch.dict(
             "workflows.model_spec.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            result = get_runtime_model_spec(rc)
+            result, resolved_impl, resolved_engine = get_runtime_model_spec(
+                model="Mistral-7B-Instruct-v0.3",
+                device="n150",
+                impl="tt-transformers",
+            )
 
-            mock_model_spec.apply_overrides.assert_called_once_with(rc)
             assert result == mock_model_spec
+            assert resolved_impl == "tt-transformers"
+            assert resolved_engine == "vLLM"
 
     def _make_mock_model_spec(self):
         """Helper to create a mock model_spec for docker command tests."""
@@ -704,10 +680,10 @@ class TestOverrideArgsIntegration:
             service_port="8000",
         )
 
-    def test_generate_docker_run_command_mounts_model_spec_json(
+    def test_generate_docker_run_command_mounts_runtime_spec_json(
         self, mock_setup_config
     ):
-        """Test that generate_docker_run_command mounts the model_spec JSON file in dev mode."""
+        """Test that generate_docker_run_command mounts the runtime spec JSON in dev mode."""
         mock_model_spec = self._make_mock_model_spec()
         mock_runtime_config = self._make_mock_runtime_config()
         mock_runtime_config.dev_mode = True
@@ -724,7 +700,6 @@ class TestOverrideArgsIntegration:
 
             assert container_name == "tt-inference-server-test123"
 
-            # Check that the JSON file is mounted and TT_MODEL_SPEC_JSON_PATH is set
             json_mount_found = False
             env_var_found = False
 
@@ -739,7 +714,7 @@ class TestOverrideArgsIntegration:
 
                 if arg == "-e" and i + 1 < len(docker_command):
                     env_setting = docker_command[i + 1]
-                    if env_setting.startswith("TT_MODEL_SPEC_JSON_PATH="):
+                    if env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH="):
                         env_var_found = True
                         assert "test-model-spec.json" in env_setting
 
@@ -747,7 +722,7 @@ class TestOverrideArgsIntegration:
                 f"JSON file mount not found in docker command: {docker_command}"
             )
             assert env_var_found, (
-                f"TT_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
+                f"RUNTIME_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
             )
 
     def test_default_mode_uses_docker_volume_and_user(self, mock_setup_config):
@@ -905,6 +880,35 @@ class TestOverrideArgsIntegration:
                 "Dev mode should not duplicate model spec JSON mount"
             )
 
+    def test_no_runtime_spec_mount_without_json_fpath(self, mock_setup_config):
+        """Test that no runtime spec mount or env var is emitted when json_fpath is None."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_runtime_config, mock_setup_config
+            )
+
+            for i, arg in enumerate(docker_command):
+                if arg == "--mount" and i + 1 < len(docker_command):
+                    mount_spec = docker_command[i + 1]
+                    assert (
+                        "model_specs" not in mount_spec
+                        or "default_model_spec" in mount_spec
+                    ), "No runtime spec mount should be present without json_fpath"
+                if arg == "-e" and i + 1 < len(docker_command):
+                    env_setting = docker_command[i + 1]
+                    assert not env_setting.startswith(
+                        "RUNTIME_MODEL_SPEC_JSON_PATH="
+                    ), (
+                        "RUNTIME_MODEL_SPEC_JSON_PATH should not be set without json_fpath"
+                    )
+
     def test_generate_docker_run_command_without_setup_config(self):
         """Test that generate_docker_run_command works without setup_config for --print-docker-cmd."""
         mock_model_spec = self._make_mock_model_spec()
@@ -935,6 +939,7 @@ class TestOverrideArgsIntegration:
                     env_setting = docker_command[i + 1]
                     assert not env_setting.startswith("CACHE_ROOT=")
                     assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
+                    assert not env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH=")
 
 
 class TestSecretsHandling:
