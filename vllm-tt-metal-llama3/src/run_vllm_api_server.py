@@ -148,36 +148,73 @@ def device_to_mesh_str(device_type: str) -> str:
     return DEVICE_TO_MESH_STR[device_type]
 
 
-def load_all_model_specs() -> dict:
-    """Load all model specs from JSON file.
+def load_model_spec(
+    model_arg: Optional[str],
+    device_arg: Optional[str],
+    engine_arg: Optional[str] = None,
+    impl_arg: Optional[str] = None,
+) -> dict:
+    """Load and resolve a single model spec.
 
-    Supports two modes:
-    1. Legacy mode: TT_MODEL_SPEC_JSON_PATH points to a single spec (used by run_docker_server.py)
-    2. New multi-spec mode: MODEL_SPECS_JSON_PATH points to all specs (for simplified docker run)
+    Resolution order:
+    1. Runtime mode: RUNTIME_MODEL_SPEC_JSON_PATH points to a pre-resolved spec
+       (produced by run.py --docker-server)
+    2. Catalog mode: MODEL_SPECS_JSON_PATH + --model/--tt-device/--device (+ optional
+       --engine/--impl) are used to resolve one spec from the built-in catalog.
 
     Returns:
-        dict: In legacy mode, a dict keyed by model_id. In multi-spec mode, a nested
-              dict: hf_model_repo > device_type > inference_engine > impl_id > spec_dict.
-    """
-    # Support legacy TT_MODEL_SPEC_JSON_PATH for single-spec mode
-    legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
-    if legacy_path and Path(legacy_path).exists():
-        logger.info(
-            f"Loading single model spec from TT_MODEL_SPEC_JSON_PATH: {legacy_path}"
-        )
-        with open(legacy_path, "r") as f:
-            spec = json.load(f)
-        # Return as dict keyed by model_id for compatibility
-        return {spec["model_id"]: spec}
+        dict: The resolved single model spec.
 
-    # New multi-spec mode
+    Raises:
+        RuntimeError: If runtime path is not available and required CLI args are missing.
+    """
+    runtime_path = os.getenv("RUNTIME_MODEL_SPEC_JSON_PATH")
+    if runtime_path:
+        runtime_path = Path(runtime_path)
+        if runtime_path.exists():
+            logger.info(
+                "Using pre-resolved runtime model spec from "
+                f"RUNTIME_MODEL_SPEC_JSON_PATH={runtime_path}"
+            )
+            logger.info(f"Loading runtime model spec from: {runtime_path}")
+            with open(runtime_path, "r") as f:
+                data = json.load(f)
+            return data.get("runtime_model_spec", data)
+        logger.warning(
+            f"RUNTIME_MODEL_SPEC_JSON_PATH={runtime_path} does not exist, "
+            "falling back to default model spec catalog."
+        )
+
+    if not model_arg or not device_arg:
+        raise RuntimeError(
+            "Either set RUNTIME_MODEL_SPEC_JSON_PATH env var "
+            "(for 'python run.py --docker-server' workflow), or provide --model and "
+            "--tt-device/--device for direct docker run. "
+            "Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
+        )
+
+    # Catalog mode (default_model_spec.json built into image)
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
         "/home/container_app_user/model_specs/default_model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
-        return json.load(f)
+        all_specs = json.load(f)
+
+    device_type = normalize_device_type(device_arg)
+    model_spec = find_default_impl(
+        all_specs,
+        model_arg,
+        device_type,
+        engine_arg=engine_arg,
+        impl_arg=impl_arg,
+    )
+    logger.info(
+        f"Using default interface: found model spec for --model={model_arg}, "
+        f"--device={device_type}, --engine={engine_arg}, --impl={impl_arg}"
+    )
+    return model_spec
 
 
 def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
@@ -553,52 +590,23 @@ def main():
     args.device = args.tt_device or args.device
     args.engine = normalize_engine_type(args.engine)
 
-    # Step 2: Load model specs and determine which spec to use
-    all_specs = load_all_model_specs()
-
-    # Check if we're in legacy single-spec mode (TT_MODEL_SPEC_JSON_PATH set)
-    legacy_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
-
-    if legacy_path and Path(legacy_path).exists():
-        logger.warning(
-            "Deprecation warning: setting TT_MODEL_SPEC_JSON_PATH is deprecated. "
-            f"Using model spec from TT_MODEL_SPEC_JSON_PATH: {legacy_path}"
-        )
-        # Legacy mode: use the single spec from TT_MODEL_SPEC_JSON_PATH
-        # (all_specs will have exactly one entry in this case)
-        model_spec = list(all_specs.values())[0]
-        logger.info("Legacy mode: using model spec from TT_MODEL_SPEC_JSON_PATH")
-
-        # Ensure cache paths and weights are available, setting env vars if
-        # they were not passed in (e.g. default Docker volume mode).
-        if not os.getenv("TT_CACHE_PATH") and args.device:
-            set_cache_paths(model_spec, normalize_device_type(args.device))
-        if not os.getenv("MODEL_WEIGHTS_DIR"):
-            ensure_weights_available(model_spec)
-    elif args.model and args.device:
-        # New interface: look up spec by --model and explicit --tt-device/--device
+    # Step 2: Load model spec
+    model_spec = load_model_spec(
+        model_arg=args.model,
+        device_arg=args.device,
+        engine_arg=args.engine,
+        impl_arg=args.impl,
+    )
+    device_type = model_spec.get("device_type")
+    if device_type:
+        device_type = normalize_device_type(device_type)
+    elif args.device:
         device_type = normalize_device_type(args.device)
-        model_spec = find_default_impl(
-            all_specs,
-            args.model,
-            device_type,
-            engine_arg=args.engine,
-            impl_arg=args.impl,
-        )
-        logger.info(
-            f"Using default interface: found model spec for --model={args.model}, "
-            f"--device={device_type}, --engine={args.engine}, --impl={args.impl}"
-        )
 
-        # Set cache paths and ensure weights are available (new interface only)
+    if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
+    if not os.getenv("MODEL_WEIGHTS_DIR"):
         ensure_weights_available(model_spec)
-    else:
-        raise RuntimeError(
-            "Either set TT_MODEL_SPEC_JSON_PATH env var (for 'python run.py --docker-server' "
-            "workflow) or provide --model and --tt-device/--device for direct "
-            "docker run. Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
-        )
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
 

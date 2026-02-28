@@ -47,9 +47,11 @@ class RuntimeConfig:
     # Dev / override
     dev_mode: bool = False
     no_auth: bool = False
+    print_docker_cmd: bool = False
     override_docker_image: Optional[str] = None
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
+    runtime_model_spec_json: Optional[str] = None
 
     # Workflow control
     tools: str = "vllm"
@@ -82,23 +84,36 @@ class RuntimeConfig:
     runtime_model_spec: Optional[Dict] = field(default=None, repr=False)
 
     @classmethod
-    def from_args(cls, args) -> RuntimeConfig:
-        """Create a RuntimeConfig from an argparse Namespace."""
+    def from_args(
+        cls,
+        args,
+        *,
+        impl: Optional[str] = None,
+        engine: Optional[str] = None,
+    ) -> RuntimeConfig:
+        """Create a RuntimeConfig from an argparse Namespace.
+
+        Optional *impl* and *engine* keyword arguments override the values
+        from *args* when the model-spec resolution has already determined
+        the correct values.
+        """
         return cls(
             model=args.model,
             workflow=args.workflow,
             device=args.device,
-            impl=args.impl,
-            engine=args.engine,
+            impl=impl if impl is not None else args.impl,
+            engine=engine if engine is not None else args.engine,
             docker_server=args.docker_server,
             local_server=args.local_server,
             interactive=args.interactive,
             service_port=args.service_port,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
+            print_docker_cmd=args.print_docker_cmd,
             override_docker_image=args.override_docker_image,
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,
+            runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
             disable_trace_capture=args.disable_trace_capture,
             concurrency_sweeps=args.concurrency_sweeps,

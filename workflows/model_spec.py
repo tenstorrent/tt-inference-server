@@ -9,7 +9,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -3093,51 +3093,52 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
 
-def get_runtime_model_spec(runtime_config: RuntimeConfig) -> ModelSpec:
-    """Select and override a ModelSpec based on RuntimeConfig CLI values.
+def get_runtime_model_spec(
+    model: str,
+    device: str,
+    engine: Optional[str] = None,
+    impl: Optional[str] = None,
+) -> Tuple[ModelSpec, str, str]:
+    """Select a ModelSpec from MODEL_SPECS.
 
-    Updates ``runtime_config.impl`` and ``runtime_config.engine`` in-place
-    when they are inferred from the selected spec.
+    Pure function -- does **not** mutate any external state.
+
+    Returns ``(model_spec, resolved_impl, resolved_engine)`` so the caller
+    can construct a fully-initialised RuntimeConfig in one step.
     """
-    device_type = DeviceTypes.from_string(runtime_config.device)
-    requested_engine = runtime_config.engine
-    requested_impl = runtime_config.impl
+    device_type = DeviceTypes.from_string(device)
 
     candidate_specs = [
-        model_spec
-        for _, model_spec in MODEL_SPECS.items()
-        if model_spec.model_name == runtime_config.model
-        and model_spec.device_type == device_type
-        and (not requested_engine or model_spec.inference_engine == requested_engine)
-        and (not requested_impl or model_spec.impl.impl_name == requested_impl)
+        spec
+        for spec in MODEL_SPECS.values()
+        if spec.model_name == model
+        and spec.device_type == device_type
+        and (not engine or spec.inference_engine == engine)
+        and (not impl or spec.impl.impl_name == impl)
     ]
 
     if not candidate_specs:
-        engine_msg = f", engine={requested_engine}" if requested_engine else ""
-        impl_msg = f", impl={requested_impl}" if requested_impl else ""
+        engine_msg = f", engine={engine}" if engine else ""
+        impl_msg = f", impl={impl}" if impl else ""
         raise ValueError(
-            f"Model:={runtime_config.model} does not support "
-            f"device:={runtime_config.device}{engine_msg}{impl_msg}"
+            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg}"
         )
 
     default_spec = next(
         (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
         None,
     )
-    selected_spec = default_spec or (candidate_specs[0] if requested_impl else None)
+    selected_spec = default_spec or (candidate_specs[0] if impl else None)
 
     if selected_spec is None:
         raise ValueError(
-            f"Model:={runtime_config.model} does not have a default impl for "
-            f"device:={runtime_config.device}, engine:={requested_engine}; "
+            f"Model:={model} does not have a default impl for "
+            f"device:={device}, engine:={engine}; "
             f"you must pass --impl"
         )
 
-    runtime_config.impl = selected_spec.impl.impl_name
-    if not requested_engine:
-        runtime_config.engine = selected_spec.inference_engine
+    resolved_impl = selected_spec.impl.impl_name
+    resolved_engine = engine if engine else selected_spec.inference_engine
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
-    model_spec.apply_overrides(runtime_config)
-
-    return model_spec
+    return model_spec, resolved_impl, resolved_engine
