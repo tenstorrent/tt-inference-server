@@ -318,7 +318,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (1, 1),
+        "device_mesh_shape": (2, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
