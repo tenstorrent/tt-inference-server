@@ -180,10 +180,7 @@ def build_eval_command(
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
-        # dont double apply the chat template
-        assert not task.apply_chat_template, "chat api already applies chat template"
-        # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}"
+        api_url = f"{base_url}/chat/completions"
     else:
         api_url = f"{base_url}/completions"
 
