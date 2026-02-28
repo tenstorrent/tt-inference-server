@@ -602,12 +602,14 @@ ModelConfigs = {
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 2,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),

@@ -39,7 +39,7 @@ class AccuracyResult(IntEnum):
 class ImageGenConfig:
     """Image generation configuration."""
 
-    ENDPOINT: str = "image/generations"
+    ENDPOINT: str = "v1/images/generations"
     DEFAULT_INFERENCE_STEPS: int = 20
     DEFAULT_NUM_PROMPTS: int = 100
     NEGATIVE_PROMPT: str = (

@@ -353,12 +353,23 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        max_tokens_all_users = self.max_context
+        max_concurrency = self.max_concurrency
+        if data_parallel_size := self.vllm_args.get("data_parallel_size"):
+            assert isinstance(data_parallel_size, int)
+            # vllm args need to be set per engine instance, the number of which is
+            # the data_parallel_size (# of DP ranks). The variables must be computed
+            # and passed to client consumers however that will make requests to the
+            # DP engines without needing to know about DP rank.
+            max_concurrency = max_concurrency // data_parallel_size
+            max_tokens_all_users = max_tokens_all_users * data_parallel_size
+        object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
+        # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
-            "max_num_seqs": str(self.max_concurrency),
+            "max_num_seqs": str(max_concurrency),
             "max_num_batched_tokens": str(self.max_context),
-            "num_scheduler_steps": "10",
             "max-log-len": "32",
             "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
@@ -523,11 +534,6 @@ class ModelSpec:
                 "subdevice_type",
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
-
-        # infer changes to vllm_args based on env_vars
-        if "VLLM_USE_V1" in self.env_vars:
-            # remove args that are not supported by V1
-            self.device_model_spec.vllm_args.pop("num_scheduler_steps", None)
 
     def _validate_data(self):
         """Validate that required specification is present."""
@@ -980,20 +986,20 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="60ffb199",
-        vllm_commit="3499ffa1",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
                 env_vars={
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
@@ -1001,11 +1007,14 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=128,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
             ),
         ],
@@ -1013,29 +1022,31 @@ llm_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="60ffb199",
-        vllm_commit="3499ffa1",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=1,
-                max_context=1024,
+                max_context=16 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=128,
+                max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                },
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
             ),
         ],
@@ -1043,7 +1054,6 @@ llm_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "VLLM_USE_V1": "1",
         },
     ),
     ModelSpecTemplate(
@@ -1103,10 +1113,6 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
-                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
@@ -1173,18 +1179,22 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
-        tt_metal_commit="65718bb",
-        vllm_commit="409b1cd",
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-        },
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
+                # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+                },
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
@@ -1239,9 +1249,11 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=False,
                 override_tt_config={
-                    "data_parallel": 4,
                     "trace_region_size": 66147328,
                     "sample_on_device_mode": "decode_only",
+                },
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1454,15 +1466,18 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=llama3_70b_galaxy_impl,
-        tt_metal_commit="65718bb",
-        vllm_commit="409b1cd",
+        tt_metal_commit="e867533",
+        vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "dispatch_core_axis": "col",
                     "sample_on_device_mode": "all",
@@ -1499,36 +1514,18 @@ llm_templates = [
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
                 max_concurrency=32 * 8,
                 max_context=64 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "num_scheduler_steps": 1,
-                },
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
             ),
         ],
         env_vars={
@@ -1848,8 +1845,10 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 8,
+                },
                 override_tt_config={
-                    "data_parallel": 8,
                     "sample_on_device_mode": "decode_only",
                 },
             ),
@@ -1875,11 +1874,13 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 4,
-                max_context=64 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "trace_region_size": 50000000,
-                    "data_parallel": 4,
                     "sample_on_device_mode": "all",
                 },
                 env_vars={
@@ -1967,12 +1968,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -1986,12 +1983,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -2020,12 +2013,8 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                env_vars={
-                    "VLLM_USE_V1": "1",
-                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -2041,13 +2030,11 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                 },
                 override_tt_config={
                     "l1_small_size": 24576,
@@ -2059,16 +2046,14 @@ vlm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=8 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
-                    "VLLM_USE_V1": "1",
                     "TT_MM_THROTTLE_PERF": 5,
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "num_scheduler_steps": 1,
                     "data_parallel_size": 4,
                     "disable_mm_preprocessor_cache": True,
                 },
@@ -2083,6 +2068,31 @@ vlm_templates = [
         ],
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "Qwen/Qwen3-VL-32B-Instruct",
+        ],
+        impl=tt_transformers_impl,
+        inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
+        tt_metal_commit="ba32283",
+        vllm_commit="4386a82",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={"num_scheduler_steps": 1},
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+            "VLLM_USE_V1": "1",
+        },
         supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
