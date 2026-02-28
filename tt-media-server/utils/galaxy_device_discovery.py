@@ -15,7 +15,16 @@ import subprocess
 import sys
 
 
-DEFAULT_TEST_BINARY = "./build/test/tt_metal/tt_fabric/test_system_health"
+def _default_test_binary() -> str:
+    if os.environ.get("TT_METAL_HOME"):
+        return os.path.join(
+            os.environ["TT_METAL_HOME"],
+            "build/test/tt_metal/tt_fabric/test_system_health",
+        )
+    return "./build/test/tt_metal/tt_fabric/test_system_health"
+
+
+DEFAULT_TEST_BINARY = _default_test_binary()
 ENV_TEST_BINARY = "TT_SYSTEM_HEALTH_BINARY"
 RUN_TIMEOUT_SEC = 60
 CHIP_LINE_PATTERN = re.compile(
