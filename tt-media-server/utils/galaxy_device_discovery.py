@@ -36,9 +36,12 @@ N_PAIRS = [("1", "2"), ("3", "4"), ("5", "6"), ("7", "8")]
 def run_test_system_health(test_binary: str) -> str:
     """Run the test_system_health binary and capture output."""
     cmd = [test_binary, "--gtest_filter=Cluster.ReportSystemHealth"]
+    env = os.environ.copy()
+    if os.environ.get("TT_METAL_HOME"):
+        env["TT_METAL_RUNTIME_ROOT"] = os.environ["TT_METAL_HOME"]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC
+            cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, env=env
         )
         return result.stdout
     except subprocess.TimeoutExpired:
