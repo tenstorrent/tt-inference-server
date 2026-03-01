@@ -71,4 +71,7 @@ std::string socket_host();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socket_port();
 
+/** Scheduling policy from SCHEDULING_POLICY. Default: defaults::SCHEDULING_POLICY ("prefill_first"). */
+llm_engine::SchedulingPolicy scheduling_policy();
+
 }  // namespace tt::config

@@ -19,15 +19,13 @@ namespace {
 
 Config make_config(int num_blocks = 32, int block_size = 8,
                    int max_batched_tokens = 256, int eos = 0,
-                   std::optional<std::vector<int64_t>> stop_ids = std::nullopt) {
+                   SchedulingPolicy policy = SchedulingPolicy::PREFILL_FIRST) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
   c.eos = eos;
-  if (stop_ids) {
-    c.stop_token_ids = std::move(*stop_ids);
-  }
+  c.scheduling_policy = policy;
   return c;
 }
 
@@ -307,5 +305,127 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   }
 }
 
+<<<<<<< HEAD
 }
+=======
+// --- Interleaved scheduling strategy tests ---
+
+TEST(InterleavedStrategyTest, PrefillWhenNothingRunning) {
+  InterleavedStrategy strat;
+  EXPECT_TRUE(strat.should_prefill_first(true, 0, 1))
+      << "Must prefill when waiting has requests and nothing is running";
+}
+
+TEST(InterleavedStrategyTest, DecodeWhenRunningAtCapacity) {
+  InterleavedStrategy strat;
+  EXPECT_FALSE(strat.should_prefill_first(true, 1, 1))
+      << "Must decode when running count equals max_num_seqs";
+}
+
+TEST(InterleavedStrategyTest, NoActionWhenNothingWaiting) {
+  InterleavedStrategy strat;
+  EXPECT_FALSE(strat.should_prefill_first(false, 0, 1));
+  EXPECT_FALSE(strat.should_prefill_first(false, 1, 1));
+}
+
+TEST(InterleavedStrategyTest, AlternatesWhenBelowCapacity) {
+  InterleavedStrategy strat;
+  // First call with running below capacity: no previous prefill, should prefill
+  EXPECT_TRUE(strat.should_prefill_first(true, 0, 2));
+  strat.on_step_complete(true);
+  // After prefill, with running below capacity: should decode
+  EXPECT_FALSE(strat.should_prefill_first(true, 1, 2));
+  strat.on_step_complete(false);
+  // After decode, should prefill again
+  EXPECT_TRUE(strat.should_prefill_first(true, 1, 2));
+}
+
+TEST(SchedulerTest, Interleaved_DecodesBeforePrefillWhenRunningAtCapacity) {
+  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::INTERLEAVED);
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 2}};
+  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 2}};
+  TaskID seq1_id = seq1.task_id;
+  TaskID seq2_id = seq2.task_id;
+  sched.add(seq1);
+  sched.add(seq2);
+
+  // Step 1: Prefill seq1 (nothing running, must prefill)
+  auto [batch1, is_prefill1] = sched.schedule();
+  ASSERT_TRUE(is_prefill1);
+  ASSERT_EQ(batch1.size(), 1u);
+  EXPECT_EQ(batch1[0]->task_id, seq1_id);
+  sched.postprocess(batch1, {1});
+
+  // Step 2: running_.size() == 1 == max_num_seqs, must decode seq1 first
+  auto [batch2, is_prefill2] = sched.schedule();
+  ASSERT_FALSE(is_prefill2) << "Interleaved: must decode seq1 before prefilling seq2";
+  ASSERT_EQ(batch2.size(), 1u);
+  EXPECT_EQ(batch2[0]->task_id, seq1_id);
+  sched.postprocess(batch2, {2});
+
+  // Step 3: seq1 hit max_tokens=2, should be finished; now prefill seq2
+  EXPECT_TRUE(batch2[0]->is_finished());
+  auto [batch3, is_prefill3] = sched.schedule();
+  ASSERT_TRUE(is_prefill3);
+  ASSERT_EQ(batch3.size(), 1u);
+  EXPECT_EQ(batch3[0]->task_id, seq2_id);
+}
+
+TEST(SchedulerTest, Interleaved_CompletesOneBeforeStartingNext) {
+  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::INTERLEAVED);
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+  sched.add_request(prompt(4), {.max_tokens = 3});
+  sched.add_request(prompt(4), {.max_tokens = 3});
+
+  // Prefill first request
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {10});
+  Sequence* first_seq = b1[0];
+
+  // Decode first request until completion (max_tokens = 3)
+  for (int i = 0; i < 3; ++i) {
+    auto [b, pf] = sched.schedule();
+    if (pf) {
+      // If we got a prefill before first_seq finished, that violates interleaving.
+      FAIL() << "Interleaved scheduler prefilled a new request while seq1 was still running";
+    }
+    ASSERT_EQ(b.size(), 1u);
+    sched.postprocess(b, {static_cast<int64_t>(i + 11)});
+    if (first_seq->is_finished()) break;
+  }
+  EXPECT_TRUE(first_seq->is_finished());
+
+  // Now second request should prefill
+  auto [b_next, pf_next] = sched.schedule();
+  ASSERT_TRUE(pf_next) << "After first request finishes, second should be prefilled";
+}
+
+TEST(SchedulerTest, PrefillFirst_PrefillsAllBeforeDecode) {
+  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::PREFILL_FIRST);
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 10}};
+  TaskID seq2_id = seq2.task_id;
+  sched.add(seq1);
+  sched.add(seq2);
+
+  // Step 1: Prefill seq1
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {1});
+
+  // Step 2: PrefillFirst should prefill seq2 even though seq1 is in running_
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_TRUE(pf2) << "PrefillFirst: seq2 should be prefilled even with seq1 running";
+  ASSERT_EQ(b2.size(), 1u);
+  EXPECT_EQ(b2[0]->task_id, seq2_id);
+}
+
+}
+>>>>>>> d114fefb (Enable Interleaved Batching)
 }
