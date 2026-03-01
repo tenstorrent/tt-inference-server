@@ -145,16 +145,6 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     return {scheduled_seqs, false};
   }
 
-  // Fallback: strategy said decode first but nothing to decode, try prefill.
-  if (!prefill_first &&
-      try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens)) {
-    strategy_->on_step_complete(true);
-    LLM_ENGINE_LOG("scheduler")
-        << "schedule prefill n=" << scheduled_seqs.size()
-        << " batched_tokens=" << num_batched_tokens << std::endl;
-    return {scheduled_seqs, true};
-  }
-
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=0 scheduled_seqs=none"
                                << " in_flight=" << in_flight_count_
                                << std::endl;

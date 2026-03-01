@@ -316,28 +316,20 @@ TEST(InterleavedStrategyTest, PrefillWhenNothingRunning) {
       << "Must prefill when waiting has requests and nothing is running";
 }
 
-TEST(InterleavedStrategyTest, DecodeWhenRunningAtCapacity) {
+TEST(InterleavedStrategyTest, DecodeWhenAnythingRunning) {
   InterleavedStrategy strat;
   EXPECT_FALSE(strat.should_prefill_first(true, 1, 1))
-      << "Must decode when running count equals max_num_seqs";
+      << "Must decode when any requests are running";
+  EXPECT_FALSE(strat.should_prefill_first(true, 1, 16))
+      << "Must decode even when running count is far below max_num_seqs";
+  EXPECT_FALSE(strat.should_prefill_first(true, 5, 16))
+      << "Must decode all running to completion before prefilling new work";
 }
 
 TEST(InterleavedStrategyTest, NoActionWhenNothingWaiting) {
   InterleavedStrategy strat;
   EXPECT_FALSE(strat.should_prefill_first(false, 0, 1));
   EXPECT_FALSE(strat.should_prefill_first(false, 1, 1));
-}
-
-TEST(InterleavedStrategyTest, AlternatesWhenBelowCapacity) {
-  InterleavedStrategy strat;
-  // First call with running below capacity: no previous prefill, should prefill
-  EXPECT_TRUE(strat.should_prefill_first(true, 0, 2));
-  strat.on_step_complete(true);
-  // After prefill, with running below capacity: should decode
-  EXPECT_FALSE(strat.should_prefill_first(true, 1, 2));
-  strat.on_step_complete(false);
-  // After decode, should prefill again
-  EXPECT_TRUE(strat.should_prefill_first(true, 1, 2));
 }
 
 TEST(SchedulerTest, Interleaved_DecodesBeforePrefillWhenRunningAtCapacity) {

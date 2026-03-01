@@ -49,30 +49,21 @@ class PrefillFirstStrategy : public ISchedulingStrategy {
 };
 
 /**
- * Interleaves prefill and decode steps.
+ * Decodes the current batch to completion before admitting new prefills.
  *
- * After a prefill step the strategy forces the next step to decode (if there
- * are running sequences). Running count is capped at max_num_seqs so that new
- * prefills are only admitted when running slots are available. This mirrors
- * the AscendScheduler / vLLM V1 approach where a batch is prefilled, decoded
- * to completion (or until slots free up), and only then is the next batch
- * admitted for prefill.
+ * Prefill is only attempted when the running queue is empty (all previous
+ * requests have finished). This mirrors the AscendScheduler approach where
+ * running is filled up to capacity, decoded until requests finish and free
+ * slots, and only then is the next batch admitted for prefill.
  */
 class InterleavedStrategy : public ISchedulingStrategy {
  public:
   bool should_prefill_first(bool has_waiting, int running_count,
-                            int max_num_seqs) override {
+                            int /*max_num_seqs*/) override {
     if (!has_waiting) return false;
-    if (running_count >= max_num_seqs) return false;
-    if (running_count == 0) return true;
-    return !last_was_prefill_;
+    return running_count == 0;
   }
-  void on_step_complete(bool was_prefill) override {
-    last_was_prefill_ = was_prefill;
-  }
-
- private:
-  bool last_was_prefill_ = false;
+  void on_step_complete(bool /*was_prefill*/) override {}
 };
 
 std::unique_ptr<ISchedulingStrategy> make_scheduling_strategy(
