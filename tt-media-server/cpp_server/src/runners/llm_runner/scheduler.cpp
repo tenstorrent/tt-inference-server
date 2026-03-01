@@ -6,13 +6,25 @@
 
 namespace llm_engine {
 
+std::unique_ptr<ISchedulingStrategy> make_scheduling_strategy(
+    SchedulingPolicy policy) {
+  switch (policy) {
+    case SchedulingPolicy::INTERLEAVED:
+      return std::make_unique<InterleavedStrategy>();
+    case SchedulingPolicy::PREFILL_FIRST:
+    default:
+      return std::make_unique<PrefillFirstStrategy>();
+  }
+}
+
 Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
     : block_size_(config.kvcache_block_size),
       max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      waiting_(task_queue) {}
+      waiting_(task_queue),
+      strategy_(make_scheduling_strategy(config.scheduling_policy)) {}
 
 bool Scheduler::is_finished() const {
   return waiting_->empty() && running_.empty() && in_flight_count_ == 0;
@@ -38,22 +50,16 @@ Sequence* Scheduler::find_sequence(TaskID task_id) {
   return it != sequences_.end() ? it->second.get() : nullptr;
 }
 
-std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
-  std::vector<Sequence*> scheduled_seqs;
-  int num_seqs = 0;
-  int num_batched_tokens = 0;
 
-  // --- Prefill: pop from task queue ---
+bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
+                                     int& num_seqs, int& num_batched_tokens) {
   while (num_seqs < max_num_seqs_) {
     auto seq = waiting_->try_pop();
-    if (!seq) {
-      break;  // Queue empty
-    }
+    if (!seq) break;
 
     if (num_batched_tokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
         !block_manager_.can_allocate(*seq)) {
-      // Can't handle this sequence -- push it back and stop prefilling.
       waiting_->push(*seq);
       delete seq;
       break;
@@ -70,7 +76,10 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     scheduled_seqs.push_back(sequences_[id].get());
     delete seq;
   }
+  return !scheduled_seqs.empty();
+}
 
+<<<<<<< HEAD
   if (!scheduled_seqs.empty()) {
     LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
                              << " batched_tokens=" << num_batched_tokens << std::endl;
@@ -78,6 +87,10 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   // --- Decode: process running sequences ---
+=======
+void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
+                                    int& num_seqs) {
+>>>>>>> d114fefb (Enable Interleaved Batching)
   while (!running_.empty() && num_seqs < max_num_seqs_) {
     Sequence* seq = running_.front();
     running_.pop_front();
@@ -102,10 +115,49 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     seq->status_ = SequenceStatus::IN_FLIGHT;
     ++in_flight_count_;
   }
-  LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
-                             << " scheduled_seqs=" << (scheduled_seqs.empty() ? "none" : scheduled_seqs[0]->task_id.id)
-                             << " in_flight=" << in_flight_count_ << std::endl;
+}
 
+std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
+  std::vector<Sequence*> scheduled_seqs;
+  int num_seqs = 0;
+  int num_batched_tokens = 0;
+
+  bool prefill_first = strategy_->should_prefill_first(
+      !waiting_->empty(), static_cast<int>(running_.size()), max_num_seqs_);
+
+  if (prefill_first) {
+    if (try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens)) {
+      strategy_->on_step_complete(true);
+      LLM_ENGINE_LOG("scheduler")
+          << "schedule prefill n=" << scheduled_seqs.size()
+          << " batched_tokens=" << num_batched_tokens << std::endl;
+      return {scheduled_seqs, true};
+    }
+  }
+
+  try_schedule_decode(scheduled_seqs, num_seqs);
+  if (!scheduled_seqs.empty()) {
+    strategy_->on_step_complete(false);
+    LLM_ENGINE_LOG("scheduler")
+        << "schedule decode n=" << scheduled_seqs.size()
+        << " scheduled_seqs=" << scheduled_seqs[0]->task_id.id
+        << " in_flight=" << in_flight_count_ << std::endl;
+    return {scheduled_seqs, false};
+  }
+
+  // Fallback: strategy said decode first but nothing to decode, try prefill.
+  if (!prefill_first &&
+      try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens)) {
+    strategy_->on_step_complete(true);
+    LLM_ENGINE_LOG("scheduler")
+        << "schedule prefill n=" << scheduled_seqs.size()
+        << " batched_tokens=" << num_batched_tokens << std::endl;
+    return {scheduled_seqs, true};
+  }
+
+  LLM_ENGINE_LOG("scheduler") << "schedule decode n=0 scheduled_seqs=none"
+                               << " in_flight=" << in_flight_count_
+                               << std::endl;
   return {scheduled_seqs, false};
 }
 

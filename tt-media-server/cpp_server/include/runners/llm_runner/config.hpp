@@ -12,6 +12,11 @@ enum class ModelRunnerType {
   Llama
 };
 
+enum class SchedulingPolicy {
+  PREFILL_FIRST,
+  INTERLEAVED,
+};
+
 struct Config {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
   int max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
@@ -21,6 +26,7 @@ struct Config {
   int kvcache_block_size = 256;
   int num_kvcache_blocks = 512;
   ModelRunnerType runner_type = ModelRunnerType::Mock;
+  SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 
 }  // namespace llm_engine
