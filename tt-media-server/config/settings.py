@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import sys
 from functools import lru_cache
 from typing import Optional
 
@@ -35,14 +36,14 @@ class Settings(BaseSettings):
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
     is_galaxy: bool = True  # used for graph device split and class init
-    device_mesh_shape: tuple = (1, 1)
+    device_mesh_shape: tuple = (2, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -187,12 +188,20 @@ class Settings(BaseSettings):
             if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
                 devices = device_manager.get_single_devices_from_system()
             if self.device_mesh_shape == (2, 1):
+                logger.info(
+                    "Running Galaxy TP2 device discovery (test_system_health, may take 10-15s)..."
+                )
                 devices = device_manager.get_device_pairs_from_system()
+                logger.info(
+                    f"Galaxy TP2 discovery returned {len(devices) if devices else 0} pairs"
+                )
                 if not devices:
-                    raise RuntimeError(
+                    logger.error(
                         "Galaxy TP2 (2,1): device discovery failed or returned no pairs. "
-                        "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds."
+                        "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds. "
+                        "Exiting."
                     )
+                    sys.exit(1)
             elif self.device_mesh_shape == (2, 4):
                 devices = device_manager.get_device_groups_of_eight_from_system()
             if devices:

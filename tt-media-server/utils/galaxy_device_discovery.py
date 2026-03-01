@@ -9,10 +9,23 @@ Runs test_system_health and parses the output to create a device mapping.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
 import sys
+import time
+
+logger = logging.getLogger(__name__)
+
+
+def _flush_logging() -> None:
+    """Flush logging and stdio so logs are visible before a subprocess that might kill the process."""
+    root = logging.getLogger()
+    for h in root.handlers:
+        h.flush()
+    sys.stdout.flush()
+    sys.stderr.flush()
 
 
 def _default_test_binary() -> str:
@@ -39,10 +52,21 @@ def run_test_system_health(test_binary: str) -> str:
     env = os.environ.copy()
     if os.environ.get("TT_METAL_HOME"):
         env["TT_METAL_RUNTIME_ROOT"] = os.environ["TT_METAL_HOME"]
+    logger.info("Running test_system_health binary (cluster discovery, ~10-15s): %s", test_binary)
+    _flush_logging()
+    start = time.monotonic()
     try:
+        # New session so a fatal crash/signal in the binary is less likely to kill this process
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, env=env
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=RUN_TIMEOUT_SEC,
+            env=env,
+            start_new_session=True,
         )
+        elapsed = time.monotonic() - start
+        logger.info("test_system_health completed in %.1fs, returncode=%s", elapsed, result.returncode)
         return result.stdout
     except subprocess.TimeoutExpired:
         if sys.stderr:
@@ -143,6 +167,8 @@ def get_device_pairs_from_discovery(
     in N1-N2, N3-N4, N5-N6, N7-N8 order per tray (same as pairs.csv).
     """
     binary = test_binary or os.environ.get(ENV_TEST_BINARY, DEFAULT_TEST_BINARY)
+    logger.info("get_device_pairs_from_discovery: binary=%s", binary)
+    _flush_logging()
     output = run_test_system_health(binary)
     if not output:
         raise RuntimeError("Galaxy device discovery: no output from test_system_health")
