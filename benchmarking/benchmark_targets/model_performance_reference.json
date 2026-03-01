@@ -209,6 +209,21 @@
                     }
                 }
             }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 35,
+                        "tput_user": 72,
+                        "tput": 2304
+                    }
+                }
+            }
         ]
     },
     "Mistral-Small-3.1-24B-Instruct-2503": {
@@ -421,6 +436,21 @@
                         "ttft_ms": 30.0,
                         "tput_user": 37.0,
                         "tput": 1162.0
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12,
+                        "tput_user": 158,
+                        "tput": 5056
                     }
                 }
             }
@@ -5135,8 +5165,9 @@
                 "num_prompts": 256,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 12,
-                        "tput_user": 158
+                        "ttft_ms": 63,
+                        "tput_user": 33,
+                        "tput": 1056
                     }
                 }
             }
