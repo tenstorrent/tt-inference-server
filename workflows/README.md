@@ -6,6 +6,7 @@ This project provides a command-line interface (CLI) to run various workflows re
 
 - [Overview](#overview)
 - [Features](#features)
+- [run.py Execution Flow](#runpy-execution-flow)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [run.py CLI Usage](#runpy-cli-usage)
@@ -16,6 +17,7 @@ This project provides a command-line interface (CLI) to run various workflows re
 - [Workflow Setup](#workflow-setup)
 - [Project Structure](#project-structure)
 - [Error Handling](#error-handling)
+- [Model Config](#model-config)
 
 ## Overview
 
@@ -24,32 +26,135 @@ The inference server has two independent interfaces:
 1. **`run.py`** (host-side) -- optionally used to template the `docker run` command, validate the runtime, configure host setup, and run client-side workflows (`benchmarks`, `evals`).
 2. **Container interface** (`run_vllm_api_server.py`) -- can be used independently from `run.py` via a direct `docker run` command, accepting `--model` and `--tt-device` to self-resolve the model spec from a bundled JSON. See the [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run).
 
-The module `workflows/run_local.py` is responsible for setting up the local execution environment. It handles tasks such as bootstrapping a virtual environment, installing dependencies, configuring workflow-specific settings, and finally launching the workflow script.
+```mermaid
+flowchart LR
+  subgraph host ["Host Machine"]
+    runpy["run.py CLI"]
+    client["Client Workflows<br/>(benchmarks, evals)"]
+  end
+
+  subgraph container ["Docker Container"]
+    entrypoint["run_vllm_api_server.py"]
+    vllm["vLLM OpenAI API Server"]
+  end
+
+  runpy -->|"docker run<br/>(--docker-server)"| entrypoint
+  runpy -->|"run_workflows()"| client
+  entrypoint --> vllm
+  client -->|"HTTP /v1/*"| vllm
+
+  directDocker["Direct docker run"] -->|"--model + --tt-device"| entrypoint
+```
+
+The `run.py` host-side CLI is optional. Users can either:
+- Use `run.py --docker-server` to automate Docker setup, weight downloads, and container launch.
+- Run the container directly with `docker run <image> --model <model> --tt-device <device>`.
+
+Client workflows (`benchmarks`, `evals`, `reports`) send HTTP requests to the vLLM server and can run against any compatible OpenAI API server.
 
 ## Features
 
 - **Multiple Workflows**: Run benchmarks, evals, server, release, and report workflows.
 - **Execution Modes**: Choose between running workflows locally or in Docker mode.
 - **Automatic Setup**: Manages environment setup, including virtual environments and dependency installation.
+- **Device Auto-Detection**: `--tt-device` is inferred from host hardware via `tt-smi` when omitted.
+- **Docker Volume Strategies**: Four mutually exclusive strategies for persisting weights and caches.
 - **Logging**: Detailed logging for tracking execution, errors, and debugging.
 
-## Example diagram for benchmarks workflow
+## run.py Execution Flow
 
-![inference-server-workflow-diagram-2025-08-14-1106.png](inference-server-workflow-diagram-2025-08-14-1106.png)
+Single command example:
 
-The workflows that run end to end tests on the inference server (benchmarks, evals, tests, spec_tests, and stress_tests) all follow the same pattern in configuring how to send HTTP requests to the inference server.
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchmarks --docker-server
+```
+
+```mermaid
+flowchart TD
+  subgraph inputs ["Inputs"]
+    userInput["User Input<br/>--model, --workflow<br/>--tt-device (optional)"]
+    envFile[".env File<br/>HF_TOKEN, JWT_SECRET"]
+  end
+
+  subgraph runpySteps ["run.py Workflow"]
+    step0["0. Bootstrap Python venvs<br/>install with uv"]
+    step1["1. Resolve runtime<br/>resolve_runtime(args) builds<br/>RuntimeConfig + ModelSpec"]
+    step2["2. Validate setup<br/>hardware, software, secrets,<br/>system SW versions"]
+    step3["3. Manage model weights<br/>download / check via setup_host()<br/>configure volume strategy"]
+    step4["4. Generate run spec<br/>runtime_config.to_json()<br/>writes runtime_model_spec JSON"]
+    step5["5. Template and run<br/>inference server command<br/>generate_docker_run_command()<br/>run_docker_command()"]
+    step6["6. Run client workflow<br/>run_workflows() launches<br/>benchmarks / evals / tests"]
+    step7["7. Process outputs<br/>reports workflow generates<br/>summary tables and reports"]
+  end
+
+  subgraph runpyCore ["run.py model runtime specification"]
+    modelSpec["MODEL_SPECS<br/>runtime configurations<br/>for each model"]
+    runtimeConfig["RuntimeConfig<br/>CLI + runtime state"]
+  end
+
+  subgraph inferenceServer ["Inference Server (Docker Container)"]
+    entrypoint["run_vllm_api_server.py"]
+    vllmFork["vLLM fork<br/>(installed from source)"]
+    ttMetal["tt-metal<br/>(installed from source)<br/>model.py / tt-transformers"]
+    entrypoint --> vllmFork
+    entrypoint --> ttMetal
+  end
+
+  subgraph clientWorkflows ["Client Workflow Processes"]
+    benchConfig["benchmark_config<br/>+ benchmark targets"]
+    runBench["run_benchmarks.py"]
+    benchServing["vLLM benchmark_serving.py"]
+    runBench --> benchServing
+    benchConfig --> runBench
+  end
+
+
+  subgraph outputFiles ["Outputs (files written to disk)"]
+    runLogs["run_logs/<br/>stdout + stderr"]
+    runSpecs["runtime_model_specs/<br/>runtime_model_spec_*.json"]
+    serverLogs["docker_server/<br/>inference server logs"]
+    toolOutputs["benchmarks_output/<br/>evals_output/<br/>tool-specific data files"]
+    reports["reports_output/<br/>summary tables, reports"]
+  end
+
+  userInput --> step0
+  envFile --> step2
+  step0 --> step1
+  step1 --> step2
+  step2 --> step3
+  step3 --> step4
+  step4 --> step5
+  step5 --> step6
+  step6 --> step7
+
+  modelSpec -.-> step1
+  runtimeConfig -.-> step4
+
+  step5 -->|"docker run"| inferenceServer
+  step6 -->|"run_workflows()"| clientWorkflows
+  clientWorkflows -->|"HTTP /v1/*"| inferenceServer
+
+  step4 -.-> runSpecs
+  step5 -.-> serverLogs
+  step6 -.-> toolOutputs
+  step7 -.-> reports
+  step1 -.-> runLogs
+```
+
+Evals, tests, stress_tests, and other client workflows follow the same pattern as benchmarks: wait for the inference server to be healthy, optionally capture traces, then send HTTP requests to the server.
 
 ## Prerequisites
 
-    Python 3.8+: Required to run the CLI and setup scripts.
-    Docker: Needed if running workflows in Docker mode.
-    Git: Required for cloning repositories during setup (e.g., for the llama-cookbook used in meta evals).
+- **Python 3.8+**: Required to run the CLI and setup scripts.
+- **Docker**: Needed if running workflows in Docker mode.
+- **Git**: Required for cloning repositories during setup (e.g., for the llama-cookbook used in meta evals).
 
 ## Installation
 
-Clone the Repository:
-```
-git clone https://github.com/yourusername/tt-inference-server.git
+Clone the repository:
+
+```bash
+git clone https://github.com/tenstorrent/tt-inference-server.git
 cd tt-inference-server
 ```
 
@@ -140,11 +245,40 @@ export JWT_SECRET=my-secret-string
 
 ### Docker Volume Options
 
-When running with `--docker-server`, `run.py` supports three mutually exclusive strategies for how model weights and caches are persisted. Only one can be specified at a time.
+When running with `--docker-server`, `run.py` supports four mutually exclusive strategies for how model weights and caches are persisted. Only one can be specified at a time.
 
-**1. Docker named volume (default)**
+```mermaid
+flowchart TD
+  subgraph strategies ["Volume Strategy Selection"]
+    default_strat["Default<br/>(no flags)"]
+    hostVol["--host-volume"]
+    hostHF["--host-hf-cache"]
+    hostWeights["--host-weights-dir"]
+  end
 
-No flags needed. A Docker named volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start.
+  subgraph containerPaths ["Container Paths"]
+    cacheRoot["/home/container_app_user/cache_root"]
+    weightsDir["cache_root/weights/model_name"]
+    ttCache["cache_root/tt_metal_cache/"]
+    roMount["/home/container_app_user/readonly_weights_mount/"]
+  end
+
+  default_strat -->|"Docker volume"| cacheRoot
+  default_strat -->|"Container downloads weights"| weightsDir
+
+  hostVol -->|"Bind mount host dir"| cacheRoot
+  hostVol -->|"Host downloads weights"| weightsDir
+
+  hostHF -->|"Readonly bind mount"| roMount
+  hostHF -->|"Docker volume"| ttCache
+
+  hostWeights -->|"Readonly bind mount"| roMount
+  hostWeights -->|"Docker volume"| ttCache
+```
+
+**1. Docker volume (default)**
+
+No flags needed. A Docker volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start via `ensure_weights_available()`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
@@ -152,7 +286,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
 
 **2. Host persistent volume (`--host-volume`)**
 
-Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem.
+Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. Weights are downloaded on the host by `setup_host()`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
@@ -300,73 +434,146 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 
 
 ## Workflow Setup
 
-The module workflows/run_local.py handles local workflow execution through the WorkflowSetup class, which:
+The module `workflows/run_workflows.py` handles workflow execution through `WorkflowSetup`, which:
 
-    Bootstraps the Environment:
-    Checks the Python version, creates a virtual environment using the uv tool, and installs necessary packages.
+1. **Bootstraps the Environment**: Checks the Python version, creates a virtual environment using the `uv` tool, and installs necessary packages.
+2. **Configures Workflow-Specific Settings**: Depending on the workflow type (benchmarks, evals, tests), it creates dedicated virtual environments, prepares datasets, and adjusts configuration files as needed.
+3. **Executes the Workflow Script**: After setup, it constructs the command line and executes the main workflow script with proper logging and output redirection.
 
-    Configures Workflow-Specific Settings:
-    Depending on the workflow type (benchmarks, evals, tests), it creates dedicated virtual environments, prepares datasets (e.g., for meta evals), and adjusts configuration files as needed.
-
-    Executes the Workflow Script:
-    After setup, it constructs the command line and executes the main workflow script with proper logging and output redirection.
+Each workflow run script receives the runtime model spec JSON path (`--runtime-model-spec-json`) which contains both the `ModelSpec` and `RuntimeConfig` needed to execute.
 
 ## Project Structure
+
 ```
 .
-├── run.py                   # Main CLI entry point.
-├── VERSION                  # Contains the current project version.
+├── run.py                          # Main CLI entry point
+├── VERSION                         # Current project version
+├── default_model_spec.json         # Bundled model spec catalog (used by container interface)
 ├── workflows/
-│   ├── run_local.py         # Module for local workflow execution.
-│   ├── run_docker.py        # Module for Docker-based execution (under development).
-│   ├── model_spec.py               # Model configuration definitions.
-│   ├── setup_host.py        # Host setup functions.
-│   ├── utils.py             # Utility functions (logging, directory checks, etc.).
-│   ├── workflow_config.py   # Workflow configuration details.
-│   └── ...                  # Other workflow-related modules.
+│   ├── model_spec.py               # ModelSpecTemplate, ModelSpec, ImplSpec, DeviceModelSpec
+│   ├── runtime_config.py           # RuntimeConfig dataclass (CLI/runtime state)
+│   ├── run_docker_server.py        # Docker command generation and container lifecycle
+│   ├── run_workflows.py            # Workflow orchestration and WorkflowSetup
+│   ├── setup_host.py               # Host setup: SetupConfig, HostSetupManager
+│   ├── validate_setup.py           # Pre-run validation checks
+│   ├── device_utils.py             # Device inference from tt-smi
+│   ├── workflow_config.py          # Static WorkflowConfig definitions
+│   ├── workflow_types.py           # Enums: DeviceTypes, WorkflowType, InferenceEngine, etc.
+│   ├── workflow_venvs.py           # Virtual environment setup per workflow
+│   ├── utils.py                    # Utility functions (logging, directory checks, etc.)
+│   └── bootstrap_uv.py            # uv package manager bootstrap
+├── vllm-tt-metal-llama3/
+│   └── src/
+│       └── run_vllm_api_server.py  # Container entrypoint (independent from run.py)
+├── benchmarking/
+│   ├── run_benchmarks.py           # Benchmarks workflow run script
+│   └── benchmark_config.py         # Benchmark configuration and targets
 ├── evals/
-│   ├── eval_config.py       # Evaluation configuration details.
-│   └── run_evals.py         # Evals run script.
+│   ├── run_evals.py                # Evals workflow run script
+│   └── eval_config.py              # Evaluation configuration
+├── stress_tests/
+│   └── run_stress_tests.py         # Stress tests workflow run script
+└── tests/
+    └── run_tests.py                # Tests workflow run script
 ```
+
 ## Error Handling
 
-    Logging:
-    Errors are caught in the main try/except block in run.py and are logged with detailed stack traces.
+- **Logging**: Errors are caught in the main `try`/`except` block in `run.py` and logged with detailed stack traces. All output is also streamed to log files under `workflow_logs/run_logs/`.
+- **Validation**: `validate_setup()` runs pre-flight checks (directory permissions, system software versions, workflow config existence) before any workflow executes. Failures are reported with actionable error messages.
+- **Docker Lifecycle**: When `--docker-server` is used with a non-server workflow, `run.py` registers an `atexit` handler to stop the Docker container on exit.
 
-    Not Yet Implemented:
-    Some workflows (e.g., benchmarks, server) currently raise NotImplementedError to indicate that further development is needed.
+## Model Config
 
+```mermaid
+classDiagram
+  class ModelSpecTemplate {
+    +ImplSpec impl
+    +Set~DeviceTypes~ device_configurations
+    +Dict default_impl_map
+    +Set weights
+    +str tt_metal_commit
+    +str vllm_commit
+    +expand_to_specs() List~ModelSpec~
+  }
+  class ModelSpec {
+    +str model_id
+    +str model_name
+    +str hf_model_repo
+    +ImplSpec impl
+    +DeviceModelSpec device_model_spec
+    +str docker_image
+    +str device_type
+    +apply_overrides(RuntimeConfig)
+    +get_serialized_dict() dict
+    +to_json() Path
+    +from_json() ModelSpec
+  }
+  class ImplSpec {
+    +str impl_id
+    +str impl_name
+    +str repo_url
+    +str code_path
+  }
+  class DeviceModelSpec {
+    +DeviceTypes device
+    +int max_concurrency
+    +int max_context
+    +dict vllm_args
+    +dict override_tt_config
+    +dict env_vars
+    +bool default_impl
+  }
+  class RuntimeConfig {
+    +str model
+    +str workflow
+    +str device
+    +str engine
+    +bool docker_server
+    +str service_port
+    +to_json() Path
+    +from_json() RuntimeConfig
+    +from_args(args) RuntimeConfig
+  }
 
-## Model config
+  ModelSpecTemplate --> ModelSpec : "expand_to_specs()"
+  ModelSpec --> ImplSpec
+  ModelSpec --> DeviceModelSpec
+  ModelSpec ..> RuntimeConfig : "apply_overrides()"
+```
 
-All data known for a given model ahead of runtime is defined compactly and inferred where possible in the ModelSpec object defined in `workflows/model_spec.py`.
+All data known for a given model ahead of runtime is defined compactly in `ModelSpecTemplate` objects in `workflows/model_spec.py`. Each template expands into multiple `ModelSpec` instances -- one per combination of device type and weight variant.
 
 For example: `Llama-3.3-70B`
+
 ```python
-    ModelSpec(
-        impl=tt_transformers_impl,
-        default_impl_map={
-            DeviceTypes.T3K: True,
-        },
-        device_configurations={DeviceTypes.T3K},
-        weights={
-            "meta-llama/Llama-3.3-70B",
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        },
-        tt_metal_commit="v0.57.0-rc71",
-        vllm_commit="2a8debd",
-        status="testing",
-    ),
+ModelSpecTemplate(
+    impl=tt_transformers_impl,
+    default_impl_map={
+        DeviceTypes.T3K: True,
+    },
+    device_configurations={DeviceTypes.T3K},
+    weights={
+        "meta-llama/Llama-3.3-70B",
+        "meta-llama/Llama-3.3-70B-Instruct",
+        "meta-llama/Llama-3.1-70B",
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+    },
+    tt_metal_commit="v0.57.0-rc71",
+    vllm_commit="2a8debd",
+    status="testing",
+)
 ```
+
 Key concepts:
 
-* weights: the ordered list of model weights that a model config is valid for. The same config is copied and made available in MODEL_SPECS map for each of the defined weights strs to match.
-* default_impl_map: Maps each device type to a bool indicating whether this implementation is the default for that device. The default implementation will be used if one is not specified directly on CLI.
-* device_configurations: the hardware supported for the model implementation and model architecture.
+- **weights**: The set of HuggingFace model repos that share this configuration. The template is expanded so that each weight string becomes a separate `ModelSpec` in `MODEL_SPECS`.
+- **default_impl_map**: Maps each device type to a bool indicating whether this implementation is the default for that device. The default implementation is used when `--impl` is not specified on the CLI.
+- **device_configurations**: The set of hardware devices supported for this model implementation.
+- **RuntimeConfig**: Captures all CLI/runtime state (workflow, service port, Docker flags, overrides) separately from the static model definition. Created via `RuntimeConfig.from_args()` and applied to the model spec via `model_spec.apply_overrides(runtime_config)`.
+- **default_model_spec.json**: Exported at `run.py` startup from `MODEL_SPECS` and bundled into Docker images. The container interface uses this catalog to resolve a model spec from `--model` + `--tt-device` without needing `run.py`.
 
-The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the default_impl ModelSpec's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelSpec as needed for additional points of comparison.
+Performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json`. The key is the default-impl `ModelSpec`'s first model weights name (e.g. `Llama-3.3-70B`), which uniquely defines targets for all weight variants of the same architecture. Targets can be added directly to a specific `ModelSpec` for additional comparison points.
 
-The model evaluation targets are defined only for each model weights because they are dependent on the different outputs from models, not on the model implementation or the hardware running it.
+Evaluation targets are defined per model weights because they depend on model output, not on the implementation or hardware.
