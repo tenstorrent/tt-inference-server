@@ -113,6 +113,12 @@ MODEL_BENCHMARK_SWEEP_OVERRIDES = {
         "concurrencies": _QWEN_VL_CONCURRENCIES,
         "num_prompts_by_concurrency": _QWEN_VL_NUM_PROMPTS,
     },
+    "olmOCR-2-7B-1025": {
+        "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
+        "image_isl_osl_resolution_pairs": _QWEN_VL_IMAGE_ISL_OSL_PAIRS,
+        "concurrencies": _QWEN_VL_CONCURRENCIES,
+        "num_prompts_by_concurrency": _QWEN_VL_NUM_PROMPTS,
+    },
     "Llama-3.1-8B": {
         "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
         "concurrencies": _QWEN_VL_CONCURRENCIES,
@@ -304,8 +310,12 @@ def calculate_vision_tokens(
     # Gemma-3 models: Fixed 256 tokens per image
     if "gemma-3" in model_name_lower or "medgemma" in model_name_lower:
         tokens_per_image = 256
-    # Qwen2.5-VL models
-    elif "qwen2.5-vl" in model_name_lower or "qwen2-5-vl" in model_name_lower:
+    # Qwen2.5-VL models (includes olmOCR-2-7B, based on Qwen2.5-VL-7B)
+    elif (
+        "qwen2.5-vl" in model_name_lower
+        or "qwen2-5-vl" in model_name_lower
+        or "olmocr" in model_name_lower
+    ):
         tokens_per_image = (image_height // 28) * (image_width // 28)
     # Qwen3-VL models
     elif "qwen3-vl" in model_name_lower or "qwen3" in model_name_lower:
