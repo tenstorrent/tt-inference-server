@@ -1,4 +1,4 @@
-# vLLM TT Metalium TT-Transformer Inference API
+# vLLM tt-metal Docker image
 
 This implementation supports the following models in the [LLM model list](../README.md#llms)
 
@@ -18,85 +18,37 @@ This implementation supports the following models in the [LLM model list](../REA
 
 ## Setup and installation
 
-This guide was tested starting condition is from a fresh installation of Ubuntu 20.04 with Tenstorrent system dependencies installed. 
-Ubuntu 22.04 should also work for most if not all models. 
+See [docs/prerequisites.md](../docs/prerequisites.md)
 
-### 1. Docker install
-
-see Ubuntu apt guide: https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
-
-Recommended to follow postinstall guide to allow $USER to run docker without sudo: https://docs.docker.com/engine/install/linux-postinstall/
-
-### 2. Ensure system dependencies installed
-
-Follow TT guide software installation at: https://docs.tenstorrent.com/getting-started/README
-
-Ensure all set up:
-- firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
-- drivers: tt-kmd (https://github.com/tenstorrent/tt-kmd)
-- hugepages: see https://docs.tenstorrent.com/getting-started/README#step-4-set-up-hugepages
-- tt-smi: https://github.com/tenstorrent/tt-smi
-
-If running on a TT-LoudBox or TT-QuietBox, you will also need:
-- topology: tt-topology https://github.com/tenstorrent/tt-topology
-  - set up mesh topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
-
-### 3. CPU performance setting
-
-In order to get peak performance increasing the CPU frequency profile is recommended. If you cannot do this for your setup, it is optional and can be skipped, though performance may be lower than otherwise expected.
-
-```bash
-sudo apt-get update && sudo apt-get install -y linux-tools-generic
-# enable perf mode
-sudo cpupower frequency-set -g performance
-
-# disable perf mode (if desired later)
-# sudo cpupower frequency-set -g ondemand
-```
-
-### 4. Run model in Docker
+### Run model in Docker container
 
 There are two ways to run the inference server in Docker:
 
-**Option A: Using `run.py` automation (recommended for first-time setup)**
-
-`run.py` handles model weights download, Docker image pull, host setup, and secret management automatically. Model weights download, Docker image download, and Python environment setup may take a long time on low-bandwidth networks.
-
-```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
-```
+For `run.py` usage see [docs/workflows_user_guide.md](../docs/workflows_user_guide.md)
 
 See the full [run.py CLI documentation](../workflows/README.md#runpy-cli-usage) for all options including Docker volume strategies and `--print-docker-cmd`.
 
-**Option B: Direct `docker run` (container interface)**
-
 The container can be used independently from `run.py`. See the [Container Interface](#container-interface-direct-docker-run) section below.
-
-## Container Interface (Direct Docker Run)
-
 The inference server container can be run directly with `docker run`, without `run.py`. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec JSON.
 
 ### Minimal Example
 
 ```bash
 docker run \
-  --rm \
-  --device /dev/tenstorrent \
-  --cap-add SYS_NICE \
-  --shm-size 32G \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
   --publish 8000:8000 \
+  --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_tt_transformers-Llama-3.1-8B-Instruct:/home/container_app_user/cache_root \
-  -e HF_TOKEN=$HF_TOKEN \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:latest \
-  --model meta-llama/Llama-3.1-8B-Instruct \
+  --volume volume_id_tt_transformers-Llama-3.2-1B-Instruct:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-84b4c53-222ee06 \
+  --model meta-llama/Llama-3.2-1B-Instruct \
   --tt-device n300
 ```
 
 Required Docker flags:
 - `--device /dev/tenstorrent` -- passes the Tenstorrent device into the container
-- `--cap-add SYS_NICE` -- required for thread priority management
-- `--shm-size 32G` -- shared memory for model loading
+- `--ipc host` -- allows for shared memory with host
 - `--mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G` -- hugepages for TT Metal
 
 ### Container CLI Arguments
