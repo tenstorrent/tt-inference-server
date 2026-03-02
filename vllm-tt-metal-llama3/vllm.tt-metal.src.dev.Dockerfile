@@ -136,6 +136,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
     vllm_dir=${HOME_DIR}/vllm \
+    TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 # Environment variables defined by other env vars
