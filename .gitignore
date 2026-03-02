@@ -67,7 +67,3 @@ tt-media-server/huggingface
 
 # ignore downloaded datsets
 tests/server_tests/datasets/*
-
-# ignore generated model support docs
-# use 'git add -f docs/model_support/**' to commit updates
-docs/model_support/**
