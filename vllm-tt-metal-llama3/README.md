@@ -94,20 +94,7 @@ docker run \
   <image> --model <model> --tt-device <device>
 ```
 
-**2. Host HuggingFace cache**
-
-Mount the host's existing HuggingFace cache readonly. The container uses the mounted weights instead of downloading them. Other persistent data (TT Metal caches) uses a Docker named volume. This is equivalent to `run.py --host-hf-cache`.
-
-```bash
-docker run \
-  ... \
-  --mount type=bind,src=$HF_CACHE,dst=/home/container_app_user/readonly_weights_mount/<model-name>,readonly \
-  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<model-name> \
-  --volume <volume-name>:/home/container_app_user/cache_root \
-  <image> --model <model> --tt-device <device>
-```
-
-**3. Host model weights directory**
+**2. Host model weights directory**
 
 Mount a host directory containing pre-downloaded model weights readonly. Other persistent data uses a Docker named volume. This is equivalent to `run.py --host-weights-dir`.
 
@@ -116,6 +103,28 @@ docker run \
   ... \
   --mount type=bind,src=$HOST_WEIGHTS_DIR,dst=/home/container_app_user/readonly_weights_mount/<dir-name>,readonly \
   -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<dir-name> \
+  --volume <volume-name>:/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
+
+This can also use the host's existing HuggingFace cache. When using `run.py --host-hf-cache`, pass the top-level HuggingFace cache directory (typically `~/.cache/huggingface`). `run.py` automatically resolves the snapshot path inside the cache, mounts the model repo directory, and sets `MODEL_WEIGHTS_DIR` to point at the correct snapshot inside the container.
+
+When using `docker run` directly, you must resolve the snapshot path yourself and pass it as the bind-mount source. The HF cache layout is typically like:
+```
+~/.cache/huggingface/hub/models--<org>--<model-name>/snapshots/<revision-hash>/
+```
+
+Set `$HF_CACHE_SNAPSHOT` to that resolved path, for example:
+
+```bash
+HF_CACHE_SNAPSHOT=~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B-Instruct/snapshots/<revision-hash>
+```
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HF_CACHE_SNAPSHOT,dst=/home/container_app_user/readonly_weights_mount/<model-name>,readonly \
+  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<model-name> \
   --volume <volume-name>:/home/container_app_user/cache_root \
   <image> --model <model> --tt-device <device>
 ```
