@@ -86,7 +86,7 @@ class DeviceManager:
         return device_pairs
 
     def get_device_pairs_from_system(self) -> list[tuple[int, int]]:
-        """Return device pairs (N1-N2, N3-N4, ... per tray) in correct wiring order from galaxy device discovery."""
+        """Return (chip_id, chip_id) pairs (N1-N2, N3-N4, ... per tray) for TT_VISIBLE_DEVICES from galaxy discovery."""
         self.logger.info("Calling galaxy device discovery (test_system_health binary)...")
         try:
             from utils.galaxy_device_discovery import get_device_pairs_from_discovery

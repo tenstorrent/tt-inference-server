@@ -5,6 +5,13 @@
 """
 Galaxy device discovery via test_system_health.
 Runs test_system_health and parses the output to create a device mapping.
+
+C++ binary source (tt-metal):
+  tests/tt_metal/tt_fabric/system_health/test_system_health.cpp
+  TEST(Cluster, ReportSystemHealth) uses cluster.get_ethernet_connections()
+  (same data as PhysicalSystemDescriptor::run_local_discovery for topology mapper).
+Diagnostic: scripts/diagnose_pair_topology.py runs discovery for one pair and
+  reports ethernet connectivity vs n300 MGD expectation.
 """
 
 from __future__ import annotations
@@ -67,7 +74,10 @@ def run_test_system_health(test_binary: str) -> str:
         )
         elapsed = time.monotonic() - start
         logger.info("test_system_health completed in %.1fs, returncode=%s", elapsed, result.returncode)
-        return result.stdout
+        stdout = result.stdout or ""
+        logger.info("GALAXY_DISCOVERY_RAW_LEN=%s", len(stdout))
+        logger.info("GALAXY_DISCOVERY_RAW_SAMPLE=%s", stdout[:600] if stdout else "(empty)")
+        return stdout
     except subprocess.TimeoutExpired:
         if sys.stderr:
             print("Error: Timeout while running test", file=sys.stderr)
@@ -101,6 +111,7 @@ def create_device_mapping(output: str) -> list[dict[str, str]]:
         if info:
             results.append(
                 {
+                    "chip": info["chip"],
                     "pcie_id": info["pcie_id"],
                     "unique_id": info["unique_id"],
                     "tray": info["tray"],
@@ -141,13 +152,13 @@ def get_tray_mapping_from_discovery(
 
 
 def get_device_pairs(results: list[dict[str, str]]) -> list[tuple[str, str]]:
-    """Extract device ID pairs (N1-N2, N3-N4, N5-N6, N7-N8) per tray."""
+    """Extract (chip_id, chip_id) pairs (N1-N2, N3-N4, N5-N6, N7-N8) per tray for TT_VISIBLE_DEVICES."""
     tray_map: dict[str, dict[str, str]] = {}
     for result in results:
         tray = result["tray"]
         if tray not in tray_map:
             tray_map[tray] = {}
-        tray_map[tray][result["n_loc"]] = result["pcie_id"]
+        tray_map[tray][result["n_loc"]] = result["chip"]
     pairs_list: list[tuple[str, str]] = []
     for tray in sorted(tray_map.keys(), key=int):
         n_devices = tray_map[tray]
@@ -163,8 +174,9 @@ def get_device_pairs_from_discovery(
     test_binary: str | None = None,
 ) -> list[tuple[int, int]]:
     """
-    Run test_system_health and return list of (pcie_id1, pcie_id2) pairs
-    in N1-N2, N3-N4, N5-N6, N7-N8 order per tray (same as pairs.csv).
+    Run test_system_health and return list of (chip_id1, chip_id2) pairs
+    in N1-N2, N3-N4, N5-N6, N7-N8 order per tray. Use chip_id (not pcie_id)
+    for TT_VISIBLE_DEVICES.
     """
     binary = test_binary or os.environ.get(ENV_TEST_BINARY, DEFAULT_TEST_BINARY)
     logger.info("get_device_pairs_from_discovery: binary=%s", binary)
@@ -178,7 +190,9 @@ def get_device_pairs_from_discovery(
             "Galaxy device discovery: no chip lines parsed from test_system_health"
         )
     pairs = get_device_pairs(results)
-    return [(int(a), int(b)) for a, b in pairs]
+    out = [(int(a), int(b)) for a, b in pairs]
+    logger.info("GALAXY_DISCOVERY_PAIRS=%s", repr(out))
+    return out
 
 
 def get_device_groups_of_eight_from_discovery(
