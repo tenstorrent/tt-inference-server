@@ -2023,7 +2023,7 @@ vlm_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "0",
+            "VLLM_USE_V1": "1",
         },
         supported_modalities=["text", "image"],
     ),
