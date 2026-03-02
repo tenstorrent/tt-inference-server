@@ -4,4 +4,4 @@
 
 #!/bin/bash
 set -eo pipefail
-uvicorn --host 0.0.0.0 main:app --lifespan on --port 8000
+uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"
