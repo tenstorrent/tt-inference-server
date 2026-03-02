@@ -15,7 +15,7 @@ flowchart TD
   start -->|"Direct Docker"| directDocker["docker run IMAGE<br/>--model MODEL --tt-device DEVICE"]
   start -->|"Client workflows only<br/>(server already running)"| clientOnly["python3 run.py --model MODEL<br/>--workflow benchmarks"]
 
-  runpyDocker -->|"Handles weights, secrets,<br/>Docker volume, container launch"| server["vLLM Server Running"]
+  runpyDocker -->|"Handles weights, secrets,<br/>Docker volume, container launch"| server["Inference Server Running"]
   directDocker -->|"Container self-resolves<br/>model spec, downloads weights"| server
   clientOnly -->|"HTTP requests to<br/>localhost:8000"| server
 ```
