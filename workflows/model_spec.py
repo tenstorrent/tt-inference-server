@@ -381,8 +381,10 @@ class ModelSpec:
         None  # Used for data-parallel configurations
     )
     uses_tensor_model_cache: bool = True
-    cli_args: Dict[str, str] = field(default_factory=dict)
     has_builtin_warmup: bool = False
+
+    # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
+    cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         default_env_vars = {
