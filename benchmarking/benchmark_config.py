@@ -83,11 +83,12 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
     (128, 128, 512, 1024, 1),
 ]
 
-# Per-model benchmark sweep overrides.
-# When model_name matches a key, these ISL/OSL pairs, concurrencies, and
-# num_prompts are used instead of the global defaults.
+# --- Per-model benchmark sweep overrides ---
+# ISL sweep from 128 to 32k with OSL fixed at 128
 _TEXT_ISL_OSL_PAIRS_128_TO_32K = [
     (128, 128),
+    (256, 128),
+    (512, 128),
     (1024, 128),
     (2048, 128),
     (4096, 128),
@@ -96,57 +97,26 @@ _TEXT_ISL_OSL_PAIRS_128_TO_32K = [
     (32768, 128),
 ]
 
-# Fixed ISL=128 with OSL sweep, plus fixed OSL=128 with ISL sweep
-_QWEN_VL_TEXT_ISL_OSL_PAIRS = [
-    # Fixed ISL=128, sweep OSL
-    (128, 128),
-    (128, 1024),
-    (128, 2048),
-    (128, 4096),
-    (128, 8192),
-    (128, 16384),
-    (128, 32768),
-    # Fixed OSL=128, sweep ISL
-    (1024, 128),
-    (2048, 128),
-    (4096, 128),
-    (8192, 128),
-    (16384, 128),
-    (32768, 128),
-]
-
-# Image resolutions: 1080p, 2K, 4K
-_QWEN_VL_IMAGE_RESOLUTIONS = [
-    (1080, 1920),  # 1080p
-    (1440, 2560),  # 2K
-    (2160, 3840),  # 4K
-]
-
+# Image ISL/OSL pairs: same ISL sweep, fixed 2K resolution (1440x2560)
 _QWEN_VL_IMAGE_ISL_OSL_PAIRS = [
-    (isl, osl, h, w, 1)
-    for isl, osl in _QWEN_VL_TEXT_ISL_OSL_PAIRS
-    for h, w in _QWEN_VL_IMAGE_RESOLUTIONS
+    (isl, osl, 1440, 2560, 1)
+    for isl, osl in _TEXT_ISL_OSL_PAIRS_128_TO_32K
 ]
 
-_FIXED_CONCURRENCIES = [1, 32]
-_FIXED_NUM_PROMPTS = {1: 8, 32: 128}
+_QWEN_VL_CONCURRENCIES = [1, 32]
+_QWEN_VL_NUM_PROMPTS = {1: 8, 32: 128}
 
 MODEL_BENCHMARK_SWEEP_OVERRIDES = {
     "Qwen2.5-VL-7B-Instruct": {
-        "text_isl_osl_pairs": _QWEN_VL_TEXT_ISL_OSL_PAIRS,
-        "image_isl_osl_resolution_pairs": _QWEN_VL_IMAGE_ISL_OSL_PAIRS,
-        "concurrencies": _FIXED_CONCURRENCIES,
-        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
-    },
-    "Llama-3.1-8B-Instruct": {
         "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
-        "concurrencies": _FIXED_CONCURRENCIES,
-        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
+        "image_isl_osl_resolution_pairs": _QWEN_VL_IMAGE_ISL_OSL_PAIRS,
+        "concurrencies": _QWEN_VL_CONCURRENCIES,
+        "num_prompts_by_concurrency": _QWEN_VL_NUM_PROMPTS,
     },
     "Llama-3.1-8B": {
         "text_isl_osl_pairs": _TEXT_ISL_OSL_PAIRS_128_TO_32K,
-        "concurrencies": _FIXED_CONCURRENCIES,
-        "num_prompts_by_concurrency": _FIXED_NUM_PROMPTS,
+        "concurrencies": _QWEN_VL_CONCURRENCIES,
+        "num_prompts_by_concurrency": _QWEN_VL_NUM_PROMPTS,
     },
 }
 

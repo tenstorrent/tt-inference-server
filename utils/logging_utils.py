@@ -9,13 +9,24 @@ import importlib
 from datetime import datetime
 from pathlib import Path
 
-from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
-from vllm.engine.metrics import logger
-from vllm.engine.llm_engine import LLMEngine
+try:
+    from vllm.engine.metrics_types import StatLoggerBase, Stats, SupportsMetricsInfo
+    from vllm.engine.metrics import logger
+except ModuleNotFoundError:
+    try:
+        from vllm.engine.metrics import StatLoggerBase, Stats, SupportsMetricsInfo, logger
+    except (ModuleNotFoundError, ImportError):
+        StatLoggerBase = None
+        Stats = None
+        SupportsMetricsInfo = None
+        logger = logging.getLogger("vllm")
 
-
-# new init function for LLMEngine to be used in vllm api server (online inference) when init in MQLLMEngine
-original_init = LLMEngine.__init__
+try:
+    from vllm.engine.llm_engine import LLMEngine
+    original_init = LLMEngine.__init__
+except (ModuleNotFoundError, ImportError):
+    LLMEngine = None
+    original_init = None
 
 
 def logging_init_wrapper(self, *args, **kwargs):
@@ -94,7 +105,10 @@ def set_vllm_logging_config(level="INFO"):
     return config_path, LOG_PATH
 
 
-class RawStatLogger(StatLoggerBase):
+_base_class = StatLoggerBase if StatLoggerBase is not None else object
+
+
+class RawStatLogger(_base_class):
     def __init__(self, num_scheduler_steps, batch_size) -> None:
         self.time_to_first_token = []
         self.time_per_output_token = []
