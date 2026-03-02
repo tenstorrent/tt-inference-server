@@ -59,7 +59,10 @@ def run_test_system_health(test_binary: str) -> str:
     env = os.environ.copy()
     if os.environ.get("TT_METAL_HOME"):
         env["TT_METAL_RUNTIME_ROOT"] = os.environ["TT_METAL_HOME"]
-    logger.info("Running test_system_health binary (cluster discovery, ~10-15s): %s", test_binary)
+    logger.info(
+        "Running test_system_health binary (cluster discovery, ~10-15s): %s",
+        test_binary,
+    )
     _flush_logging()
     start = time.monotonic()
     try:
@@ -73,10 +76,16 @@ def run_test_system_health(test_binary: str) -> str:
             start_new_session=True,
         )
         elapsed = time.monotonic() - start
-        logger.info("test_system_health completed in %.1fs, returncode=%s", elapsed, result.returncode)
+        logger.info(
+            "test_system_health completed in %.1fs, returncode=%s",
+            elapsed,
+            result.returncode,
+        )
         stdout = result.stdout or ""
         logger.info("GALAXY_DISCOVERY_RAW_LEN=%s", len(stdout))
-        logger.info("GALAXY_DISCOVERY_RAW_SAMPLE=%s", stdout[:600] if stdout else "(empty)")
+        logger.info(
+            "GALAXY_DISCOVERY_RAW_SAMPLE=%s", stdout[:600] if stdout else "(empty)"
+        )
         return stdout
     except subprocess.TimeoutExpired:
         if sys.stderr:
