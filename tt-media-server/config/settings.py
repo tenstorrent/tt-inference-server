@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-import sys
 from functools import lru_cache
 from typing import Optional
 
@@ -201,7 +200,6 @@ class Settings(BaseSettings):
                         "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds. "
                         "Exiting."
                     )
-                    sys.exit(1)
             elif self.device_mesh_shape == (2, 4):
                 devices = device_manager.get_device_groups_of_eight_from_system()
             if devices:
