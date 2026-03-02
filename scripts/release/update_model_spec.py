@@ -463,6 +463,7 @@ def reload_and_export_model_specs_json(model_spec_path, output_json_path):
     # Dynamically import the updated model_spec module
     spec = importlib.util.spec_from_file_location("model_spec", model_spec_path)
     model_spec_module = importlib.util.module_from_spec(spec)
+    sys.modules["model_spec"] = model_spec_module
     spec.loader.exec_module(model_spec_module)
 
     model_specs = model_spec_module.MODEL_SPECS
@@ -499,6 +500,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
 
     spec = importlib.util.spec_from_file_location("model_spec_docs", model_spec_path)
     model_spec_module = importlib.util.module_from_spec(spec)
+    sys.modules["model_spec_docs"] = model_spec_module
     spec.loader.exec_module(model_spec_module)
 
     templates = model_spec_module.spec_templates
@@ -585,6 +587,7 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
 
     spec = importlib.util.spec_from_file_location("model_spec_readme", model_spec_path)
     model_spec_module = importlib.util.module_from_spec(spec)
+    sys.modules["model_spec_readme"] = model_spec_module
     spec.loader.exec_module(model_spec_module)
     templates = model_spec_module.spec_templates
 
