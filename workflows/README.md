@@ -50,7 +50,7 @@ The `run.py` host-side CLI is optional. Users can either:
 - Use `run.py --docker-server` to automate Docker setup, weight downloads, and container launch.
 - Run the container directly with `docker run <image> --model <model> --tt-device <device>`.
 
-Client workflows (`benchmarks`, `evals`, `reports`) send HTTP requests to the vLLM server and can run against any compatible OpenAI API server.
+Client workflows (`benchmarks`, `evals`, `reports`) send HTTP requests to the model inference server to measure performance (`benchmarks`) and accuracy (`evals`) and generate reports. Inference servers are: vLLM OpenAI API server, tt-media-server, or other in future.
 
 ## Features
 
