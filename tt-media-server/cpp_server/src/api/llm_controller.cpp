@@ -5,99 +5,53 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
+#include "domain/completion_response.hpp"
+#include "profiling/tracy.hpp"
 
-
+#include <memory>
 #include <random>
 #include <sstream>
 #include <chrono>
 #include <iostream>
+#include <cmath>
 #include <mutex>
-#include <thread>
 
+#include "utils/service_factory.hpp"
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
-
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace tt::api {
 
 LLMController::LLMController() {
-    // Only initialize if TT_MODEL_SERVICE=llm or not set
     if (!tt::config::is_llm_service_enabled()) {
         std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
         return;
     }
 
-    service_ = std::make_shared<services::LLMService>();
-    service_->start();
-    std::cout << "[LLMController] Initialized and service started" << std::endl;
+    service_ = tt::utils::service_factory::get_service_by_type<services::LLMService>();
+    if (!service_) {
+        throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
+                                 "Ensure register_services() is called before Drogon starts.");
+    }
+    std::cout << "[LLMController] Initialized (service already started)" << std::endl;
 }
 
 std::string LLMController::generate_completion_id() {
+    static std::mutex gen_mutex;
     static std::random_device rd;
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<> dis(0, 15);
     static const char* hex_chars = "0123456789abcdef";
 
+    std::lock_guard<std::mutex> lock(gen_mutex);
     std::ostringstream ss;
-    ss << "cmpl-";
     for (int i = 0; i < 24; ++i) {
         ss << hex_chars[dis(gen)];
     }
     return ss.str();
 }
 
-void LLMController::completions(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    // Parse JSON body
-    auto json = req->getJsonObject();
-    if (!json) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            Json::Value("Invalid JSON body")
-        );
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
-    // Parse request
-    domain::CompletionRequest request;
-    try {
-        request = domain::CompletionRequest::fromJson(*json);
-        request.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
-    } catch (const std::exception& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            Json::Value(std::string("Failed to parse request: ") + e.what())
-        );
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
-    // Check if model is ready
-    if (!service_->is_model_ready()) {
-        Json::Value error;
-        error["error"]["message"] = "Model is not ready";
-        error["error"]["type"] = "service_unavailable";
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-        callback(resp);
-        return;
-    }
-
-    // Handle streaming or non-streaming (move request into streaming path to avoid copy)
-    if (request.stream) {
-        handle_streaming(std::move(request), req, std::move(callback));
-    } else {
-        handle_non_streaming(request, std::move(callback));
-    }
-}
-
-Json::Value LLMController::chat_error_json(const std::string& message, const std::string& type,
+Json::Value LLMController::error_json(const std::string& message, const std::string& type,
     const Json::Value& param, const Json::Value& code) {
     Json::Value error;
     error["object"] = "error";
@@ -108,14 +62,72 @@ Json::Value LLMController::chat_error_json(const std::string& message, const std
     return error;
 }
 
-void LLMController::chat_completions(
+void LLMController::completions(
     const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+
+    ZoneScopedN("API::completions");
 
     auto json = req->getJsonObject();
     if (!json) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            chat_error_json("Invalid JSON body", "invalid_request_error"));
+            error_json("Invalid JSON body", "invalid_request_error"));
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    domain::CompletionRequest request;
+    try {
+        request = domain::CompletionRequest::fromJson(*json);
+        request.task_id = generate_completion_id();
+    } catch (const std::exception& e) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    if (!service_->is_model_ready()) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json("Model is not ready", "service_unavailable"));
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
+
+    if (request.stream) {
+        handle_streaming(std::move(request), std::move(callback), false);
+    } else {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto response = service_->submit_request(std::move(request));
+        auto end_time = std::chrono::high_resolution_clock::now();
+
+        response.id = "cmpl-" + response.id;
+
+        // Add timing metrics to non-streaming response
+        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
+            response.usage.ttft_ms = static_cast<double>(total_duration.count());
+            if (response.usage.completion_tokens > 1) {
+                response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
+            }
+        }
+
+        callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
+    }
+}
+
+void LLMController::chat_completions(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+    ZoneScopedN("API::chat_completions");
+
+    auto json = req->getJsonObject();
+    if (!json) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json("Invalid JSON body", "invalid_request_error"));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
@@ -124,10 +136,10 @@ void LLMController::chat_completions(
     domain::ChatCompletionRequest chat_req;
     try {
         chat_req = domain::ChatCompletionRequest::fromJson(*json);
-        chat_req.task_id = generate_completion_id().substr(5); // Remove "cmpl-" prefix
+        chat_req.task_id = generate_completion_id();
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            chat_error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
+            error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
@@ -135,7 +147,8 @@ void LLMController::chat_completions(
 
     if (chat_req.messages.empty()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            chat_error_json("messages is required and must be a non-empty array", "invalid_request_error", Json::Value("messages")));
+            error_json("messages is required and must be a non-empty array",
+                "invalid_request_error", Json::Value("messages")));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;
@@ -143,96 +156,59 @@ void LLMController::chat_completions(
 
     if (!service_->is_model_ready()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            chat_error_json("Model is not ready", "service_unavailable"));
+            error_json("Model is not ready", "service_unavailable"));
         resp->setStatusCode(drogon::k503ServiceUnavailable);
         callback(resp);
         return;
     }
 
-    // Convert chat request to completion request (messages -> prompt via chat template)
     domain::CompletionRequest request = chat_req.to_completion_request();
+
     if (request.stream) {
-        handle_chat_streaming(std::move(request), req, std::move(callback));
+        handle_streaming(std::move(request), std::move(callback), true);
     } else {
-        handle_chat_non_streaming(request, std::move(callback));
-    }
-}
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto completion = service_->submit_request(std::move(request));
+        auto end_time = std::chrono::high_resolution_clock::now();
 
-void LLMController::run_async_completion(
-    const domain::CompletionRequest& request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    ResponseFormatter formatter) {
+        completion.id = "chatcmpl-" + completion.id;
 
-    auto future = service_->process_request(request);
-    trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-    if (!loop) {
-        Json::Value err;
-        err["error"]["message"] = "No event loop";
-        err["error"]["type"] = "internal_error";
-        callback(drogon::HttpResponse::newHttpJsonResponse(err));
-        return;
-    }
-
-    std::thread([future = std::move(future), callback = std::move(callback), formatter = std::move(formatter), loop]() mutable {
-        try {
-            if (future.wait_for(std::chrono::seconds(30)) == std::future_status::timeout) {
-                Json::Value err;
-                err["error"]["message"] = "Request timeout";
-                err["error"]["type"] = "timeout";
-                auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
-                resp->setStatusCode(drogon::k504GatewayTimeout);
-                loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
-                return;
+        // Add timing metrics to non-streaming response
+        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
+            completion.usage.ttft_ms = static_cast<double>(total_duration.count());
+            if (completion.usage.completion_tokens > 1) {
+                completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
             }
-            Json::Value json = formatter(future.get());
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(json);
-            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
-        } catch (...) {
-            Json::Value err;
-            err["error"]["type"] = "internal_error";
-            try { std::rethrow_exception(std::current_exception()); } catch (const std::exception& e) { err["error"]["message"] = e.what(); } catch (...) { err["error"]["message"] = "Unknown error"; }
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
-            resp->setStatusCode(drogon::k500InternalServerError);
-            loop->queueInLoop([callback = std::move(callback), resp]() { callback(resp); });
         }
-    }).detach();
+
+        auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
+        callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
+    }
 }
 
-void LLMController::handle_non_streaming(
-    const domain::CompletionRequest& request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-    run_async_completion(request, std::move(callback), [](const domain::CompletionResponse& r) { return r.toJson(); });
-}
-
-void LLMController::handle_chat_non_streaming(
-    const domain::CompletionRequest& request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-    run_async_completion(request, std::move(callback), [](const domain::CompletionResponse& r) {
-        return domain::ChatCompletionResponse::fromCompletionResponse(r).toJson();
-    });
-}
-
-void LLMController::handle_chat_streaming(
+void LLMController::handle_streaming(
     domain::CompletionRequest request,
-    const drogon::HttpRequestPtr&,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    bool is_chat) const {
 
+    ZoneScopedN("API::handle_streaming");
+
+    const std::string completion_id =
+        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
+    const std::string model = request.model.value_or("default");
     const int64_t created = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
-    const std::string completion_id = "chatcmpl-" + request.task_id;
-    const std::string model = request.model.value_or("test-model");
 
-    // Extract stream options before moving request
-    const bool include_usage = request.stream_options.has_value()
-        && request.stream_options->include_usage;
+    const bool include_usage = !request.stream_options.has_value()
+        || request.stream_options->include_usage;  // Default to true if not specified
     const bool continuous_usage = request.stream_options.has_value()
         && request.stream_options->continuous_usage_stats;
 
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req = std::move(request), completion_id, model, created,
-         include_usage, continuous_usage](
+         is_chat, include_usage, continuous_usage](
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
@@ -240,146 +216,118 @@ void LLMController::handle_chat_streaming(
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
             auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
-            // Send initial role-only chunk before content generation starts
-            {
+            // Timing metrics for TTFT and TPS calculation
+            auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
+                std::chrono::high_resolution_clock::now());
+            auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
+            auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
+
+            if (is_chat) {
                 std::optional<domain::CompletionUsage> initial_usage;
                 if (continuous_usage) {
-                    initial_usage = domain::CompletionUsage{0, 0, 0};
+                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
                 }
                 auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
                     completion_id, model, created, initial_usage);
                 if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
             }
 
-            service_->process_streaming_request(
+            service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
-                 completion_tokens, continuous_usage](
-                    const domain::StreamingChunkResponse& chunk) {
-                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
-                        completion_tokens->fetch_add(1);
+                 is_chat, include_usage, continuous_usage, completion_tokens,
+                 start_time, first_token_time, second_token_time](
+                    const domain::StreamingChunkResponse& chunk, bool is_final) {
+                    if (done->load() || !*stream_ptr) {
+                        return;
+                    }
+                    if (!chunk.choices.empty()) {
+                        const int current_tokens = completion_tokens->fetch_add(1) + 1;
 
-                        std::optional<domain::CompletionUsage> usage;
-                        if (continuous_usage) {
-                            int tokens = completion_tokens->load();
-                            usage = domain::CompletionUsage{0, tokens, tokens};
+                        // Record timing for TTFT and TPS calculation
+                        auto now = std::chrono::high_resolution_clock::now();
+                        if (!first_token_time->has_value()) {
+                            *first_token_time = now;
+                        } else if (current_tokens == 2 && !second_token_time->has_value()) {
+                            *second_token_time = now;
                         }
 
-                        auto chat_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-                            completion_id, model, created, chunk.choices[0], usage);
-
-                        std::string sse = chat_chunk.toSSE();
-                        loop->queueInLoop([stream_ptr, sse]() {
-                            if (*stream_ptr) (*stream_ptr)->send(sse);
-                        });
-                    }
-                },
-                [loop, stream_ptr, done, include_usage,
-                 completion_id, model, created, completion_tokens]() {
-                    loop->queueInLoop(
-                        [stream_ptr, done, include_usage,
-                         completion_id, model, created, completion_tokens]() {
-                        if (!done->exchange(true) && *stream_ptr) {
-                            if (include_usage) {
-                                int tokens = completion_tokens->load();
-                                domain::CompletionUsage usage{0, tokens, tokens};
-                                auto usage_chunk = domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                    completion_id, model, created, usage);
-                                (*stream_ptr)->send(usage_chunk.toSSE());
+                        std::string sse;
+                        if (is_chat) {
+                            std::optional<domain::CompletionUsage> usage;
+                            if (continuous_usage) {
+                                // Only send token counts during streaming, timing metrics come with final chunk
+                                usage = domain::CompletionUsage{0, current_tokens, current_tokens, std::nullopt, std::nullopt};
                             }
-
-                            (*stream_ptr)->send("data: [DONE]\n\n");
-                            (*stream_ptr)->close();
-                        }
-                    });
-                });
-        });
-
-    resp->setContentTypeString("text/event-stream");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "keep-alive");
-    resp->addHeader("X-Accel-Buffering", "no");
-
-    callback(resp);
-}
-
-void LLMController::handle_streaming(
-    domain::CompletionRequest request,
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    const int64_t created = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
-    const std::string completion_id = "cmpl-" + request.task_id;
-    const std::string model = request.model.value_or("test-model");
-    const std::string task_id = request.task_id;
-
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created, task_id](
-            drogon::ResponseStreamPtr stream) mutable {
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-
-            // Reusable RapidJSON envelope: build once, update only choices[0] per chunk (shared for copyable lambda)
-            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
-            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
-            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
-            envelope->AddMember("object", "text_completion", a);
-            envelope->AddMember("created", static_cast<int64_t>(created), a);
-            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
-            rapidjson::Value choices(rapidjson::kArrayType);
-            rapidjson::Value choice(rapidjson::kObjectType);
-            choice.AddMember("text", rapidjson::Value("", a).Move(), a);
-            choice.AddMember("index", 0, a);
-            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
-            choices.PushBack(choice.Move(), a);
-            envelope->AddMember("choices", choices.Move(), a);
-
-            service_->process_streaming_request(
-                std::move(req),
-                // Chunk callback - serialize with RapidJSON and send immediately
-                [stream_ptr, done, envelope](
-                    const domain::StreamingChunkResponse& chunk) {
-                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
-                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
-                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
-                            return;
-                        }
-                        rapidjson::Value& choice = (*envelope)["choices"][0];
-                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
-                        choice["text"].SetString(
-                            chunk.choices[0].text.c_str(),
-                            static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
-                            alloc);
-                        choice["index"].SetInt(chunk.choices[0].index);
-                        if (chunk.choices[0].finish_reason.has_value()) {
-                            choice["finish_reason"].SetString(
-                                chunk.choices[0].finish_reason->c_str(),
-                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
-                                alloc);
-                        } else {
-                            choice["finish_reason"].SetNull();
+                            sse = domain::ChatCompletionStreamChunk::makeContentChunk(
+                                completion_id, model, created, chunk.choices[0], usage).toSSE();
+                        } else if (!chunk.choices[0].text.empty() ||
+                                   !chunk.choices[0].finish_reason.has_value()) {
+                            domain::StreamingChunkResponse out;
+                            out.id = completion_id;
+                            out.object = "text_completion";
+                            out.model = model;
+                            out.created = created;
+                            out.choices = chunk.choices;
+                            sse = out.toSSE();
                         }
 
-                        static thread_local rapidjson::StringBuffer buf;
-                        buf.Clear();
-                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-                        envelope->Accept(writer);
-                        std::string sse = "data: ";
-                        sse.append(buf.GetString(), buf.GetSize());
-                        sse.append("\n\n");
-
-                        (*stream_ptr)->send(sse);
+                        if (!sse.empty()) {
+                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                                if (*stream_ptr) (*stream_ptr)->send(sse);
+                            });
+                        }
                     }
-                },
-                // Done callback - send termination and close
-                [stream_ptr, done]() {
-                    if (!done->exchange(true) && *stream_ptr) {
-                        (*stream_ptr)->send("data: [DONE]\n\n");
-                        (*stream_ptr)->close();
+                    if (is_final) {
+                        loop->queueInLoop(
+                            [stream_ptr, done, is_chat, include_usage,
+                             completion_id, model, created, completion_tokens,
+                             start_time, first_token_time, second_token_time]() {
+                                if (!done->exchange(true) && *stream_ptr) {
+                                    if (include_usage) {
+                                        const int tokens = completion_tokens->load();
+                                        domain::CompletionUsage usage{0, tokens, tokens, std::nullopt, std::nullopt};
+
+                                        // Calculate final timing metrics
+                                        if (first_token_time->has_value()) {
+                                            auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                first_token_time->value() - *start_time);
+                                            usage.ttft_ms = std::round(static_cast<double>(ttft_duration.count()) / 10.0) / 100.0;
+                                        }
+
+                                        if (tokens > 1) {
+                                            auto final_time = std::chrono::high_resolution_clock::now();
+                                            auto base_time = second_token_time->has_value() ?
+                                                second_token_time->value() : first_token_time->value();
+                                            auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                final_time - base_time);
+                                            if (total_duration.count() > 0) {
+                                                auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
+                                                usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
+                                                std::cout << "[DEBUG] Final TPS: " << usage.tps.value() << " tokens/sec" << std::endl;
+                                            }
+                                        }
+
+                                        if (is_chat) {
+                                            (*stream_ptr)->send(
+                                                domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                                    completion_id, model, created, usage).toSSE());
+                                        } else {
+                                            // For text completions, we need to send a usage chunk
+                                            // The format should be similar but for text_completion object
+                                            domain::StreamingChunkResponse usage_chunk;
+                                            usage_chunk.id = completion_id;
+                                            usage_chunk.object = "text_completion";
+                                            usage_chunk.model = model;
+                                            usage_chunk.created = created;
+                                            usage_chunk.usage = usage;
+                                            (*stream_ptr)->send(usage_chunk.toSSE());
+                                        }
+                                    }
+                                    (*stream_ptr)->send("data: [DONE]\n\n");
+                                    (*stream_ptr)->close();
+                                }
+                            });
                     }
                 });
         });
@@ -389,152 +337,6 @@ void LLMController::handle_streaming(
     resp->addHeader("Connection", "keep-alive");
     resp->addHeader("X-Accel-Buffering", "no");
 
-    callback(resp);
-}
-
-void LLMController::handle_streaming_buffered(
-    domain::CompletionRequest request,
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    const int64_t created = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
-    const std::string completion_id = "cmpl-" + request.task_id;
-    const std::string model = request.model.value_or("test-model");
-
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created](
-            drogon::ResponseStreamPtr stream) mutable {
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-
-            auto envelope = std::make_shared<rapidjson::Document>(rapidjson::kObjectType);
-            rapidjson::Document::AllocatorType& a = envelope->GetAllocator();
-            envelope->AddMember("id", rapidjson::Value(completion_id.c_str(), a).Move(), a);
-            envelope->AddMember("object", "text_completion", a);
-            envelope->AddMember("created", static_cast<int64_t>(created), a);
-            envelope->AddMember("model", rapidjson::Value(model.c_str(), a).Move(), a);
-            rapidjson::Value choices(rapidjson::kArrayType);
-            rapidjson::Value choice(rapidjson::kObjectType);
-            choice.AddMember("text", rapidjson::Value("", a).Move(), a);
-            choice.AddMember("index", 0, a);
-            choice.AddMember("finish_reason", rapidjson::Value(rapidjson::kNullType), a);
-            choices.PushBack(choice.Move(), a);
-            envelope->AddMember("choices", choices.Move(), a);
-
-            // 32KB write buffer to reduce syscalls for high-throughput scenarios
-            auto buffer = std::make_shared<std::string>();
-            buffer->reserve(64 * 1024);
-            auto buffer_mutex = std::make_shared<std::mutex>();
-            static constexpr size_t FLUSH_THRESHOLD = 32 * 1024;
-
-            service_->process_streaming_request(
-                std::move(req),
-                [stream_ptr, done, envelope, buffer, buffer_mutex](                    const domain::StreamingChunkResponse& chunk) {
-                    if (!done->load() && *stream_ptr && !chunk.choices.empty()) {
-                        // Skip sending final empty chunk as SSE data (client counts content tokens only)
-                        if (chunk.choices[0].text.empty() && chunk.choices[0].finish_reason.has_value()) {
-                            return;
-                        }
-                        rapidjson::Value& choice = (*envelope)["choices"][0];
-                        rapidjson::Document::AllocatorType& alloc = envelope->GetAllocator();
-                        choice["text"].SetString(
-                            chunk.choices[0].text.c_str(),
-                            static_cast<rapidjson::SizeType>(chunk.choices[0].text.size()),
-                            alloc);
-                        choice["index"].SetInt(chunk.choices[0].index);
-                        if (chunk.choices[0].finish_reason.has_value()) {
-                            choice["finish_reason"].SetString(
-                                chunk.choices[0].finish_reason->c_str(),
-                                static_cast<rapidjson::SizeType>(chunk.choices[0].finish_reason->size()),
-                                alloc);
-                        } else {
-                            choice["finish_reason"].SetNull();
-                        }
-
-                        static thread_local rapidjson::StringBuffer buf;
-                        buf.Clear();
-                        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-                        envelope->Accept(writer);
-                        std::string sse = "data: ";
-                        sse.append(buf.GetString(), buf.GetSize());
-                        sse.append("\n\n");
-
-                        std::lock_guard<std::mutex> lock(*buffer_mutex);
-                        buffer->append(sse);
-
-                        if (buffer->size() >= FLUSH_THRESHOLD) {
-                            (*stream_ptr)->send(*buffer);
-                            buffer->clear();
-                        }
-                    }
-                },
-                [stream_ptr, done, buffer, buffer_mutex]() {
-                    if (!done->exchange(true) && *stream_ptr) {
-                        std::lock_guard<std::mutex> lock(*buffer_mutex);
-                        if (!buffer->empty()) {
-                            (*stream_ptr)->send(*buffer);
-                            buffer->clear();
-                        }
-                        (*stream_ptr)->send("data: [DONE]\n\n");
-                        (*stream_ptr)->close();
-                    }
-                });
-        });
-
-    resp->setContentTypeString("text/event-stream");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "keep-alive");
-    resp->addHeader("X-Accel-Buffering", "no");
-
-    callback(resp);
-}
-
-void LLMController::health(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    Json::Value response;
-    response["status"] = "healthy";
-    response["timestamp"] = static_cast<Json::Int64>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    callback(resp);
-}
-
-void LLMController::ready(
-    const drogon::HttpRequestPtr& /* req */,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-
-    auto status = service_->get_system_status();
-
-    Json::Value response;
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
-    response["device"] = status.device;
-
-    Json::Value workers(Json::arrayValue);
-    for (const auto& worker : status.worker_info) {
-        Json::Value w;
-        w["worker_id"] = worker.worker_id;
-        w["is_ready"] = worker.is_ready;
-        w["processed_requests"] = static_cast<Json::UInt64>(worker.processed_requests);
-        workers.append(w);
-    }
-    response["workers"] = workers;
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    if (!status.model_ready) {
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-    }
     callback(resp);
 }
 

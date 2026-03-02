@@ -5,6 +5,7 @@
 from config.constants import ModelRunners
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.logger import TTLogger
 
 AVAILABLE_RUNNERS = {
     ModelRunners.TT_SDXL_TRACE: lambda wid: __import__(
@@ -62,6 +63,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
     ).VLLMForgeEmbeddingQwenRunner(wid),
+    ModelRunners.VLLMForge_LLAMA_70B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_llama_70b",
+        fromlist=["VLLMForgeLlama70BRunner"],
+    ).VLLMForgeLlama70BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),
@@ -97,10 +102,18 @@ AVAILABLE_RUNNERS = {
 
 
 def get_device_runner(worker_id: str) -> BaseDeviceRunner:
+    _logger = TTLogger()
     model_runner = settings.model_runner
+    _logger.info(
+        f"get_device_runner: worker_id={worker_id!r}, model_runner={model_runner!r}"
+    )
     try:
         model_runner_enum = ModelRunners(model_runner)
-        return AVAILABLE_RUNNERS[model_runner_enum](worker_id)
+        runner = AVAILABLE_RUNNERS[model_runner_enum](worker_id)
+        _logger.info(
+            f"get_device_runner: created {type(runner).__name__} for worker {worker_id}"
+        )
+        return runner
     except ValueError:
         raise ValueError(f"Unknown model runner: {model_runner}")
     except KeyError:

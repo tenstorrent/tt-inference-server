@@ -3,55 +3,14 @@
 
 #pragma once
 
-#include <string>
 #include <optional>
+#include <string>
 #include <json/json.h>
 
+#include "domain/base_response.hpp"
+#include "utils/json_escape.hpp"
+
 namespace tt::domain {
-
-/**
- * Represents a single streaming chunk from the completion.
- */
-struct CompletionStreamChunk {
-    std::string text;
-    std::optional<int> index;
-    std::optional<std::string> finish_reason;
-
-    Json::Value toJson() const {
-        Json::Value json;
-        json["text"] = text;
-        if (index.has_value()) {
-            json["index"] = index.value();
-        } else {
-            json["index"] = Json::nullValue;
-        }
-        if (finish_reason.has_value()) {
-            json["finish_reason"] = finish_reason.value();
-        } else {
-            json["finish_reason"] = Json::nullValue;
-        }
-        return json;
-    }
-};
-
-/**
- * Output yielded during streaming generation.
- */
-struct StreamingChunkOutput {
-    static constexpr const char* TYPE = "streaming_chunk";
-    CompletionStreamChunk chunk;
-    std::string task_id;
-};
-
-/**
- * Final output yielded at the end of streaming generation.
- */
-struct FinalResultOutput {
-    static constexpr const char* TYPE = "final_result";
-    CompletionStreamChunk result;
-    std::string task_id;
-    bool return_result;
-};
 
 /**
  * Usage statistics for the completion.
@@ -60,12 +19,20 @@ struct CompletionUsage {
     int prompt_tokens = 0;
     int completion_tokens = 0;
     int total_tokens = 0;
+    std::optional<double> ttft_ms;  // Time to first token in milliseconds
+    std::optional<double> tps;      // Tokens per second (excluding first token)
 
     Json::Value toJson() const {
         Json::Value json;
         json["prompt_tokens"] = prompt_tokens;
         json["completion_tokens"] = completion_tokens;
         json["total_tokens"] = total_tokens;
+        if (ttft_ms.has_value()) {
+            json["ttft_ms"] = ttft_ms.value();
+        }
+        if (tps.has_value()) {
+            json["tps"] = tps.value();
+        }
         return json;
     }
 };
@@ -96,7 +63,7 @@ struct CompletionChoice {
 /**
  * Full OpenAI-compatible completion response.
  */
-struct CompletionResponse {
+struct CompletionResponse: BaseResponse {
     std::string id;
     std::string object = "text_completion";
     int64_t created;
@@ -131,13 +98,14 @@ struct CompletionResponse {
 /**
  * Streaming chunk response (SSE format).
  */
-struct StreamingChunkResponse {
+struct StreamingChunkResponse: BaseResponse {
     std::string id;
     std::string object = "text_completion";
     int64_t created;
     std::string model;
     std::vector<CompletionChoice> choices;
     std::optional<std::string> error;  // Error message if any
+    std::optional<CompletionUsage> usage;
 
     Json::Value toJson() const {
         Json::Value json;
@@ -156,6 +124,10 @@ struct StreamingChunkResponse {
             json["error"] = error.value();
         }
 
+        if (usage.has_value()) {
+            json["usage"] = usage->toJson();
+        }
+
         return json;
     }
 
@@ -168,7 +140,7 @@ struct StreamingChunkResponse {
     // Fast SSE serialization - avoids Json::Value allocation overhead
     std::string toSSE() const {
         std::string result;
-        result.reserve(256);  // Pre-allocate typical size
+        result.reserve(512);
 
         result.append("data: {\"id\":\"");
         result.append(id);
@@ -183,7 +155,7 @@ struct StreamingChunkResponse {
         for (size_t i = 0; i < choices.size(); ++i) {
             if (i > 0) result.append(",");
             result.append("{\"text\":\"");
-            result.append(choices[i].text);
+            result.append(tt::utils::json_escape(choices[i].text));
             result.append("\",\"index\":");
             result.append(std::to_string(choices[i].index));
             result.append(",\"logprobs\":null,\"finish_reason\":");
@@ -197,7 +169,31 @@ struct StreamingChunkResponse {
             result.append("}");
         }
 
-        result.append("]}\n\n");
+        result.append("]");
+
+        // Add usage data if present
+        if (usage.has_value()) {
+            result.append(",\"usage\":{\"prompt_tokens\":");
+            result.append(std::to_string(usage->prompt_tokens));
+            result.append(",\"completion_tokens\":");
+            result.append(std::to_string(usage->completion_tokens));
+            result.append(",\"total_tokens\":");
+            result.append(std::to_string(usage->total_tokens));
+
+            if (usage->ttft_ms.has_value()) {
+                result.append(",\"ttft_ms\":");
+                result.append(std::to_string(usage->ttft_ms.value()));
+            }
+
+            if (usage->tps.has_value()) {
+                result.append(",\"tps\":");
+                result.append(std::to_string(usage->tps.value()));
+            }
+
+            result.append("}");
+        }
+
+        result.append("}\n\n");
         return result;
     }
 };

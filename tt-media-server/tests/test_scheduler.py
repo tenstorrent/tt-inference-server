@@ -105,10 +105,13 @@ class TestScheduler:
     def scheduler(self, mock_queues, mock_locks):
         """Create a scheduler instance with mocked components"""
         warmup_signals_queue, task_queue, result_queue, error_queue = mock_queues
+        mock_logger.reset_mock()
 
         with patch("multiprocessing.Queue") as mock_queue_constructor, patch(
             "threading.Lock"
-        ) as mock_lock_constructor:
+        ) as mock_lock_constructor, patch(
+            "model_services.scheduler.TTLogger", return_value=mock_logger
+        ):
             mock_queue_constructor.side_effect = [
                 warmup_signals_queue,
                 task_queue,
@@ -139,8 +142,8 @@ class TestScheduler:
         assert scheduler.monitor_running
         assert scheduler.result_queues == {}
 
-        # Verify logger was initialized
-        mock_logger.info.assert_not_called()  # No logs yet
+        # Verify logger was used during init (_calculate_worker_count logs)
+        assert mock_logger.info.call_count >= 1
 
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
@@ -458,6 +461,7 @@ class TestSchedulerResultListener:
     @pytest.fixture
     def scheduler_for_listener(self):
         """Create scheduler instance for listener tests"""
+        mock_logger.reset_mock()
         mock_settings_listener = Mock()
         mock_settings_listener.device_ids = "(0)"
         mock_settings_listener.max_queue_size = 10
@@ -468,7 +472,7 @@ class TestSchedulerResultListener:
 
         with patch(
             "model_services.scheduler.get_settings", return_value=mock_settings_listener
-        ):
+        ), patch("model_services.scheduler.TTLogger", return_value=mock_logger):
             scheduler = Scheduler()
             return scheduler
 

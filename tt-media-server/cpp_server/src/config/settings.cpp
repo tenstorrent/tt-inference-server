@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
+#include "runners/llm_runner/config.hpp"
 
 #include <cstdlib>
 #include <cstddef>
@@ -80,6 +81,10 @@ bool is_llm_service_enabled() {
     return model_service() == ModelService::LLM;
 }
 
+std::string runner_type() {
+    return to_string(model_service());
+}
+
 size_t num_workers() {
     return device_ids_parsed().size();
 }
@@ -96,9 +101,6 @@ std::string python_path() {
     return env_string("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
 }
 
-RunnerType runner_type() {
-    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
-}
 
 static std::filesystem::path tokenizers_dir() {
     std::error_code ec;
@@ -132,6 +134,32 @@ std::string visible_devices_for_worker(size_t worker_index) {
     const auto& ids = device_ids_parsed();
     if (worker_index < ids.size()) return ids[worker_index];
     return "";
+}
+
+llm_engine::Config llm_engine_config() {
+    llm_engine::Config cfg;
+    const char* v = std::getenv("LLM_DEVICE_BACKEND");
+    if (v) {
+        std::string s(v);
+        if (s == "sockets") {
+            cfg.device = llm_engine::DeviceBackend::Sockets;
+        } else {
+            cfg.device = llm_engine::DeviceBackend::Mock;
+        }
+    }
+    return cfg;
+}
+
+SocketRole socket_role() {
+    return socket_role_from_string(env_string("SOCKET_ROLE", defaults::SOCKET_ROLE));
+}
+
+std::string socket_host() {
+    return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
+}
+
+uint16_t socket_port() {
+    return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
 }
 
 }  // namespace tt::config
