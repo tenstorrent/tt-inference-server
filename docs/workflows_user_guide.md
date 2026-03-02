@@ -5,7 +5,7 @@ The `run.py` CLI is the main entry point for running workflows against Tenstorre
 1. **`run.py --docker-server`** -- automates Docker setup, weight downloads, and container launch.
 2. **Direct `docker run`** -- run the container independently with `--model` and `--tt-device`. See the [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run).
 
-Client-side workflows (`benchmarks`, `evals`, `reports`) can run against any compatible OpenAI API server, whether started by `run.py` or externally.
+Client-side workflows (`benchmarks`, `evals`, `reports`) can run against any compatible model server, whether started by `run.py` or externally. For LLMs we use vLLM and the [tt-media-server](../tt-media-server) otherwise.
 
 ```mermaid
 flowchart TD
