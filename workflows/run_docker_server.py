@@ -45,13 +45,15 @@ def get_media_server_docker_env_vars(model_spec):
     Returns:
         Dictionary of media server environment variables
     """
+    service_port = model_spec.cli_args.service_port
     env_vars = {
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
+        "SERVICE_PORT": service_port,
     }
 
     logger.info(
-        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
+        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, SERVICE_PORT={service_port}"
     )
     return env_vars
 
