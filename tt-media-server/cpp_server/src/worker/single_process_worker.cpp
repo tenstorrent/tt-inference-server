@@ -15,19 +15,6 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 
     pid = getpid();
     worker_id = cfg.worker_id;
-
-    on_token_ = [this](const llm_engine::TokenResult& result) {
-        auto token = ipc::SharedToken{
-            .token_index = 0,
-            .flags = static_cast<uint32_t>(result.finished.value_or(false) ? 1 : 0),
-            .token_id = result.token_id,
-            .task_id = {},
-            .padding = {},
-        };
-        strncpy(token.task_id, result.task_id.id.c_str(), sizeof(token.task_id) - 1);
-        token.task_id[sizeof(token.task_id) - 1] = '\0';
-        this->cfg.result_queue->push(token);
-    };
     is_ready = true;
 }
 
@@ -48,7 +35,7 @@ void SingleProcessWorker::start() {
         runner_ = tt::utils::runner_factory::create_runner(
             tt::config::model_service(),
             cfg.runner_config,
-            on_token_,
+            cfg.result_queue.get(),
             cfg.task_queue.get()
         );
     }
