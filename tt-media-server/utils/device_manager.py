@@ -2,30 +2,52 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from __future__ import annotations
-
+import subprocess
 from utils.logger import TTLogger
 
 
 class DeviceManager:
-    def __init__(self) -> None:
+    def __init__(self):
         self.logger = TTLogger()
 
-    def get_tray_mapping_from_system(self) -> dict[int, list[int]]:
-        """Return tray mapping (tray -> list of device IDs). Uses galaxy device discovery (test_system_health)."""
+    def get_tray_mapping_from_system(self):
+        """Execute tt-smi command and return tray mapping dictionary"""
         try:
-            from utils.galaxy_device_discovery import get_tray_mapping_from_discovery
+            # Execute the system command
+            result = subprocess.run(
+                ["tt-smi", "-glx_list_tray_to_device"],
+                capture_output=True,
+                text=True,
+                timeout=30,  # 30 second timeout
+            )
 
-            tray_mapping = get_tray_mapping_from_discovery()
-            self.logger.info(f"Tray mapping from discovery: {tray_mapping}")
+            if result.returncode != 0:
+                self.logger.error(
+                    f"tt-smi command failed with return code {result.returncode}"
+                )
+                self.logger.error(f"stderr: {result.stderr}")
+                return {}
+
+            # Parse the output using existing method
+            tray_mapping = self.parse_tray_mapping(result.stdout)
+            self.logger.info(f"Successfully parsed tray mapping: {tray_mapping}")
             return tray_mapping
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("tt-smi command timed out after 30 seconds")
+            return {}
+        except FileNotFoundError:
+            self.logger.error(
+                "tt-smi command not found. Make sure it's installed and in PATH"
+            )
+            return {}
         except Exception as e:
-            self.logger.error(f"Galaxy device discovery failed: {e}")
+            self.logger.error(f"Error executing tt-smi command: {e}")
             return {}
 
     @staticmethod
-    def parse_tray_mapping(table_text: str) -> dict[int, list[int]]:
-        """(DOVLA IS FIXING)Parse the tray mapping table and return a dictionary of tray -> device IDs"""
+    def parse_tray_mapping(table_text):
+        """Parse the tray mapping table and return a dictionary of tray -> device IDs"""
 
         lines = table_text.strip().split("\n")
         tray_mapping = {}
@@ -60,9 +82,7 @@ class DeviceManager:
 
         return tray_mapping
 
-    def create_device_pairs(
-        self, tray_mapping: dict[int, list[int]]
-    ) -> list[tuple[int, int]]:
+    def create_device_pairs(self, tray_mapping):
         """Create device pairs from tray mapping. Each pair contains adjacent device IDs from the same tray"""
         device_pairs = []
 
@@ -85,22 +105,16 @@ class DeviceManager:
 
         return device_pairs
 
-    def get_device_pairs_from_system(self) -> list[tuple[int, int]]:
-        """Return (chip_id, chip_id) pairs (N1-N2, N3-N4, ... per tray) for TT_VISIBLE_DEVICES from galaxy discovery."""
-        self.logger.info(
-            "Calling galaxy device discovery (test_system_health binary)..."
-        )
-        try:
-            from utils.galaxy_device_discovery import get_device_pairs_from_discovery
-
-            pairs = get_device_pairs_from_discovery()
-            self.logger.info(f"Device pairs from discovery: {pairs}")
-            return pairs
-        except Exception as e:
-            self.logger.error(f"Galaxy device discovery failed: {e}")
+    def get_device_pairs_from_system(self):
+        """Convenience method to get tray mapping and create device pairs in one call"""
+        tray_mapping = self.get_tray_mapping_from_system()
+        if not tray_mapping:
+            self.logger.error("Failed to get tray mapping, cannot create device pairs")
             return []
 
-    def create_single_devices(self, tray_mapping: dict[int, list[int]]) -> list[int]:
+        return self.create_device_pairs(tray_mapping)
+
+    def create_single_devices(self, tray_mapping):
         """Create single devices from tray mapping. Each device is returned as individual integer"""
         single_devices = []
 
@@ -116,7 +130,7 @@ class DeviceManager:
         )
         return single_devices
 
-    def get_single_devices_from_system(self) -> list[int]:
+    def get_single_devices_from_system(self):
         """Convenience method to get tray mapping and create single device tuples in one call"""
         tray_mapping = self.get_tray_mapping_from_system()
         if not tray_mapping:
@@ -127,9 +141,7 @@ class DeviceManager:
 
         return self.create_single_devices(tray_mapping)
 
-    def create_device_groups_of_eight(
-        self, tray_mapping: dict[int, list[int]]
-    ) -> list[tuple[int, ...]]:
+    def create_device_groups_of_eight(self, tray_mapping):
         """Create device groups from tray mapping. Each group contains 8 device IDs from the same tray"""
         device_groups = []
 
@@ -161,16 +173,11 @@ class DeviceManager:
         )
         return device_groups
 
-    def get_device_groups_of_eight_from_system(self) -> list[tuple[int, ...]]:
-        """Return device groups of 8 (N1..N8 per tray) in correct wiring order from galaxy device discovery."""
-        try:
-            from utils.galaxy_device_discovery import (
-                get_device_groups_of_eight_from_discovery,
-            )
-
-            groups = get_device_groups_of_eight_from_discovery()
-            self.logger.info(f"Device groups of 8 from discovery: {groups}")
-            return groups
-        except Exception as e:
-            self.logger.error(f"Galaxy device discovery failed: {e}")
+    def get_device_groups_of_eight_from_system(self):
+        """Convenience method to get tray mapping and create device groups of 8 in one call"""
+        tray_mapping = self.get_tray_mapping_from_system()
+        if not tray_mapping:
+            self.logger.error("Failed to get tray mapping, cannot create device groups")
             return []
+
+        return self.create_device_groups_of_eight(tray_mapping)
