@@ -444,8 +444,8 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 1,
+                "num_prompts": 8,
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 12,
@@ -5161,13 +5161,13 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 1,
+                "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 63,
-                        "tput_user": 33,
-                        "tput": 1056
+                        "ttft_ms": 12,
+                        "tput_user": 158,
+                        "tput": 5056
                     }
                 }
             }
