@@ -195,16 +195,14 @@ The inference server container can be used independently from `run.py` via a dir
 
 ```bash
 docker run \
-  --rm \
-  --device /dev/tenstorrent \
-  --cap-add SYS_NICE \
-  --shm-size 32G \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
   --publish 8000:8000 \
+  --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_tt_transformers-Llama-3.1-8B-Instruct:/home/container_app_user/cache_root \
-  -e HF_TOKEN=$HF_TOKEN \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:latest \
-  --model meta-llama/Llama-3.1-8B-Instruct \
+  --volume volume_id_tt_transformers-Llama-3.2-1B-Instruct:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-84b4c53-222ee06 \
+  --model meta-llama/Llama-3.2-1B-Instruct \
   --tt-device n300
 ```
 
