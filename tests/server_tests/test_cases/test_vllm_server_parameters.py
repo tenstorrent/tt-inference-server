@@ -4,6 +4,7 @@
 
 import asyncio
 import math
+import re
 from collections import Counter
 
 import pytest
@@ -35,6 +36,42 @@ def shannon_entropy(tokens):
         return 0
     counts = Counter(tokens)
     return -sum((c / total) * math.log2(c / total) for c in counts.values())
+
+
+def strip_think_blocks(text):
+    """Remove <think>...</think> blocks from model output."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*", "", text, flags=re.DOTALL)
+    return text.strip()
+
+
+class TestStripThinkBlocks:
+    def test_no_think_block(self):
+        assert strip_think_blocks("Hello, world!") == "Hello, world!"
+
+    def test_single_think_block(self):
+        assert strip_think_blocks("<think>reasoning</think>The answer.") == "The answer."
+
+    def test_multiline_think_block(self):
+        assert strip_think_blocks("<think>line1\nline2</think>\n\nThe answer.") == "The answer."
+
+    def test_multiple_think_blocks(self):
+        assert strip_think_blocks("<think>first</think>middle<think>second</think>end") == "middleend"
+
+    def test_empty_think_block(self):
+        assert strip_think_blocks("<think></think>content") == "content"
+
+    def test_unclosed_think_tag(self):
+        assert strip_think_blocks("<think>never closes") == ""
+
+    def test_unclosed_after_content(self):
+        assert strip_think_blocks("Answer.<think>never closes") == "Answer."
+
+    def test_empty_string(self):
+        assert strip_think_blocks("") == ""
+
+    def test_only_think_block(self):
+        assert strip_think_blocks("<think>all reasoning</think>") == ""
 
 
 # --- Reusable Prompts ---
@@ -264,8 +301,8 @@ def test_penalties(
     response_test = api_client(payload_test, timeout=None)
 
     # Compute baseline and test statistics
-    text_base = response_base["choices"][0]["message"]["content"]
-    text_test = response_test["choices"][0]["message"]["content"]
+    text_base = strip_think_blocks(response_base["choices"][0]["message"]["content"])
+    text_test = strip_think_blocks(response_test["choices"][0]["message"]["content"])
 
     base_stats = repetition_stats(text_base)
     test_stats = repetition_stats(text_test)
