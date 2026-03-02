@@ -2623,9 +2623,9 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
             None,
             None,
         )
-    # TODO: Support handling of multiple test reports
-    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    files = files[0]
+    # When multiple test runs exist, use only the most recent result
+    files = max(files, key=lambda f: Path(f).stat().st_mtime)
+    logger.info(f"Selected most recent test report: {files}")
 
     # generate vLLM parameter coverage report
     markdown_str = generate_vllm_parameter_report(
@@ -2638,8 +2638,11 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     test_dir_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
     )
-    test_dirs = glob(test_dir_path_pattern)
-
+    test_dirs = sorted(
+        glob(test_dir_path_pattern),
+        key=lambda d: Path(d).stat().st_mtime,
+        reverse=True,
+    )
     for test_dir in test_dirs:
         parameter_report_path = Path(test_dir) / "parameter_report.json"
         if parameter_report_path.exists():
