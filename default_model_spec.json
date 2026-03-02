@@ -106,8 +106,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -180,8 +180,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -290,8 +290,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -403,8 +403,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -513,8 +513,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -587,8 +587,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -659,8 +659,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -740,8 +740,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -850,8 +850,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -960,8 +960,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1070,8 +1070,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1149,8 +1149,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1263,8 +1263,8 @@
           ],
           "subdevice_type": "T3K",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -1397,8 +1397,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         },
         "tt_transformers": {
           "model_id": "id_tt-transformers_Qwen3-32B_galaxy",
@@ -1511,8 +1511,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1622,8 +1622,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1702,8 +1702,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1781,8 +1781,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -1892,8 +1892,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -1964,8 +1964,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -2036,8 +2036,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -2149,8 +2149,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -2266,8 +2266,8 @@
           ],
           "subdevice_type": "T3K",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -2346,8 +2346,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -2502,8 +2502,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -2658,8 +2658,8 @@
           ],
           "subdevice_type": "T3K",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -2741,8 +2741,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -2897,8 +2897,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -3053,8 +3053,8 @@
           ],
           "subdevice_type": "T3K",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -3136,8 +3136,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -3249,8 +3249,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -3319,8 +3319,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -3432,8 +3432,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -3502,8 +3502,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -3672,8 +3672,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -3799,8 +3799,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -3920,8 +3920,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -4037,8 +4037,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -4129,8 +4129,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -4299,8 +4299,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -4426,8 +4426,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       },
       "media": {
@@ -4541,8 +4541,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -4662,8 +4662,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -4779,8 +4779,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -4871,8 +4871,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -5041,8 +5041,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -5168,8 +5168,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -5289,8 +5289,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -5406,8 +5406,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -5498,8 +5498,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -5668,8 +5668,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -5795,8 +5795,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -5916,8 +5916,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -6033,8 +6033,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -6125,8 +6125,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -6197,8 +6197,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -6265,8 +6265,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -6333,8 +6333,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -6444,8 +6444,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -6556,8 +6556,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -6667,8 +6667,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -6778,8 +6778,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -6890,8 +6890,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -7001,8 +7001,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -7115,8 +7115,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       },
       "forge": {
@@ -7227,8 +7227,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": false,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -7337,8 +7337,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       },
       "forge": {
@@ -7451,8 +7451,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": false,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -7561,8 +7561,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -7675,8 +7675,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -7785,8 +7785,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -7895,8 +7895,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -8005,8 +8005,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8119,8 +8119,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8271,8 +8271,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8338,8 +8338,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8450,8 +8450,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8558,8 +8558,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8674,8 +8674,8 @@
           ],
           "subdevice_type": "P150",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8796,8 +8796,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -8922,8 +8922,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -9012,8 +9012,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -9122,8 +9122,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9236,8 +9236,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9388,8 +9388,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9455,8 +9455,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9567,8 +9567,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9675,8 +9675,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9791,8 +9791,8 @@
           ],
           "subdevice_type": "P150",
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -9913,8 +9913,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -10039,8 +10039,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     },
@@ -10129,8 +10129,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": true
+          "has_builtin_warmup": true,
+          "cli_args": {}
         }
       }
     }
@@ -10242,8 +10242,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -10322,8 +10322,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -10444,8 +10444,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -10566,8 +10566,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -10688,8 +10688,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -10810,8 +10810,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -10936,8 +10936,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -11025,8 +11025,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -11151,8 +11151,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -11277,8 +11277,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -11366,8 +11366,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -11492,8 +11492,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -11569,8 +11569,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -11681,8 +11681,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -11793,8 +11793,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -11905,8 +11905,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -12021,8 +12021,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12135,8 +12135,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12253,8 +12253,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12366,8 +12366,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -12477,8 +12477,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12590,8 +12590,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -12701,8 +12701,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12816,8 +12816,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -12931,8 +12931,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -13043,8 +13043,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13151,8 +13151,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13224,8 +13224,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13336,8 +13336,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13448,8 +13448,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -13560,8 +13560,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13668,8 +13668,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13741,8 +13741,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13853,8 +13853,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -13965,8 +13965,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -14075,8 +14075,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14185,8 +14185,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14295,8 +14295,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14403,8 +14403,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -14513,8 +14513,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14623,8 +14623,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14733,8 +14733,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -14841,8 +14841,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -14953,8 +14953,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15061,8 +15061,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -15171,8 +15171,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15242,8 +15242,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15313,8 +15313,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15382,8 +15382,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -15494,8 +15494,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15602,8 +15602,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15710,8 +15710,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15818,8 +15818,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -15926,8 +15926,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16034,8 +16034,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -16146,8 +16146,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16254,8 +16254,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16362,8 +16362,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16470,8 +16470,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16578,8 +16578,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16686,8 +16686,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -16798,8 +16798,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -16906,8 +16906,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17014,8 +17014,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17083,8 +17083,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -17158,8 +17158,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17227,8 +17227,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -17302,8 +17302,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17371,8 +17371,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -17481,8 +17481,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17589,8 +17589,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17699,8 +17699,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -17809,8 +17809,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -17917,8 +17917,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18027,8 +18027,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -18137,8 +18137,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18247,8 +18247,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -18369,8 +18369,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18491,8 +18491,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18613,8 +18613,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18735,8 +18735,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -18853,8 +18853,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -18971,8 +18971,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19089,8 +19089,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19205,8 +19205,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -19327,8 +19327,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19449,8 +19449,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19571,8 +19571,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19691,8 +19691,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -19807,8 +19807,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": false,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -19923,8 +19923,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": false,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -20033,8 +20033,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -20143,8 +20143,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -20253,8 +20253,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -20363,8 +20363,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -20473,8 +20473,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -20583,8 +20583,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -20693,8 +20693,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -20803,8 +20803,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -20913,8 +20913,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -21023,8 +21023,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -21133,8 +21133,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -21243,8 +21243,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
@@ -21353,8 +21353,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     },
@@ -21463,8 +21463,8 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "cli_args": {},
-          "has_builtin_warmup": false
+          "has_builtin_warmup": false,
+          "cli_args": {}
         }
       }
     }
