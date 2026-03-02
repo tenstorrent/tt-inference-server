@@ -4,4 +4,4 @@
 
 # Start the C++ server
 cd cpp_server/build
-./tt_media_server_cpp -p 8000
+./tt_media_server_cpp -p "${SERVICE_PORT:-8000}"
