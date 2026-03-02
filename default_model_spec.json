@@ -6518,8 +6518,7 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}",
-              "num_scheduler_steps": null
+              "override_tt_config": "{}"
             },
             "override_tt_config": {},
             "env_vars": {
@@ -6852,8 +6851,7 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}",
-              "num_scheduler_steps": null
+              "override_tt_config": "{}"
             },
             "override_tt_config": {},
             "env_vars": {
