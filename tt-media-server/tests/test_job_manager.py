@@ -1284,6 +1284,7 @@ class TestJobManager:
     # ------------------------------------------------------------------------------------------------
     # metrics-related tests
     def test_insert_metric_duplicate_raises_exception(self, job_manager):
+        """Test that inserting a metric with the same primary key raises an exception."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return
@@ -1293,7 +1294,7 @@ class TestJobManager:
             job_manager.db.insert_metric(job_id="job-1", global_step=10, epoch=1, metric_name="loss", value=0.9, timestamp=2000)
 
     @pytest.mark.asyncio
-    async def test_get_training_metrics_returns_list(self, job_manager, mock_request):
+    async def test_get_training_metrics_returns_correct_list(self, job_manager, mock_request):
         metrics_list = [{"global_step": 1, "epoch": 1, "metric_name": "loss", "value": 0.5, "timestamp": 1000}]
         training_ctx = TrainingJobContext(
             start_event=Event(), cancel_event=Event(), training_metrics=metrics_list,
@@ -1311,11 +1312,10 @@ class TestJobManager:
 
         result = job_manager.get_training_metrics("train-1")
         assert result is metrics_list
-        assert len(result) == 1
-        assert result[0]["metric_name"] == "loss"
 
     @pytest.mark.asyncio
     async def test_persist_metrics_to_db(self, job_manager, mock_request):
+        """Test that persisting metrics to the database works correctly."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return
@@ -1356,7 +1356,7 @@ class TestJobManager:
     
     @pytest.mark.asyncio
     async def test_restore_training_job_restores_metrics(self, job_manager):
-        """insert_metric → restore → get_training_metrics full round-trip."""
+        """Test the full workflow from insert_metric, over restore, toget_training_metrics."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return
