@@ -489,10 +489,11 @@ class JobManager:
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
             training_ctx = job._training_context
-            if training_ctx and training_ctx.cancel_event:
+            if training_ctx and training_ctx.cancel_event and not force:
                 # runner handles cancellation
                 training_ctx.cancel_event.set()
-            if force:
+            else:
+                # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
             running_task = job._task
 
