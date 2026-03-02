@@ -24,8 +24,11 @@ flowchart TD
 - `benchmarks`: Send random data prompts to the inference server, profile throughput and latency.
 - `evals`: Send evaluation dataset prompts to the inference server, score output for accuracy.
 - `reports`: Generate summary reports from `benchmarks` and `evals` output data.
-- `release`: Run `benchmarks`, `evals`, and `reports` in sequence for release certification.
+- `release`: Run `evals`, `benchmarks`, `spec_tests`, `tests`, and `reports` in sequence for release certification.
 - `server`: Start the inference server only (requires `--docker-server`).
+- `spec_tests` (internal): Run server integration tests (device liveness, load tests) against the inference server.
+- `stress_tests` (internal): Run sustained load tests to measure server stability and throughput.
+- `tests` (internal): Run pytest-based vLLM API parameter tests against the inference server (model-dependent).
 
 For example, start the vLLM server in a Docker container and run client-side benchmarks against it:
 
@@ -57,6 +60,9 @@ python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchma
   - [Benchmarking Steps](#benchmarking-steps)
 - [Accuracy Evaluations](#accuracy-evaluations)
 - [Reports](#reports)
+- [Server Spec Tests](#server-spec-tests)
+- [API Parameter Tests](#api-parameter-tests)
+- [Stress Tests](#stress-tests)
 - [Logs](#logs)
 - [Additional Documentation](#additional-documentation)
 
@@ -89,7 +95,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 | Option         | Description                                                                                  |
 |----------------|----------------------------------------------------------------------------------------------|
 | `--model`      | Name of the model to run. Available choices are defined in `MODEL_SPECS`. |
-| `--workflow`   | Workflow to run: `benchmarks`, `evals`, `release`, `reports`, `server`, `tests`. |
+| `--workflow`   | Workflow to run: `benchmarks`, `evals`, `release`, `reports`, `server`, `spec_tests` (internal), `stress_tests` (internal), `tests` (internal). |
 
 ### Model and Device Arguments
 
@@ -251,10 +257,11 @@ The Model Name -> Docker Image mapping is in the main repo README.md LLMs table:
 ## Release Workflow
 
 For the same model-device combination, the `release` workflow runs in sequence:
-1. `benchmarks` workflow
-2. `evals` workflow
-3. `tests` workflow
-4. `reports` workflow
+1. `evals` workflow
+2. `benchmarks` workflow
+3. `spec_tests` workflow
+4. `tests` workflow (only for models with entries in `tests/test_config.py`)
+5. `reports` workflow
 
 This is a convenience so that a single run on device executes all workflows required to certify a model implementation on Tenstorrent hardware is working correctly and ready for release.
 
@@ -316,6 +323,50 @@ This report summarizes metrics and uses defined tolerance thresholds to determin
 
 See [Logs](#logs) section below for example format of the report files generated.
 
+## Server Spec Tests
+
+> **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
+
+The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `tests/server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `ImageGenerationLoadTest`) are loaded dynamically and executed via `tests/server_tests/run.py`.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
+```
+
+Each test case entry in `server_tests_config.json` specifies:
+- `name` / `module`: the test class and its Python module path.
+- `enabled`: set to `false` to skip a test case.
+- `test_config`: execution settings — `test_timeout`, `retry_attempts`, `retry_delay`, `break_on_failure`, `mock_mode`.
+- `targets`: test-specific numerical thresholds (e.g. `image_generation_time`, `num_of_devices`).
+
+Output is written as JSON and Markdown reports to `workflow_logs/spec_tests_output/`.
+
+## API Parameter Tests
+
+> **Internal workflow.** `tests` is used for release validation and CI. It requires a running inference server. Not all models have test entries defined.
+
+The `tests` workflow runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, and penalty parameters). Model support is defined in `tests/test_config.py` (`TEST_CONFIGS`); models not listed there will skip this workflow.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow tests
+```
+
+The run script (`tests/run_tests.py`) iterates over `TestTask` entries for the model, invoking `pytest` with `-s -v` on `tests/server_tests/test_cases/test_vllm_server_parameters.py`.
+
+Output is written to `workflow_logs/tests_output/`.
+
+## Stress Tests
+
+> **Internal workflow.** `stress_tests` is used for release validation and CI. It requires a running inference server.
+
+The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `stress_tests/run_stress_tests.py`.
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests
+```
+
+Output is written to `workflow_logs/stress_tests_output/`.
+
 ## Logs
 
 Log types:
@@ -325,6 +376,9 @@ Log types:
 - **benchmarks_output**: the raw data output from the `benchmarks` workflow.
 - **evals_output**: the raw data output from the `evals` workflow.
 - **reports_output**: for each workflow, the markdown (.md) summary output and `/data` summary data. The `release` workflow output has a summary report of both `benchmarks` and `evals` results, used to determine if a model passes release validation. An example report: https://github.com/tenstorrent/tt-inference-server/issues/164.
+- **spec_tests_output**: JSON and Markdown test reports from the `spec_tests` workflow.
+- **tests_output**: pytest result output from the `tests` workflow.
+- **stress_tests_output**: result data from the `stress_tests` workflow.
 
 In this example for:
 - `model_name` := Llama-3.2-1B-Instruct
@@ -357,8 +411,15 @@ The logs have the following structure:
 │       ├── data
 │       │   └── report_data_Llama-3.2-1B-Instruct_n300.json
 │       └── report_Llama-3.2-1B-Instruct_n300.md
-└── run_logs
-    └── run_2025-03-26_02-09-13_Llama-3.2-1B-Instruct_n300_evals.log
+├── run_logs
+│   └── run_2025-03-26_02-09-13_Llama-3.2-1B-Instruct_n300_evals.log
+├── spec_tests_output
+│   ├── spec_tests_report_Llama-3.2-1B-Instruct_n300.json
+│   └── spec_tests_report_Llama-3.2-1B-Instruct_n300.md
+├── stress_tests_output
+│   └── stress_tests_Llama-3.2-1B-Instruct_n300_<timestamp>.json
+└── tests_output
+    └── parameter_report_Llama-3.2-1B-Instruct_n300_<timestamp>.json
 ```
 
 ## Additional Documentation
