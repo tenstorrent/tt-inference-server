@@ -399,7 +399,7 @@ def format_cli_args_summary(runtime_config):
 def populate_model_spec_cli_args(model_spec, runtime_config):
     """Backfill model_spec.cli_args from RuntimeConfig for compatibility.
 
-    TODO: Remove when tt-media-server no longer depends on model_spec.cli_args. #1767 
+    TODO: Remove when tt-media-server no longer depends on model_spec.cli_args. #1767
     """
     if not hasattr(model_spec, "cli_args") or model_spec.cli_args is None:
         return
