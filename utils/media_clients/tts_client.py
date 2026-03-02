@@ -452,7 +452,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info("Calculating performance check based on TTFT, RTR targets")
 
         # Get performance targets using the shared utility
-        device_str = self.model_spec.device_type.name.lower()
+        device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
             self.model_spec.model_name,
             device_str,
