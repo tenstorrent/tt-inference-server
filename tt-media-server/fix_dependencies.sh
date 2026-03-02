@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 # Remove packages that might contain CUDA
 uv pip uninstall xformers diffusers torch torchvision torchaudio
 
