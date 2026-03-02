@@ -213,7 +213,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--host-volume` | None (Docker named volume) | Host directory for persistent cache volume (bind mount). |
 | `--host-hf-cache` | None | Host HuggingFace cache directory to mount readonly for model weights. |
 | `--host-weights-dir` | None | Host directory with pre-downloaded model weights to mount into the container. |
-| `--image-user` | `1000` | UID passed to `docker run --user`. Set to match host user UID for correct bind mount permissions. |
+| `--image-user` | `1000` | UID passed to `docker run --user`. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
 Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified. See [Docker Volume Options](#docker-volume-options) for details.
 
@@ -276,9 +276,17 @@ flowchart TD
   hostWeights -->|"Docker volume"| ttCache
 ```
 
+**File permissions:** The container runs as a non-root user. There is no root-level entrypoint that adjusts permissions at startup, so mounted volumes must already be accessible to the image's built-in UID (UID `1000` for default release images).
+
+| Strategy | Host permission requirement |
+|---|---|
+| Docker named volume (default) | None. Docker seeds the volume from the image with correct ownership. |
+| `--host-volume` (bind mount) | Host directory must be **writable** by the image UID (e.g. `sudo chown 1000 <path>`). |
+| `--host-hf-cache` / `--host-weights-dir` (readonly bind mounts) | Host path must be **readable** by the image UID. TT Metal caches use a separate Docker named volume. |
+
 **1. Docker volume (default)**
 
-No flags needed. A Docker volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start via `ensure_weights_available()`.
+No flags needed. A Docker volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start via `ensure_weights_available()`. No host permission setup is needed.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
@@ -286,7 +294,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
 
 **2. Host persistent volume (`--host-volume`)**
 
-Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. Weights are downloaded on the host by `setup_host()`.
+Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. Weights are downloaded on the host by `setup_host()`. The host directory must be writable by the image's built-in UID (UID `1000` for default release images, e.g. `sudo chown 1000 ~/persistent_volume` or `sudo chown 1000 /mnt/data/tt-cache`).
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
@@ -295,7 +303,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
 
 **3. Host HuggingFace cache (`--host-hf-cache`)**
 
-Mounts the host's existing HuggingFace cache directory readonly into the container. Other persistent data (TT Metal caches) uses a Docker named volume.
+Mounts the host's existing HuggingFace cache directory readonly into the container. TT Metal caches use a separate Docker named volume, so no host write access is needed for caches. The `run.py` script will find that snapshot weights directory and mount that to docker container.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
@@ -304,7 +312,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
 
 **4. Host weights directory (`--host-weights-dir`)**
 
-Mounts a host directory containing pre-downloaded model weights readonly into the container. Other persistent data uses a Docker named volume.
+Mounts a host directory containing pre-downloaded model weights readonly into the container. TT Metal caches use a separate Docker named volume, so no host write access is needed for caches.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \

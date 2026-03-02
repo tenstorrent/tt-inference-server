@@ -83,9 +83,17 @@ By default, the container downloads model weights and stores TT Metal caches in 
 
 Only one strategy should be used at a time.
 
+**File permissions:** The container runs as a non-root user (`container_app_user`). There is no root-level entrypoint that adjusts permissions at startup, so mounted volumes must already be accessible to the image's built-in UID (UID `1000` for default release images).
+
+| Strategy | Host permission requirement |
+|---|---|
+| Docker named volume (default) | None. Docker seeds the volume from the image with correct ownership on first creation. |
+| Host persistent volume (bind mount) | The host directory must be **writable** by the image UID (e.g. `sudo chown 1000 <path>`). If needed add Docker user UID (e.g. `1000`) to a shared group with user who owns the directoy, then `chown` to the shared group. With this, `chmod` to `775` For read+write. Alternatively, if that does not work for your usecase you can just do `chmod` to `777` without the shared group. |
+| Host weights / Host HF cache (readonly bind mounts) | The host path only needs to be **readable** by the image UID. TT Metal caches are stored in a separate Docker named volume, not on the host. |
+
 **1. Host persistent volume**
 
-Bind mount an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. This is equivalent to `run.py --host-volume`.
+Bind mount an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. The host directory must be writable by the image's built-in UID (see permissions table above). This is equivalent to `run.py --host-volume`.
 
 ```bash
 docker run \
@@ -96,7 +104,7 @@ docker run \
 
 **2. Host model weights directory**
 
-Mount a host directory containing pre-downloaded model weights readonly. Other persistent data uses a Docker named volume. This is equivalent to `run.py --host-weights-dir`.
+Mount a host directory containing pre-downloaded model weights readonly. TT Metal caches use a separate Docker named volume. This is equivalent to `run.py --host-weights-dir`.
 
 ```bash
 docker run \

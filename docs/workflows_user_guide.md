@@ -119,9 +119,9 @@ When using `--docker-server`, these options control how model weights and caches
 | `--host-volume`     | None (Docker named volume) | Host directory for persistent cache volume (bind mount).               |
 | `--host-hf-cache`   | None                   | Host HuggingFace cache directory to mount readonly for model weights.      |
 | `--host-weights-dir` | None                  | Host directory with pre-downloaded model weights to mount readonly.        |
-| `--image-user`      | `1000`                 | UID passed to `docker run --user`. Set to match host user UID for correct bind mount permissions. |
+| `--image-user`      | `1000`                 | UID passed to `docker run --user`. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
-See [Docker Volume Options](../workflows/README.md#docker-volume-options) in the workflows reference for detailed descriptions of each strategy.
+See [Docker Volume Options](../workflows/README.md#docker-volume-options) in the workflows reference for detailed descriptions of each strategy and file permission requirements.
 
 ### Advanced Arguments
 
@@ -239,6 +239,8 @@ If not set via `.env` or environment, `run.py` will prompt interactively on firs
 By default (Docker named volume mode), model weights are downloaded inside the container on first start via `ensure_weights_available()`. No host-side download is needed.
 
 When using `--host-volume` or `--host-hf-cache`, weights are downloaded on the host by `setup_host()` before container launch. When using `--host-weights-dir`, weights are assumed to already exist at the specified path.
+
+**Permissions note:** The container runs as a non-root user with no root-level entrypoint. The runtime UID is baked into the image (UID `1000` for default release images). When using `--host-volume`, the host directory must be writable by that UID (e.g. `sudo chown 1000 <path>`). When using `--host-hf-cache` or `--host-weights-dir`, the host path is mounted readonly and only needs read access; TT Metal caches are stored in a separate Docker named volume. The default Docker named volume strategy requires no host permission setup.
 
 See [Docker Volume Options](../workflows/README.md#docker-volume-options) for details on each strategy.
 

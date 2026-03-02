@@ -266,7 +266,9 @@ def parse_arguments():
         type=str,
         default="1000",
         help="UID to pass to docker run --user (default: 1000). "
-        "Set to match your host user UID for correct bind mount permissions.",
+        "Set to match the UID the image was built with. "
+        "Default release images use UID 1000. "
+        "Override only when using a custom image built with a different UID.",
     )
 
     args = parser.parse_args()
