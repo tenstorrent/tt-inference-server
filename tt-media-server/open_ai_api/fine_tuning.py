@@ -9,9 +9,40 @@ from model_services.base_job_service import BaseJobService
 from model_services.training_service import TrainingService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
+from config.constants import MODEL_RUNNER_TO_MODEL_NAMES_MAP, MODEL_SERVICE_RUNNER_MAP, ModelServices
 
 router = APIRouter()
 
+@router.get("/datasets")
+async def list_available_datasets(
+    api_key: str = Security(get_api_key)
+):
+    """
+    List all available datasets.
+
+    Returns:
+        JSONResponse: List of available datasets.
+    """
+    datasets = [loader.value for loader in AVAILABLE_DATASET_LOADERS.keys()]
+    return JSONResponse(content={"data": datasets})
+
+@router.get("/models")
+async def list_training_models(
+    api_key: str = Security(get_api_key)
+):
+    """
+    List all available training models.
+
+    Returns:
+        JSONResponse: List of available training models.
+    """
+    runners = MODEL_SERVICE_RUNNER_MAP.get(ModelServices.TRAINING, set())
+    models = []
+    for runner in runners:
+        names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner, set())
+        models.extend(n.value for n in names)
+    return JSONResponse(content={"data": models})
 
 @router.post("/jobs")
 async def submit_fine_tuning_request(
@@ -127,31 +158,3 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
-
-
-@router.get("/jobs/{job_id}/checkpoints")
-async def list_fine_tuning_checkpoints(
-    job_id: str,
-    service: BaseJobService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-):
-    """
-    List checkpoints for a fine-tuning job.
-
-    Returns:
-        JSONResponse: List of model checkpoints.
-
-    Raises:
-        HTTPException: If job not found.
-    """
-    try:
-        # TODO: Implement file retrieval instead of result path, and discuss if we return
-        # all checkpoints or just the last model weights state which is saved to result_path
-        result_path = service.get_job_result_path(job_id)
-        return JSONResponse(
-            content={"object": "string", "data": result_path, "has_more": False}
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
-        )

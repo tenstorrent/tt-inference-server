@@ -19,12 +19,13 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
+from config.constants import SupportedModels
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
-        self.model_name = "google/gemma-1.1-2b-it"
+        self.model_name = SupportedModels.GEMMA_1_1_2B_IT.value
 
     @log_execution_time("Setting up Gemma Lora training")
     async def warmup(self) -> bool:
