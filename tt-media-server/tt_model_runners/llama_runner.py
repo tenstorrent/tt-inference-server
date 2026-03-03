@@ -44,8 +44,6 @@ STOP_TOKEN_IDS: frozenset[int] = frozenset({128001, 128008, 128009})
 DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B"
 MAX_NUM_BLOCKS = 512
 KV_CACHE_BLOCK_SIZE = 32
-DEFAULT_TOP_K = 32
-DEFAULT_TOP_P = 0.9
 
 
 @dataclass
@@ -72,6 +70,21 @@ class StepResult:
     error: str = ""
 
 
+def _sample(logits_1d, temperature: float, seed: int | None = None) -> int:
+    """Host-side sampling. Argmax when temperature <= 0."""
+    import torch
+
+    if temperature <= 0:
+        return int(torch.argmax(logits_1d).item())
+    probs = torch.softmax(logits_1d.float() / temperature, dim=-1)
+    if seed is not None:
+        gen = torch.Generator().manual_seed(seed)
+        idx = torch.multinomial(probs, 1, generator=gen)
+    else:
+        idx = torch.multinomial(probs, 1)
+    return int(idx.item())
+
+
 class Llama31_8BRunner(BaseMetalDeviceRunner):
     """
     Runner that wraps tt-metal LlamaForCausalLM for use with cpp_server LLM engine.
@@ -84,7 +97,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     - warmup_prefill=True (default) compiles operators and captures traces;
       skipping it causes "unsafe device buffer allocation" that corrupts output.
     - enable_trace=True for decode to match vLLM behaviour.
-    - Sampling is done on-device via SamplingParams.
+    - Sampling is done on host from returned logits.
     """
 
     def __init__(self, device_id: str):
@@ -95,7 +108,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "8192"))
         self._kv_cache = None
         self._max_num_blocks_per_seq = 0
-        self._decode_reset_pending = False
 
     def get_pipeline_device_params(self):
         return {"num_command_queues": 2, "trace_region_size": 32 * 1024 * 1024}
@@ -177,13 +189,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     def _run_prefill_batch(
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
-        results = [self._run_prefill(s, torch) for s in sequences]
-        self._decode_reset_pending = True
-        return results
+        return [self._run_prefill(s, torch) for s in sequences]
 
     def _run_prefill(self, seq: StepSequence, torch) -> StepResult:
-        from models.common.sampling import SamplingParams
-
         if not seq.block_table:
             return StepResult(
                 task_id=seq.task_id,
@@ -195,27 +203,18 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         page_table = self._page_table_from_block_ids(seq.block_table, torch)
         tokens = torch.tensor([seq.token_ids], dtype=torch.int64)
 
-        sampling_params = SamplingParams(
-            temperature=seq.temperature,
-            top_k=DEFAULT_TOP_K,
-            top_p=DEFAULT_TOP_P,
-            seed=seq.seed,
-        )
-
-        prefilled_token, _log_probs = self.model.prefill_forward(
+        logits = self.model.prefill_forward(
             tokens,
             page_table=page_table,
             kv_cache=self._kv_cache,
             prompt_lens=[prompt_len],
-            sampling_params=sampling_params,
         )
 
-        next_token = int(prefilled_token.item())
+        logits_1d = logits[0, -1, :] if logits.dim() >= 3 else logits.flatten()
+        next_token = _sample(logits_1d, seq.temperature, seq.seed)
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode(self, seq: StepSequence, torch) -> StepResult:
-        from models.common.sampling import SamplingParams
-
         if not seq.block_table:
             return StepResult(
                 task_id=seq.task_id,
@@ -228,51 +227,33 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         current_pos = torch.tensor([seq.current_pos], dtype=torch.int64)
 
-        sampling_params = SamplingParams(
-            temperature=seq.temperature,
-            top_k=DEFAULT_TOP_K,
-            top_p=DEFAULT_TOP_P,
-            seed=seq.seed,
-        )
-
-        reset_batch = self._decode_reset_pending
-        self._decode_reset_pending = False
-
-        token_ids, _log_probs = self.model.decode_forward(
+        logits, _log_probs = self.model.decode_forward(
             tokens,
             current_pos,
             page_table=page_table,
             kv_cache=self._kv_cache,
             enable_trace=True,
-            sampling_params=sampling_params,
-            reset_batch=reset_batch,
         )
 
-        next_token = int(token_ids[0].item())
+        logits_1d = logits[0, -1, :]
+        next_token = _sample(logits_1d, seq.temperature, seq.seed)
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode_batch(
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
         """Single batched decode forward when len(sequences) <= max_batch_size."""
-        from models.common.sampling import SamplingParams
-
         B = self.max_batch_size
         if len(sequences) > B:
             return [self._run_decode(s, torch) for s in sequences]
 
         tokens_list = [0] * B
         start_pos_list = [0] * B
-        temps = [0.0] * B
-        seeds = [0] * B
         page_tables = []
 
         for i, seq in enumerate(sequences):
             tokens_list[i] = seq.token_ids[-1]
             start_pos_list[i] = seq.current_pos
-            temps[i] = seq.temperature
-            if seq.seed is not None:
-                seeds[i] = seq.seed
             page_tables.append(self._page_table_from_block_ids(seq.block_table, torch))
 
         for _ in range(B - len(sequences)):
@@ -284,27 +265,18 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
         page_table_batch = torch.cat(page_tables, dim=0)
 
-        sampling_params = SamplingParams(
-            temperature=temps,
-            top_k=[DEFAULT_TOP_K] * B,
-            top_p=[DEFAULT_TOP_P] * B,
-            seed=seeds,
-        )
-
-        reset_batch = self._decode_reset_pending
-        self._decode_reset_pending = False
-
-        token_ids, _log_probs = self.model.decode_forward(
+        logits, _log_probs = self.model.decode_forward(
             tokens_batch,
             start_pos_batch,
             page_table=page_table_batch,
             kv_cache=self._kv_cache,
             enable_trace=True,
-            sampling_params=sampling_params,
-            reset_batch=reset_batch,
         )
 
         return [
-            StepResult(task_id=seq.task_id, token_id=int(token_ids[i].item()))
+            StepResult(
+                task_id=seq.task_id,
+                token_id=_sample(logits[i, -1, :], seq.temperature, seq.seed),
+            )
             for i, seq in enumerate(sequences)
         ]
