@@ -640,19 +640,19 @@ def save_to_csv(results: List[Dict[str, Any]], file_path: Union[Path, str]) -> N
 def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping
     display_cols: List[Tuple[str, str]] = [
-        ("backend", "Source"),
+        # ("backend", "Source"),
         ("input_sequence_length", "ISL"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
         ("num_requests", "N Req"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "Tput User (TPS)"),
-        ("tps_decode_throughput", "Tput Decode (TPS)"),
-        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("tps_decode_throughput", "Output Tput (tok/s)"),
+        ("tps_prefill_throughput", "Input Tput (tok/s)"),
+        ("total_token_throughput", "Total Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
-        ("total_token_throughput", "Total Token Throughput (tokens/duration)"),
     ]
 
     display_dict = {}
@@ -679,9 +679,9 @@ def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "Tput User (TPS)"),
-        ("tps_decode_throughput", "Tput Decode (TPS)"),
-        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("tps_decode_throughput", "Output Tput (tok/s)"),
+        ("tps_prefill_throughput", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
     ]
@@ -789,9 +789,9 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "Tput User (TPS)"),
-        ("tps_decode_throughput", "Tput Decode (TPS)"),
-        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
+        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("tps_decode_throughput", "Output Tput (tok/s)"),
+        ("tps_prefill_throughput", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
     ]
@@ -988,9 +988,9 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             "N Req": "total number of requests (sample size, N)",
             "TTFT": "Time To First Token (ms)",
             "TPOT": "Time Per Output Token (ms)",
-            "Tput User": "Throughput per user (TPS)",
-            "Tput Decode": "Throughput for decode tokens, across all users (TPS)",
-            "Tput Prefill": "Throughput for prefill tokens (TPS)",
+            "User Output Tput": "Output token throughput per user (tok/s/user)",
+            "Output Tput": "Output token (decode) throughput, across all users (tok/s)",
+            "Input Tput": "Input token (prefill) throughput (tok/s)",
             "E2EL": "End-to-End Latency (ms)",
             "Req Tput": "Request Throughput (RPS)",
         }

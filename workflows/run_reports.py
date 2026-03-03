@@ -266,8 +266,8 @@ def benchmark_release_markdown(release_raw, target_checks=None):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("ttft", "TTFT (ms)"),
-        ("tput_user", "Tput User (TPS)"),
-        ("tput", "Tput Decode (TPS)"),
+        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput", "Output Tput (tok/s)"),
     ]
     check_cols = []
     if target_checks:
@@ -284,7 +284,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
                     if metric.endswith("_check") or metric.endswith("_ratio")
                     else " (ms)"  # TTFT always in milliseconds
                     if metric.startswith("ttft")
-                    else " (TPS)"  # any Tput* in transactions/second
+                    else " (tok/s)"  # any Tput* in transactions/second
                     if metric.startswith("tput")
                     else ""
                 ),
@@ -338,8 +338,8 @@ def benchmark_vlm_release_markdown(release_raw, target_checks=None):
         ("images_per_prompt", "Images per Prompt"),
         ("num_requests", "Num Requests"),
         ("ttft", "TTFT (ms)"),
-        ("tput_user", "Tput User (TPS)"),
-        ("tput", "Tput Decode (TPS)"),
+        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput", "Output Tput (tok/s)"),
     ]
     check_cols = []
     if target_checks:
@@ -356,7 +356,7 @@ def benchmark_vlm_release_markdown(release_raw, target_checks=None):
                     if metric.endswith("_check") or metric.endswith("_ratio")
                     else " (ms)"  # TTFT always in milliseconds
                     if metric.startswith("ttft")
-                    else " (TPS)"  # any Tput* in transactions/second
+                    else " (tok/s)"  # any Tput* in transactions/second
                     if metric.startswith("tput")
                     else ""
                 ),
@@ -475,7 +475,7 @@ def aiperf_release_markdown(release_raw, is_vlm_benchmark=False):
 def aiperf_throughput_markdown(release_raw):
     """Generate markdown table for benchmarks with derived throughput metrics.
 
-    This follows the genai-perf comparison style with Tput User, Tput Decode, and Tput Prefill
+    This follows the genai-perf comparison style with User Output Tput, Output Tput, and Input Tput
     columns for easy comparison between vLLM, AIPerf, and genai-perf benchmarks.
     """
     # Define display columns - genai-perf comparison style with Source column
@@ -487,9 +487,9 @@ def aiperf_throughput_markdown(release_raw):
         ("num_requests", "N"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("tput_user", "Tput User (TPS)"),
-        ("tput_decode", "Tput Decode (TPS)"),
-        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("tput_user", "User Tput (tok/s)"),
+        ("tput_decode", "Output Tput (tok/s)"),
+        ("tput_prefill", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
     ]
@@ -553,9 +553,9 @@ def aiperf_throughput_markdown_with_images(release_raw):
         ("image_height", "Height"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("tput_user", "Tput User (TPS)"),
-        ("tput_decode", "Tput Decode (TPS)"),
-        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_decode", "Output Tput (tok/s)"),
+        ("tput_prefill", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
     ]
@@ -2720,8 +2720,8 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
         # Throughput metrics at the end
-        ("tput_user", "Tput User (TPS)"),
-        ("tput", "Tput Decode (TPS)"),
+        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput", "Output Tput (tok/s)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
@@ -2736,8 +2736,8 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         "TPOT (ms)": 1,
         "ITL (ms)": 1,
         "E2EL (ms)": 1,
-        "Tput User (TPS)": 2,
-        "Tput Decode (TPS)": 1,
+        "User Output Tput (tok/s/user)": 2,
+        "Output Tput (tok/s)": 1,
     }
 
     display_dicts = []
@@ -2846,8 +2846,8 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
         # Throughput metrics at the end
-        ("tput_user", "Tput User (TPS)"),
-        ("tput", "Tput Decode (TPS)"),
+        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput", "Output Tput (tok/s)"),
     ]
 
     NOT_MEASURED_STR = "N/A"
@@ -2887,8 +2887,8 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
         # Throughput
-        "Tput User (TPS)": 2,
-        "Tput Decode (TPS)": 1,
+        "User Output Tput (tok/s/user)": 2,
+        "Output Tput (tok/s)": 1,
     }
 
     display_dicts = []

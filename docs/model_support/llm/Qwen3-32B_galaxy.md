@@ -78,26 +78,26 @@ Models CI job: https://github.com/tenstorrent/tt-shield/actions/runs/22597865268
 
 #### vLLM Text-to-Text Performance Benchmark Sweeps for Qwen3-32B on galaxy
 
-|   Source    |  ISL  | OSL  | Concurrency | N Req | TTFT (ms) | TPOT (ms) | Tput User (TPS) | Tput Decode (TPS) | Tput Prefill (TPS) | E2EL (ms) | Req Tput (RPS) | Total Token Throughput (tokens/duration) |
-|-------------|-------|------|-------------|-------|-----------|-----------|-----------------|-------------------|--------------------|-----------|----------------|------------------------------------------|
-| openai-chat |   128 |  128 |           1 |     8 |      70.8 |      22.8 |           43.9  |              43.9 |             1807.4 |    2964.1 |          0.337 |                                    86.36 |
-| openai-chat |   128 |  128 |          32 |   256 |     570.7 |      21.3 |           46.86 |            1499.4 |             7176.6 |    3281.2 |          9.748 |                                  2495.48 |
-| openai-chat |   128 | 1024 |           1 |     4 |      73.5 |      22.8 |           43.9  |              43.9 |             1741.9 |   23376.6 |          0.043 |                                    49.28 |
-| openai-chat |   128 | 1024 |          32 |   128 |     668.6 |      21.5 |           46.62 |            1491.8 |             6125.8 |   22612.2 |          1.414 |                                  1628.54 |
-| openai-chat |  1024 |  128 |           1 |     4 |     164.3 |      22.9 |           43.7  |              43.7 |             6231.6 |    3070.5 |          0.326 |                                   375.15 |
-| openai-chat |  1024 |  128 |          32 |   128 |    4264.4 |      23.1 |           43.27 |            1384.7 |             7684.0 |    7199.3 |          4.045 |                                  4660.34 |
-| openai-chat |  2048 |  128 |           1 |     4 |     295.7 |      23.3 |           42.9  |              42.9 |             6926.0 |    3256.1 |          0.307 |                                   668.24 |
-| openai-chat |  2048 |  128 |          32 |   128 |    8155.7 |      25.5 |           39.26 |            1256.4 |             8035.7 |   11390.2 |          2.61  |                                  5678.78 |
-| openai-chat |  4096 |  128 |           1 |     4 |     449.2 |      23.9 |           41.78 |              41.8 |             9118.1 |    3488.7 |          0.287 |                                  1210.68 |
-| openai-chat |  4096 |  128 |          32 |   128 |   12720.3 |      28.6 |           35.01 |            1120.4 |            10304.2 |   16347.7 |          1.853 |                                  7827.92 |
-| openai-chat |  8192 |  128 |           1 |     2 |     758.9 |      25.3 |           39.52 |              39.5 |            10794.8 |    3972.2 |          0.252 |                                  2094.41 |
-| openai-chat |  8192 |  128 |          32 |    64 |   21839.5 |      35.1 |           28.49 |             911.6 |            12003.2 |   26297.4 |          1.133 |                                  9427.43 |
-| openai-chat | 16384 |  128 |           1 |     2 |    1454.0 |      27.8 |           35.92 |              35.9 |            11267.9 |    4989.9 |          0.2   |                                  3308.92 |
-| openai-chat | 16384 |  128 |          31 |    62 |   37614.7 |      56.1 |           17.81 |             552.2 |            13502.8 |   44743.9 |          0.626 |                                 10334.57 |
-| openai-chat | 32768 |  128 |           1 |     1 |    3177.5 |      33.5 |           29.86 |              29.9 |            10312.5 |    7430.7 |          0.135 |                                  4426.83 |
-| openai-chat | 32768 |  128 |          15 |    15 |   37515.1 |      55.2 |           18.12 |             271.9 |            13101.9 |   44522.3 |          0.271 |                                  8922.67 |
-| openai-chat | 65536 |  128 |           1 |     1 |    8303.9 |      43.9 |           22.76 |              22.8 |             7892.2 |   13883.2 |          0.072 |                                  4729.63 |
-| openai-chat | 65536 |  128 |           7 |     7 |   41851.8 |      70.4 |           14.2  |              99.4 |            10961.3 |   50793.0 |          0.103 |                                  6774.04 |
+|  ISL  | OSL  | Concurrency | N Req | TTFT (ms) | TPOT (ms) | User Output Tput (tok/s/user) | Output Tput (tok/s) | Input Tput (tok/s) | E2EL (ms) | Req Tput (RPS) | Total Tput (tokens/duration) |
+|-------|------|-------------|-------|-----------|-----------|-----------------|-------------------|--------------------|-----------|----------------|------------------------------------------|
+|   128 |  128 |           1 |     8 |      70.8 |      22.8 |           43.9  |              43.9 |             1807.4 |    2964.1 |          0.337 |                                    86.36 |
+|   128 |  128 |          32 |   256 |     570.7 |      21.3 |           46.86 |            1499.4 |             7176.6 |    3281.2 |          9.748 |                                  2495.48 |
+|   128 | 1024 |           1 |     4 |      73.5 |      22.8 |           43.9  |              43.9 |             1741.9 |   23376.6 |          0.043 |                                    49.28 |
+|   128 | 1024 |          32 |   128 |     668.6 |      21.5 |           46.62 |            1491.8 |             6125.8 |   22612.2 |          1.414 |                                  1628.54 |
+|  1024 |  128 |           1 |     4 |     164.3 |      22.9 |           43.7  |              43.7 |             6231.6 |    3070.5 |          0.326 |                                   375.15 |
+|  1024 |  128 |          32 |   128 |    4264.4 |      23.1 |           43.27 |            1384.7 |             7684.0 |    7199.3 |          4.045 |                                  4660.34 |
+|  2048 |  128 |           1 |     4 |     295.7 |      23.3 |           42.9  |              42.9 |             6926.0 |    3256.1 |          0.307 |                                   668.24 |
+|  2048 |  128 |          32 |   128 |    8155.7 |      25.5 |           39.26 |            1256.4 |             8035.7 |   11390.2 |          2.61  |                                  5678.78 |
+|  4096 |  128 |           1 |     4 |     449.2 |      23.9 |           41.78 |              41.8 |             9118.1 |    3488.7 |          0.287 |                                  1210.68 |
+|  4096 |  128 |          32 |   128 |   12720.3 |      28.6 |           35.01 |            1120.4 |            10304.2 |   16347.7 |          1.853 |                                  7827.92 |
+|  8192 |  128 |           1 |     2 |     758.9 |      25.3 |           39.52 |              39.5 |            10794.8 |    3972.2 |          0.252 |                                  2094.41 |
+|  8192 |  128 |          32 |    64 |   21839.5 |      35.1 |           28.49 |             911.6 |            12003.2 |   26297.4 |          1.133 |                                  9427.43 |
+| 16384 |  128 |           1 |     2 |    1454.0 |      27.8 |           35.92 |              35.9 |            11267.9 |    4989.9 |          0.2   |                                  3308.92 |
+| 16384 |  128 |          31 |    62 |   37614.7 |      56.1 |           17.81 |             552.2 |            13502.8 |   44743.9 |          0.626 |                                 10334.57 |
+| 32768 |  128 |           1 |     1 |    3177.5 |      33.5 |           29.86 |              29.9 |            10312.5 |    7430.7 |          0.135 |                                  4426.83 |
+| 32768 |  128 |          15 |    15 |   37515.1 |      55.2 |           18.12 |             271.9 |            13101.9 |   44522.3 |          0.271 |                                  8922.67 |
+| 65536 |  128 |           1 |     1 |    8303.9 |      43.9 |           22.76 |              22.8 |             7892.2 |   13883.2 |          0.072 |                                  4729.63 |
+| 65536 |  128 |           7 |     7 |   41851.8 |      70.4 |           14.2  |              99.4 |            10961.3 |   50793.0 |          0.103 |                                  6774.04 |
 
 Note: all metrics are means across benchmark run unless otherwise stated.
 > ISL: Input Sequence Length (tokens)
@@ -106,9 +106,9 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 > N Req: total number of requests (sample size, N)
 > TTFT: Time To First Token (ms)
 > TPOT: Time Per Output Token (ms)
-> Tput User: Throughput per user (TPS)
-> Tput Decode: Throughput for decode tokens, across all users (TPS)
-> Tput Prefill: Throughput for prefill tokens (TPS)
+> User Output Tput: Throughput per user (tok/s)
+> Output Tput: Throughput for decode tokens, across all users (tok/s)
+> Input Tput: Throughput for prefill tokens (tok/s)
 > E2EL: End-to-End Latency (ms)
 > Req Tput: Request Throughput (RPS)
 
@@ -116,7 +116,7 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 
 #### Text-to-Text Performance Benchmark Targets Qwen3-32B on galaxy
 
-| ISL | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) | Functional TTFT Check | Functional Tput User Check | Complete TTFT Check | Complete Tput User Check | Target TTFT Check | Target Tput User Check | Functional TTFT (ms) | Functional Tput User (TPS) | Complete TTFT (ms) | Complete Tput User (TPS) | Target TTFT (ms) | Target Tput User (TPS) |
+| ISL | OSL | Concurrency | TTFT (ms) | User Output Tput (tok/s/user) | Output Tput (tok/s) | Functional TTFT Check | Functional User Output Tput Check | Complete TTFT Check | Complete User Output Tput Check | Target TTFT Check | Target User Output Tput Check | Functional TTFT (ms) | Functional User Output Tput (tok/s/user) | Complete TTFT (ms) | Complete User Output Tput (tok/s/user) | Target TTFT (ms) | Target User Output Tput (tok/s/user) |
 |-----|-----|-------------|-----------|-----------------|-------------------|-----------------------|----------------------------|---------------------|--------------------------|-------------------|------------------------|----------------------|----------------------------|--------------------|--------------------------|------------------|------------------------|
 | 128 | 128 |           1 |      70.8 |            43.9 |              43.9 | PASS ✅               | PASS ✅                    | FAIL ⛔             | FAIL ⛔                  | FAIL ⛔           | FAIL ⛔                |               300.00 |                      15.60 |              60.00 |                    78.00 |            30.00 |                 156.00 |
 
@@ -125,8 +125,8 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 > OSL: Output Sequence Length (tokens)
 > Concurrency: number of concurrent requests (batch size)
 > TTFT: Time To First Token (ms)
-> Tput User: Throughput per user (TPS)
-> Tput Decode: Throughput for decode tokens, across all users (TPS)
+> User Output Tput: Throughput per user (tok/s)
+> Output Tput: Throughput for decode tokens, across all users (tok/s)
 
 ### Accuracy Evaluations for Qwen3-32B on galaxy
 
