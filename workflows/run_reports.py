@@ -30,6 +30,7 @@ from stress_tests.stress_tests_summary_report import (
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
@@ -217,9 +218,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM reports")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -3071,7 +3072,9 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
     return stress_test_release_str, release_raw, summary_fpath, data_fpath
 
 
-def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+def benchmarks_release_data_format(
+    model_spec, device_str, benchmark_summary_data, runtime_config=None
+):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
@@ -3116,8 +3119,10 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
                 self.model_spec = model_spec
 
         wrapper = ModelSpecWrapper(model_spec)
-        streaming_enabled = is_streaming_enabled_for_whisper(wrapper)
-        preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
+        streaming_enabled = is_streaming_enabled_for_whisper(wrapper, runtime_config)
+        preprocessing_enabled = is_preprocessing_enabled_for_whisper(
+            wrapper, runtime_config
+        )
 
         benchmark_summary["streaming_enabled"] = streaming_enabled
         benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
@@ -3388,13 +3393,13 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    model = cli_args.get("model")
-    device_str = cli_args.get("device")
-    docker_server = cli_args.get("docker_server", False)
+    # runtime config loaded from JSON
+    model = runtime_config.model
+    device_str = runtime_config.device
+    docker_server = runtime_config.docker_server
 
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -3422,7 +3427,7 @@ def main():
         "report_id": report_id,
         "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
-        "model_spec_json": args.model_spec_json,
+        "runtime_model_spec_json": args.runtime_model_spec_json,
         "model_repo": model_spec.hf_model_repo,
         "model_impl": model_spec.impl.impl_name,
         "inference_engine": model_spec.inference_engine,
@@ -3439,22 +3444,26 @@ def main():
     # Create a simple args object for the report generation functions
     class SimpleArgs:
         def __init__(
-            self, output_path, model, device, model_spec_json, percentile_report=False
+            self,
+            output_path,
+            model,
+            device,
+            runtime_model_spec_json,
+            percentile_report=False,
         ):
             self.output_path = output_path
             self.model = model
             self.device = device
-            self.model_spec_json = model_spec_json
+            self.runtime_model_spec_json = runtime_model_spec_json
             self.percentile_report = percentile_report
 
-    # Extract percentile_report flag from cli_args
-    percentile_report = cli_args.get("percentile_report", False)
+    percentile_report = runtime_config.percentile_report
 
     simple_args = SimpleArgs(
         args.output_path,
         model,
         device_str,
-        args.model_spec_json,
+        args.runtime_model_spec_json,
         percentile_report=percentile_report,
     )
 
@@ -3583,8 +3592,7 @@ def main():
             or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -3693,7 +3701,7 @@ def main():
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
             benchmarks_release_data = benchmarks_release_data_format(
-                model_spec, device_str, benchmark_summary_data
+                model_spec, device_str, benchmark_summary_data, runtime_config
             )
 
             # Add target_checks to the existing benchmark object
@@ -3702,8 +3710,7 @@ def main():
 
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
