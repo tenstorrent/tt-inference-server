@@ -177,10 +177,8 @@ class Settings(BaseSettings):
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
-            "_set_device_pairs_overrides: is_galaxy=%s, mesh=%s, device_ids(before)=%r",
-            self.is_galaxy,
-            self.device_mesh_shape,
-            self.device_ids,
+            f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
+            f"mesh={self.device_mesh_shape}, device_ids(before)={self.device_ids!r}"
         )
 
         if not self.is_galaxy:
@@ -200,8 +198,7 @@ class Settings(BaseSettings):
                 )
                 devices = dm.get_device_pairs()
                 logger.info(
-                    "Galaxy TP2 discovery returned %s pairs",
-                    len(devices) if devices else 0,
+                    f"Galaxy TP2 discovery returned {len(devices) if devices else 0} pairs"
                 )
                 if not devices:
                     logger.error(
@@ -214,7 +211,7 @@ class Settings(BaseSettings):
                 devices = dm.get_device_groups_of_eight()
 
         except Exception as e:
-            logger.error("Device discovery failed: %s", e)
+            logger.error(f"Device discovery failed: {e}")
             devices = None
 
         finally:
@@ -224,14 +221,12 @@ class Settings(BaseSettings):
                     for d in devices
                 )
                 logger.info(
-                    "_set_device_pairs_overrides: galaxy override applied, device_ids(after)=%r",
-                    self.device_ids,
+                    f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
                 )
             elif mesh in ((2, 1), (2, 4)):
                 logger.error(
-                    "Discovery failed for mesh %s - no devices. "
-                    "Check tt-smi / test_system_health.",
-                    mesh,
+                    f"Discovery failed for mesh {mesh} - no devices. "
+                    "Check tt-smi / test_system_health."
                 )
 
     def _set_throttling_overrides(self):
