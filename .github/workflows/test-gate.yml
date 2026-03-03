@@ -687,6 +687,196 @@ jobs:
       - name: Check benchmark result
         run: exit ${{ env.BENCH_FAIL }}
 
+  cpp-server-prefill-decode-split:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Prefill/Decode Split Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+          cd ..
+
+      - name: Start Decode server (receives HTTP, listens for prefill)
+        run: |
+          cd cpp_server/build
+          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+            ./tt_media_server_cpp -p 8001 > ../../decode_server.log 2>&1 &
+          echo $! > ../../decode_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8001/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8001/health || exit 1
+          echo "✅ Decode server started on port 8001"
+
+      - name: Start Prefill server (connects to decode server)
+        run: |
+          cd cpp_server/build
+          LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+            ./tt_media_server_cpp -p 8002 > ../../prefill_server.log 2>&1 &
+          echo $! > ../../prefill_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8002/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8002/health || exit 1
+          echo "✅ Prefill server started on port 8002"
+          sleep 2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Run vLLM bench serve against split servers
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          RESULT_FILE="vllm-bench-split-result.json"
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-V3.2' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8001 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "$RESULT_FILE" \
+            2>&1 | tee bench_split_output.txt
+          echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
+
+      - name: Parse result and check thresholds
+        run: |
+          RESULT_FILE="${{ env.RESULT_FILE }}"
+          if [ ! -f "$RESULT_FILE" ]; then
+            echo "❌ Result file not found: $RESULT_FILE"
+            exit 1
+          fi
+
+          COMPLETED=$(jq -r '.completed // 0' "$RESULT_FILE")
+          FAILED=$(jq -r '.failed // 0' "$RESULT_FILE")
+          if [ "$COMPLETED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+            echo "❌ All requests failed (completed=0, failed=$FAILED)"
+            exit 1
+          fi
+
+          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
+          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
+          TPOT_THRESHOLD_MS="2"
+          TTFT_THRESHOLD_MS="200"
+
+          FAIL=0
+          if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+          if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+            if python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_THRESHOLD_MS else 1)"; then
+              :
+            else
+              echo "❌ mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_THRESHOLD_MS}ms"
+              FAIL=1
+            fi
+          fi
+
+          echo "MEAN_TPOT_MS=$MEAN_TPOT_MS" >> $GITHUB_ENV
+          echo "MEAN_TTFT_MS=$MEAN_TTFT_MS" >> $GITHUB_ENV
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+
+          {
+            echo "## 🔀 C++ Server Prefill/Decode Split Test"
+            echo ""
+            echo "| Metric | Value | Threshold |"
+            echo "|--------|-------|-----------|"
+            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_THRESHOLD_MS}ms |"
+            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_THRESHOLD_MS}ms |"
+            echo "| **completed** | $COMPLETED | - |"
+            echo "| **failed** | $FAILED | - |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAIL" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Stop servers
+        if: always()
+        run: |
+          [ -f decode_server.pid ] && kill $(cat decode_server.pid) 2>/dev/null || true
+          [ -f prefill_server.pid ] && kill $(cat prefill_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Decode Server Logs ==="
+          if [ -f decode_server.log ]; then
+            cat decode_server.log
+          else
+            echo "No decode_server.log file found"
+          fi
+          echo ""
+          echo "=== Prefill Server Logs ==="
+          if [ -f prefill_server.log ]; then
+            cat prefill_server.log
+          else
+            echo "No prefill_server.log file found"
+          fi
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-prefill-decode-split-result
+          path: tt-media-server/vllm-bench-split-result.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-prefill-decode-split-logs
+          path: |
+            tt-media-server/decode_server.log
+            tt-media-server/prefill_server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        run: exit ${{ env.BENCH_FAIL }}
+
   forge-runner-changes:
     name: Detect Forge Runner Changes
     runs-on: ubuntu-latest
@@ -955,7 +1145,15 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage, cpp-server-ttnn-build, cpp-server-llm-streaming]
+    needs:
+      - lint
+      - unit-tests
+      - forge-runner-cpu-tests
+      - llm-streaming-performance
+      - test-coverage
+      - cpp-server-ttnn-build
+      - cpp-server-llm-streaming
+      - cpp-server-prefill-decode-split
     if: always()
     steps:
       - name: Check results
@@ -987,6 +1185,10 @@ jobs:
           fi
           if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
             echo "❌ C++ server LLM streaming test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.cpp-server-prefill-decode-split.result }}" == "failure" ]]; then
+            echo "❌ C++ server prefill/decode split test failed"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"
