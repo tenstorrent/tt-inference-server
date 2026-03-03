@@ -6,14 +6,10 @@
 
 namespace llm_engine {
 
-enum class DeviceBackend {
+enum class ModelRunnerType {
   Mock,
   TtRun,
-};
-
-enum class ModelRunnerType {
-  Stub,
-  Llama,
+  Llama
 };
 
 struct Config {
@@ -24,8 +20,7 @@ struct Config {
   int eos = 1;
   int kvcache_block_size = 32;
   int num_kvcache_blocks = 512;
-  DeviceBackend device = DeviceBackend::Mock;
-  ModelRunnerType model_runner = ModelRunnerType::Stub;
+  ModelRunnerType runner_type = ModelRunnerType::Mock;
 };
 
 }  // namespace llm_engine

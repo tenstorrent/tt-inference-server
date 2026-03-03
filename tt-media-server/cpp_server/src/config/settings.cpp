@@ -148,15 +148,15 @@ llm_engine::Config llm_engine_config() {
     cfg.stop_token_ids = utils::active_tokenizer_strategy().stop_token_ids();
     if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
         cfg.max_num_seqs = 16;
-        cfg.model_runner = llm_engine::ModelRunnerType::Llama;
+        cfg.runner_type = llm_engine::ModelRunnerType::Llama;
     }
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
         if (s == "ttrun") {
-            cfg.device = llm_engine::DeviceBackend::TtRun;
+            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
         } else {
-            cfg.device = llm_engine::DeviceBackend::Mock;
+            cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
     }
     return cfg;

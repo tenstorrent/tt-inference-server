@@ -41,7 +41,7 @@ from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 #   128009 = <|eot_id|>   (end-of-turn, emitted after every assistant response)
 EOS_TOKEN_ID = 128001
 STOP_TOKEN_IDS: frozenset[int] = frozenset({128001, 128008, 128009})
-DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B"
+DEFAULT_HF_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 MAX_NUM_BLOCKS = 512
 KV_CACHE_BLOCK_SIZE = 32
 
@@ -138,7 +138,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         from models.tt_transformers.tt.generator_vllm import LlamaForCausalLM
         from transformers import AutoConfig
 
-        self.logger.info(f"Device {self.device_id}: Loading Llama-3.1-8B...")
+        self.logger.info(f"Device {self.device_id}: Loading Llama-3.1-8B-Instruct...")
         hf_config = AutoConfig.from_pretrained(self.hf_model_name)
         mesh_device = self.set_device()
         self.model = LlamaForCausalLM.initialize_vllm_model(

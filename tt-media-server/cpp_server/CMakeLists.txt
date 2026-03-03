@@ -136,18 +136,16 @@ else()
     endif()
 endif()
 
-# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
-# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
+# LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
-    src/runners/llm_runner/backend/device_backend.cpp
-    src/runners/llm_runner/backend/mock_device_backend.cpp
-    src/runners/llm_runner/backend/ttrun_device_backend.cpp
     src/runners/llm_runner/shared_memory.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/mock_model_runner.cpp
+    src/runners/llm_runner/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
