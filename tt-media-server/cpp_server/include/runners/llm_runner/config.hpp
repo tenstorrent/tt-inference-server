@@ -24,7 +24,6 @@ struct Config {
   int eos = 1;
   int kvcache_block_size = 32;
   int num_kvcache_blocks = 512;
-  bool reserve_first_kv_block = false;
   DeviceBackend device = DeviceBackend::Mock;
   ModelRunnerType model_runner = ModelRunnerType::Stub;
 };

@@ -25,7 +25,7 @@ class Block {
 
 class BlockManager {
  public:
-  BlockManager(int num_blocks, int block_size, bool reserve_first_block = false);
+  BlockManager(int num_blocks, int block_size);
 
   static int64_t compute_hash(const std::vector<int64_t>& token_ids,
                               int64_t prefix = -1);

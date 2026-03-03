@@ -20,8 +20,7 @@ void Block::reset() {
   token_ids.clear();
 }
 
-BlockManager::BlockManager(int num_blocks, int block_size, bool reserve_first_block)
-    : block_size_(block_size) {
+BlockManager::BlockManager(int num_blocks, int block_size) : block_size_(block_size) {
   if (num_blocks <= 0) {
     throw std::invalid_argument(
         "BlockManager: num_blocks must be positive, got " + std::to_string(num_blocks));
@@ -30,11 +29,7 @@ BlockManager::BlockManager(int num_blocks, int block_size, bool reserve_first_bl
   for (int i = 0; i < num_blocks; ++i) {
     blocks_.emplace_back(i);
   }
-  // When reserve_first_block is true, block 0 is kept as a null/scratch block:
-  // padded rows in batched decode point their page tables at block 0, so writes
-  // from inactive batch positions land there instead of corrupting real KV data.
-  int first = reserve_first_block ? 1 : 0;
-  for (int i = first; i < num_blocks; ++i) {
+  for (int i = 0; i < num_blocks; ++i) {
     free_block_ids_.push_back(i);
   }
 }

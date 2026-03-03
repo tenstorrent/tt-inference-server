@@ -242,24 +242,24 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     def _run_decode_batch(
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
-        """Single batched decode forward when len(sequences) <= max_batch_size."""
+        """Batched decode when len(sequences) <= max_batch_size.
+        tt-metal requires batch == max_batch_size. Fill unused slots by repeating
+        real sequences so every slot points to valid KV blocks (no reserved
+        block 0 needed). Results from repeated slots are discarded.
+        """
         B = self.max_batch_size
         if len(sequences) > B:
             return [self._run_decode(s, torch) for s in sequences]
 
-        tokens_list = [0] * B
-        start_pos_list = [0] * B
+        n = len(sequences)
+        tokens_list = []
+        start_pos_list = []
         page_tables = []
-
-        for i, seq in enumerate(sequences):
-            tokens_list[i] = seq.token_ids[-1]
-            start_pos_list[i] = seq.current_pos
+        for i in range(B):
+            seq = sequences[i % n]
+            tokens_list.append(seq.token_ids[-1])
+            start_pos_list.append(seq.current_pos)
             page_tables.append(self._page_table_from_block_ids(seq.block_table, torch))
-
-        for _ in range(B - len(sequences)):
-            page_tables.append(
-                torch.zeros((1, self._max_num_blocks_per_seq), dtype=torch.int32)
-            )
 
         tokens_batch = torch.tensor([[t] for t in tokens_list], dtype=torch.int64)
         start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)

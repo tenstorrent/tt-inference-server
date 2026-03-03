@@ -148,7 +148,6 @@ llm_engine::Config llm_engine_config() {
     cfg.stop_token_ids = utils::active_tokenizer_strategy().stop_token_ids();
     if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
         cfg.max_num_seqs = 16;
-        cfg.reserve_first_kv_block = true;
         cfg.model_runner = llm_engine::ModelRunnerType::Llama;
     }
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
