@@ -142,9 +142,9 @@ llm_engine::Config llm_engine_config() {
     if (v) {
         std::string s(v);
         if (s == "ttrun") {
-            cfg.device = llm_engine::DeviceBackend::TtRun;
+            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
         } else {
-            cfg.device = llm_engine::DeviceBackend::Mock;
+            cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
     }
     return cfg;
