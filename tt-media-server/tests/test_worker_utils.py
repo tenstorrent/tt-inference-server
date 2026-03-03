@@ -383,7 +383,7 @@ class TestInitializeDeviceWorker:
                         initialize_device_worker("0", mock_logger)
 
                     mock_loop.close.assert_called_once()
-                    mock_logger.error.assert_called_once()
+                    assert mock_logger.error.call_count == 2
 
     def test_closes_device_on_exception(self):
         """Test that device is closed if exception occurs after device_runner is created"""

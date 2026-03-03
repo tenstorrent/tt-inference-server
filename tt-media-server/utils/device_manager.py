@@ -139,7 +139,7 @@ class DeviceManager:
         """Run tt-smi and return tray mapping. Returns {} on failure."""
         try:
             return self._run_tt_smi()
-        except DeviceDiscoveryError as e:
+        except Exception as e:
             logger.error("tt-smi discovery failed: %s", e)
             return {}
 
