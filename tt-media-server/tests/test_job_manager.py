@@ -1033,13 +1033,14 @@ class TestJobManager:
     async def test_cooperative_cancel_via_cancel_event(self, job_manager, mock_request):
         """Test cooperative cancellation where task checks cancel_event and returns normally."""
 
-        cancel_event = Event()
-        start_event = Event()
+        training_ctx = TrainingJobContext(
+            start_event=Event(), cancel_event=Event(), training_metrics=[],
+        )
 
         async def cooperative_task(req):
-            start_event.set()
+            training_ctx.start_event.set()
             # Simulates a training loop checking cancel_event — same as the real runner
-            while not cancel_event.is_set():
+            while not training_ctx.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             return "models_save/result.pt"
 
@@ -1050,8 +1051,7 @@ class TestJobManager:
             request=mock_request,
             task_function=cooperative_task,
             result_path="models_save/result.pt",
-            start_event=start_event,
-            cancel_event=cancel_event,
+            training_context=training_ctx,
         )
 
         await asyncio.sleep(0.3)
@@ -1067,7 +1067,7 @@ class TestJobManager:
             assert db_job2["status"] == "cancelling"
 
         # _cleanup_job should set the event, NOT cancel the task
-        assert cancel_event.is_set()
+        assert training_ctx.cancel_event.is_set()
 
         await asyncio.sleep(0.5)
 
@@ -1085,12 +1085,13 @@ class TestJobManager:
         self, job_manager, mock_request
     ):
         """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
-        cancel_event = Event()
-        start_event = Event()
+        training_ctx = TrainingJobContext(
+            start_event=Event(), cancel_event=Event(), training_metrics=[],
+        )
 
         async def cooperative_task(req):
-            start_event.set()
-            while not cancel_event.is_set():
+            training_ctx.start_event.set()
+            while not training_ctx.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             return "models_save/result.pt"
 
@@ -1101,15 +1102,14 @@ class TestJobManager:
             request=mock_request,
             task_function=cooperative_task,
             result_path="models_save/result.pt",
-            start_event=start_event,
-            cancel_event=cancel_event,
+            training_context=training_ctx,
         )
 
         await asyncio.sleep(0.3)
         await job_manager.shutdown()
 
         # Task should have been force-cancelled, not waiting for cooperative exit
-        assert not cancel_event.is_set()  # force=True skips the event
+        assert not training_ctx.cancel_event.is_set()  # force=True skips the event
 
     @pytest.mark.asyncio
     async def test_queued_job_starts_after_in_progress_job_cancelled(
@@ -1117,22 +1117,25 @@ class TestJobManager:
     ):
         """When a running job is cancelled, the next queued job should start processing."""
 
-        start_event_1 = Event()
-        start_event_2 = Event()
-        cancel_event = Event()
+        training_ctx_1 = TrainingJobContext(
+            start_event=Event(), cancel_event=Event(), training_metrics=[],
+        )
+        training_ctx_2 = TrainingJobContext(
+            start_event=Event(), cancel_event=Event(), training_metrics=[],
+        )
 
         runner_available = asyncio.Event()
 
         async def task_1(req):
-            start_event_1.set()
-            while not cancel_event.is_set():
+            training_ctx_1.start_event.set()
+            while not training_ctx_1.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             runner_available.set()
             return "result_1.pt"
 
         async def task_2(req):
             await runner_available.wait()
-            start_event_2.set()
+            training_ctx_2.start_event.set()
             await asyncio.sleep(5)
             return "result_2.pt"
 
@@ -1143,8 +1146,7 @@ class TestJobManager:
             request=mock_request,
             task_function=task_1,
             result_path="result_1.pt",
-            start_event=start_event_1,
-            cancel_event=cancel_event,
+            training_context=training_ctx_1,
         )
 
         await asyncio.sleep(0.3)
@@ -1158,7 +1160,7 @@ class TestJobManager:
             model="test-model",
             request=mock_request,
             task_function=task_2,
-            start_event=start_event_2,
+            training_context=training_ctx_2,
         )
 
         await asyncio.sleep(0.1)
@@ -1351,8 +1353,8 @@ class TestJobManager:
 
         db_metrics = job_manager.db.get_metrics_flat("train-persist")
         assert len(db_metrics) == 2
-        assert db_metrics[0]["value"] == 0.4
-        assert db_metrics[1]["value"] == 0.5
+        assert db_metrics[0]["value"] == 0.5
+        assert db_metrics[1]["value"] == 0.4
     
     @pytest.mark.asyncio
     async def test_restore_training_job_restores_metrics(self, job_manager):
@@ -1386,3 +1388,36 @@ class TestJobManager:
                 assert metrics[2] == {"global_step": 20, "epoch": 2, "metric_name": "loss", "value": 0.3, "timestamp": 1002}
             finally:
                 await m2.shutdown()
+
+    def test_get_metrics_flat_sorted_by_metric_name_then_global_step(self, job_manager):
+        """Test that get_metrics_flat returns metrics sorted by metric_name ASC, then global_step ASC."""
+        if not job_manager.db:
+            assert True
+            return
+
+        job_manager.db.insert_job(
+            job_id="job-sort",
+            job_type=JobTypes.TRAINING.value,
+            model="model-1",
+            request_parameters={},
+            status="in_progress",
+            created_at=1000,
+        )
+
+        # Insert metrics in deliberately unsorted order
+        job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="loss", value=0.1, timestamp=3000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="accuracy", value=0.7, timestamp=1000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=2000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="accuracy", value=0.95, timestamp=3000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=20, epoch=2, metric_name="accuracy", value=0.85, timestamp=2000)
+
+        results = job_manager.db.get_metrics_flat("job-sort")
+
+        assert len(results) == 6
+
+        # Verify primary sort: metric_name ASC
+        metric_names = [r["metric_name"] for r in results]
+        global_steps = [r["global_step"] for r in results]
+        assert metric_names == ["accuracy", "accuracy", "accuracy", "loss", "loss", "loss"]
+        assert global_steps == [10, 20, 30, 10, 20, 30]

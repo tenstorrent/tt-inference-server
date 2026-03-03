@@ -191,7 +191,7 @@ class JobDatabase:
         """Returns metrics as a flat list."""
         with self._get_cursor(commit=False) as cursor:
             cursor.execute(
-                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, epoch ASC, global_step ASC",
+                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
                 (job_id,),
             )
             return [

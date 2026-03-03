@@ -318,20 +318,6 @@ class JobManager:
                     f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
                 )
 
-    async def _mark_job_in_progress(self, job: Job):
-        if job._start_event:
-            while not job._start_event.is_set():
-                await asyncio.sleep(0.5)
-
-        job.mark_in_progress()
-        if self.db:
-            try:
-                self.db.update_job_status(job.id, job.status.value)
-            except Exception as e:
-                self._logger.error(
-                    f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
-                )
-
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         metrics_persister = None
         try:
