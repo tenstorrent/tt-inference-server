@@ -1,0 +1,119 @@
+# Understanding the Apache 2.0 License for tt-inference-server
+
+This document provides additional context and clarification for how the Apache
+License 2.0 applies to the tt-inference-server project. This is not legal
+advice and does not modify the terms of the LICENSE file.
+
+## What the Apache 2.0 License Means for You
+
+### If you're USING tt-inference-server
+
+**You can:**
+- Use the software for any purpose, including commercial applications
+- Modify the software to fit your needs
+- Distribute the software or your modifications
+- Use the software privately without sharing your changes
+
+**You must:**
+- Include a copy of the Apache 2.0 license with any distribution
+- Provide clear attribution to Tenstorrent AI ULC
+- State any significant changes you've made to the software
+- Include the NOTICE file with any distribution
+
+**You cannot:**
+- Hold Tenstorrent AI ULC liable for any damages arising from the software
+- Use Tenstorrent trademarks without permission (except as required for attribution)
+- Remove or alter copyright notices
+
+### If you're CONTRIBUTING to tt-inference-server
+
+**By contributing, you agree that:**
+- Your contributions will be licensed under Apache 2.0
+- You have the right to make the contribution (you own it or have permission)
+- Your contributions are provided "as-is" without warranties
+
+**Best practices for contributors:**
+- Include proper SPDX headers in new files:
+  ```
+  // SPDX-License-Identifier: Apache-2.0
+  // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+  ```
+- Follow the contribution guidelines in CONTRIBUTING.md
+- Respect the Code of Conduct in CODE_OF_CONDUCT.md
+- Report security vulnerabilities according to SECURITY.md
+
+## Patent Grant Clarification
+
+The Apache 2.0 license includes an explicit patent grant (Section 3). This means:
+
+1. **Contributors grant you patent rights:** If a contributor's code uses their
+   patent, they automatically grant you a license to use that patent (for this
+   software only).
+
+2. **Defensive termination:** If you sue anyone claiming this software infringes
+   your patents, your patent license terminates automatically.
+
+3. **Why this matters:** This protects users and contributors from patent
+   litigation while encouraging open collaboration.
+
+## Third-Party Dependencies
+
+tt-inference-server includes several third-party dependencies, each with their
+own licenses:
+
+- **Apache 2.0:** Fully compatible (same license)
+- **MIT License:** Fully compatible (permissive)
+- **BSD 3-Clause:** Fully compatible (permissive with attribution)
+- **Boost Software License:** Fully compatible (permissive)
+
+All third-party components are listed in the NOTICE file. When you distribute
+tt-inference-server, you must include attribution for these dependencies.
+
+## Trademarks
+
+The Apache 2.0 license does NOT grant permission to use Tenstorrent trademarks,
+trade names, or product names, except as required for reasonable and customary
+use in describing the origin of the software.
+
+"Tenstorrent" and related marks are trademarks of Tenstorrent AI ULC. Use of
+these marks requires separate permission.
+
+## Commercial Use
+
+The Apache 2.0 license explicitly permits commercial use. You can:
+- Use tt-inference-server in commercial products
+- Charge for services built on tt-inference-server
+- Integrate tt-inference-server into proprietary software
+
+**However, you must:**
+- Provide the LICENSE and NOTICE files
+- Give appropriate attribution
+- Clearly indicate any modifications you've made
+
+## Questions and Interpretation
+
+If you have questions about licensing:
+
+1. **General Apache 2.0 questions:** See https://www.apache.org/licenses/LICENSE-2.0
+2. **Project-specific questions:** File an issue at https://github.com/tenstorrent/tt-inference-server/issues
+3. **Legal advice:** Consult with your own legal counsel
+
+## Summary
+
+The Apache 2.0 license is designed to:
+- Encourage both open source and commercial use
+- Provide clear patent protection
+- Require attribution and transparency
+- Allow modification and distribution
+- Protect contributors from liability
+
+We chose Apache 2.0 because it strikes a balance between openness and protection,
+making it suitable for both research and commercial applications of tt-inference-server.
+
+---
+
+**Last Updated:** March 2026
+
+**Note:** This document provides helpful context but does not constitute legal advice.
+The LICENSE file contains the actual legal terms. When in doubt, consult the
+official Apache 2.0 license text and/or seek legal counsel.
