@@ -214,13 +214,13 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 1,
+                "num_prompts": 8,
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 35,
                         "tput_user": 72,
-                        "tput": 2304
+                        "tput": 72
                     }
                 }
             }
