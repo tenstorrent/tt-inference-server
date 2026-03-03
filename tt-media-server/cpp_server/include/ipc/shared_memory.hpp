@@ -91,6 +91,11 @@ public:
         int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
         mode_t mode = S_IRUSR | S_IWUSR;
 
+        if (create) {
+            // Unlink existing shared memory to ensure clean state
+            shm_unlink(name.c_str());
+        }
+
         shm_fd_ = shm_open(name.c_str(), flags, mode);
         if (shm_fd_ < 0) {
             throw std::runtime_error("Failed to open shared memory: " + name);

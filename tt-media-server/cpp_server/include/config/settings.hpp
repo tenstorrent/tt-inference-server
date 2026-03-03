@@ -58,8 +58,8 @@ llm_engine::Config llm_engine_config();
 /** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_V3). */
 ModelType model_type();
 
-/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
-SocketRole socket_role();
+/** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
+LLMMode llm_mode();
 
 /** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
 std::string socket_host();

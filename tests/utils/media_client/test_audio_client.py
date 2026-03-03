@@ -428,7 +428,8 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "AUDIO"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
@@ -583,7 +584,8 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "AUDIO"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         strategy = AudioClientStrategy({}, model_spec, device, "/tmp/output", 8000)
@@ -1019,7 +1021,8 @@ class TestAudioClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         model_spec.model_name = "test"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "AUDIO"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
 

@@ -35,6 +35,7 @@ from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
@@ -69,9 +70,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -184,13 +185,13 @@ def main():
 
     args = parse_args()
     jwt_secret = args.jwt_secret
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
-    disable_trace_capture = cli_args.get("disable_trace_capture", False)
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    service_port = runtime_config.service_port
+    disable_trace_capture = runtime_config.disable_trace_capture
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -206,7 +207,7 @@ def main():
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     # Check for tools selection (genai vs vllm)
-    tools = cli_args.get("tools", "vllm")
+    tools = runtime_config.tools if runtime_config.tools is not None else "vllm"
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
@@ -219,7 +220,7 @@ def main():
         logger.info("Using genai-perf (Triton SDK) for benchmarking")
 
         # Determine debug mode from limit_samples_mode
-        limit_samples_mode_str = cli_args.get("limit_samples_mode")
+        limit_samples_mode_str = runtime_config.limit_samples_mode
         debug_mode = False
         if limit_samples_mode_str:
             from workflows.workflow_types import EvalLimitMode
@@ -268,10 +269,7 @@ def main():
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
-    # CLI arg takes precedence, fallback to model spec cli_args
-    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
-        "concurrency_sweeps", False
-    )
+    concurrency_sweeps = args.concurrency_sweeps or runtime_config.concurrency_sweeps
     if concurrency_sweeps:
         max_context = model_spec.device_model_spec.max_context
         max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users

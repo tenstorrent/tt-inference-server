@@ -379,7 +379,7 @@ precedence:
 
 **1. Argparse (CLI flags):**
 
-- `--model-spec-json`: Model specification file path
+- `--runtime-model-spec-json`: Runtime model specification file path
 - `--output-path`: Results output directory
 - `--jwt-secret`: Authentication token
 

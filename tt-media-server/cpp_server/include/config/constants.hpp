@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace tt::config {
 
@@ -53,30 +54,28 @@ enum class ModelType {
     LLAMA_3_1_8B_INSTRUCT,
 };
 
-enum class SocketRole {
-    NONE,
-    SERVER,
-    CLIENT,
+
+enum class LLMMode {
+    REGULAR,
+    PREFILL_ONLY,
+    DECODE_ONLY,
 };
 
-/** String value for env SOCKET_ROLE (e.g. "server", "client"). */
-inline std::string to_string(SocketRole r) {
-    switch (r) {
-        case SocketRole::SERVER:
-            return "server";
-        case SocketRole::CLIENT:
-            return "client";
-        case SocketRole::NONE:
-        default:
-            return "";
+/** String value for env LLM_MODE (e.g. "regular", "prefill", "decode"). */
+constexpr std::string_view to_string(LLMMode m) {
+    switch (m) {
+        case LLMMode::PREFILL_ONLY: return "prefill";
+        case LLMMode::DECODE_ONLY:  return "decode";
+        case LLMMode::REGULAR:      return "regular";
     }
+    return "unknown";
 }
 
-/** Parse SOCKET_ROLE; empty or unknown -> NONE. */
-inline SocketRole socket_role_from_string(const std::string& v) {
-    if (v == "server") return SocketRole::SERVER;
-    if (v == "client") return SocketRole::CLIENT;
-    return SocketRole::NONE;
+/** Parse LLM_MODE; empty or unknown -> REGULAR. */
+inline LLMMode llm_mode_from_string(const std::string& v) {
+    if (v == "prefill") return LLMMode::PREFILL_ONLY;
+    if (v == "decode") return LLMMode::DECODE_ONLY;
+    return LLMMode::REGULAR;
 }
 
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
@@ -100,6 +99,7 @@ namespace defaults {
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
+    constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
     constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
