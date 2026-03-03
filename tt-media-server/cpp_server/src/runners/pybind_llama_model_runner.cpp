@@ -123,7 +123,7 @@ struct PybindLlamaModelRunner::Impl {
                               block_table, current_pos, prompt_len, seed));
         }
 
-        py::object results = runner_.attr("run_step")(is_prefill, py_seqs);
+        py::object results = runner_.attr("run")(is_prefill, py_seqs);
 
         for (size_t i = 0; i < seqs.size(); ++i) {
           py::object item = results[py::int_(i)];
