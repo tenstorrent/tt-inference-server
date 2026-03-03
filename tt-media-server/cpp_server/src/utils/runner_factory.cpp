@@ -5,28 +5,10 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
-#include "runners/llama_model_runner.hpp"
 
 #include <iostream>
 
 namespace tt::utils::runner_factory {
-
-static tt::runners::ModelRunnerFactory make_model_runner_factory() {
-    if (tt::config::model_runner_type() != tt::config::RunnerType::LLAMA_RUNNER) {
-        return nullptr;
-    }
-    return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb)
-               -> std::unique_ptr<llm_engine::IModelRunner> {
-        auto runner = llm_engine::make_llama_model_runner(cfg, cb);
-        if (!runner) {
-            std::cerr << "[RunnerFactory] FATAL: LlamaModelRunner init failed — "
-                         "model warmup or Python init error. "
-                         "Check logs above for '[LlamaModelRunner] Python init error'.\n";
-            std::abort();
-        }
-        return runner;
-    };
-}
 
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
@@ -43,8 +25,7 @@ std::unique_ptr<runners::IRunner> create_runner(
         default: {
             std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
             auto& cfg = std::get<llm_engine::Config>(config);
-
-            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue, make_model_runner_factory());
+            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
         }
     }
 }

@@ -4,7 +4,7 @@ A high-performance C++ implementation of the TT Media Server using the Drogon we
 
 ## LLM engine
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runners/llm_runner/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
 
 ### Main features
 
@@ -19,12 +19,15 @@ The engine does **not** support chunked prefill: each request is prefilled in fu
 
 ### Run unit tests
 
-Run scheduler unit tests (Google Test):
+Run LLM engine unit tests (Google Test) from the `cpp_server` directory:
 
 ```bash
 cd build && ctest --output-on-failure
-# or run the test binary directly:
+# Or run test binaries directly:
 ./build/scheduler_test
+./build/llm_runner_test
+./build/sequence_test
+./build/ipc_scheduler_smoke_test
 ```
 
 ## Quick Start
@@ -148,7 +151,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MODEL_RUNNER` | Runner type: `llm_test` (LLM_TEST, in-process stub) or `llama_runner` (spawns `python -m tt_model_runners.llama_runner`). | `llm_test` |
+| `MODEL_RUNNER` | Runner type: `llm_test` (in-process stub) or `llama_runner` (in-process pybind11, calls `tt_model_runners.llama_runner.Llama31_8BRunner`). | `llm_test` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
@@ -325,24 +328,46 @@ The C++ server mirrors the Python implementation's architecture:
 cpp_server/
 ├── include/
 │   ├── api/
-│   │   └── llm_controller.hpp      # OpenAI-compatible API controller
+│   │   ├── llm_controller.hpp       # OpenAI-compatible LLM API
+│   │   ├── embedding_controller.hpp
+│   │   └── health_controller.hpp
+│   ├── config/
+│   │   ├── settings.hpp             # Env-based config (defaults + overrides)
+│   │   └── constants.hpp            # Default env values, RunnerType, etc.
 │   ├── domain/
-│   │   ├── completion_request.hpp  # Request domain object
-│   │   └── completion_response.hpp # Response domain objects
+│   │   ├── completion_request.hpp
+│   │   ├── completion_response.hpp
+│   │   ├── chat_completion_*.hpp
+│   │   └── embedding_*.hpp
 │   ├── runners/
-│   │   └── runner_factory.hpp      # Runner factory (env-based selection)
-│   ├── scheduler/
-│   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
-│   └── services/
-│       ├── base_service.hpp        # Base service class
-│       └── llm_service.hpp         # LLM service
+│   │   ├── llm_runner.hpp           # LLMRunner (scheduler + model runner)
+│   │   ├── llm_runner/              # LLM engine (config, scheduler, block manager, model_runner)
+│   │   │   ├── config.hpp           # Config, DeviceBackend, ModelRunnerType
+│   │   │   ├── model_runner.hpp     # IModelRunner, make_model_runner()
+│   │   │   ├── device_backend.hpp  # IDeviceBackend, make_device_backend()
+│   │   │   └── ...
+│   │   ├── llama_model_runner.hpp   # LlamaModelRunner (pybind11 in-process)
+│   │   ├── embedding_runner.hpp
+│   │   └── runner_interface.hpp
+│   ├── utils/
+│   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
+│   │   └── tokenizer_strategy.hpp  # MODEL_RUNNER → tokenizer
+│   ├── services/
+│   │   ├── llm_service.hpp
+│   │   └── embedding_service.hpp
+│   └── worker/
+│       └── single_process_worker.hpp
 ├── src/
 │   ├── api/
-│   │   └── llm_controller.cpp
-│   ├── scheduler/
-│   │   └── scheduler.cpp
+│   ├── config/
+│   ├── runners/
+│   │   ├── llm_runner.cpp
+│   │   ├── llm_runner/              # model_runner, device_backend, scheduler, ...
+│   │   ├── llama_model_runner.cpp
+│   │   └── embedding_runner.cpp
+│   ├── utils/
+│   │   └── runner_factory.cpp       # create_runner() → LLMRunner or EmbeddingRunner
 │   ├── services/
-│   │   └── base_service.cpp
 │   └── main.cpp
 └── CMakeLists.txt
 ```
@@ -364,40 +389,27 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- `RunnerFactory`: Creates appropriate runner based on `TT_RUNNER_TYPE` environment variable
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `MODEL_RUNNER`. For LLM, builds `llm_engine::Config` (including `model_runner` and `device` from config/settings) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/config.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
 
 ## Runner Types
 
-The server supports the following runner type, selected via the `TT_RUNNER_TYPE` environment variable:
+The server supports the following runner types, selected via the `MODEL_RUNNER` environment variable:
 
 | Runner | Value | Description |
 |--------|-------|-------------|
-| LLMTestRunner | `llm_test` (default) | Pure CPU benchmark, generates 120k tokens/sec |
-| Llama runner | `llama_runner` | Spawns `python -m tt_model_runners.llama_runner` (TTNN device) |
+| LLM test (stub) | `llm_test` (default) | In-process mock; no device. Good for server/API testing. |
+| Llama runner | `llama_runner` | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
 
-### LLMTestRunner (Default)
+### LLM test runner (default)
 
-Generates tokens at 120,000 tokens/second using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of any device I/O.
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/completions` | POST | OpenAI-compatible text completion |
-| `/health` | GET | Health check |
-| `/tt-liveness` | GET | Liveness check with system status |
+When `MODEL_RUNNER=llm_test`, the engine uses a stub model runner (no real device). Useful for testing the server and API without hardware.
 
 ## Performance
 
-The `LLMTestRunner` is designed to generate tokens at **120,000 tokens/second** using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of actual model inference.
-
-Token generation timing:
-- Target: 120,000 tokens/second
-- Token interval: ~8.33 microseconds
-- Uses `std::chrono::high_resolution_clock` for precise timing
+With `MODEL_RUNNER=llm_test`, the stub runner can be used to benchmark server overhead (no device I/O). Real throughput with `llama_runner` depends on the TT device and model.
 
 ## Building
 
@@ -468,15 +480,6 @@ The server includes tokenizer support for encode/decode:
 4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
    active tokenizer is selected at runtime based on `MODEL_RUNNER` (see
    [Runtime model selection](#runtime-model-selection) above).
-
-## Performance
-
-The `LLMTestRunner` is designed to generate tokens at **120,000 tokens/second** using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of actual model inference.
-
-Token generation timing:
-- Target: 120,000 tokens/second
-- Token interval: ~8.33 microseconds
-- Uses `std::chrono::high_resolution_clock` for precise timing
 
 ## Comparison with Python FastAPI
 

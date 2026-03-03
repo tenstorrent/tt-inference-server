@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <memory>
+#include <atomic>
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
@@ -20,14 +20,20 @@ class LlamaModelRunner : public IModelRunner {
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
 
-  bool is_ready() const;
+  bool is_ready() const { return initialized_; }
 
  private:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
+  bool initialize();
+  void fail_sequences(const std::vector<Sequence*>& seqs);
+
+  Config config_;
+  DecodeCallback decode_callback_;
+  std::atomic<bool> stop_{false};
+  bool initialized_ = false;
+  bool owns_interpreter_ = false;
 };
 
 std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
-                                                             DecodeCallback callback);
+                                                      DecodeCallback callback);
 
 }  // namespace llm_engine

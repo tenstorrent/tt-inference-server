@@ -7,7 +7,7 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue, ModelRunnerFactory model_runner_factory)
+LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
     : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
@@ -17,11 +17,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     decode_queue_.push(result);
   };
 
-  if (model_runner_factory) {
-    model_runner_ = model_runner_factory(config_, std::move(decode_cb));
-  } else {
-    model_runner_ = make_model_runner(config_, std::move(decode_cb));
-  }
+  model_runner_ = make_model_runner(config_, std::move(decode_cb));
 }
 
 LLMRunner::~LLMRunner() {

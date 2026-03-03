@@ -3,6 +3,12 @@
 #include "runners/llm_runner/device_backend.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
+#ifdef USE_METAL_CPP_LIB
+#include "runners/llama_model_runner.hpp"
+#endif
+
+#include <iostream>
+
 namespace llm_engine {
 
 constexpr int64_t kWhitespaceTokenId = 223;
@@ -64,6 +70,18 @@ void ModelRunnerStub::exit() {
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback) {
+#ifdef USE_METAL_CPP_LIB
+  if (config.model_runner == ModelRunnerType::Llama) {
+    auto runner = make_llama_model_runner(config, callback);
+    if (!runner) {
+      std::cerr << "[make_model_runner] FATAL: LlamaModelRunner init failed — "
+                   "model warmup or Python init error. "
+                   "Check logs above for '[LlamaModelRunner] Python init error'.\n";
+      std::abort();
+    }
+    return runner;
+  }
+#endif
   auto backend = make_device_backend(config);
   return std::make_unique<ModelRunnerStub>(config, std::move(callback), std::move(backend));
 }

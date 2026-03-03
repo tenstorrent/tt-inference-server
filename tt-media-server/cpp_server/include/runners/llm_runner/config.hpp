@@ -11,6 +11,11 @@ enum class DeviceBackend {
   Sockets,
 };
 
+enum class ModelRunnerType {
+  Stub,
+  Llama,
+};
+
 struct Config {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
   int max_num_batched_tokens = 16384;
@@ -21,6 +26,7 @@ struct Config {
   int num_kvcache_blocks = 512;
   bool reserve_first_kv_block = false;
   DeviceBackend device = DeviceBackend::Mock;
+  ModelRunnerType model_runner = ModelRunnerType::Stub;
 };
 
 }  // namespace llm_engine

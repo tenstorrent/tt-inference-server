@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <functional>
 #include <memory>
 
 #include "runners/runner_interface.hpp"
@@ -15,12 +14,9 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-using ModelRunnerFactory =
-    std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;
-
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue, ModelRunnerFactory model_runner_factory = nullptr);
+  LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }

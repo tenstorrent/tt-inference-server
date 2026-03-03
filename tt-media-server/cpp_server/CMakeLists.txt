@@ -151,7 +151,10 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/sampling_params.cpp
 )
 if(TT_METAL_API_FOUND)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
+    list(APPEND LLM_ENGINE_SOURCES
+        src/runners/llm_runner/sockets_device_backend.cpp
+        src/runners/llama_model_runner.cpp
+    )
 else()
     message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
 endif()
@@ -174,6 +177,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
         target_link_libraries(llm_engine PUBLIC tt_metal tt_stl)
     endif()
+    target_link_libraries(llm_engine PUBLIC pybind11::embed)
 endif()
 target_link_libraries(llm_engine PUBLIC Boost::boost)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -262,7 +266,6 @@ set(SOURCES
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
-    src/runners/llama_model_runner.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
     src/utils/tokenizer_strategy.cpp

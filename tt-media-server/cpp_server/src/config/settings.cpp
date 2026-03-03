@@ -149,6 +149,7 @@ llm_engine::Config llm_engine_config() {
     if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
         cfg.max_num_seqs = 16;
         cfg.reserve_first_kv_block = true;
+        cfg.model_runner = llm_engine::ModelRunnerType::Llama;
     }
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
