@@ -80,6 +80,7 @@ async def get_fine_tuning_job_metadata(
 
     return JSONResponse(content=job_data)
 
+
 @router.get("/jobs/{job_id}/metrics")
 async def get_training_metrics(
     job_id: str,
@@ -94,11 +95,13 @@ async def get_training_metrics(
     metrics = service.get_job_metrics(job_id, after)
     is_final = job_data.get("status") in ("completed", "failed", "cancelled")
 
-    return JSONResponse(content={
-        "data": metrics,
-        "next_after": after + len(metrics),
-        "is_final": is_final,
-    })
+    return JSONResponse(
+        content={
+            "data": metrics,
+            "next_after": after + len(metrics),
+            "is_final": is_final,
+        }
+    )
 
 
 @router.post("/jobs/{job_id}/cancel")

@@ -33,6 +33,7 @@ class TrainingJobContext:
     cancel_event: Event
     training_metrics: list
 
+
 @dataclass
 class Job:
     id: str
@@ -46,7 +47,7 @@ class Job:
     error: Optional[dict] = None
     _task: Callable = None
     _training_context: Optional[TrainingJobContext] = None
-    
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
@@ -146,7 +147,7 @@ class JobManager:
                 job.result_path = result_path
             if training_context:
                 job._training_context = training_context
-            
+
             if self.db:
                 try:
                     self.db.insert_job(
@@ -200,7 +201,7 @@ class JobManager:
                 else:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
-    
+
     def get_training_metrics(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
@@ -277,7 +278,7 @@ class JobManager:
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
-    
+
     async def _persist_metrics_to_db(self, job: Job):
         metrics_list = self.get_training_metrics(job.id)
         if metrics_list is None:
@@ -297,7 +298,9 @@ class JobManager:
                         timestamp=metric["timestamp"],
                     )
                 except Exception as e:
-                    self._logger.error(f"Failed to persist metric for job {job.id}: {e}")
+                    self._logger.error(
+                        f"Failed to persist metric for job {job.id}: {e}"
+                    )
             last_seen = current_len
             if job.is_terminal():
                 break

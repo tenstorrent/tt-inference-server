@@ -47,15 +47,17 @@ class TestTrainingServiceCreateJob:
 
             assert mock_request._output_model_path == "models_save/unique_task_123.pt"
 
+
 class TestTrainingServiceGetJobMetrics:
     @pytest.fixture
     def service(self):
         from model_services.training_service import TrainingService
+
         # Skip __init__ side effects — only _job_manager is needed for get_job_metrics
         svc = object.__new__(TrainingService)
         svc._job_manager = MagicMock()
         return svc
-    
+
     def test_after_slices_correctly(self, service):
         metrics = [
             {"global_step": 1, "metric_name": "loss", "value": 0.5},
@@ -68,5 +70,7 @@ class TestTrainingServiceGetJobMetrics:
         result_after_2 = service.get_job_metrics("job-1", after=2)
         result_after_10 = service.get_job_metrics("job-1", after=10)
         assert result_all == metrics
-        assert result_after_2 == [{"global_step": 3, "metric_name": "loss", "value": 0.3}]
+        assert result_after_2 == [
+            {"global_step": 3, "metric_name": "loss", "value": 0.3}
+        ]
         assert result_after_10 == []

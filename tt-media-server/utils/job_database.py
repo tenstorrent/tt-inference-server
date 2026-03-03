@@ -55,7 +55,7 @@ class JobDatabase:
                     result_path TEXT
                 );
             """)
-            cursor.execute('''
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS metrics (
                     job_id TEXT NOT NULL,
                     global_step INTEGER NOT NULL,
@@ -67,7 +67,7 @@ class JobDatabase:
                     PRIMARY KEY (job_id, global_step, metric_name), 
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
-            ''')
+            """)
 
     def insert_job(
         self,
@@ -179,14 +179,22 @@ class JobDatabase:
         return jobs
 
     # ------------- METRICS -------------
-    def insert_metric(self, job_id: str, global_step: int, epoch: int, metric_name: str, value: float, timestamp: int) -> None:
+    def insert_metric(
+        self,
+        job_id: str,
+        global_step: int,
+        epoch: int,
+        metric_name: str,
+        value: float,
+        timestamp: int,
+    ) -> None:
         """Insert a new metric into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
                 "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                (job_id, global_step, epoch, metric_name, value, timestamp)
+                (job_id, global_step, epoch, metric_name, value, timestamp),
             )
-    
+
     def get_metrics_flat(self, job_id: str) -> List[Dict[str, Any]]:
         """Returns metrics as a flat list."""
         with self._get_cursor(commit=False) as cursor:
