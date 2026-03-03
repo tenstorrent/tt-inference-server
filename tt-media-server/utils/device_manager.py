@@ -33,7 +33,7 @@ CHIP_PATTERN = re.compile(
 )
 
 
-class DiscoveryError(RuntimeError):
+class DeviceDiscoveryError(RuntimeError):
     """Device discovery failed."""
 
 
@@ -61,7 +61,7 @@ class DeviceManager:
         """(1,1) mesh - flat list via tt-smi. Returns [] on discovery failure."""
         try:
             tray_mapping = self._run_tt_smi()
-        except DiscoveryError as e:
+        except DeviceDiscoveryError as e:
             logger.error("tt-smi discovery failed: %s", e)
             return []
         devices = self._create_single_devices(tray_mapping)
@@ -75,7 +75,7 @@ class DeviceManager:
             pairs = self._build_pairs_from_chips(chips)
             logger.info("Device pairs: %s", pairs)
             return pairs
-        except DiscoveryError as e:
+        except DeviceDiscoveryError as e:
             logger.error("Galaxy device discovery failed: %s", e)
             return []
 
@@ -83,12 +83,12 @@ class DeviceManager:
         """(2,4) mesh - groups of 8 via tt-smi. Returns [] on failure."""
         try:
             tray_mapping = self._run_tt_smi()
-        except DiscoveryError as e:
+        except DeviceDiscoveryError as e:
             logger.error("tt-smi discovery failed: %s", e)
             return []
         try:
             groups = self._create_device_groups_of_eight(tray_mapping)
-        except DiscoveryError as e:
+        except DeviceDiscoveryError as e:
             logger.error("%s", e)
             return []
         logger.info("Device groups of 8: %s", groups)
@@ -104,16 +104,16 @@ class DeviceManager:
                 timeout=TT_SMI_TIMEOUT,
             )
         except FileNotFoundError:
-            raise DiscoveryError("tt-smi not found in PATH")
+            raise DeviceDiscoveryError("tt-smi not found in PATH")
         except subprocess.TimeoutExpired:
-            raise DiscoveryError(f"tt-smi timed out after {TT_SMI_TIMEOUT}s")
+            raise DeviceDiscoveryError(f"tt-smi timed out after {TT_SMI_TIMEOUT}s")
 
         if result.returncode != 0:
-            raise DiscoveryError(f"tt-smi failed: {result.stderr}")
+            raise DeviceDiscoveryError(f"tt-smi failed: {result.stderr}")
 
         tray_mapping = self._parse_tt_smi_output(result.stdout or "")
         if not tray_mapping:
-            raise DiscoveryError("tt-smi: no trays parsed")
+            raise DeviceDiscoveryError("tt-smi: no trays parsed")
 
         logger.info("Tray mapping: %s", tray_mapping)
         return tray_mapping
@@ -139,7 +139,7 @@ class DeviceManager:
         """Run tt-smi and return tray mapping. Returns {} on failure."""
         try:
             return self._run_tt_smi()
-        except DiscoveryError as e:
+        except DeviceDiscoveryError as e:
             logger.error("tt-smi discovery failed: %s", e)
             return {}
 
@@ -157,7 +157,7 @@ class DeviceManager:
         for tray in sorted(tray_mapping):
             ids = sorted(tray_mapping[tray])
             if len(ids) < N_PER_TRAY:
-                raise DiscoveryError(
+                raise DeviceDiscoveryError(
                     f"Tray {tray}: need {N_PER_TRAY} devices, got {len(ids)}"
                 )
             groups.append(tuple(ids[:N_PER_TRAY]))
@@ -183,11 +183,11 @@ class DeviceManager:
                 start_new_session=True,
             )
         except subprocess.TimeoutExpired:
-            raise DiscoveryError(
+            raise DeviceDiscoveryError(
                 f"test_system_health timed out after {SYSTEM_HEALTH_TIMEOUT}s"
             )
         except OSError as e:
-            raise DiscoveryError(f"test_system_health failed: {e}")
+            raise DeviceDiscoveryError(f"test_system_health failed: {e}")
 
         logger.info(
             "Completed in %.1fs, rc=%s",
@@ -197,11 +197,11 @@ class DeviceManager:
 
         output = result.stdout or ""
         if not output:
-            raise DiscoveryError("test_system_health: no output")
+            raise DeviceDiscoveryError("test_system_health: no output")
 
         chips = self._parse_system_health_output(output)
         if not chips:
-            raise DiscoveryError("test_system_health: no chips parsed")
+            raise DeviceDiscoveryError("test_system_health: no chips parsed")
 
         return chips
 
