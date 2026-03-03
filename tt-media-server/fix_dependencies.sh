@@ -11,4 +11,4 @@ uv pip install torch torchvision torchaudio --index-url https://download.pytorch
 # Install xformers withouth and CUDA sub-depts
 uv pip install xformers --no-deps
 
-uv pip install diffusers
+uv pip install diffusers==0.35.1
