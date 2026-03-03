@@ -155,7 +155,7 @@ class DeviceManager:
         """Build one group of 8 per tray. Raises DiscoveryError if any tray has < 8."""
         groups: list[tuple[int, ...]] = []
         for tray in sorted(tray_mapping):
-            ids = sorted(tray_mapping[tray])
+            ids = sorted(tray_mapping[tray]) #Maybe not mandatory to sort
             if len(ids) < N_PER_TRAY:
                 raise DeviceDiscoveryError(
                     f"Tray {tray}: need {N_PER_TRAY} devices, got {len(ids)}"
