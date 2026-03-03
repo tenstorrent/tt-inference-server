@@ -96,16 +96,16 @@ public:
                         int active_tasks);
 
     /**
-     * @brief Set callback for received task forwards
-     * @param callback Function to call when task forward message is received
+     * @brief Set callback for when prefill server receives a request
+     * @param callback Function to call when prefill request is received
      */
-    void setTaskForwardCallback(TaskForwardCallback callback);
+    void onPrefillRequested(TaskForwardCallback callback);
 
     /**
-     * @brief Set callback for received task results
-     * @param callback Function to call when result is received
+     * @brief Set callback for when decode server receives prefill completion
+     * @param callback Function to call when prefill is complete
      */
-    void setTaskResultCallback(TaskCallback callback);
+    void onPrefillComplete(TaskCallback callback);
 
     /**
      * @brief Set callback for received health checks

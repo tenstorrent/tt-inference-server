@@ -16,10 +16,10 @@ InterServerService::~InterServerService() {
 }
 
 bool InterServerService::initializeFromConfig() {
-    auto role = tt::config::socket_role();
+    auto mode = tt::config::llm_mode();
 
-    if (role == tt::config::SocketRole::NONE) {
-        std::cout << "[InterServerService] Socket communication disabled (SOCKET_ROLE not set)" << std::endl;
+    if (mode == tt::config::LLMMode::REGULAR) {
+        std::cout << "[InterServerService] Socket communication disabled (regular mode)" << std::endl;
         enabled_ = false;
         return false;
     }
@@ -29,10 +29,10 @@ bool InterServerService::initializeFromConfig() {
 
     bool success = false;
 
-    if (role == tt::config::SocketRole::SERVER) {
+    if (mode == tt::config::LLMMode::DECODE_ONLY) {
         std::cout << "[InterServerService] Initializing as server on port " << port << std::endl;
         success = socket_manager_.initializeAsServer(port);
-    } else if (role == tt::config::SocketRole::CLIENT) {
+    } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
         std::cout << "[InterServerService] Initializing as client to " << host << ":" << port << std::endl;
         success = socket_manager_.initializeAsClient(host, port);
     }
@@ -112,11 +112,11 @@ bool InterServerService::sendHealthCheck(const std::string& server_id,
     return socket_manager_.sendObject("health_check", message);
 }
 
-void InterServerService::setTaskForwardCallback(TaskForwardCallback callback) {
+void InterServerService::onPrefillRequested(TaskForwardCallback callback) {
     task_forward_callback_ = callback;
 }
 
-void InterServerService::setTaskResultCallback(TaskCallback callback) {
+void InterServerService::onPrefillComplete(TaskCallback callback) {
     task_result_callback_ = callback;
 }
 

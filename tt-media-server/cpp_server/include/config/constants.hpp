@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace tt::config {
 
@@ -47,32 +48,6 @@ inline std::string to_string(RunnerType r) {
     }
 }
 
-enum class SocketRole {
-    NONE,
-    SERVER,
-    CLIENT,
-};
-
-/** String value for env SOCKET_ROLE (e.g. "server", "client"). */
-inline std::string to_string(SocketRole r) {
-    switch (r) {
-        case SocketRole::SERVER:
-            return "server";
-        case SocketRole::CLIENT:
-            return "client";
-        case SocketRole::NONE:
-        default:
-            return "";
-    }
-}
-
-/** Parse SOCKET_ROLE; empty or unknown -> NONE. */
-inline SocketRole socket_role_from_string(const std::string& v) {
-    if (v == "server") return SocketRole::SERVER;
-    if (v == "client") return SocketRole::CLIENT;
-    return SocketRole::NONE;
-}
-
 enum class LLMMode {
     REGULAR,
     PREFILL_ONLY,
@@ -80,16 +55,13 @@ enum class LLMMode {
 };
 
 /** String value for env LLM_MODE (e.g. "regular", "prefill", "decode"). */
-inline std::string to_string(LLMMode m) {
+constexpr std::string_view to_string(LLMMode m) {
     switch (m) {
-        case LLMMode::PREFILL_ONLY:
-            return "prefill";
-        case LLMMode::DECODE_ONLY:
-            return "decode";
-        case LLMMode::REGULAR:
-        default:
-            return "regular";
+        case LLMMode::PREFILL_ONLY: return "prefill";
+        case LLMMode::DECODE_ONLY:  return "decode";
+        case LLMMode::REGULAR:      return "regular";
     }
+    return "unknown";
 }
 
 /** Parse LLM_MODE; empty or unknown -> REGULAR. */

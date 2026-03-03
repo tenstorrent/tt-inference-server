@@ -388,14 +388,14 @@ void LLMService::post_process(domain::CompletionResponse&) const {
 
 void LLMService::setup_socket_callbacks() {
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
-        socket_service_->setTaskResultCallback(
+        socket_service_->onPrefillComplete(
             [this](const tt::sockets::TaskResultMessage& result) {
-                handle_socket_task_result(result);
+                handle_prefill_complete(result);
             });
     } else if (mode_ == tt::config::LLMMode::PREFILL_ONLY) {
-        socket_service_->setTaskForwardCallback(
+        socket_service_->onPrefillRequested(
             [this](const tt::sockets::TaskForwardMessage& message) {
-                handle_socket_task_forward(message);
+                handle_prefill_request(message);
             });
     }
 
@@ -435,7 +435,7 @@ void LLMService::handle_connection_lost() {
     stream_callbacks_.clear();
 }
 
-void LLMService::handle_socket_task_forward(const tt::sockets::TaskForwardMessage& message) {
+void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& message) {
     std::cout << "[LLMService:PREFILL] Received task " << message.task_id
               << " (" << message.token_ids.size() << " tokens, max_tokens=" << message.max_tokens << ")\n" << std::flush;
 
@@ -489,7 +489,7 @@ void LLMService::handle_socket_task_forward(const tt::sockets::TaskForwardMessag
         });
 }
 
-void LLMService::handle_socket_task_result(const tt::sockets::TaskResultMessage& result) {
+void LLMService::handle_prefill_complete(const tt::sockets::TaskResultMessage& result) {
     const std::string& task_id = result.task_id;
     std::cout << "[LLMService:DECODE] Received result for task " << task_id
               << " (finished=" << result.finished << ", remaining=" << result.remaining_tokens

@@ -154,13 +154,6 @@ LLMMode llm_mode() {
     return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
 }
 
-SocketRole socket_role() {
-    auto mode = llm_mode();
-    if (mode == LLMMode::DECODE_ONLY) return SocketRole::SERVER;
-    if (mode == LLMMode::PREFILL_ONLY) return SocketRole::CLIENT;
-    return socket_role_from_string(env_string("SOCKET_ROLE", defaults::SOCKET_ROLE));
-}
-
 std::string socket_host() {
     return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
 }

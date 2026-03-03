@@ -64,8 +64,8 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    void handle_socket_task_forward(const tt::sockets::TaskForwardMessage& message);
-    void handle_socket_task_result(const tt::sockets::TaskResultMessage& result);
+    void handle_prefill_request(const tt::sockets::TaskForwardMessage& message);
+    void handle_prefill_complete(const tt::sockets::TaskResultMessage& result);
     void continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result);
     void handle_connection_lost();
 
