@@ -64,3 +64,21 @@ Developer documentation: [docs/README.md](docs/README.md)
 Release documentation: [scripts/release/README.md](scripts/release/README.md)
 
 If you encounter setup or stability problems with any model please [file an issue](https://github.com/tenstorrent/tt-inference-server/issues/new?template=Blank+issue) and our team will address it.
+
+## License
+
+This project is licensed under the Apache License 2.0, except where specified. See the [LICENSE](LICENSE) file for the full license text.
+
+For additional context and common questions about the Apache 2.0 license as applied to this project, see [LICENSE_understanding.txt](LICENSE_understanding.txt).
+
+Third-party dependencies and their licenses are documented in the [NOTICE](NOTICE) file.
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+Please note that this project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+## Security
+
+For information on reporting security vulnerabilities, please see our [Security Policy](SECURITY.md).

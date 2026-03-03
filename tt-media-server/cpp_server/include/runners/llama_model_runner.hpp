@@ -12,6 +12,24 @@ namespace llm_engine {
 /**
  * IModelRunner that runs Llama-3.1-8B-Instruct via embedded Python interpreter (pybind11).
  * Calls tt_model_runners.llama_runner.Llama31_8BRunner methods directly in-process.
+ * 
+ * Thread Safety:
+ * - Uses Python's GIL (Global Interpreter Lock) for thread-safe Python calls
+ * - All Python interactions are wrapped in py::gil_scoped_acquire
+ * - PyEval_SaveThread() releases GIL when not executing Python code
+ * - The Python interpreter is a single global resource, so all inference through
+ *   this runner is serialized at the Python boundary
+ * 
+ * Performance Considerations:
+ * - GIL serialization may become a bottleneck under high concurrency
+ * - Consider multiple worker processes if GIL contention impacts throughput
+ * 
+ * Resource Management:
+ * - Python interpreter initialization is handled in initialize()
+ * - Global Python objects (g_runner, g_step_seq_class) cleaned up in exit()
+ * - Destructor ensures exit() is called for proper cleanup
+ * - If Python interpreter was initialized by this class, it is NOT finalized
+ *   to avoid issues with other potential Python code in the process
  */
 class LlamaModelRunner : public IModelRunner {
  public:

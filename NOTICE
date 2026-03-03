@@ -1,0 +1,117 @@
+tt-inference-server
+Copyright © 2024-2026 Tenstorrent AI ULC
+
+This product includes software developed at Tenstorrent AI ULC.
+
+--------------------------------------------------------------------------------
+Third-Party Software
+--------------------------------------------------------------------------------
+
+This project depends on or includes components from the following third-party
+software projects:
+
+1. pybind11
+   Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>
+   License: BSD 3-Clause License
+   URL: https://github.com/pybind/pybind11
+   Used for: Embedding Python interpreter in C++ server
+
+2. RapidJSON
+   Copyright (c) 2015 THL A29 Limited, a Tencent company, and Milo Yip
+   License: MIT License
+   URL: https://github.com/Tencent/rapidjson
+   Used for: Fast JSON serialization in C++ server
+
+3. cereal
+   Copyright (c) 2013-2022, Randolph Voorhies, Shane Grant
+   License: BSD 3-Clause License
+   URL: https://github.com/USCiLab/cereal
+   Used for: C++ serialization library
+
+4. tokenizers-cpp
+   Copyright (c) 2022 MLC LLM team
+   License: Apache License 2.0
+   URL: https://github.com/mlc-ai/tokenizers-cpp
+   Used for: Tokenization in C++ server
+
+5. GoogleTest
+   Copyright (c) 2008, Google Inc.
+   License: BSD 3-Clause License
+   URL: https://github.com/google/googletest
+   Used for: Unit testing framework
+
+6. Tracy Profiler
+   Copyright (c) 2017-2023, Bartosz Taudul <wolf@nereid.pl>
+   License: BSD 3-Clause License
+   URL: https://github.com/wolfpld/tracy
+   Used for: Optional profiling support
+
+7. Boost C++ Libraries
+   License: Boost Software License 1.0
+   URL: https://www.boost.org/
+   Used for: Various C++ utilities including Boost.Interprocess
+
+8. Drogon
+   Copyright (c) 2018-2024, An Tao
+   License: MIT License
+   URL: https://github.com/drogonframework/drogon
+   Used for: HTTP/WebSocket framework for C++ server
+
+9. Django REST Framework
+   Copyright (c) 2011-2024, Tom Christie
+   License: BSD 3-Clause License
+   URL: https://github.com/encode/django-rest-framework
+   Used for: Python API framework
+
+10. vLLM
+    Copyright (c) 2023, vLLM Team
+    License: Apache License 2.0
+    URL: https://github.com/vllm-project/vllm
+    Used for: LLM inference engine integration
+
+11. SGLang
+    Copyright (c) 2024, SGLang Team
+    License: Apache License 2.0
+    URL: https://github.com/sgl-project/sglang
+    Used for: Structured generation language runtime
+
+12. Hugging Face Transformers
+    Copyright (c) 2018-, The Hugging Face team
+    License: Apache License 2.0
+    URL: https://github.com/huggingface/transformers
+    Used for: Model loading and tokenization
+
+13. PyTorch
+    Copyright (c) 2016-2024, Facebook, Inc. and its affiliates
+    License: BSD-style License
+    URL: https://github.com/pytorch/pytorch
+    Used for: Deep learning framework
+
+14. NumPy
+    Copyright (c) 2005-2024, NumPy Developers
+    License: BSD 3-Clause License
+    URL: https://github.com/numpy/numpy
+    Used for: Numerical computing
+
+15. FastAPI
+    Copyright (c) 2018-2024, Sebastián Ramírez
+    License: MIT License
+    URL: https://github.com/tiangolo/fastapi
+    Used for: Python web framework
+
+16. Docker
+    Copyright (c) 2013-2024, Docker, Inc.
+    License: Apache License 2.0
+   URL: https://github.com/docker/docker
+    Used for: Containerization
+
+--------------------------------------------------------------------------------
+Additional Information
+--------------------------------------------------------------------------------
+
+For complete license texts of the above dependencies, please refer to their
+respective repositories or included license files in the dependencies/
+subdirectories.
+
+This NOTICE file is provided in compliance with the Apache License 2.0
+requirements for attribution of third-party components.

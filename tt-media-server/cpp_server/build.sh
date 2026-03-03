@@ -178,8 +178,10 @@ download_tokenizer() {
             echo "  This is a gated model. Make sure you have:"
             echo "    1. A valid HF_TOKEN set in your environment"
             echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
+            echo "  Debug: wget --header 'Authorization: Bearer [REDACTED]' -S -O /dev/null ${hf_repo}/tokenizer.json"
+        else
+            echo "  Debug: wget -S -O /dev/null ${hf_repo}/tokenizer.json"
         fi
-        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
         return 1
     fi
 

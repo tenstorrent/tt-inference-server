@@ -194,7 +194,30 @@
 Third-Party Dependencies:
 
 The following dependencies are utilized by this project but are not explicitly
-distributed as part of the software:
+distributed as part of the software. For complete attribution information, see
+the NOTICE file.
 
-- Django [License available here](https://github.com/django/django/blob/main/LICENSE)
-- Docker [License available here](https://github.com/docker/docs/blob/main/LICENSE)
+C++ Dependencies:
+- pybind11 (BSD 3-Clause) - https://github.com/pybind/pybind11
+- RapidJSON (MIT) - https://github.com/Tencent/rapidjson
+- cereal (BSD 3-Clause) - https://github.com/USCiLab/cereal
+- tokenizers-cpp (Apache 2.0) - https://github.com/mlc-ai/tokenizers-cpp
+- GoogleTest (BSD 3-Clause) - https://github.com/google/googletest
+- Tracy Profiler (BSD 3-Clause) - https://github.com/wolfpld/tracy
+- Boost C++ Libraries (Boost Software License) - https://www.boost.org/
+- Drogon (MIT) - https://github.com/drogonframework/drogon
+
+Python Dependencies:
+- Django REST Framework (BSD 3-Clause) - https://github.com/encode/django-rest-framework
+- vLLM (Apache 2.0) - https://github.com/vllm-project/vllm
+- SGLang (Apache 2.0) - https://github.com/sgl-project/sglang
+- Hugging Face Transformers (Apache 2.0) - https://github.com/huggingface/transformers
+- PyTorch (BSD-style) - https://github.com/pytorch/pytorch
+- NumPy (BSD 3-Clause) - https://github.com/numpy/numpy
+- FastAPI (MIT) - https://github.com/tiangolo/fastapi
+
+Infrastructure:
+- Docker (Apache 2.0) - https://github.com/docker/docker
+
+For the full license text of each dependency, please visit their respective
+repositories or see the NOTICE file.
