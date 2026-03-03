@@ -1,6 +1,5 @@
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/debug.hpp"
-#include "runners/llm_runner/device_backend.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 #ifdef USE_METAL_CPP_LIB
@@ -26,7 +25,7 @@ std::vector<TokenResult> DecodeQueue::drain() {
 }
 
 ModelRunnerStub::ModelRunnerStub(const Config& config, DecodeCallback callback,
-                                std::unique_ptr<IDeviceBackend> backend)
+                                std::unique_ptr<backend::IDeviceBackend> backend)
     : config_(config),
       decode_callback_(std::move(callback)),
       backend_(std::move(backend)) {
@@ -74,17 +73,10 @@ std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback) {
 #ifdef USE_METAL_CPP_LIB
   if (config.model_runner == ModelRunnerType::Llama) {
-    auto runner = make_llama_model_runner(config, callback);
-    if (!runner) {
-      std::cerr << "[make_model_runner] FATAL: LlamaModelRunner init failed — "
-                   "model warmup or Python init error. "
-                   "Check logs above for '[LlamaModelRunner] Python init error'.\n";
-      std::abort();
-    }
-    return runner;
+    return make_llama_model_runner(config, callback);
   }
 #endif
-  auto backend = make_device_backend(config);
+  auto backend = backend::make_device_backend(config);
   return std::make_unique<ModelRunnerStub>(config, std::move(callback), std::move(backend));
 }
 
