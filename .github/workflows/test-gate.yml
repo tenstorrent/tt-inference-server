@@ -687,6 +687,34 @@ jobs:
       - name: Check benchmark result
         run: exit ${{ env.BENCH_FAIL }}
 
+  cpp-server-tests:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+
+      - name: Run C++ unit tests
+        run: |
+          cd cpp_server/build
+          ctest --output-on-failure
+
   forge-runner-changes:
     name: Detect Forge Runner Changes
     runs-on: ubuntu-latest
@@ -955,7 +983,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage, cpp-server-ttnn-build, cpp-server-llm-streaming]
+    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance, test-coverage, cpp-server-ttnn-build, cpp-server-llm-streaming, cpp-server-tests]
     if: always()
     steps:
       - name: Check results
@@ -987,6 +1015,10 @@ jobs:
           fi
           if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
             echo "❌ C++ server LLM streaming test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.cpp-server-tests.result }}" == "failure" ]]; then
+            echo "❌ C++ server unit tests failed"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"
