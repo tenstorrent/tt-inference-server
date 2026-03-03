@@ -92,6 +92,64 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+| `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
+| `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
+| `SOCKET_PORT` | Socket port for prefill/decode communication. | `9000` |
+
+### Prefill/Decode Split Mode
+
+The server supports running in a split architecture where prefill and decode operations are handled by separate server instances on different machines. This enables distributing the workload across multiple nodes.
+
+**Modes:**
+- `regular` (default): Single server handles both prefill and decode
+- `prefill`: Server only performs prefill (processes prompt, generates first token)
+- `decode`: Server receives HTTP requests, forwards to prefill server, then generates remaining tokens locally
+
+**Architecture:**
+```
+Client HTTP Request
+        │
+        ▼
+┌───────────────────┐
+│   Decode Server   │ (LLM_MODE=decode, port 8001)
+│   Socket Server   │ (SOCKET_PORT=9000)
+└─────────┬─────────┘
+          │ TCP Socket
+          ▼
+┌───────────────────┐
+│  Prefill Server   │ (LLM_MODE=prefill, port 8002)
+│   Socket Client   │ (connects to decode server)
+└───────────────────┘
+```
+
+**Running the split architecture:**
+
+1. **Start Decode Server** (receives HTTP requests, listens for prefill connections):
+   ```bash
+   LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+     ./build/tt_media_server_cpp -p 8001
+   ```
+
+2. **Start Prefill Server** (connects to decode server):
+   ```bash
+   LLM_MODE=prefill SOCKET_HOST=<decode-server-ip> SOCKET_PORT=9000 \
+     ./build/tt_media_server_cpp -p 8002
+   ```
+
+3. **Send requests to the Decode Server**:
+   ```bash
+   curl -X POST http://<decode-server>:8001/v1/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer your-secret-key" \
+     -d '{"prompt": "Hello, how are you?", "max_tokens": 50}'
+   ```
+
+**Flow:**
+1. Client sends request to decode server (HTTP)
+2. Decode server forwards prompt to prefill server (socket)
+3. Prefill server processes prompt, generates first token, sends back token IDs
+4. Decode server generates remaining tokens locally
+5. Decode server streams response to client
 
 ### Tracy profiling (Tracy build only)
 

@@ -262,15 +262,14 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             domain::CompletionChoice choice;
             choice.text = tokenizer.decode({static_cast<int>(token.token_id)});
             choice.index = token.token_index;
+            choice.token_id = static_cast<int64_t>(token.token_id);
             if (token.is_final()) {
                 choice.finish_reason = "stop";
             }
             response.choices.push_back(std::move(choice));
 
-            last_token_ids_.insert(std::string(token.task_id), static_cast<int64_t>(token.token_id));
             callback(response, token.is_final());
             if (token.is_final()) {
-                last_token_ids_.erase(std::string(token.task_id));
                 TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
             }
         }
@@ -463,9 +462,8 @@ void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& m
             std::string text;
             if (!chunk.choices.empty()) {
                 text = chunk.choices[0].text;
-                auto tid = last_token_ids_.get(task_id);
-                if (tid.has_value()) {
-                    token_ids_ptr->push_back(tid.value());
+                if (chunk.choices[0].token_id.has_value()) {
+                    token_ids_ptr->push_back(chunk.choices[0].token_id.value());
                 }
             }
 

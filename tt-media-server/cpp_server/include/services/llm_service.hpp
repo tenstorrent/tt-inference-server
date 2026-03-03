@@ -77,7 +77,6 @@ private:
     std::vector<std::thread> consumer_threads_;
 
     ConcurrentMap<std::string, std::function<void(domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
-    ConcurrentMap<std::string, int64_t> last_token_ids_;
 
     std::atomic<uint64_t> next_worker_{0};
 
