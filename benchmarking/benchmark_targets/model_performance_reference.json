@@ -560,6 +560,20 @@
                     }
                 }
             }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 63,
+                        "tput_user": 33
+                    }
+                }
+            }
         ]
     },
     "Qwen3-30B-A3B": {
