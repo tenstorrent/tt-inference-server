@@ -2507,7 +2507,10 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        # tt_metal_commit="63988eeadf",
+        # docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
+        tt_metal_commit="be88351",
+        # docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2528,6 +2531,12 @@ audio_tts_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
