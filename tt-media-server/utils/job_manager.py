@@ -306,8 +306,9 @@ class JobManager:
                     self._logger.error(
                         f"Failed to persist metric for job {job.id}: {e}"
                     )
-                    break  # we break the loop to avoid increasing last_seen and potentially loosing the metric
-            last_seen = current_len
+                    break  # we break the loop to avoid increasing last_seen and potentially losing the metric
+            else:
+                last_seen = current_len
             if job.is_terminal():
                 break
             await asyncio.sleep(1.0)
