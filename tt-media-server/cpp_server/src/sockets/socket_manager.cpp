@@ -6,8 +6,25 @@
 #include <cstring>
 #include <fcntl.h>
 #include <errno.h>
+#include <netinet/tcp.h>
 
 namespace tt::sockets {
+
+namespace {
+void setSocketKeepAlive(int socket_fd) {
+    int enable = 1;
+    setsockopt(socket_fd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+
+    int idle = 10;
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+
+    int interval = 5;
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
+
+    int max_probes = 3;
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, &max_probes, sizeof(max_probes));
+}
+}  // namespace
 
 SocketManager& SocketManager::getInstance() {
     static SocketManager instance;
@@ -131,9 +148,10 @@ void SocketManager::serverLoop() {
             break;
         }
 
-        // Set non-blocking mode
+        // Set non-blocking mode and keep-alive
         int flags = fcntl(new_socket, F_GETFL, 0);
         fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
+        setSocketKeepAlive(new_socket);
 
         peer_socket_ = new_socket;
         connected_ = true;
@@ -150,7 +168,10 @@ void SocketManager::serverLoop() {
             close(peer_socket_);
             peer_socket_ = -1;
         }
-        connected_ = false;
+        bool was_connected = connected_.exchange(false);
+        if (was_connected && connection_lost_callback_) {
+            connection_lost_callback_();
+        }
 
         std::cout << "[SocketManager] Client disconnected" << std::endl;
     }
@@ -185,9 +206,10 @@ void SocketManager::clientLoop() {
             continue;
         }
 
-        // Set non-blocking mode
+        // Set non-blocking mode and keep-alive
         int flags = fcntl(client_socket_, F_GETFL, 0);
         fcntl(client_socket_, F_SETFL, flags | O_NONBLOCK);
+        setSocketKeepAlive(client_socket_);
 
         peer_socket_ = client_socket_;
         connected_ = true;
@@ -204,7 +226,10 @@ void SocketManager::clientLoop() {
             client_socket_ = -1;
         }
         peer_socket_ = -1;
-        connected_ = false;
+        bool was_connected = connected_.exchange(false);
+        if (was_connected && connection_lost_callback_) {
+            connection_lost_callback_();
+        }
 
         std::cout << "[SocketManager] Disconnected from server" << std::endl;
 
@@ -295,14 +320,34 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
     // Read actual data
     std::vector<uint8_t> data(size);
     size_t total_received = 0;
+    int retry_count = 0;
+    const int max_retries = 1000;  // 1 second timeout (1000 * 1ms)
 
     while (total_received < size) {
         received = recv(peer_socket_, data.data() + total_received, size - total_received, 0);
-        if (received <= 0) {
+        if (received > 0) {
+            total_received += received;
+            retry_count = 0;  // Reset retry count on successful receive
+        } else if (received == 0) {
+            // Connection closed by peer
+            connected_ = false;
+            return {};
+        } else {
+            // received < 0: check if it's a temporary error
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Non-blocking socket has no data yet, wait briefly and retry
+                if (++retry_count > max_retries) {
+                    std::cerr << "[SocketManager] Timeout waiting for message data" << std::endl;
+                    connected_ = false;
+                    return {};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            // Real error
             connected_ = false;
             return {};
         }
-        total_received += received;
     }
 
     return data;
@@ -345,6 +390,10 @@ std::string SocketManager::getStatus() const {
     }
 
     return mode_ == Mode::SERVER ? "server:waiting" : "client:connecting";
+}
+
+void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
+    connection_lost_callback_ = std::move(callback);
 }
 
 } // namespace tt::sockets

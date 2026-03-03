@@ -55,8 +55,8 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
-SocketRole socket_role();
+/** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
+LLMMode llm_mode();
 
 /** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
 std::string socket_host();

@@ -150,8 +150,8 @@ llm_engine::Config llm_engine_config() {
     return cfg;
 }
 
-SocketRole socket_role() {
-    return socket_role_from_string(env_string("SOCKET_ROLE", defaults::SOCKET_ROLE));
+LLMMode llm_mode() {
+    return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
 }
 
 std::string socket_host() {

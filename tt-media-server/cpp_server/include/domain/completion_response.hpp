@@ -45,6 +45,7 @@ struct CompletionChoice {
     int index = 0;
     std::optional<Json::Value> logprobs;
     std::optional<std::string> finish_reason;
+    std::optional<int64_t> token_id;
 
     Json::Value toJson() const {
         Json::Value json;
