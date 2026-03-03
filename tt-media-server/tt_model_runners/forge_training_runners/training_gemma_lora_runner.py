@@ -177,7 +177,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Optimizer step finished"
                     )
 
-                    do_validation = global_step % request.val_steps_freq == 0 and global_step > 0
+                    do_validation = global_step % request.val_steps_freq == 0
 
                     if global_step % request.steps_freq == 0:
                         avg_loss = (
@@ -189,13 +189,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             f"Step {global_step} | train/loss: {avg_loss:.4f}"
                         )
                         if request._training_metrics is not None:
-                            request._training_metrics.append({
-                                "global_step": global_step,
-                                "epoch": epoch,
-                                "metric_name": "train_loss",
-                                "value": round(avg_loss, 4),
-                                "timestamp": time.time(),
-                            })
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "train_loss",
+                                    "value": round(avg_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
@@ -215,13 +217,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
                         if request._training_metrics is not None:
-                            request._training_metrics.append({
-                                "global_step": global_step,
-                                "epoch": epoch,
-                                "metric_name": "val_loss",
-                                "value": round(avg_val_loss, 4),
-                                "timestamp": time.time(),
-                            })
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "val_loss",
+                                    "value": round(avg_val_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         self.model.train()
 
                     global_step += 1
