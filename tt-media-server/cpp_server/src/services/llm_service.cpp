@@ -385,7 +385,8 @@ void LLMService::process_streaming_request(
 
     auto prompt = std::get<std::vector<int>>(request.prompt);
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
-    auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
+    auto sequence = std::make_unique<llm_engine::Sequence>(
+        tt::config::llm_engine_config(), token_ids);
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));

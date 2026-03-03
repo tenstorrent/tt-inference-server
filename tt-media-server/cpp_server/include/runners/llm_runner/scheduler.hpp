@@ -61,6 +61,7 @@ class Scheduler {
   bool is_stop_token(int64_t token_id) const { return stop_token_ids_.count(token_id) > 0; }
 
  private:
+  Config config_;
   int max_num_seqs_;
   int max_num_batched_tokens_;
   std::unordered_set<int64_t> stop_token_ids_;

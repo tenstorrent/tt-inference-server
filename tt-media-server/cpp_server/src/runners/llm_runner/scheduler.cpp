@@ -7,7 +7,8 @@
 namespace llm_engine {
 
 Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
-    : max_num_seqs_(config.max_num_seqs),
+    : config_(config),
+      max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
@@ -19,7 +20,7 @@ bool Scheduler::is_finished() const {
 
 Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(std::move(prompt), params);
+  auto seq = std::make_unique<Sequence>(config_, std::move(prompt), params);
   Sequence& ref = *seq;
   auto id = seq->task_id;
   add(ref);
