@@ -280,7 +280,8 @@ void LLMController::handle_streaming(
                         }
 
                         if (!sse.empty()) {
-                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                            loop->queueInLoop(
+                                [stream_ptr, sse = std::move(sse)]() {
                                 if (*stream_ptr) (*stream_ptr)->send(sse);
                             });
                         }
@@ -332,6 +333,7 @@ void LLMController::handle_streaming(
                                             (*stream_ptr)->send(usage_chunk.toSSE());
                                         }
                                     }
+                                    (*stream_ptr)->send("data: [DONE]\n\n");
                                     (*stream_ptr)->close();
                                 }
                             });

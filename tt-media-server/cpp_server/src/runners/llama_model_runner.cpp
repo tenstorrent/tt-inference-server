@@ -23,7 +23,6 @@ py::object g_step_seq_class;
 bool LlamaModelRunner::initialize() {
   if (!Py_IsInitialized()) {
     py::initialize_interpreter();
-    owns_interpreter_ = true;
   }
 
   try {

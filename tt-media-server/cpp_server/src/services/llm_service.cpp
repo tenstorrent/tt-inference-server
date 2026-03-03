@@ -5,9 +5,11 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "utils/tokenizer_strategy.hpp"
 #include "worker/single_process_worker.hpp"
 #include "utils/mapper.hpp"
 #include <cassert>
+#include <unordered_set>
 #include <chrono>
 #include <climits>
 #include <condition_variable>
@@ -249,6 +251,8 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     }
 
     tt::utils::Tokenizer tokenizer(tt::config::tokenizer_path());
+    const auto stop_ids = tt::utils::active_tokenizer_strategy().stop_token_ids();
+    const std::unordered_set<int64_t> stop_token_set(stop_ids.begin(), stop_ids.end());
 
     while (running_) {
         if (!check_worker_alive(worker_idx)) {
@@ -282,9 +286,10 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             if (token.is_error()) {
                 choice.finish_reason = "error";
             } else {
-                choice.text = token.is_stop_token() ? "" : tokenizer.decode({static_cast<int>(token.token_id)});
+                bool is_stop = stop_token_set.count(static_cast<int64_t>(token.token_id)) > 0;
+                choice.text = is_stop ? "" : tokenizer.decode({static_cast<int>(token.token_id)});
                 if (token.is_final()) {
-                    choice.finish_reason = token.is_stop_token() ? "stop" : "length";
+                    choice.finish_reason = is_stop ? "stop" : "length";
                 }
             }
             response.choices.push_back(std::move(choice));

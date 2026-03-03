@@ -18,12 +18,13 @@ namespace {
   }
 
 Config make_config(int num_blocks = 32, int block_size = 8,
-                   int max_batched_tokens = 256,
+                   int max_batched_tokens = 256, int eos = 0,
                    std::optional<std::vector<int64_t>> stop_ids = std::nullopt) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
+  c.eos = eos;
   if (stop_ids) {
     c.stop_token_ids = std::move(*stop_ids);
   }
@@ -99,7 +100,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
 }
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
-  Config config = make_config(32, 8, 256, std::vector<int64_t>{99});
+  Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
@@ -163,7 +164,7 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
 }
 
 TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
-  Config config = make_config(32, 8, 256, std::vector<int64_t>{99});
+  Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq{prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
@@ -211,7 +212,7 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
 }
 
 TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
-  Config config = make_config(32, 8, 20);
+  Config config = make_config(32, 8, 20, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq1{prompt(15), SamplingParams{.max_tokens = 5}};
@@ -224,7 +225,7 @@ TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
 }
 
 TEST(SchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
-  Config config = make_config(32, 8, 256);
+  Config config = make_config(32, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq1{prompt(4), SamplingParams{.max_tokens = 5}};
@@ -250,7 +251,7 @@ TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
 }
 
 TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
-  Config config = make_config(1, 8, 256);
+  Config config = make_config(1, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
@@ -278,7 +279,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
 }
 
 TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
-  Config config = make_config(2, 8, 256);
+  Config config = make_config(2, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};

@@ -56,13 +56,12 @@ struct TokenResult {
   TaskID task_id;
   uint64_t token_id;
   std::optional<bool> finished;
-  bool is_stop_token = false;
   bool is_error = false;
 };
 
 class Sequence {
  public:
-  static constexpr int block_size = 32;
+  static constexpr int block_size = 256;
 
   Sequence(std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());

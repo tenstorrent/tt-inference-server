@@ -30,7 +30,6 @@ class LlamaModelRunner : public IModelRunner {
   DecodeCallback decode_callback_;
   std::atomic<bool> stop_{false};
   bool initialized_ = false;
-  bool owns_interpreter_ = false;
 };
 
 std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,

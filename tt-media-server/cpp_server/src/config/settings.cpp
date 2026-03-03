@@ -146,15 +146,16 @@ std::string visible_devices_for_worker(size_t worker_index) {
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer_strategy().stop_token_ids();
-    if (model_runner_type() == RunnerType::LLAMA_RUNNER) {
-        cfg.max_num_seqs = 16;
-        cfg.runner_type = llm_engine::ModelRunnerType::Llama;
-    }
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
         if (s == "ttrun") {
             cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+        } else if (s == "llama") {
+            cfg.max_num_seqs = 16;
+            cfg.kvcache_block_size = 32;
+            cfg.max_num_batched_tokens = 16384;
+            cfg.runner_type = llm_engine::ModelRunnerType::Llama;
         } else {
             cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
@@ -162,8 +163,8 @@ llm_engine::Config llm_engine_config() {
     return cfg;
 }
 
-RunnerType model_runner_type() {
-    return runner_type_from_string(env_string("MODEL_RUNNER", defaults::MODEL_RUNNER));
+ModelType model_type() {
+    return model_type_from_device_backend(env_string("LLM_DEVICE_BACKEND", "mock"));
 }
 
 SocketRole socket_role() {

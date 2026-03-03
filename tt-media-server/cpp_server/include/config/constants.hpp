@@ -34,22 +34,24 @@ inline ModelService model_service_from_string(const std::string& v) {
     return ModelService::LLM;
 }
 
-/** Runner type from MODEL_RUNNER: LLM_TEST (in-process stub) or LLAMA_RUNNER (Python tt_model_runners.llama_runner). */
 enum class RunnerType {
     LLM_TEST,
-    LLAMA_RUNNER,
 };
 
-/** MODEL_RUNNER string for env (llm_test -> LLM_TEST, llama_runner -> LLAMA_RUNNER). */
+/** String value for env MODEL_RUNNER (e.g. "llm_test"). */
 inline std::string to_string(RunnerType r) {
     switch (r) {
-        case RunnerType::LLAMA_RUNNER:
-            return "llama_runner";
         case RunnerType::LLM_TEST:
         default:
             return "llm_test";
     }
 }
+
+/** Model type: drives tokenizer strategy + model-specific config. Derived from LLM_DEVICE_BACKEND env var. */
+enum class ModelType {
+    DEEPSEEK_V3,
+    LLAMA_3_1_8B_INSTRUCT,
+};
 
 enum class SocketRole {
     NONE,
@@ -78,8 +80,14 @@ inline SocketRole socket_role_from_string(const std::string& v) {
 }
 
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
-inline RunnerType runner_type_from_string(const std::string& v) {
-    return v == "llama_runner" ? RunnerType::LLAMA_RUNNER : RunnerType::LLM_TEST;
+inline RunnerType runner_type_from_string(const std::string& /*v*/) {
+    return RunnerType::LLM_TEST;
+}
+
+/** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_V3. */
+inline ModelType model_type_from_device_backend(const std::string& v) {
+    if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_V3;
 }
 
 /**
@@ -89,7 +97,6 @@ inline RunnerType runner_type_from_string(const std::string& v) {
 namespace defaults {
     constexpr const char* DEVICE_IDS = "(0)";
     constexpr const char* MODEL_SERVICE = "llm";
-    constexpr const char* MODEL_RUNNER = "llm_test";
     constexpr size_t MAX_BATCH_SIZE = 1;
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";

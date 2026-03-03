@@ -20,7 +20,8 @@ void Block::reset() {
   token_ids.clear();
 }
 
-BlockManager::BlockManager(int num_blocks, int block_size) : block_size_(block_size) {
+BlockManager::BlockManager(int num_blocks, int block_size)
+ : block_size_(block_size) {
   if (num_blocks <= 0) {
     throw std::invalid_argument(
         "BlockManager: num_blocks must be positive, got " + std::to_string(num_blocks));

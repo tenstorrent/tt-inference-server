@@ -55,8 +55,8 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-/** Runner type from MODEL_RUNNER (llm_test -> LLM_TEST, llama_runner -> LLAMA_RUNNER). */
-RunnerType model_runner_type();
+/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_V3). */
+ModelType model_type();
 
 /** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
 SocketRole socket_role();

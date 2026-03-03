@@ -9,7 +9,6 @@
 #include "config/constants.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/runner_config.hpp"
-#include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
 

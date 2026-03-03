@@ -34,12 +34,10 @@ struct alignas(64) SharedToken {
     static constexpr uint32_t FLAG_FINAL = 1;
     static constexpr uint32_t FLAG_ERROR = 2;
     static constexpr uint32_t FLAG_DONE = 4;
-    static constexpr uint32_t FLAG_STOP_TOKEN = 8;
 
     bool is_final() const { return flags & FLAG_FINAL; }
     bool is_error() const { return flags & FLAG_ERROR; }
     bool is_done() const { return flags & FLAG_DONE; }
-    bool is_stop_token() const { return flags & FLAG_STOP_TOKEN; }
 };
 
 static_assert(sizeof(SharedToken) == 128, "SharedToken must be 128 bytes for cache alignment");

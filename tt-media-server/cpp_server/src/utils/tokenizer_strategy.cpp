@@ -96,18 +96,18 @@ std::string LlamaTokenizerStrategy::apply_chat_template(
 // Factory + global singleton
 // ---------------------------------------------------------------------------
 
-std::unique_ptr<ITokenizerStrategy> create_tokenizer_strategy(config::RunnerType runner_type) {
-    switch (runner_type) {
-        case config::RunnerType::LLAMA_RUNNER:
+std::unique_ptr<ITokenizerStrategy> create_tokenizer_strategy(config::ModelType model) {
+    switch (model) {
+        case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
             return std::make_unique<LlamaTokenizerStrategy>();
-        case config::RunnerType::LLM_TEST:
+        case config::ModelType::DEEPSEEK_V3:
         default:
             return std::make_unique<DeepSeekTokenizerStrategy>();
     }
 }
 
 const ITokenizerStrategy& active_tokenizer_strategy() {
-    static auto strategy = create_tokenizer_strategy(config::model_runner_type());
+    static auto strategy = create_tokenizer_strategy(config::model_type());
     return *strategy;
 }
 

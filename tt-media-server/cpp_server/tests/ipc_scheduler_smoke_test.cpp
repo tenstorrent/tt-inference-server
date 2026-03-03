@@ -78,6 +78,7 @@ int main() {
     config.num_kvcache_blocks = 32;
     config.kvcache_block_size = 8;
     config.max_num_batched_tokens = 256;
+    config.eos = 0;
 
     auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
     Scheduler sched(config, queue.get());
@@ -100,6 +101,7 @@ int main() {
       std::cout << "]\n";
     }
 
+    // --- Verify (batch size is 1 with current Config::max_num_seqs) ---
     bool ok = true;
     auto fail = [&](const char* msg) {
       std::cerr << "[child]  FAIL: " << msg << "\n";

@@ -18,7 +18,7 @@ struct TokenizerConfig;
 /**
  * Strategy interface for model-specific tokenizer behavior.
  * Implementations encapsulate chat template formatting, special token handling,
- * and model metadata. Selected at runtime based on RunnerType.
+ * and model metadata. Selected at runtime based on ModelType.
  */
 class ITokenizerStrategy {
 public:
@@ -58,14 +58,14 @@ public:
 };
 
 /**
- * Factory: creates tokenizer strategy based on runner type.
- * LLM_TEST -> DeepSeekTokenizerStrategy (default)
- * LLAMA_RUNNER -> LlamaTokenizerStrategy
+ * Factory: creates tokenizer strategy for the given model.
+ * DEEPSEEK_V3 -> DeepSeekTokenizerStrategy (default)
+ * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizerStrategy
  */
-std::unique_ptr<ITokenizerStrategy> create_tokenizer_strategy(config::RunnerType runner_type);
+std::unique_ptr<ITokenizerStrategy> create_tokenizer_strategy(config::ModelType model);
 
 /**
- * Global active tokenizer strategy, auto-initialized from MODEL_RUNNER env var on first access.
+ * Global active tokenizer strategy, auto-initialized from LLM_DEVICE_BACKEND on first access.
  * Thread-safe (C++11 function-local static initialization).
  */
 const ITokenizerStrategy& active_tokenizer_strategy();

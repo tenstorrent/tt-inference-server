@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
                       << "\nEnvironment Variables:\n"
-                      << "  MODEL_RUNNER        Runner type: 'llm_test' (default) or 'llama_runner'\n";
+                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
             return 0;
         }
     }
