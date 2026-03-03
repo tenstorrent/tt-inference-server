@@ -951,7 +951,7 @@ _eval_config_list = [
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
@@ -990,7 +990,7 @@ _eval_config_list = [
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
