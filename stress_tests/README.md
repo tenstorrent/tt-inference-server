@@ -290,7 +290,7 @@ Each test automatically collects comprehensive metrics:
 
 **Throughput Metrics:**
 
-- **Tokens per second (TPS)**: User-level and system-level throughput
+- **Tokens per second (tok/s)**: User-level and system-level throughput
 - **Requests per second (RPS)**: Request completion rate
 
 **Percentile Distributions (Automatic):**

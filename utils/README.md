@@ -149,7 +149,7 @@ The client saves responses in JSON format with the following structure:
 Both tools use Python's logging module with INFO level by default. You can see detailed progress, including:
 - Prompt generation progress
 - API request status
-- Tokens per second (TPS)
+- Tokens per second (tok/s)
 - Time to first token (TTFT)
 - Completion token counts
 - Batch processing status
