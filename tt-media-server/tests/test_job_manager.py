@@ -1464,7 +1464,7 @@ class TestJobManager:
                 metrics = m2.get_training_metrics("train-1")
                 assert metrics is not None
                 assert len(metrics) == 3
-                # Verify get_metrics_flat ordering: metric_name ASC, epoch ASC, global_step ASC
+                # Verify get_metrics_flat ordering: metric_name ASC, global_step ASC
                 assert metrics[0]["metric_name"] == "accuracy"
                 assert metrics[1] == {
                     "global_step": 10,
@@ -1512,7 +1512,6 @@ class TestJobManager:
 
         assert len(results) == 6
 
-        # Verify primary sort: metric_name ASC
         metric_names = [r["metric_name"] for r in results]
         global_steps = [r["global_step"] for r in results]
         # fmt: off
