@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "runners/pybind_llama_model_runner.hpp"
+#include "runners/llama_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 #include <pybind11/embed.h>
@@ -17,7 +17,7 @@ namespace py = pybind11;
 
 namespace llm_engine {
 
-struct PybindLlamaModelRunner::Impl {
+struct LlamaModelRunner::Impl {
   Config config;
   DecodeCallback decode_callback;
   std::atomic<bool> stop_{false};
@@ -57,18 +57,18 @@ struct PybindLlamaModelRunner::Impl {
       py::module_ asyncio = py::module_::import("asyncio");
       bool warmup_ok = asyncio.attr("run")(runner_.attr("warmup")()).cast<bool>();
       if (!warmup_ok) {
-        std::cerr << "[PybindLlama] Warmup failed\n";
+        std::cerr << "[LlamaModelRunner] Warmup failed\n";
         return false;
       }
 
-      std::cout << "[PybindLlama] Llama runner ready (in-process)\n";
+      std::cout << "[LlamaModelRunner] Llama runner ready (in-process)\n";
       initialized_ = true;
       // Release the GIL so the engine step thread (and Python background threads)
       // can acquire it later via PyGILState_Ensure.
       PyEval_SaveThread();
       return true;
     } catch (const py::error_already_set& e) {
-      std::cerr << "[PybindLlama] Python init error: " << e.what() << "\n";
+      std::cerr << "[LlamaModelRunner] Python init error: " << e.what() << "\n";
       PyEval_SaveThread();
       return false;
     }
@@ -133,13 +133,13 @@ struct PybindLlamaModelRunner::Impl {
           std::string error = item.attr("error").cast<std::string>();
           if (!error.empty()) {
             dr.is_error = true;
-            std::cerr << "[PybindLlama] sequence " << dr.task_id.id
+            std::cerr << "[LlamaModelRunner] sequence " << dr.task_id.id
                       << " error: " << error << "\n";
           }
           decode_callback(dr);
         }
       } catch (const py::error_already_set& e) {
-        std::cerr << "[PybindLlama] Python error in run_step: " << e.what() << "\n";
+        std::cerr << "[LlamaModelRunner] Python error in run_step: " << e.what() << "\n";
         had_error = true;
       }
     }
@@ -158,36 +158,36 @@ struct PybindLlamaModelRunner::Impl {
       step_seq_class_ = py::object();
     }
     initialized_ = false;
-    std::cout << "[PybindLlama] Runner exited\n";
+    std::cout << "[LlamaModelRunner] Runner exited\n";
   }
 };
 
-PybindLlamaModelRunner::PybindLlamaModelRunner(const Config& config, DecodeCallback callback)
+LlamaModelRunner::LlamaModelRunner(const Config& config, DecodeCallback callback)
     : impl_(std::make_unique<Impl>()) {
   impl_->config = config;
   impl_->decode_callback = std::move(callback);
   impl_->initialize();
 }
 
-PybindLlamaModelRunner::~PybindLlamaModelRunner() {
+LlamaModelRunner::~LlamaModelRunner() {
   exit();
 }
 
-void PybindLlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
+void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
   impl_->run(seqs, is_prefill);
 }
 
-void PybindLlamaModelRunner::exit() {
+void LlamaModelRunner::exit() {
   impl_->do_exit();
 }
 
-bool PybindLlamaModelRunner::is_ready() const {
+bool LlamaModelRunner::is_ready() const {
   return impl_->initialized_;
 }
 
-std::unique_ptr<IModelRunner> make_pybind_llama_model_runner(const Config& config,
+std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
                                                              DecodeCallback callback) {
-  auto runner = std::make_unique<PybindLlamaModelRunner>(config, std::move(callback));
+  auto runner = std::make_unique<LlamaModelRunner>(config, std::move(callback));
   if (!runner->is_ready()) {
     return nullptr;
   }

@@ -13,10 +13,10 @@ namespace llm_engine {
  * IModelRunner that runs Llama-3.1-8B-Instruct via embedded Python interpreter (pybind11).
  * Calls tt_model_runners.llama_runner.Llama31_8BRunner methods directly in-process.
  */
-class PybindLlamaModelRunner : public IModelRunner {
+class LlamaModelRunner : public IModelRunner {
  public:
-  PybindLlamaModelRunner(const Config& config, DecodeCallback callback);
-  ~PybindLlamaModelRunner() override;
+  LlamaModelRunner(const Config& config, DecodeCallback callback);
+  ~LlamaModelRunner() override;
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
 
@@ -27,7 +27,7 @@ class PybindLlamaModelRunner : public IModelRunner {
   std::unique_ptr<Impl> impl_;
 };
 
-std::unique_ptr<IModelRunner> make_pybind_llama_model_runner(const Config& config,
+std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
                                                              DecodeCallback callback);
 
 }  // namespace llm_engine

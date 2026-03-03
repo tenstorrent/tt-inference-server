@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
-#include "runners/pybind_llama_model_runner.hpp"
+#include "runners/llama_model_runner.hpp"
 
 #include <iostream>
 
@@ -17,11 +17,11 @@ static tt::runners::ModelRunnerFactory make_model_runner_factory() {
     }
     return [](const llm_engine::Config& cfg, llm_engine::DecodeCallback cb)
                -> std::unique_ptr<llm_engine::IModelRunner> {
-        auto runner = llm_engine::make_pybind_llama_model_runner(cfg, cb);
+        auto runner = llm_engine::make_llama_model_runner(cfg, cb);
         if (!runner) {
-            std::cerr << "[RunnerFactory] FATAL: Pybind Llama runner init failed — "
+            std::cerr << "[RunnerFactory] FATAL: LlamaModelRunner init failed — "
                          "model warmup or Python init error. "
-                         "Check logs above for '[PybindLlama] Python init error'.\n";
+                         "Check logs above for '[LlamaModelRunner] Python init error'.\n";
             std::abort();
         }
         return runner;
