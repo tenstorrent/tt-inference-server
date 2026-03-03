@@ -7,9 +7,8 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue,
-                     ModelRunnerFactory model_runner_factory)
-    : config_(config), on_token_(std::move(on_token)) {
+LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue, ModelRunnerFactory model_runner_factory)
+    : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
@@ -71,7 +70,17 @@ void LLMRunner::drain_decode_results() {
     if (dr.is_error) {
       LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
       scheduler_->removeSequence(dr.task_id);
-      on_token_(TokenResult{dr.task_id, 0, true, false, true});
+      auto shared = ipc::SharedToken{
+          .token_index = 0,
+          .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
+                                         ipc::SharedToken::FLAG_ERROR),
+          .token_id = 0,
+          .task_id = {},
+          .padding = {},
+      };
+      strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+      result_queue_->push(shared);
       continue;
     }
 
@@ -80,8 +89,17 @@ void LLMRunner::drain_decode_results() {
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    bool is_stop = finished && scheduler_->is_stop_token(dr.token_id);
-    on_token_(TokenResult{dr.task_id, static_cast<uint64_t>(dr.token_id), finished, is_stop, false});
+
+    auto shared = ipc::SharedToken{
+        .token_index = 0,
+        .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
+        .token_id = dr.token_id,
+        .task_id = {},
+        .padding = {},
+    };
+    strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+    shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+    result_queue_->push(shared);
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id

@@ -13,7 +13,12 @@
             "type": "shell",
             "command": "./build.sh",
             "args": ["--debug"],
-            "options": { "cwd": "${workspaceFolder}/cpp_server" },
+            "options": {
+                "cwd": "${workspaceFolder}/cpp_server",
+                "env": {
+                    "PATH": "${workspaceFolder}/../../tt-metal/python_env/bin:${env:PATH}"
+                }
+            },
             "group": "build",
             "dependsOn": ["Kill C++ Server"],
             "presentation": { "reveal": "silent", "panel": "shared" }

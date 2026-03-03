@@ -569,6 +569,14 @@ private:
         props["total_tokens"]["type"] = "integer";
         props["total_tokens"]["description"] = "Total tokens used";
 
+        props["ttft_ms"]["type"] = "number";
+        props["ttft_ms"]["description"] = "Time to first token in milliseconds";
+        props["ttft_ms"]["nullable"] = true;
+
+        props["tps"]["type"] = "number";
+        props["tps"]["description"] = "Tokens per second (excluding first token)";
+        props["tps"]["nullable"] = true;
+
         schema["properties"] = props;
         return schema;
     }

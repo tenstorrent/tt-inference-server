@@ -10,19 +10,17 @@
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
+#include "ipc/shared_memory.hpp"
 
 namespace tt::runners {
   using namespace llm_engine;
-
-using TokenCallback = std::function<void(const TokenResult& result)>;
 
 using ModelRunnerFactory =
     std::function<std::unique_ptr<IModelRunner>(const Config&, DecodeCallback)>;
 
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue,
-            ModelRunnerFactory model_runner_factory = nullptr);
+  LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue, ModelRunnerFactory model_runner_factory = nullptr);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
@@ -37,7 +35,7 @@ class LLMRunner : public IRunner {
   void exit();
 
   Config config_;
-  TokenCallback on_token_;
+  ipc::TokenRingBuffer<65536>* result_queue_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   DecodeQueue decode_queue_;
