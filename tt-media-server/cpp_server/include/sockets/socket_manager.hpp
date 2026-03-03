@@ -107,6 +107,12 @@ public:
      */
     std::string getStatus() const;
 
+    /**
+     * @brief Set callback for connection lost events
+     * @param callback Function to call when connection is lost
+     */
+    void setConnectionLostCallback(std::function<void()> callback);
+
     // Disable copy/move for singleton
     SocketManager(const SocketManager&) = delete;
     SocketManager& operator=(const SocketManager&) = delete;
@@ -140,6 +146,8 @@ private:
     std::map<std::string, std::function<void(const std::vector<uint8_t>&)>> handlers_;
 
     mutable std::mutex send_mutex_;
+
+    std::function<void()> connection_lost_callback_;
 };
 
 // Template implementations

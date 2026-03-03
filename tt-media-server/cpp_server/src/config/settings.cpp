@@ -141,17 +141,17 @@ llm_engine::Config llm_engine_config() {
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
-        if (s == "sockets") {
-            cfg.device = llm_engine::DeviceBackend::Sockets;
+        if (s == "ttrun") {
+            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
         } else {
-            cfg.device = llm_engine::DeviceBackend::Mock;
+            cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
     }
     return cfg;
 }
 
-SocketRole socket_role() {
-    return socket_role_from_string(env_string("SOCKET_ROLE", defaults::SOCKET_ROLE));
+LLMMode llm_mode() {
+    return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
 }
 
 std::string socket_host() {
