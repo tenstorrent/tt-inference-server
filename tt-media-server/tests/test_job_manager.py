@@ -12,7 +12,14 @@ import pytest
 from multiprocessing import Event
 from config.constants import JobTypes
 from domain.base_request import BaseRequest
-from utils.job_manager import Job, JobManager, JobStatus, get_job_manager, TrainingJobContext
+from utils.job_manager import (
+    Job,
+    JobManager,
+    JobStatus,
+    get_job_manager,
+    TrainingJobContext,
+)
+
 
 class TestJob:
     """Tests for Job dataclass"""
@@ -1034,7 +1041,9 @@ class TestJobManager:
         """Test cooperative cancellation where task checks cancel_event and returns normally."""
 
         training_ctx = TrainingJobContext(
-            start_event=Event(), cancel_event=Event(), training_metrics=[],
+            start_event=Event(),
+            cancel_event=Event(),
+            training_metrics=[],
         )
 
         async def cooperative_task(req):
@@ -1086,7 +1095,9 @@ class TestJobManager:
     ):
         """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
         training_ctx = TrainingJobContext(
-            start_event=Event(), cancel_event=Event(), training_metrics=[],
+            start_event=Event(),
+            cancel_event=Event(),
+            training_metrics=[],
         )
 
         async def cooperative_task(req):
@@ -1118,10 +1129,14 @@ class TestJobManager:
         """When a running job is cancelled, the next queued job should start processing."""
 
         training_ctx_1 = TrainingJobContext(
-            start_event=Event(), cancel_event=Event(), training_metrics=[],
+            start_event=Event(),
+            cancel_event=Event(),
+            training_metrics=[],
         )
         training_ctx_2 = TrainingJobContext(
-            start_event=Event(), cancel_event=Event(), training_metrics=[],
+            start_event=Event(),
+            cancel_event=Event(),
+            training_metrics=[],
         )
 
         runner_available = asyncio.Event()
@@ -1290,16 +1305,49 @@ class TestJobManager:
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return
-        job_manager.db.insert_job(job_id="job-1", job_type=JobTypes.TRAINING.value, model="model-1", request_parameters={}, status="in_progress", created_at=1000)
-        job_manager.db.insert_metric(job_id="job-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
+        job_manager.db.insert_job(
+            job_id="job-1",
+            job_type=JobTypes.TRAINING.value,
+            model="model-1",
+            request_parameters={},
+            status="in_progress",
+            created_at=1000,
+        )
+        job_manager.db.insert_metric(
+            job_id="job-1",
+            global_step=10,
+            epoch=1,
+            metric_name="loss",
+            value=0.5,
+            timestamp=1000,
+        )
         with pytest.raises(Exception):
-            job_manager.db.insert_metric(job_id="job-1", global_step=10, epoch=1, metric_name="loss", value=0.9, timestamp=2000)
+            job_manager.db.insert_metric(
+                job_id="job-1",
+                global_step=10,
+                epoch=1,
+                metric_name="loss",
+                value=0.9,
+                timestamp=2000,
+            )
 
     @pytest.mark.asyncio
-    async def test_get_training_metrics_returns_correct_list(self, job_manager, mock_request):
-        metrics_list = [{"global_step": 1, "epoch": 1, "metric_name": "loss", "value": 0.5, "timestamp": 1000}]
+    async def test_get_training_metrics_returns_correct_list(
+        self, job_manager, mock_request
+    ):
+        metrics_list = [
+            {
+                "global_step": 1,
+                "epoch": 1,
+                "metric_name": "loss",
+                "value": 0.5,
+                "timestamp": 1000,
+            }
+        ]
         training_ctx = TrainingJobContext(
-            start_event=Event(), cancel_event=Event(), training_metrics=metrics_list,
+            start_event=Event(),
+            cancel_event=Event(),
+            training_metrics=metrics_list,
         )
 
         async def task_func(req):
@@ -1307,9 +1355,13 @@ class TestJobManager:
             return "result.pt"
 
         await job_manager.create_job(
-            job_id="train-1", job_type=JobTypes.TRAINING, model="m1",
-            request=mock_request, task_function=task_func,
-            result_path="result.pt", training_context=training_ctx,
+            job_id="train-1",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            training_context=training_ctx,
         )
 
         result = job_manager.get_training_metrics("train-1")
@@ -1326,26 +1378,42 @@ class TestJobManager:
         start_event.set()
         metrics_list = []
         training_ctx = TrainingJobContext(
-            start_event=start_event, cancel_event=Event(), training_metrics=metrics_list,
+            start_event=start_event,
+            cancel_event=Event(),
+            training_metrics=metrics_list,
         )
 
         async def task_func(req):
             # Simulate appending metrics during "training"
-            metrics_list.append({
-                "global_step": 1, "epoch": 1, "metric_name": "loss",
-                "value": 0.5, "timestamp": 1000,
-            })
-            metrics_list.append({
-                "global_step": 2, "epoch": 1, "metric_name": "loss",
-                "value": 0.4, "timestamp": 1001,
-            })
+            metrics_list.append(
+                {
+                    "global_step": 1,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.5,
+                    "timestamp": 1000,
+                }
+            )
+            metrics_list.append(
+                {
+                    "global_step": 2,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.4,
+                    "timestamp": 1001,
+                }
+            )
             await asyncio.sleep(1.5)  # let the persister poll at least once
             return "result.pt"
 
         await job_manager.create_job(
-            job_id="train-persist", job_type=JobTypes.TRAINING, model="m1",
-            request=mock_request, task_function=task_func,
-            result_path="result.pt", training_context=training_ctx,
+            job_id="train-persist",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            training_context=training_ctx,
         )
 
         # Wait for completion + persister to finish
@@ -1355,7 +1423,7 @@ class TestJobManager:
         assert len(db_metrics) == 2
         assert db_metrics[0]["value"] == 0.5
         assert db_metrics[1]["value"] == 0.4
-    
+
     @pytest.mark.asyncio
     async def test_restore_training_job_restores_metrics(self, job_manager):
         """Test the full workflow from insert_metric, over restore, toget_training_metrics."""
@@ -1365,12 +1433,22 @@ class TestJobManager:
 
         db_path = job_manager.db.db_path
 
-        job_manager.db.insert_job(job_id="train-1", job_type=JobTypes.TRAINING.value, model="m1", request_parameters={}, status="completed", created_at=1000)
+        job_manager.db.insert_job(
+            job_id="train-1",
+            job_type=JobTypes.TRAINING.value,
+            model="m1",
+            request_parameters={},
+            status="completed",
+            created_at=1000,
+        )
+        # fmt: off
         job_manager.db.insert_metric(job_id="train-1", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=1002)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, timestamp=1001)
+        # fmt: on
 
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         with patch("utils.job_manager.get_settings") as mock_settings:
@@ -1384,8 +1462,20 @@ class TestJobManager:
                 assert len(metrics) == 3
                 # Verify get_metrics_flat ordering: metric_name ASC, epoch ASC, global_step ASC
                 assert metrics[0]["metric_name"] == "accuracy"
-                assert metrics[1] == {"global_step": 10, "epoch": 1, "metric_name": "loss", "value": 0.5, "timestamp": 1000}
-                assert metrics[2] == {"global_step": 20, "epoch": 2, "metric_name": "loss", "value": 0.3, "timestamp": 1002}
+                assert metrics[1] == {
+                    "global_step": 10,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.5,
+                    "timestamp": 1000,
+                }
+                assert metrics[2] == {
+                    "global_step": 20,
+                    "epoch": 2,
+                    "metric_name": "loss",
+                    "value": 0.3,
+                    "timestamp": 1002,
+                }
             finally:
                 await m2.shutdown()
 
@@ -1404,6 +1494,7 @@ class TestJobManager:
             created_at=1000,
         )
 
+        # fmt: off
         # Insert metrics in deliberately unsorted order
         job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="loss", value=0.1, timestamp=3000)
         job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="accuracy", value=0.7, timestamp=1000)
@@ -1411,6 +1502,7 @@ class TestJobManager:
         job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
         job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="accuracy", value=0.95, timestamp=3000)
         job_manager.db.insert_metric(job_id="job-sort", global_step=20, epoch=2, metric_name="accuracy", value=0.85, timestamp=2000)
+        # fmt: on
 
         results = job_manager.db.get_metrics_flat("job-sort")
 
@@ -1419,5 +1511,7 @@ class TestJobManager:
         # Verify primary sort: metric_name ASC
         metric_names = [r["metric_name"] for r in results]
         global_steps = [r["global_step"] for r in results]
+        # fmt: off
         assert metric_names == ["accuracy", "accuracy", "accuracy", "loss", "loss", "loss"]
         assert global_steps == [10, 20, 30, 10, 20, 30]
+        # fmt: on
