@@ -5,17 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fine-Tuning Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙</text></svg>">
     <style>
-        body { max-width: 960px; margin: 0 auto; padding: 1rem; }
-        fieldset { margin-bottom: 0.5rem; }
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; }
-        .form-grid label { margin-bottom: 0; }
+        body { max-width: 1600px; margin: 0 auto; padding: 1rem; font-size: 14px; }
+        .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+        .left-panel, .right-panel { min-width: 0; }
+        .right-panel { }
+        h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+        h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+        h3 { font-size: 1.1rem; }
+        h4 { font-size: 1rem; }
+        fieldset {
+            margin-bottom: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        fieldset legend {
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 0 0.5rem;
+            color: #333;
+        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem 0.75rem; }
+        .form-grid label { margin-bottom: 0; font-size: 0.85rem; }
+        input, select { padding: 0.85rem 0.5rem; font-size: 0.85rem; }
+        button { padding: 0.4rem 1rem; font-size: 0.85rem; }
+        table { font-size: 0.7rem; }
+
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .right-panel { max-height: none; }
+        }
 
         .badge {
             display: inline-block; padding: 2px 10px; border-radius: 12px;
             font-size: 0.8rem; font-weight: 600; color: #fff;
         }
-        .badge-running, .badge-pending { background: #e67e22; }
+        .badge-queued, .badge-in_progress, .badge-cancelling { background: #e67e22; }
         .badge-completed { background: #27ae60; }
         .badge-failed, .badge-cancelled { background: #c0392b; }
 
@@ -28,9 +56,6 @@
         #detail-meta dt { font-weight: 600; margin-top: 0.3rem; }
         #detail-meta dd { margin-left: 0; margin-bottom: 0.3rem; }
 
-        #metrics-table { max-height: 400px; overflow-y: auto; display: block; }
-        #metrics-table thead, #metrics-table tbody { display: table; width: 100%; table-layout: fixed; }
-
         .error-msg { color: #c0392b; font-weight: 600; margin-top: 0.5rem; }
         .success-msg { color: #27ae60; font-weight: 600; margin-top: 0.5rem; }
         #model-info { font-size: 0.9rem; color: #555; margin-bottom: 1rem; }
@@ -38,292 +63,106 @@
 </head>
 <body>
     <h1>Fine-Tuning Dashboard</h1>
-    <p id="model-info">Loading model info...</p>
+    <p id="info-text">Loading model and dataset info...</p>
 
-    <form id="job-form">
-        <fieldset>
-            <legend>Dataset</legend>
-            <div class="form-grid">
-                <label>Dataset
-                    <select id="dataset_loader"></select>
-                </label>
-                <label>Max Sequence Length
-                    <input type="number" id="dataset_max_sequence_length" value="32" min="1">
-                </label>
+    <div class="layout">
+        <div class="left-panel">
+            <form id="job-form">
+                <fieldset>
+                    <legend>Model</legend>
+                    <div class="form-grid">
+                        <label>Model
+                            <select id="model_select"></select>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Dataset</legend>
+                    <div class="form-grid">
+                        <label>Dataset
+                            <select id="dataset_loader"></select>
+                        </label>
+                        <label>Max Sequence Length
+                            <input type="number" id="dataset_max_sequence_length" value="32" min="1">
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Training</legend>
+                    <div class="form-grid">
+                        <label>Batch Size
+                            <input type="number" id="batch_size" value="4" min="1">
+                        </label>
+                        <label>Learning Rate
+                            <input type="text" id="learning_rate" value="6e-5">
+                        </label>
+                        <label>Epochs
+                            <input type="number" id="num_epochs" value="1" min="1">
+                        </label>
+                        <label>Validation Steps Freq
+                            <input type="number" id="val_steps_freq" value="50" min="1">
+                        </label>
+                        <label>Log Steps Freq
+                            <input type="number" id="steps_freq" value="10" min="1">
+                        </label>
+                        <label>Dtype
+                            <select id="dtype">
+                                <option value="torch.bfloat16">torch.bfloat16</option>
+                                <option value="torch.float32">torch.float32</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>LoRA</legend>
+                    <div class="form-grid">
+                        <label>Rank (r)
+                            <input type="number" id="lora_r" value="4" min="1">
+                        </label>
+                        <label>Alpha
+                            <input type="number" id="lora_alpha" value="8" min="1">
+                        </label>
+                        <label>Target Modules (comma-separated)
+                            <input type="text" id="lora_target_modules" value="q_proj, v_proj">
+                        </label>
+                        <label>Task Type
+                            <select id="lora_task_type">
+                                <option value="CAUSAL_LM">CAUSAL_LM</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <button type="submit">Submit Job</button>
+                <span id="form-status"></span>
+            </form>
+        </div>
+
+        <div class="right-panel">
+            <h2>Jobs</h2>
+            <table id="jobs-table">
+                <thead>
+                    <tr><th>Job ID</th><th>Model</th><th>Status</th><th>Created</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+
+            <div id="job-detail" hidden>
+                <h3>Job: <code id="detail-id"></code></h3>
+                <dl id="detail-meta"></dl>
+                <button id="cancel-btn" hidden>Cancel Job</button>
+                
+                <div id="metrics-section">
+                    <h4 id="metrics-heading">No metrics to show</h4>
+                    <canvas id="metrics-chart" width="1200" height="500" style="width:100%; background:#fff; border:1px solid #ddd; border-radius:4px;"></canvas>
+                </div>
             </div>
-        </fieldset>
-
-        <fieldset>
-            <legend>Training</legend>
-            <div class="form-grid">
-                <label>Batch Size
-                    <input type="number" id="batch_size" value="4" min="1">
-                </label>
-                <label>Learning Rate
-                    <input type="text" id="learning_rate" value="6e-5">
-                </label>
-                <label>Epochs
-                    <input type="number" id="num_epochs" value="1" min="1">
-                </label>
-                <label>Validation Steps Freq
-                    <input type="number" id="val_steps_freq" value="50" min="1">
-                </label>
-                <label>Log Steps Freq
-                    <input type="number" id="steps_freq" value="10" min="1">
-                </label>
-                <label>Dtype
-                    <select id="dtype">
-                        <option value="torch.bfloat16">torch.bfloat16</option>
-                        <option value="torch.float32">torch.float32</option>
-                    </select>
-                </label>
-            </div>
-        </fieldset>
-
-        <fieldset>
-            <legend>LoRA</legend>
-            <div class="form-grid">
-                <label>Rank (r)
-                    <input type="number" id="lora_r" value="4" min="1">
-                </label>
-                <label>Alpha
-                    <input type="number" id="lora_alpha" value="8" min="1">
-                </label>
-                <label>Target Modules (comma-separated)
-                    <input type="text" id="lora_target_modules" value="q_proj, v_proj">
-                </label>
-                <label>Task Type
-                    <select id="lora_task_type">
-                        <option value="CAUSAL_LM">CAUSAL_LM</option>
-                    </select>
-                </label>
-            </div>
-        </fieldset>
-
-        <button type="submit">Submit Job</button>
-        <span id="form-status"></span>
-    </form>
-
-    <h2>Jobs</h2>
-    <table id="jobs-table">
-        <thead>
-            <tr><th>Job ID</th><th>Model</th><th>Status</th><th>Created</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-
-    <div id="job-detail" hidden>
-        <h3>Job: <code id="detail-id"></code></h3>
-        <dl id="detail-meta"></dl>
-        <button id="cancel-btn" hidden>Cancel Job</button>
-
-        <h4>Training Metrics</h4>
-        <table id="metrics-table">
-            <thead><tr><th>Step</th><th>Epoch</th><th>Metric</th><th>Value</th></tr></thead>
-            <tbody></tbody>
-        </table>
+        </div>
     </div>
 
-    <script>
-        const BASE = '/v1/fine_tuning';
-        const API_KEY = 'your-secret-key';
-        const HEADERS = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${API_KEY}`
-        };
-
-        let selectedJobId = null;
-        let metricsInterval = null;
-        let nextAfter = 0;
-
-        const $ = (id) => document.getElementById(id);
-
-        function statusBadge(status) {
-            return `<span class="badge badge-${status}">${status}</span>`;
-        }
-
-        async function loadOptions() {
-            try {
-                const [datasets, models] = await Promise.all([
-                    fetch(`${BASE}/datasets`, { headers: HEADERS }).then(r => r.json()),
-                    fetch(`${BASE}/models`, { headers: HEADERS }).then(r => r.json()),
-                ]);
-
-                const sel = $('dataset_loader');
-                sel.innerHTML = '';
-                for (const d of datasets.data) {
-                    const opt = document.createElement('option');
-                    opt.value = d;
-                    opt.textContent = d;
-                    sel.appendChild(opt);
-                }
-
-                const modelList = models.data.length ? models.data.join(', ') : 'none';
-                $('model-info').textContent = `Training model: ${modelList}`;
-            } catch (e) {
-                $('model-info').textContent = 'Failed to load options: ' + e.message;
-            }
-        }
-
-        async function submitJob(e) {
-            e.preventDefault();
-            const statusEl = $('form-status');
-            statusEl.textContent = 'Submitting...';
-            statusEl.className = '';
-
-            const body = {
-                dataset_loader: $('dataset_loader').value,
-                dataset_max_sequence_length: parseInt($('dataset_max_sequence_length').value),
-                batch_size: parseInt($('batch_size').value),
-                learning_rate: parseFloat($('learning_rate').value),
-                num_epochs: parseInt($('num_epochs').value),
-                val_steps_freq: parseInt($('val_steps_freq').value),
-                steps_freq: parseInt($('steps_freq').value),
-                dtype: $('dtype').value,
-                lora_r: parseInt($('lora_r').value),
-                lora_alpha: parseInt($('lora_alpha').value),
-                lora_target_modules: $('lora_target_modules').value.split(',').map(s => s.trim()).filter(Boolean),
-                lora_task_type: $('lora_task_type').value,
-            };
-
-            try {
-                const res = await fetch(`${BASE}/jobs`, {
-                    method: 'POST', headers: HEADERS, body: JSON.stringify(body)
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    throw new Error(err.detail || `HTTP ${res.status}`);
-                }
-                const job = await res.json();
-                statusEl.textContent = `Job created: ${job.id}`;
-                statusEl.className = 'success-msg';
-                refreshJobs();
-            } catch (err) {
-                statusEl.textContent = `Error: ${err.message}`;
-                statusEl.className = 'error-msg';
-            }
-        }
-
-        async function refreshJobs() {
-            try {
-                const res = await fetch(`${BASE}/jobs`, { headers: HEADERS });
-                const data = await res.json();
-                const tbody = document.querySelector('#jobs-table tbody');
-                tbody.innerHTML = '';
-
-                const jobs = data.data || [];
-                jobs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-
-                for (const job of jobs) {
-                    const tr = document.createElement('tr');
-                    if (job.id === selectedJobId) tr.classList.add('selected');
-                    tr.innerHTML = `
-                        <td><code>${job.id}</code></td>
-                        <td>${job.model || '-'}</td>
-                        <td>${statusBadge(job.status)}</td>
-                        <td>${job.created_at || '-'}</td>
-                    `;
-                    tr.addEventListener('click', () => selectJob(job.id));
-                    tbody.appendChild(tr);
-                }
-            } catch (e) {
-                console.error('Failed to refresh jobs:', e);
-            }
-        }
-
-        async function selectJob(jobId) {
-            selectedJobId = jobId;
-
-            document.querySelectorAll('#jobs-table tbody tr').forEach(tr => tr.classList.remove('selected'));
-            // Re-highlight after refresh
-            refreshJobs();
-
-            const detailDiv = $('job-detail');
-            detailDiv.hidden = false;
-            $('detail-id').textContent = jobId;
-
-            try {
-                const res = await fetch(`${BASE}/jobs/${jobId}`, { headers: HEADERS });
-                const job = await res.json();
-
-                const meta = $('detail-meta');
-                const entries = [
-                    ['Status', statusBadge(job.status)],
-                    ['Model', job.model || '-'],
-                    ['Created', job.created_at || '-'],
-                    ['Completed', job.completed_at || '-'],
-                ];
-                if (job.error) entries.push(['Error', job.error]);
-                if (job.request_parameters) {
-                    for (const [k, v] of Object.entries(job.request_parameters)) {
-                        entries.push([k, Array.isArray(v) ? v.join(', ') : v]);
-                    }
-                }
-                meta.innerHTML = entries.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
-
-                const cancelBtn = $('cancel-btn');
-                const cancellable = ['running', 'pending'].includes(job.status);
-                cancelBtn.hidden = !cancellable;
-                cancelBtn.onclick = () => cancelJob(jobId);
-            } catch (e) {
-                $('detail-meta').innerHTML = `<dt>Error</dt><dd>${e.message}</dd>`;
-            }
-
-            // Reset and start metrics polling
-            document.querySelector('#metrics-table tbody').innerHTML = '';
-            nextAfter = 0;
-            if (metricsInterval) clearInterval(metricsInterval);
-            pollMetrics(jobId);
-            metricsInterval = setInterval(() => pollMetrics(jobId), 2000);
-        }
-
-        async function pollMetrics(jobId) {
-            if (jobId !== selectedJobId) return;
-            try {
-                const res = await fetch(
-                    `${BASE}/jobs/${jobId}/metrics?after=${nextAfter}`, { headers: HEADERS }
-                );
-                const data = await res.json();
-                const tbody = document.querySelector('#metrics-table tbody');
-
-                for (const m of (data.data || [])) {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${m.global_step}</td>
-                        <td>${m.epoch}</td>
-                        <td>${m.metric_name}</td>
-                        <td>${m.value}</td>
-                    `;
-                    tbody.appendChild(tr);
-                }
-
-                nextAfter = data.next_after;
-                if (data.is_final) {
-                    clearInterval(metricsInterval);
-                    metricsInterval = null;
-                    refreshJobs();
-                }
-            } catch (e) {
-                console.error('Failed to poll metrics:', e);
-            }
-        }
-
-        async function cancelJob(jobId) {
-            try {
-                await fetch(`${BASE}/jobs/${jobId}/cancel`, {
-                    method: 'POST', headers: HEADERS
-                });
-                selectJob(jobId);
-                refreshJobs();
-            } catch (e) {
-                console.error('Failed to cancel job:', e);
-            }
-        }
-
-        $('job-form').addEventListener('submit', submitJob);
-        loadOptions();
-        refreshJobs();
-        setInterval(refreshJobs, 5000);
-    </script>
+    <script src="app.js"></script>
 </body>
 </html>
