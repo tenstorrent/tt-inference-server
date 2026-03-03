@@ -152,17 +152,13 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
 )
-<<<<<<< HEAD
 if(TT_METAL_API_FOUND)
     list(APPEND LLM_ENGINE_SOURCES
-        src/runners/llm_runner/sockets_device_backend.cpp
         src/runners/llama_model_runner.cpp
     )
 else()
     message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
 endif()
-=======
->>>>>>> dev
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
