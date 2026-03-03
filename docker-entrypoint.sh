@@ -67,8 +67,4 @@ echo "Mounted volume permissions setup completed."
 
 # Execute server as CONTAINER_APP_USERNAME user
 # Usage: docker run <image> --model <hf_repo> --device <device_type>
-exec gosu "${CONTAINER_APP_USERNAME}" /bin/bash -c "
-    source \${PYTHON_ENV_DIR}/bin/activate && \
-    cd \${HOME:-/home/container_app_user}/app/src && \
-    python run_vllm_api_server.py \"\$@\"
-" -- "$@"
+exec gosu "${CONTAINER_APP_USERNAME}" "$@"

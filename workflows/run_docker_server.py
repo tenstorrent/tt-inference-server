@@ -37,6 +37,7 @@ def short_uuid():
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
     env_vars = {
+        "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }
@@ -256,8 +257,11 @@ def generate_docker_run_command(
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
     docker_command.append(model_spec.docker_image)
-    docker_command.extend(["--model", model_spec.hf_model_repo])
-    docker_command.extend(["--tt-device", runtime_config.device])
+    # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
+    if model_spec.inference_engine == InferenceEngine.VLLM.value:
+        docker_command.extend(["--model", model_spec.hf_model_repo])
+        docker_command.extend(["--tt-device", runtime_config.device])
+
     if runtime_config.no_auth:
         docker_command.append("--no-auth")
     if runtime_config.disable_trace_capture:
