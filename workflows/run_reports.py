@@ -2166,16 +2166,17 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
+    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
     for json_file in files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         _ = meta.pop("task_name", None)
         for task_dict in res:
             for specific_task_name, metrics in task_dict.items():
-                results[specific_task_name] = metrics
-                meta_data[specific_task_name] = meta
+                if specific_task_name not in results:
+                    results[specific_task_name] = metrics
+                    meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -2401,6 +2402,9 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
+    list_files = sorted(
+        list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True
+    )
     results = {}
     meta_data = {}
 
@@ -2420,19 +2424,15 @@ def process_list_format_eval_files(list_files):
             # Extract task name if available
             task_name = eval_data.get("task_name", "image_generation")
 
-            # Store metrics under task name
-            if task_name not in results:
-                results[task_name] = {}
+            if task_name in results:
+                continue
 
-            # Add all metrics from this eval data
-            results[task_name].update(eval_data)
+            results[task_name] = eval_data
 
-            # Store metadata
-            if task_name not in meta_data:
-                meta_data[task_name] = {
-                    "task_name": task_name,
-                    "dataset_path": eval_data.get("dataset_path", "N/A"),
-                }
+            meta_data[task_name] = {
+                "task_name": task_name,
+                "dataset_path": eval_data.get("dataset_path", "N/A"),
+            }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
 
