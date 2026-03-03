@@ -52,7 +52,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | vLLM Commit | `7c6685a` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a` |
 
-https://github.com/tenstorrent/tt-shield/actions/runs/22597865268/job/65476351959
+## Release Report
+
+Models CI job: https://github.com/tenstorrent/tt-shield/actions/runs/22597865268/job/65476351959
 
 ### Metadata: Qwen3-32B on galaxy
 ```json
