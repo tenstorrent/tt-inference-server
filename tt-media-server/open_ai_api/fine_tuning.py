@@ -6,6 +6,7 @@ from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
 from model_services.base_job_service import BaseJobService
+from model_services.training_service import TrainingService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 
@@ -85,7 +86,7 @@ async def get_fine_tuning_job_metadata(
 async def get_training_metrics(
     job_id: str,
     after: int = 0,
-    service: BaseJobService = Depends(service_resolver),
+    service: TrainingService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     job_data = service.get_job_metadata(job_id)

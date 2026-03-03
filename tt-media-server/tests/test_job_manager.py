@@ -1416,8 +1416,12 @@ class TestJobManager:
             training_context=training_ctx,
         )
 
-        # Wait for completion + persister to finish
-        await asyncio.sleep(3.0)
+        # Poll DB until getting both metrics
+        for _ in range(20):
+            db_metrics = job_manager.db.get_metrics_flat("train-persist")
+            if len(db_metrics) == 2:
+                break
+            await asyncio.sleep(0.3)
 
         db_metrics = job_manager.db.get_metrics_flat("train-persist")
         assert len(db_metrics) == 2
@@ -1426,7 +1430,7 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_restore_training_job_restores_metrics(self, job_manager):
-        """Test the full workflow from insert_metric, over restore, toget_training_metrics."""
+        """Test the full workflow from insert_metric, over restore, to get_training_metrics."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return

@@ -24,6 +24,7 @@ class JobDatabase:
         """Creates a fresh database connection for each operation."""
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     @contextmanager
@@ -62,7 +63,7 @@ class JobDatabase:
                     epoch INTEGER NOT NULL,
                     metric_name TEXT NOT NULL,
                     value FLOAT NOT NULL,
-                    timestamp TIMESTAMP REAL NOT NULL,
+                    timestamp REAL NOT NULL,
                     
                     PRIMARY KEY (job_id, global_step, metric_name), 
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
@@ -186,7 +187,7 @@ class JobDatabase:
         epoch: int,
         metric_name: str,
         value: float,
-        timestamp: int,
+        timestamp: float,
     ) -> None:
         """Insert a new metric into the database."""
         with self._get_cursor(commit=True) as cursor:

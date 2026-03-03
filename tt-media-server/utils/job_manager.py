@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
 from multiprocessing import Event
+from sqlite3 import IntegrityError
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -297,10 +298,15 @@ class JobManager:
                         value=metric["value"],
                         timestamp=metric["timestamp"],
                     )
+                except IntegrityError:
+                    self._logger.warning(
+                        f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
+                    )
                 except Exception as e:
                     self._logger.error(
                         f"Failed to persist metric for job {job.id}: {e}"
                     )
+                    break  # we break the loop to avoid increasing last_seen and potentially loosing the metric
             last_seen = current_len
             if job.is_terminal():
                 break
