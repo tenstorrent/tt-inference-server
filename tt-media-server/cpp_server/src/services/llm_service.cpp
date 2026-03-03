@@ -405,8 +405,7 @@ void LLMService::setup_socket_callbacks() {
     socket_service_->setHealthCheckCallback(
         [](const std::string& server_id, double cpu, double memory, int tasks) {
             std::cout << "[LLMService] Health check from " << server_id
-                      << " - CPU: " << cpu << "%, Memory: " << memory
-                      << "%, Tasks: " << tasks << std::endl;
+                      << " (active_tasks=" << tasks << ")\n" << std::flush;
         });
 }
 
