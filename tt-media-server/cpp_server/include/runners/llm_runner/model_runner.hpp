@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "runners/llm_runner/config.hpp"
-#include "runners/llm_runner/device_backend.hpp"
+#include "runners/llm_runner/backend/device_backend.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "profiling/tracy.hpp"
 
@@ -38,7 +38,7 @@ class IModelRunner {
 class ModelRunnerStub : public IModelRunner {
  public:
   ModelRunnerStub(const Config& config, DecodeCallback callback,
-                  std::unique_ptr<IDeviceBackend> backend);
+                  std::unique_ptr<backend::IDeviceBackend> backend);
   ~ModelRunnerStub() override;
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
   void exit() override;
@@ -48,7 +48,7 @@ class ModelRunnerStub : public IModelRunner {
 
   Config config_;
   DecodeCallback decode_callback_;
-  std::unique_ptr<IDeviceBackend> backend_;
+  std::unique_ptr<backend::IDeviceBackend> backend_;
   std::atomic<bool> stop_{false};
   std::thread reader_thread_;
 };

@@ -143,6 +143,7 @@ void LLMService::start_workers() {
             throw std::runtime_error("Failed to fork worker process");
         }
         if (pid == 0) {
+            setpgid(0, 0);
             try {
                 exec_worker_process(i, cfg.env_vars);
             } catch (const std::exception& e) {
@@ -150,6 +151,7 @@ void LLMService::start_workers() {
                 _exit(1);
             }
         }
+        setpgid(pid, pid);
         worker->pid = pid;
         std::cout << "[LLMService] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
     }
