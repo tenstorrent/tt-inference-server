@@ -35,7 +35,7 @@ class TrainingService(BaseJobService):
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
-            model=ModelNames.GEMMA_1_1_2B_IT.value, # hardcoded for now
+            model=ModelNames.GEMMA_1_1_2B_IT.value,  # hardcoded for now
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
