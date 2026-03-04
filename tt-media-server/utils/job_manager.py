@@ -27,10 +27,12 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
     CANCELLING = "cancelling"
 
+
 @dataclass
 class JobContext:
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
+
 
 @dataclass
 class TrainingJobContext(JobContext):

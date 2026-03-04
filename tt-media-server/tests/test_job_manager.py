@@ -1045,6 +1045,7 @@ class TestJobManager:
             start_event=Event(),
             cancel_event=Event(),
         )
+
         async def cooperative_task(req):
             job_ctx.start_event.set()
             # Simulates a training loop checking cancel_event — same as the real runner
