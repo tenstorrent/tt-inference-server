@@ -2402,9 +2402,7 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
-    list_files = sorted(
-        list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True
-    )
+    list_files = sorted(list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
 
