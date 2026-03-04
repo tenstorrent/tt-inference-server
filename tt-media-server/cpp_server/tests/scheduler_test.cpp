@@ -5,6 +5,7 @@
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/interleaved_scheduler.hpp"
+#include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 #include <gtest/gtest.h>
@@ -459,6 +460,174 @@ TEST(InterleavedSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   auto [batch, _] = sched.schedule();
   sched.postprocess(batch, {1});
   EXPECT_TRUE(sched.is_finished());
+}
+
+// --- make_scheduler factory test for MAX_OCCUPANCY ---
+
+TEST(MakeSchedulerTest, MaxOccupancyPolicy_CreatesMaxOccupancyScheduler) {
+  Config config = make_config();
+  config.scheduling_policy = SchedulingPolicy::MAX_OCCUPANCY;
+  auto queue = make_queue();
+  auto sched = make_scheduler(config, queue.get());
+  ASSERT_NE(sched, nullptr);
+  EXPECT_NE(dynamic_cast<MaxOccupancyScheduler*>(sched.get()), nullptr);
+}
+
+// --- MaxOccupancyScheduler tests ---
+
+TEST(MaxOccupancySchedulerTest, PrefillsToFillGap) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 10});
+  sched.add_request(prompt(4), {.max_tokens = 10});
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  EXPECT_EQ(b1.size(), 2u) << "Should prefill both to fill max_num_seqs=2";
+  sched.postprocess(b1, {1, 1});
+
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2) << "No gaps, should decode";
+  EXPECT_EQ(b2.size(), 2u);
+}
+
+TEST(MaxOccupancySchedulerTest, PrefillsOnlyGapCount_WhenOneFinishes) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 2});
+  sched.add_request(prompt(4), {.max_tokens = 20});
+  sched.add_request(prompt(4), {.max_tokens = 20});
+
+  // Prefill first 2 (max_num_seqs=2)
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  EXPECT_EQ(b1.size(), 2u);
+  Sequence* short_seq = b1[0];
+  sched.postprocess(b1, {1, 1});
+
+  // Decode: both get 1 token
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  EXPECT_EQ(b2.size(), 2u);
+  sched.postprocess(b2, {2, 2});
+
+  // short_seq hit max_tokens=2, should be finished
+  EXPECT_TRUE(short_seq->is_finished());
+
+  // Now running=1, waiting=1: should prefill exactly 1 to fill the gap
+  auto [b3, pf3] = sched.schedule();
+  ASSERT_TRUE(pf3) << "Should prefill to fill the gap left by finished seq";
+  EXPECT_EQ(b3.size(), 1u) << "Should prefill only 1 (the gap), not 2";
+  sched.postprocess(b3, {1});
+
+  // Now running=2, should decode at full capacity
+  auto [b4, pf4] = sched.schedule();
+  ASSERT_FALSE(pf4);
+  EXPECT_EQ(b4.size(), 2u);
+}
+
+TEST(MaxOccupancySchedulerTest, DecodesAtFullCapacity_WhenNoWaiting) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 10});
+  sched.add_request(prompt(4), {.max_tokens = 10});
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {1, 1});
+
+  // No waiting, running at capacity: decode
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  EXPECT_EQ(b2.size(), 2u);
+}
+
+TEST(MaxOccupancySchedulerTest, DecodesWithoutPrefill_WhenNoWaitingAndGapExists) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 1});
+  sched.add_request(prompt(4), {.max_tokens = 10});
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {1, 1});
+
+  // seq1 finishes on decode
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  sched.postprocess(b2, {99, 2});
+
+  // Gap exists (running=1) but nothing waiting: just decode
+  auto [b3, pf3] = sched.schedule();
+  ASSERT_FALSE(pf3) << "No waiting requests, should decode even with gap";
+  EXPECT_EQ(b3.size(), 1u);
+}
+
+TEST(MaxOccupancySchedulerTest, PrefillsFromEmpty_LikePrefillFirst) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 10});
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1) << "With 0 running and waiting, should prefill";
+  EXPECT_EQ(b1.size(), 1u);
+}
+
+TEST(MaxOccupancySchedulerTest, IsFinished_AfterAllComplete) {
+  Config config = make_config();
+  config.max_num_seqs = 2;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(2), {.max_tokens = 1});
+
+  auto [b1, _1] = sched.schedule();
+  sched.postprocess(b1, {1});
+  EXPECT_TRUE(sched.is_finished());
+}
+
+TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 3;
+  auto queue = make_queue();
+  MaxOccupancyScheduler sched{config, queue.get()};
+
+  // Add 5 requests: 3 will be prefilled, 2 will wait
+  for (int i = 0; i < 5; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 2});
+  }
+
+  // Prefill 3
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  EXPECT_EQ(b1.size(), 3u);
+  sched.postprocess(b1, {1, 1, 1});
+
+  // Decode 3: first one finishes (max_tokens=2)
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  EXPECT_EQ(b2.size(), 3u);
+  sched.postprocess(b2, {2, 2, 2});
+
+  // All 3 finished. 2 waiting. Prefill 2.
+  auto [b3, pf3] = sched.schedule();
+  ASSERT_TRUE(pf3);
+  EXPECT_EQ(b3.size(), 2u);
 }
 
 }

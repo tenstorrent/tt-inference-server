@@ -4,6 +4,7 @@
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/interleaved_scheduler.hpp"
+#include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
 
 #include <cassert>
@@ -16,6 +17,8 @@ std::unique_ptr<Scheduler> make_scheduler(const Config& config,
   switch (config.scheduling_policy) {
     case SchedulingPolicy::INTERLEAVED:
       return std::make_unique<InterleavedScheduler>(config, task_queue);
+    case SchedulingPolicy::MAX_OCCUPANCY:
+      return std::make_unique<MaxOccupancyScheduler>(config, task_queue);
     case SchedulingPolicy::PREFILL_FIRST:
     default:
       return std::make_unique<PrefillFirstScheduler>(config, task_queue);
@@ -56,8 +59,9 @@ Sequence* Scheduler::find_sequence(TaskID task_id) {
 
 
 bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
-                                     int& num_seqs, int& num_batched_tokens) {
-  while (num_seqs < max_num_seqs_) {
+                                     int& num_seqs, int& num_batched_tokens,
+                                     int seq_limit) {
+  while (num_seqs < seq_limit) {
     auto seq = waiting_->try_pop();
     if (!seq) break;
 
@@ -116,11 +120,14 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_seqs = 0;
   int num_batched_tokens = 0;
 
+  int running_count = static_cast<int>(running_.size());
   bool prefill_first = should_prefill_first(
-      !waiting_->empty(), static_cast<int>(running_.size()), max_num_seqs_);
+      !waiting_->empty(), running_count, max_num_seqs_);
 
   if (prefill_first) {
-    if (try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens)) {
+    int seq_limit = max_prefill_seqs(running_count, max_num_seqs_);
+    if (seq_limit > 0 &&
+        try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens, seq_limit)) {
       LLM_ENGINE_LOG("scheduler")
           << "schedule prefill n=" << scheduled_seqs.size()
           << " batched_tokens=" << num_batched_tokens << std::endl;

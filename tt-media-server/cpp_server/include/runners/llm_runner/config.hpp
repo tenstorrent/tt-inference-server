@@ -15,6 +15,7 @@ enum class ModelRunnerType {
 enum class SchedulingPolicy {
   PREFILL_FIRST,
   INTERLEAVED,
+  MAX_OCCUPANCY,
 };
 
 struct Config {

@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
         })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
-        .setIdleConnectionTimeout(300)
+        .setIdleConnectionTimeout(3000)
         .setKeepaliveRequestsNumber(0)  // No limit
         .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
         .setClientMaxMemoryBodySize(100 * 1024 * 1024)

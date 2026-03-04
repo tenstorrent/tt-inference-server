@@ -62,10 +62,20 @@ class Scheduler {
   virtual bool should_prefill_first(bool has_waiting, int running_count,
                                     int max_num_seqs) const = 0;
 
+  /**
+   * Maximum number of sequences to prefill in one step.
+   * Default: max_num_seqs (full capacity). Override to limit prefill
+   * to available slots when running sequences should be preserved.
+   */
+  virtual int max_prefill_seqs(int running_count, int max_num_seqs) const {
+    return max_num_seqs;
+  }
+
  private:
   int block_size_;
   bool try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
-                            int& num_seqs, int& num_batched_tokens);
+                            int& num_seqs, int& num_batched_tokens,
+                            int seq_limit);
   void try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
                            int& num_seqs);
 

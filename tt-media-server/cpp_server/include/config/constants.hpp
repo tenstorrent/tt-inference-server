@@ -102,7 +102,7 @@ namespace defaults {
     constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
-    constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first" or "interleaved"
+    constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first", "interleaved", or "max_occupancy"
 }
 
 }  // namespace tt::config
