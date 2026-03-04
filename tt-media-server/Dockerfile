@@ -142,16 +142,17 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
 
-# cpp_server deps (apt + Rust if needed + Drogon)
-RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
+# # cpp_server deps (apt + Rust if needed + Drogon)
+# RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
 
-# Build C++ server (requires Rust for tokenizers-cpp)
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
-    && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh"
+# # Build C++ server (requires Rust for tokenizers-cpp)
+# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#     && export CARGO_HOME=${HOME_DIR}/.cargo \
+#     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+#     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
+#     && cd ${TT_METAL_HOME}/server/cpp_server \
+#     && ./build.sh"
+# boze pomozi
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
