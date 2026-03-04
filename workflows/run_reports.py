@@ -2510,6 +2510,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         logger.info(f"Image Files: {image_files}")
         files.extend(image_files)
+    files = list(dict.fromkeys(files))
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (
