@@ -54,9 +54,6 @@ TEST_F(TokenizerTest, EmptyTokensDecode) {
     EXPECT_EQ(decoded, "");
 }
 
-// ---------------------------------------------------------------------------
-// Fixture: DeepSeek-specific tests (always creates a DeepSeek tokenizer)
-// ---------------------------------------------------------------------------
 
 class DeepseekTokenizerTest : public ::testing::Test {
 protected:
@@ -77,6 +74,8 @@ protected:
 };
 
 TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
+    // Pre-computed expected tokens from DeepSeek R1 05 28 tokenizer (without special tokens)
+    // Generated using: tokenizer.encode(text, add_special_tokens=False)
     std::map<std::string, std::vector<int>> expected_tokens = {
         {"Hello, world!", {19923, 14, 2058, 3}},
         {"The quick brown fox jumps over the lazy dog.", {671, 4787, 13769, 46012, 54994, 1060, 270, 41638, 6397, 16}},
@@ -171,53 +170,49 @@ TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
 }
 
-TEST_F(DeepseekTokenizerTest, ApplyChatTemplate) {
+
+TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
+    // Same message list as used in HuggingFace docs for apply_chat_template.
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    const std::string bos = "<\xEF\xBD\x9C" "begin\xE2\x96\x81of\xE2\x96\x81sentence\xEF\xBD\x9C>";
-    const std::string user_tag = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
-    const std::string asst_tag = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
-
+    // Expected output from HuggingFace transformers tokenizer.apply_chat_template(..., add_generation_prompt=True)
+    // for DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
     const std::string expected =
-        bos +
-        user_tag + "Hello" +
-        asst_tag + "Hi!" +
-        user_tag + "How are you?" +
-        asst_tag;
+        "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How are you?<｜Assistant｜>";
 
     std::string actual = tokenizer().apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match DeepSeek V3 format.\n"
+
+        << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(DeepseekTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
+
+TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekR10528Format) {
+    // Same message list as used in HuggingFace docs for apply_chat_template.
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
         {"user", "How are you?"},
     };
 
-    const std::string bos = "<\xEF\xBD\x9C" "begin\xE2\x96\x81of\xE2\x96\x81sentence\xEF\xBD\x9C>";
-    const std::string user_tag = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
-    const std::string asst_tag = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
 
+    // Expected output from HuggingFace transformers tokenizer.apply_chat_template(..., add_generation_prompt=True)
+    // for DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
     const std::string expected =
-        bos +
-        user_tag + "Hello" +
-        asst_tag + "Hi!" +
-        user_tag + "How are you?";
+        "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How are you?";
 
     std::string actual = tokenizer().apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
-        << "apply_chat_template output should match DeepSeek V3 format.\n"
+
+        << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 format.\n"
         << "  Expected length: " << expected.size() << "\n"
         << "  Actual length:   " << actual.size();
 }

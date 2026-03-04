@@ -64,9 +64,9 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    void handle_prefill_request(const tt::sockets::TaskForwardMessage& message);
-    void handle_prefill_complete(const tt::sockets::TaskResultMessage& result);
-    void continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result);
+    void handle_prefill_request(const tt::sockets::PrefillRequestMessage& message);
+    void handle_prefill_complete(const tt::sockets::PrefillResultMessage& result);
+    void continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result);
     void handle_connection_lost();
 
     tt::config::LLMMode mode_;

@@ -71,8 +71,8 @@ models from HuggingFace into `tokenizers/<model-name>/`:
 
 ```
 tokenizers/
-  deepseek-ai/DeepSeek-V3/tokenizer.json
-  deepseek-ai/DeepSeek-V3/tokenizer_config.json
+  deepseek-ai/DeepSeek-R1-0528/tokenizer.json
+  deepseek-ai/DeepSeek-R1-0528/tokenizer_config.json
   meta-llama/Llama-3.1-8B-Instruct/tokenizer.json
   meta-llama/Llama-3.1-8B-Instruct/tokenizer_config.json
 ```
@@ -104,7 +104,7 @@ recompilation needed:
 
 | `LLM_DEVICE_BACKEND` | Model | Tokenizer |
 |----------------------|-------|-----------|
-| `mock` or `ttrun` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-V3/` |
+| `mock` or `ttrun` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
 | `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
 
 The runtime selection uses an OOP strategy pattern — see
@@ -208,9 +208,9 @@ Client HTTP Request
 
 **Flow:**
 1. Client sends request to decode server (HTTP)
-2. Decode server forwards prompt to prefill server (socket)
-3. Prefill server processes prompt, generates first token, sends back token IDs
-4. Decode server generates remaining tokens locally
+2. Decode server sends prefill request to prefill server (socket)
+3. Prefill server processes prompt, generates first token, sends prefill result with token IDs
+4. Decode server continues generating remaining tokens locally
 5. Decode server streams response to client
 
 ### Tracy profiling (Tracy build only)
@@ -534,9 +534,28 @@ The server includes tokenizer support for encode/decode:
    ```bash
    ./build.sh
    ```
+<<<<<<< HEAD
 4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
    active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
    [Runtime model selection](#runtime-model-selection) above).
+=======
+4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
+   To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
+   ```bash
+   mkdir -p cpp_server/tokenizers
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer_config.json
+   ```
+
+## Performance
+
+The `LLMTestRunner` is designed to generate tokens at **120,000 tokens/second** using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of actual model inference.
+
+Token generation timing:
+- Target: 120,000 tokens/second
+- Token interval: ~8.33 microseconds
+- Uses `std::chrono::high_resolution_clock` for precise timing
+>>>>>>> dev
 
 ## Comparison with Python FastAPI
 

@@ -89,9 +89,9 @@ std::string tokenizer_dir_for_model(config::ModelType model) {
     switch (model) {
         case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
             return "meta-llama/Llama-3.1-8B-Instruct";
-        case config::ModelType::DEEPSEEK_V3:
+        case config::ModelType::DEEPSEEK_R1_0528:
         default:
-            return "deepseek-ai/DeepSeek-V3";
+            return "deepseek-ai/DeepSeek-R1-0528";
     }
 }
 
@@ -99,7 +99,7 @@ std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model, const std::
     switch (model) {
         case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
             return std::make_unique<LlamaTokenizer>(path);
-        case config::ModelType::DEEPSEEK_V3:
+        case config::ModelType::DEEPSEEK_R1_0528:
         default:
             return std::make_unique<DeepseekTokenizer>(path);
     }

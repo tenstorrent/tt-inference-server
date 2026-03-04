@@ -50,7 +50,7 @@ inline std::string to_string(RunnerType r) {
 
 /** Model type: drives tokenizer strategy + model-specific config. Derived from LLM_DEVICE_BACKEND env var. */
 enum class ModelType {
-    DEEPSEEK_V3,
+    DEEPSEEK_R1_0528,
     LLAMA_3_1_8B_INSTRUCT,
 };
 
@@ -100,7 +100,6 @@ namespace defaults {
     constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
     constexpr const char* TT_PYTHON_PATH = "..";
     constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
-    constexpr const char* SOCKET_ROLE = "";  // Empty = disabled, "SERVER", "CLIENT"
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
 }

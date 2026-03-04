@@ -195,10 +195,10 @@ download_tokenizer() {
 echo ""
 echo "Pre-fetching tokenizer files for supported models..."
 
-# DeepSeek V3 (public, no auth) — required for default build
+# DeepSeek R1-0528 (public, no auth) — required for default build
 download_tokenizer \
-    "deepseek-ai/DeepSeek-V3" \
-    "https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main" \
+    "deepseek-ai/DeepSeek-R1-0528" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
     "false"
 
 # Llama 3.1 8B Instruct (gated, requires HF_TOKEN)

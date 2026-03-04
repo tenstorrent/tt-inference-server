@@ -11,7 +11,7 @@ class DeepseekTokenizer final : public Tokenizer {
 public:
     using Tokenizer::Tokenizer;
 
-    std::string model_name() const override { return "deepseek-ai/DeepSeek-V3"; }
+    std::string model_name() const override { return "deepseek-ai/DeepSeek-R1-0528"; }
     int special_token_decode_threshold() const override { return -1; }
     std::vector<int64_t> stop_token_ids() const override { return {1}; }
 

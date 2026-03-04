@@ -161,7 +161,7 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 
 The build script pre-fetches tokenizer files for all supported models into
 per-model subdirectories under `tokenizers/`:
-- `tokenizers/deepseek-ai/DeepSeek-V3/tokenizer.json` + `tokenizer_config.json`
+- `tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json` + `tokenizer_config.json`
 - `tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json` + `tokenizer_config.json`
 
 The active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND`. To add a
