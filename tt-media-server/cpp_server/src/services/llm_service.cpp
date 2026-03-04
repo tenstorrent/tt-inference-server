@@ -361,16 +361,16 @@ void LLMService::process_streaming_request(
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
 
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
-        bool sent = socket_service_->forwardTask(
+        bool sent = socket_service_->sendPrefillRequest(
             task_id, "", token_ids, request.max_tokens);
 
         if (!sent) {
             stream_callbacks_.erase(task_id);
             pending_tasks_.fetch_sub(1);
-            throw std::runtime_error("Failed to forward task to prefill server (not connected)");
+            throw std::runtime_error("Failed to send prefill request (not connected)");
         }
-        std::cout << "[LLMService] Forwarded task " << task_id
-                  << " to prefill server (" << token_ids.size() << " tokens)\n" << std::flush;
+        std::cout << "[LLMService:DECODE] Sent prefill request " << task_id
+                  << " (" << token_ids.size() << " tokens)\n" << std::flush;
         return;
     }
 
@@ -388,12 +388,12 @@ void LLMService::post_process(domain::CompletionResponse&) const {
 void LLMService::setup_socket_callbacks() {
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
         socket_service_->onPrefillComplete(
-            [this](const tt::sockets::TaskResultMessage& result) {
+            [this](const tt::sockets::PrefillResultMessage& result) {
                 handle_prefill_complete(result);
             });
     } else if (mode_ == tt::config::LLMMode::PREFILL_ONLY) {
         socket_service_->onPrefillRequested(
-            [this](const tt::sockets::TaskForwardMessage& message) {
+            [this](const tt::sockets::PrefillRequestMessage& message) {
                 handle_prefill_request(message);
             });
     }
@@ -433,8 +433,8 @@ void LLMService::handle_connection_lost() {
     stream_callbacks_.clear();
 }
 
-void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& message) {
-    std::cout << "[LLMService:PREFILL] Received task " << message.task_id
+void LLMService::handle_prefill_request(const tt::sockets::PrefillRequestMessage& message) {
+    std::cout << "[LLMService:PREFILL] Received prefill request " << message.task_id
               << " (" << message.token_ids.size() << " tokens, max_tokens=" << message.max_tokens << ")\n" << std::flush;
 
     domain::CompletionRequest request;
@@ -469,26 +469,26 @@ void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& m
             int remaining_tokens = original_max_tokens - 1;
             bool fully_finished = is_final && remaining_tokens <= 0;
 
-            tt::sockets::TaskResultMessage result_msg;
+            tt::sockets::PrefillResultMessage result_msg;
             result_msg.task_id = task_id;
             result_msg.generated_text = text;
             result_msg.finished = fully_finished;
             result_msg.tokens_generated = 1;
             result_msg.token_ids = *token_ids_ptr;
             result_msg.remaining_tokens = remaining_tokens;
-            socket_service_->sendTaskResult(result_msg);
+            socket_service_->sendPrefillResult(result_msg);
 
             if (is_final) {
-                std::cout << "[LLMService:PREFILL] Sent first token for task " << task_id
+                std::cout << "[LLMService:PREFILL] Sent prefill result " << task_id
                           << " (remaining: " << remaining_tokens << ", token_ids: "
                           << token_ids_ptr->size() << ")\n" << std::flush;
             }
         });
 }
 
-void LLMService::handle_prefill_complete(const tt::sockets::TaskResultMessage& result) {
+void LLMService::handle_prefill_complete(const tt::sockets::PrefillResultMessage& result) {
     const std::string& task_id = result.task_id;
-    std::cout << "[LLMService:DECODE] Received result for task " << task_id
+    std::cout << "[LLMService:DECODE] Received prefill result " << task_id
               << " (finished=" << result.finished << ", remaining=" << result.remaining_tokens
               << ", token_ids=" << result.token_ids.size() << ")\n" << std::flush;
 
@@ -532,7 +532,7 @@ void LLMService::handle_prefill_complete(const tt::sockets::TaskResultMessage& r
     }
 }
 
-void LLMService::continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result) {
+void LLMService::continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result) {
     domain::CompletionRequest request;
     request.task_id = prefill_result.task_id;
 

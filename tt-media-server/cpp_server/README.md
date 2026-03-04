@@ -146,9 +146,9 @@ Client HTTP Request
 
 **Flow:**
 1. Client sends request to decode server (HTTP)
-2. Decode server forwards prompt to prefill server (socket)
-3. Prefill server processes prompt, generates first token, sends back token IDs
-4. Decode server generates remaining tokens locally
+2. Decode server sends prefill request to prefill server (socket)
+3. Prefill server processes prompt, generates first token, sends prefill result with token IDs
+4. Decode server continues generating remaining tokens locally
 5. Decode server streams response to client
 
 ### Tracy profiling (Tracy build only)
