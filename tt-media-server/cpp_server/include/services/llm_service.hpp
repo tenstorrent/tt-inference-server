@@ -9,6 +9,8 @@
 #include "config/constants.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
+#include "domain/prefill_request.hpp"
+#include "domain/prefill_result.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
 
@@ -29,6 +31,9 @@ class LLMService
     : public BaseService<domain::CompletionRequest, domain::CompletionResponse>
     , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
+    // Callback types for transport-agnostic communication
+    using PrefillRequestCallback = std::function<bool(const domain::PrefillRequest&)>;
+    using PrefillResultCallback = std::function<void(const domain::PrefillResult&)>;
 
     LLMService();
     ~LLMService() override;
@@ -41,6 +46,22 @@ public:
 
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
+
+    // Handler methods - called by controllers (transport-agnostic)
+    void handle_prefill_request(
+        const std::string& task_id,
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids,
+        int max_tokens);
+    void handle_prefill_complete(const domain::PrefillResult& result);
+    void handle_connection_lost();
+
+    // Set callbacks for transport-agnostic communication (called by controller)
+    void set_prefill_request_callback(PrefillRequestCallback callback);
+    void set_prefill_result_callback(PrefillResultCallback callback);
+
+    // Get socket service for controller initialization
+    std::shared_ptr<tt::sockets::InterServerService> get_socket_service() const;
 
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
@@ -58,16 +79,12 @@ protected:
 private:
     void start_workers();
     void start_consumers();
-    void setup_socket_callbacks();
 
     void consumer_loop_for_worker(size_t worker_idx);
 
     bool check_worker_alive(size_t worker_idx);
 
-    void handle_prefill_request(const tt::sockets::PrefillRequestMessage& message);
-    void handle_prefill_complete(const tt::sockets::PrefillResultMessage& result);
-    void continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result);
-    void handle_connection_lost();
+    void continue_decode_generation(const domain::PrefillResult& prefill_result);
 
     tt::config::LLMMode mode_;
 
@@ -90,7 +107,11 @@ private:
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
     tt::utils::Tokenizer tokenizer_;
-    std::unique_ptr<tt::sockets::InterServerService> socket_service_;
+    std::shared_ptr<tt::sockets::InterServerService> socket_service_;
+
+    // Callbacks for transport-agnostic communication (set by controller)
+    PrefillRequestCallback prefill_request_callback_;
+    PrefillResultCallback prefill_result_callback_;
 };
 
 }

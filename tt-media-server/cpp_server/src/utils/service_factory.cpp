@@ -7,12 +7,15 @@
 #include "services/llm_service.hpp"
 #include "services/embedding_service.hpp"
 #include "config/constants.hpp"
-#include "services/llm_service.hpp"
-#include "services/embedding_service.hpp"
+#include "api/socket_controller.hpp"
 
 #include <iostream>
 
 namespace tt::utils::service_factory {
+
+namespace {
+    std::unique_ptr<tt::api::SocketController> socket_controller_;
+}
 
 void register_services() {
     tracy_config::TracyStartMainProcess();
@@ -20,6 +23,16 @@ void register_services() {
     if (tt::config::is_llm_service_enabled()) {
         auto llm = std::make_shared<services::LLMService>();
         llm->start();
+
+        // Create socket controller only for prefill/decode split modes
+        auto mode = tt::config::llm_mode();
+        if (mode != tt::config::LLMMode::REGULAR) {
+            auto socket_service = llm->get_socket_service();
+            if (socket_service && socket_service->isEnabled()) {
+                socket_controller_ = std::make_unique<tt::api::SocketController>(llm, socket_service);
+            }
+        }
+
         register_service(std::move(llm));
         std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
     }

@@ -245,6 +245,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
