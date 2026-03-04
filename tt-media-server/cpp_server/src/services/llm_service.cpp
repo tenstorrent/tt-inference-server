@@ -429,32 +429,28 @@ void LLMService::handle_connection_lost() {
     stream_callbacks_.clear();
 }
 
-void LLMService::handle_prefill_request(
-    const std::string& task_id,
-    const std::string& prompt,
-    const std::vector<int64_t>& token_ids,
-    int max_tokens) {
-
-    std::cout << "[LLMService:PREFILL] Processing prefill request " << task_id
-              << " (" << token_ids.size() << " tokens, max_tokens=" << max_tokens << ")\n" << std::flush;
+void LLMService::handle_prefill_request(const domain::PrefillRequest& prefill_req) {
+    std::cout << "[LLMService:PREFILL] Processing prefill request " << prefill_req.task_id
+              << " (" << prefill_req.token_ids.size() << " tokens, max_tokens=" << prefill_req.max_tokens << ")\n" << std::flush;
 
     domain::CompletionRequest request;
-    request.task_id = task_id;
+    request.task_id = prefill_req.task_id;
 
-    std::vector<int64_t> original_token_ids = token_ids;
-    if (!token_ids.empty()) {
-        std::vector<int> tokens(token_ids.begin(), token_ids.end());
+    std::vector<int64_t> original_token_ids = prefill_req.token_ids;
+    if (!prefill_req.token_ids.empty()) {
+        std::vector<int> tokens(prefill_req.token_ids.begin(), prefill_req.token_ids.end());
         request.prompt = std::move(tokens);
     } else {
-        request.prompt = prompt;
+        request.prompt = prefill_req.prompt;
     }
 
-    const int original_max_tokens = max_tokens;
+    const int original_max_tokens = prefill_req.max_tokens;
     request.max_tokens = 1;
 
     pre_process(request);
 
     auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(std::move(original_token_ids));
+    std::string task_id = prefill_req.task_id;
 
     process_streaming_request(std::move(request),
         [this, task_id, token_ids_ptr,

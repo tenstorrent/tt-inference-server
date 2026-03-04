@@ -50,11 +50,12 @@ void SocketController::setup_prefill_mode_handlers() {
     socket_service_->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
             std::cout << "[SocketController] Received prefill request " << message.task_id << "\n" << std::flush;
-            llm_service_->handle_prefill_request(
-                message.task_id,
-                message.prompt,
-                message.token_ids,
-                message.max_tokens);
+            domain::PrefillRequest request;
+            request.task_id = message.task_id;
+            request.prompt = message.prompt;
+            request.token_ids = message.token_ids;
+            request.max_tokens = message.max_tokens;
+            llm_service_->handle_prefill_request(request);
         });
 }
 

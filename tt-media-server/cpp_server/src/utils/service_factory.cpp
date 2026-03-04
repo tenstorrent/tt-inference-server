@@ -24,12 +24,8 @@ void register_services() {
         auto llm = std::make_shared<services::LLMService>();
         llm->start();
 
-        auto mode = tt::config::llm_mode();
-        if (mode != tt::config::LLMMode::REGULAR) {
-            auto socket_service = llm->get_socket_service();
-            if (socket_service && socket_service->isEnabled()) {
-                socket_controller_ = std::make_unique<tt::api::SocketController>(llm, socket_service);
-            }
+        if (tt::config::llm_mode() != tt::config::LLMMode::REGULAR) {
+            socket_controller_ = std::make_unique<tt::api::SocketController>(llm, llm->get_socket_service());
         }
 
         register_service(std::move(llm));

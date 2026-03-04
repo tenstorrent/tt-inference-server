@@ -46,11 +46,7 @@ public:
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
 
-    void handle_prefill_request(
-        const std::string& task_id,
-        const std::string& prompt,
-        const std::vector<int64_t>& token_ids,
-        int max_tokens);
+    void handle_prefill_request(const domain::PrefillRequest& request);
     void handle_prefill_complete(const domain::PrefillResult& result);
     void handle_connection_lost();
 
