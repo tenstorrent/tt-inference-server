@@ -19,10 +19,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TT_SMI_TIMEOUT = 30
-SYSTEM_HEALTH_TIMEOUT = 60
 SYSTEM_HEALTH_BINARY_ENV = "TT_SYSTEM_HEALTH_BINARY"
 TT_METAL_HOME_ENV = "TT_METAL_HOME"
+TT_SMI_TIMEOUT = int(os.environ.get("TT_SMI_TIMEOUT", "30"))
+SYSTEM_HEALTH_TIMEOUT = int(os.environ.get("TT_SYSTEM_HEALTH_TIMEOUT", "60"))
 SYSTEM_HEALTH_RELATIVE_PATH = "build/test/tt_metal/tt_fabric/test_system_health"
 SYSTEM_HEALTH_GTEST_FILTER = "Cluster.ReportSystemHealth"
 N_PER_TRAY = 8
