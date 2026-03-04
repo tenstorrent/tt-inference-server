@@ -19,13 +19,8 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
 
     device_runner: BaseDeviceRunner = None
     try:
-        logger.info(f"PIPELINE_PAIR worker_utils init_worker worker_id={worker_id!r}")
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
-        logger.info(
-            f"PIPELINE_PAIR worker_utils set_device START worker_id={worker_id!r}"
-        )
         device_runner.set_device()
-        logger.info(f"PIPELINE_PAIR worker_utils set_device OK worker_id={worker_id!r}")
         # Use the same loop for model loading
         try:
             loop.run_until_complete(device_runner.warmup())
@@ -40,9 +35,6 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
     except Exception as e:
         if device_runner is not None:
             device_runner.close_device()
-        logger.error(
-            f"PIPELINE_PAIR worker_utils FAILED worker_id={worker_id!r} error={e}"
-        )
-        logger.error(f"Failed to get device runner: {e}")
+        logger.error(f"Worker {worker_id} device init failed: {e}")
         loop.close()
         raise

@@ -201,33 +201,36 @@ class Settings(BaseSettings):
                     f"Galaxy TP2 discovery returned {len(devices) if devices else 0} pairs"
                 )
                 if not devices:
-                    logger.error(
-                        "Galaxy TP2 (2,1): device discovery failed or returned no pairs. "
-                        "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds. "
-                        "Exiting."
+                    raise RuntimeError(
+                        "Galaxy TP2 (2,1): device discovery returned no pairs. "
+                        "Ensure test_system_health binary is available and "
+                        "Cluster.ReportSystemHealth succeeds."
                     )
 
             elif mesh == (2, 4):
                 devices = dm.get_device_groups_of_eight()
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP8 (2,4): device discovery returned no groups. "
+                        "Ensure tt-smi is available and returns at least 8 devices per tray."
+                    )
 
         except Exception as e:
-            logger.error(f"Device discovery failed: {e}")
-            devices = None
+            if mesh in ((2, 1), (2, 4)):
+                raise RuntimeError(
+                    f"Device discovery failed for mesh {mesh}: {e}. "
+                    "Cannot start without valid device pairs."
+                ) from e
+            logger.error(f"Device discovery failed for mesh {mesh}: {e}")
+            return
 
-        finally:
-            if devices:
-                self.device_ids = ",".join(
-                    f"({d})" if isinstance(d, int) else f"({','.join(map(str, d))})"
-                    for d in devices
-                )
-                logger.info(
-                    f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
-                )
-            elif mesh in ((2, 1), (2, 4)):
-                logger.error(
-                    f"Discovery failed for mesh {mesh} - no devices. "
-                    "Check tt-smi / test_system_health."
-                )
+        self.device_ids = ",".join(
+            f"({d})" if isinstance(d, int) else f"({','.join(map(str, d))})"
+            for d in devices
+        )
+        logger.info(
+            f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
+        )
 
     def _set_throttling_overrides(self):
         if self.model_runner in [

@@ -19,10 +19,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TT_SMI_TIMEOUT = 30
-SYSTEM_HEALTH_TIMEOUT = 60
 SYSTEM_HEALTH_BINARY_ENV = "TT_SYSTEM_HEALTH_BINARY"
 TT_METAL_HOME_ENV = "TT_METAL_HOME"
+TT_SMI_TIMEOUT = int(os.environ.get("TT_SMI_TIMEOUT", "30"))
+SYSTEM_HEALTH_TIMEOUT = int(os.environ.get("TT_SYSTEM_HEALTH_TIMEOUT", "60"))
 SYSTEM_HEALTH_RELATIVE_PATH = "build/test/tt_metal/tt_fabric/test_system_health"
 SYSTEM_HEALTH_GTEST_FILTER = "Cluster.ReportSystemHealth"
 N_PER_TRAY = 8
@@ -166,6 +166,20 @@ class DeviceManager:
     def _run_system_health(self) -> list[ChipInfo]:
         """Run test_system_health, return parsed chips. Raises DiscoveryError on failure."""
         binary = self._resolve_binary()
+        result = self._exec_system_health(binary)
+
+        output = result.stdout or ""
+        if not output:
+            raise DeviceDiscoveryError("test_system_health: no output")
+
+        chips = self._parse_system_health_output(output)
+        if not chips:
+            raise DeviceDiscoveryError("test_system_health: no chips parsed")
+
+        return chips
+
+    def _exec_system_health(self, binary: str) -> subprocess.CompletedProcess:
+        """Execute the binary, retrying once after chmod +x on permission failure."""
         cmd = [binary, f"--gtest_filter={SYSTEM_HEALTH_GTEST_FILTER}"]
         env = self._build_env()
 
@@ -187,23 +201,52 @@ class DeviceManager:
                 f"test_system_health timed out after {SYSTEM_HEALTH_TIMEOUT}s"
             )
         except OSError as e:
-            raise DeviceDiscoveryError(f"test_system_health failed: {e}")
+            result = self._retry_after_chmod(binary, cmd, env, e)
 
         logger.info(
             "Completed in %.1fs, rc=%s",
             time.monotonic() - start,
             result.returncode,
         )
+        return result
 
-        output = result.stdout or ""
-        if not output:
-            raise DeviceDiscoveryError("test_system_health: no output")
+    def _retry_after_chmod(
+        self,
+        binary: str,
+        cmd: list[str],
+        env: dict,
+        original_error: OSError,
+    ) -> subprocess.CompletedProcess:
+        """chmod +x the binary and retry once. Raises DeviceDiscoveryError if retry also fails."""
+        logger.warning(
+            "test_system_health exec failed: %s — attempting chmod +x %s",
+            original_error,
+            binary,
+        )
+        try:
+            os.chmod(binary, os.stat(binary).st_mode | 0o111)
+        except OSError as chmod_err:
+            raise DeviceDiscoveryError(
+                f"test_system_health not executable and chmod +x failed: {chmod_err}"
+            ) from original_error
 
-        chips = self._parse_system_health_output(output)
-        if not chips:
-            raise DeviceDiscoveryError("test_system_health: no chips parsed")
-
-        return chips
+        try:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=SYSTEM_HEALTH_TIMEOUT,
+                env=env,
+                start_new_session=True,
+            )
+        except subprocess.TimeoutExpired:
+            raise DeviceDiscoveryError(
+                f"test_system_health timed out after {SYSTEM_HEALTH_TIMEOUT}s (after chmod +x)"
+            )
+        except OSError as e:
+            raise DeviceDiscoveryError(
+                f"test_system_health failed even after chmod +x: {e}"
+            ) from original_error
 
     def _resolve_binary(self) -> str:
         """Resolve test_system_health binary path."""
