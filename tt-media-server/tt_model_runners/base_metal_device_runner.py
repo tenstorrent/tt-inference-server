@@ -73,10 +73,6 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
 
     def _mesh_device(self):
         try:
-            self.logger.info(
-                f"PIPELINE_PAIR base_metal _mesh_device START device_id={self.device_id!r}"
-            )
-            # Get available devices
             device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise RuntimeError("No TTNN devices available")
@@ -94,18 +90,12 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             )
 
             self.logger.info(
-                f"PIPELINE_PAIR base_metal _mesh_device OK device_id={self.device_id!r}"
-            )
-            self.logger.info(
-                f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
+                f"Device {self.device_id}: Created mesh device with {mesh_device.get_num_devices()} devices"
             )
             return mesh_device
         except Exception as e:
             self.logger.error(
-                f"PIPELINE_PAIR base_metal _mesh_device FAILED device_id={self.device_id!r} error={e}"
-            )
-            self.logger.error(
-                f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+                f"Device {self.device_id}: Device initialization failed: {e}"
             )
             raise RuntimeError(
                 f"Unexpected device initialization error: {str(e)}"
@@ -116,17 +106,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
-            self.logger.info(
-                f"PIPELINE_PAIR base_metal open_mesh_device CALL device_id={self.device_id!r}"
-            )
             mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
-            self.logger.info(
-                f"PIPELINE_PAIR base_metal open_mesh_device OK device_id={self.device_id!r}"
-            )
         except Exception as e:
-            self.logger.error(
-                f"PIPELINE_PAIR base_metal open_mesh_device FAILED device_id={self.device_id!r}"
-            )
             try:
                 if fabric_config:
                     ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
