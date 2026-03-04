@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import time
 
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
@@ -11,17 +12,23 @@ from utils.logger import TTLogger
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):
     """Initialize device runner and event loop for worker"""
-    # Create a single event loop for this worker process
-    # This is critical for AsyncLLMEngine which creates background tasks tied to the event loop
-    # Using asyncio.run() multiple times creates/closes different loops, breaking AsyncLLMEngine
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     device_runner: BaseDeviceRunner = None
     try:
+        logger.info(f"Worker {worker_id}: Creating device runner...")
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
+
+        logger.info(f"Worker {worker_id}: Setting up device (open mesh, fabric)...")
+        t0 = time.time()
         device_runner.set_device()
-        # Use the same loop for model loading
+        logger.info(
+            f"Worker {worker_id}: Device setup completed in {time.time() - t0:.1f}s"
+        )
+
+        logger.info(f"Worker {worker_id}: Starting model warmup...")
+        t0 = time.time()
         try:
             loop.run_until_complete(device_runner.warmup())
         except KeyboardInterrupt:
@@ -31,6 +38,9 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
             loop.close()
             return None, None
 
+        logger.info(
+            f"Worker {worker_id}: Model warmup completed in {time.time() - t0:.1f}s"
+        )
         return device_runner, loop
     except Exception as e:
         if device_runner is not None:

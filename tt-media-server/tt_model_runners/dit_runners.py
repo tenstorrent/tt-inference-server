@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from abc import abstractmethod
 
 import ttnn
@@ -85,12 +86,22 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading model...")
+        load_start = time.time()
 
         def distribute_block():
             self.pipeline = self.create_pipeline()
 
+        async def _heartbeat(interval=60):
+            while True:
+                await asyncio.sleep(interval)
+                elapsed = time.time() - load_start
+                self.logger.info(
+                    f"Device {self.device_id}: Model loading in progress... elapsed={elapsed:.0f}s"
+                )
+
         # 20 minutes to distribute the model on device
         weights_distribution_timeout = 1200
+        heartbeat_task = asyncio.create_task(_heartbeat())
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(distribute_block),
@@ -109,8 +120,13 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 e,
             )
             raise
+        finally:
+            heartbeat_task.cancel()
 
-        self.logger.info(f"Device {self.device_id}: Model loaded successfully")
+        load_elapsed = time.time() - load_start
+        self.logger.info(
+            f"Device {self.device_id}: Model loaded successfully in {load_elapsed:.1f}s"
+        )
 
         # we use model_construct to create the request without validation
         # (warmup uses 2 inference steps which is below the normal minimum)
@@ -187,10 +203,22 @@ class TTFlux1Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
-            return Flux1Pipeline.create_pipeline(
+            self.logger.info(
+                f"Device {self.device_id}: Creating Flux1 pipeline - "
+                f"checkpoint={self.settings.model_weights_path}, "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = Flux1Pipeline.create_pipeline(
                 checkpoint_name=self.settings.model_weights_path,
                 mesh_device=self.ttnn_device,
             )
+            elapsed = time.time() - start
+            self.logger.info(
+                f"Device {self.device_id}: Flux1 pipeline created in {elapsed:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
