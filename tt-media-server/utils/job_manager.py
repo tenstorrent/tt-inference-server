@@ -34,7 +34,7 @@ class JobContext:
 
 @dataclass
 class TrainingJobContext(JobContext):
-    training_metrics: list
+    training_metrics: list = field(default_factory=list)
 
 
 @dataclass

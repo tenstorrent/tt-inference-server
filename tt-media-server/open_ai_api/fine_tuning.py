@@ -86,7 +86,7 @@ async def get_fine_tuning_job_metadata(
 async def get_training_metrics(
     job_id: str,
     after: int = 0,
-    service: TrainingService = Depends(service_resolver),
+    service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     job_data = service.get_job_metadata(job_id)
