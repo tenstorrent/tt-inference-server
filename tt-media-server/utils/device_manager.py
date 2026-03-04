@@ -62,7 +62,7 @@ class DeviceManager:
         try:
             tray_mapping = self._run_tt_smi()
         except DeviceDiscoveryError as e:
-            logger.error("tt-smi discovery failed: %s", e)
+            logger.warning("tt-smi discovery failed (will use env device_ids): %s", e)
             return []
         devices = self._create_single_devices(tray_mapping)
         logger.info("Single devices: %s", devices)
