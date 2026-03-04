@@ -68,7 +68,10 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     }
     if (token_ids.empty()) return "";
 
-    int threshold = special_token_decode_threshold();
+    if (cached_special_token_threshold_ == -2) {
+        cached_special_token_threshold_ = special_token_decode_threshold();
+    }
+    int threshold = cached_special_token_threshold_;
     if (threshold > 0) {
         std::vector<int> filtered;
         filtered.reserve(token_ids.size());

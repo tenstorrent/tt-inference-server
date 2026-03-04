@@ -90,6 +90,7 @@ public:
 protected:
     std::unique_ptr<tokenizers::Tokenizer> tok_;
     TokenizerConfig cfg_;
+    mutable int cached_special_token_threshold_ = -2;  // -2 = unset, then special_token_decode_threshold()
 };
 
 /**
