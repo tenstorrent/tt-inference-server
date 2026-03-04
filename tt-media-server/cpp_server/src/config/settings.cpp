@@ -178,7 +178,8 @@ ModelType model_type() {
 
 LLMMode llm_mode() {
     return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
-    
+}
+
 llm_engine::SchedulingPolicy scheduling_policy() {
     auto s = env_string("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY);
     if (s == "interleaved") return llm_engine::SchedulingPolicy::INTERLEAVED;

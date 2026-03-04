@@ -11,7 +11,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
-  scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
+  scheduler_ = make_scheduler(config_, task_queue);
 
   auto decode_cb = [this](const TokenResult& result) {
     decode_queue_.push(result);

@@ -3,10 +3,11 @@
 
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/interleaved_scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 #include <gtest/gtest.h>
-#include <optional>
 #include <vector>
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 
@@ -19,13 +20,13 @@ namespace {
 
 Config make_config(int num_blocks = 32, int block_size = 8,
                    int max_batched_tokens = 256, int eos = 0,
-                   SchedulingPolicy policy = SchedulingPolicy::PREFILL_FIRST) {
+                   std::vector<int64_t> stop_token_ids = {}) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
   c.eos = eos;
-  c.scheduling_policy = policy;
+  c.stop_token_ids = std::move(stop_token_ids);
   return c;
 }
 
@@ -35,25 +36,48 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TEST(SchedulerTest, IsFinished_WhenEmpty_ReturnsTrue) {
+// --- make_scheduler factory tests ---
+
+TEST(MakeSchedulerTest, PrefillFirstPolicy_CreatesPrefillFirstScheduler) {
   Config config = make_config();
-  Scheduler sched{config, make_queue().get()};
+  config.scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
+  auto queue = make_queue();
+  auto sched = make_scheduler(config, queue.get());
+  ASSERT_NE(sched, nullptr);
+  EXPECT_NE(dynamic_cast<PrefillFirstScheduler*>(sched.get()), nullptr);
+}
+
+TEST(MakeSchedulerTest, InterleavedPolicy_CreatesInterleavedScheduler) {
+  Config config = make_config();
+  config.scheduling_policy = SchedulingPolicy::INTERLEAVED;
+  auto queue = make_queue();
+  auto sched = make_scheduler(config, queue.get());
+  ASSERT_NE(sched, nullptr);
+  EXPECT_NE(dynamic_cast<InterleavedScheduler*>(sched.get()), nullptr);
+}
+
+// --- PrefillFirstScheduler tests ---
+
+TEST(PrefillFirstSchedulerTest, IsFinished_WhenEmpty_ReturnsTrue) {
+  Config config = make_config();
+  auto queue = make_queue();
+  PrefillFirstScheduler sched{config, queue.get()};
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(SchedulerTest, IsFinished_AfterAdd_ReturnsFalse) {
+TEST(PrefillFirstSchedulerTest, IsFinished_AfterAdd_ReturnsFalse) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   sched.add(seq);
   EXPECT_FALSE(sched.is_finished());
 }
 
-TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
+TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
@@ -64,10 +88,10 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   EXPECT_EQ(batch[0]->status_, SequenceStatus::IN_FLIGHT);
 }
 
-TEST(SchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
+TEST(PrefillFirstSchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   sched.add_request(prompt(4), SamplingParams{.max_tokens = 10});
 
   auto [batch1, is_prefill1] = sched.schedule();
@@ -78,10 +102,10 @@ TEST(SchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
   EXPECT_TRUE(batch2.empty());
 }
 
-TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
+TEST(PrefillFirstSchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
@@ -97,10 +121,10 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   EXPECT_EQ(decode_batch[0]->task_id, expected_id);
 }
 
-TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
+TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -120,10 +144,10 @@ TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
+TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 2});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -143,10 +167,10 @@ TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
+TEST(PrefillFirstSchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   SamplingParams params;
   params.max_tokens = 2;
   Sequence seq{256, prompt(2), params};
@@ -161,10 +185,10 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
   EXPECT_TRUE(batch2[0]->is_finished());
 }
 
-TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
+TEST(PrefillFirstSchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
   Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
@@ -173,10 +197,10 @@ TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
   EXPECT_TRUE(batch[0]->is_finished());
 }
 
-TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
+TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
@@ -191,10 +215,10 @@ TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   EXPECT_EQ(batch2[0]->task_id, expected_id);
 }
 
-TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
+TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID seq2_task_id = seq2.task_id;
@@ -209,10 +233,10 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   EXPECT_EQ(batch2[0]->task_id, seq2_task_id);
 }
 
-TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
+TEST(PrefillFirstSchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   Config config = make_config(32, 8, 20, 0);
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq1{256, prompt(15), SamplingParams{.max_tokens = 5}};
   Sequence seq2{256, prompt(15), SamplingParams{.max_tokens = 5}};
   sched.add(seq1);
@@ -222,10 +246,10 @@ TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   EXPECT_EQ(batch.size(), 1u) << "Only one sequence fits within max_num_batched_tokens";
 }
 
-TEST(SchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
+TEST(PrefillFirstSchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
   Config config = make_config(32, 8, 256, 0);
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 5}};
   Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 5}};
   Sequence seq3{256, prompt(4), SamplingParams{.max_tokens = 5}};
@@ -237,10 +261,10 @@ TEST(SchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
   EXPECT_EQ(batch.size(), 1u) << "At most 1 sequence in one batch";
 }
 
-TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
+TEST(PrefillFirstSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 1}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
@@ -248,10 +272,10 @@ TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
+TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
   Config config = make_config(1, 8, 256, 0);
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
@@ -276,10 +300,10 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
   }
 }
 
-TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
+TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
   Config config = make_config(2, 8, 256, 0);
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  PrefillFirstScheduler sched{config, queue.get()};
   Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
@@ -305,59 +329,83 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   }
 }
 
-<<<<<<< HEAD
-}
-=======
-// --- Interleaved scheduling strategy tests ---
-
-TEST(InterleavedStrategyTest, PrefillWhenNothingRunning) {
-  InterleavedStrategy strat;
-  EXPECT_TRUE(strat.should_prefill_first(true, 0, 1))
-      << "Must prefill when waiting has requests and nothing is running";
-}
-
-TEST(InterleavedStrategyTest, DecodeWhenAnythingRunning) {
-  InterleavedStrategy strat;
-  EXPECT_FALSE(strat.should_prefill_first(true, 1, 1))
-      << "Must decode when any requests are running";
-  EXPECT_FALSE(strat.should_prefill_first(true, 1, 16))
-      << "Must decode even when running count is far below max_num_seqs";
-  EXPECT_FALSE(strat.should_prefill_first(true, 5, 16))
-      << "Must decode all running to completion before prefilling new work";
-}
-
-TEST(InterleavedStrategyTest, NoActionWhenNothingWaiting) {
-  InterleavedStrategy strat;
-  EXPECT_FALSE(strat.should_prefill_first(false, 0, 1));
-  EXPECT_FALSE(strat.should_prefill_first(false, 1, 1));
-}
-
-TEST(SchedulerTest, Interleaved_DecodesBeforePrefillWhenRunningAtCapacity) {
-  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::INTERLEAVED);
+TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
+  Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
-  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 2}};
-  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 2}};
+  PrefillFirstScheduler sched{config, queue.get()};
+  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  TaskID seq2_id = seq2.task_id;
+  sched.add(seq1);
+  sched.add(seq2);
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {1});
+
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_TRUE(pf2) << "PrefillFirst: seq2 should be prefilled even with seq1 running";
+  ASSERT_EQ(b2.size(), 1u);
+  EXPECT_EQ(b2[0]->task_id, seq2_id);
+}
+
+// --- InterleavedScheduler tests ---
+
+TEST(InterleavedSchedulerTest, PrefillWhenNothingRunning) {
+  Config config = make_config();
+  auto queue = make_queue();
+  InterleavedScheduler sched{config, queue.get()};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  sched.add(seq);
+
+  auto [batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill) << "Must prefill when nothing is running";
+  EXPECT_EQ(batch.size(), 1u);
+}
+
+TEST(InterleavedSchedulerTest, DecodeWhenAnythingRunning) {
+  Config config = make_config();
+  auto queue = make_queue();
+  InterleavedScheduler sched{config, queue.get()};
+  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  TaskID seq1_id = seq1.task_id;
+  sched.add(seq1);
+  sched.add(seq2);
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  sched.postprocess(b1, {1});
+
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2) << "Must decode when any requests are running";
+  ASSERT_EQ(b2.size(), 1u);
+  EXPECT_EQ(b2[0]->task_id, seq1_id);
+}
+
+TEST(InterleavedSchedulerTest, DecodesBeforePrefillWhenRunningAtCapacity) {
+  Config config = make_config();
+  auto queue = make_queue();
+  InterleavedScheduler sched{config, queue.get()};
+  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 2}};
+  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 2}};
   TaskID seq1_id = seq1.task_id;
   TaskID seq2_id = seq2.task_id;
   sched.add(seq1);
   sched.add(seq2);
 
-  // Step 1: Prefill seq1 (nothing running, must prefill)
   auto [batch1, is_prefill1] = sched.schedule();
   ASSERT_TRUE(is_prefill1);
   ASSERT_EQ(batch1.size(), 1u);
   EXPECT_EQ(batch1[0]->task_id, seq1_id);
   sched.postprocess(batch1, {1});
 
-  // Step 2: running_.size() == 1 == max_num_seqs, must decode seq1 first
   auto [batch2, is_prefill2] = sched.schedule();
   ASSERT_FALSE(is_prefill2) << "Interleaved: must decode seq1 before prefilling seq2";
   ASSERT_EQ(batch2.size(), 1u);
   EXPECT_EQ(batch2[0]->task_id, seq1_id);
   sched.postprocess(batch2, {2});
 
-  // Step 3: seq1 hit max_tokens=2, should be finished; now prefill seq2
   EXPECT_TRUE(batch2[0]->is_finished());
   auto [batch3, is_prefill3] = sched.schedule();
   ASSERT_TRUE(is_prefill3);
@@ -365,24 +413,21 @@ TEST(SchedulerTest, Interleaved_DecodesBeforePrefillWhenRunningAtCapacity) {
   EXPECT_EQ(batch3[0]->task_id, seq2_id);
 }
 
-TEST(SchedulerTest, Interleaved_CompletesOneBeforeStartingNext) {
-  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::INTERLEAVED);
+TEST(InterleavedSchedulerTest, CompletesOneBeforeStartingNext) {
+  Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
+  InterleavedScheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 3});
   sched.add_request(prompt(4), {.max_tokens = 3});
 
-  // Prefill first request
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
   sched.postprocess(b1, {10});
   Sequence* first_seq = b1[0];
 
-  // Decode first request until completion (max_tokens = 3)
   for (int i = 0; i < 3; ++i) {
     auto [b, pf] = sched.schedule();
     if (pf) {
-      // If we got a prefill before first_seq finished, that violates interleaving.
       FAIL() << "Interleaved scheduler prefilled a new request while seq1 was still running";
     }
     ASSERT_EQ(b.size(), 1u);
@@ -391,33 +436,30 @@ TEST(SchedulerTest, Interleaved_CompletesOneBeforeStartingNext) {
   }
   EXPECT_TRUE(first_seq->is_finished());
 
-  // Now second request should prefill
   auto [b_next, pf_next] = sched.schedule();
   ASSERT_TRUE(pf_next) << "After first request finishes, second should be prefilled";
 }
 
-TEST(SchedulerTest, PrefillFirst_PrefillsAllBeforeDecode) {
-  Config config = make_config(32, 8, 256, 0, SchedulingPolicy::PREFILL_FIRST);
+TEST(InterleavedSchedulerTest, NoActionWhenNothingWaiting) {
+  Config config = make_config();
   auto queue = make_queue();
-  Scheduler sched{config, queue.get()};
-  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 10}};
-  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2_id = seq2.task_id;
-  sched.add(seq1);
-  sched.add(seq2);
+  InterleavedScheduler sched{config, queue.get()};
+  EXPECT_TRUE(sched.is_finished());
 
-  // Step 1: Prefill seq1
-  auto [b1, pf1] = sched.schedule();
-  ASSERT_TRUE(pf1);
-  sched.postprocess(b1, {1});
+  auto [batch, is_prefill] = sched.schedule();
+  EXPECT_TRUE(batch.empty());
+}
 
-  // Step 2: PrefillFirst should prefill seq2 even though seq1 is in running_
-  auto [b2, pf2] = sched.schedule();
-  ASSERT_TRUE(pf2) << "PrefillFirst: seq2 should be prefilled even with seq1 running";
-  ASSERT_EQ(b2.size(), 1u);
-  EXPECT_EQ(b2[0]->task_id, seq2_id);
+TEST(InterleavedSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
+  Config config = make_config();
+  auto queue = make_queue();
+  InterleavedScheduler sched{config, queue.get()};
+  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 1}};
+  sched.add(seq);
+  auto [batch, _] = sched.schedule();
+  sched.postprocess(batch, {1});
+  EXPECT_TRUE(sched.is_finished());
 }
 
 }
->>>>>>> d114fefb (Enable Interleaved Batching)
 }
