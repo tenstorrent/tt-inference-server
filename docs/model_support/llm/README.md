@@ -11,7 +11,7 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- | --- | --- |
 | [Llama-3.3-70B-Instruct](Llama-3.3-70B-Instruct_galaxy.md) | [🟢 Complete](Llama-3.3-70B-Instruct_galaxy.md) | [🟡 Functional](Llama-3.3-70B-Instruct_p150x8.md) | [🟡 Functional](Llama-3.3-70B-Instruct_p150x4.md) | - | [🟡 Functional](Llama-3.3-70B-Instruct_t3k.md) | - |
-| [Qwen3-32B](Qwen3-32B_galaxy.md) | [🟢 Complete](Qwen3-32B_galaxy.md) | [🟡 Functional](Qwen3-32B_p150x8.md) | - | - | [🟡 Functional](Qwen3-32B_t3k.md) | - |
+| [Qwen3-32B](Qwen3-32B_galaxy.md) | [🟢 Complete](Qwen3-32B_galaxy.md)<br>Output Tput: 1465 (tok/s)<br>TTFT: 70.8 (ms)| [🟡 Functional](Qwen3-32B_p150x8.md) | - | - | [🟡 Functional](Qwen3-32B_t3k.md) | - |
 | [Llama-3.1-8B](Llama-3.1-8B_galaxy.md) | [🟡 Functional](Llama-3.1-8B_galaxy.md) | [🟡 Functional](Llama-3.1-8B_p150x8.md) | [🟢 Complete](Llama-3.1-8B_p150x4.md) | [🛠️ Experimental](Llama-3.1-8B_p100.md) | [🟢 Complete](Llama-3.1-8B_t3k.md) | [🟢 Complete](Llama-3.1-8B_n150.md) |
 | [Mistral-7B-Instruct-v0.3](Mistral-7B-Instruct-v0.3_t3k.md) | - | - | - | - | [🟢 Complete](Mistral-7B-Instruct-v0.3_t3k.md) | [🟢 Complete](Mistral-7B-Instruct-v0.3_n150.md) |
 | [Llama-3.2-1B](Llama-3.2-1B_t3k.md) | - | - | - | - | [🟡 Functional](Llama-3.2-1B_t3k.md) | [🟡 Functional](Llama-3.2-1B_n150.md) |
@@ -19,6 +19,11 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | [Qwen2.5-72B](Qwen2.5-72B_galaxy.md) | [🟡 Functional](Qwen2.5-72B_galaxy.md) | - | - | - | [🟡 Functional](Qwen2.5-72B_t3k.md) | - |
 | [Qwen3-8B](Qwen3-8B_galaxy.md) | [🟡 Functional](Qwen3-8B_galaxy.md) | - | - | - | [🟡 Functional](Qwen3-8B_t3k.md) | [🟡 Functional](Qwen3-8B_n150.md) |
 | [QwQ-32B](QwQ-32B_galaxy.md) | [🟡 Functional](QwQ-32B_galaxy.md) | - | - | - | [🟡 Functional](QwQ-32B_t3k.md) | - |
+
+> Note: all metrics are means across benchmark run and with parameters below unless otherwise stated.
+> Input Sequence Length: 128 tokens
+> Output Sequence Length: 128 tokens
+> Concurrency: 32
 
 ## Experimental Models
 
