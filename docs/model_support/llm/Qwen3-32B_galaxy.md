@@ -54,22 +54,24 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 ## Release Report
 
-Models CI job: https://github.com/tenstorrent/tt-shield/actions/runs/22597865268/job/65476351959
+Models CI job: https://github.com/tenstorrent/tt-shield/actions/runs/21076491467/job/60621726246#step:11:10
+
+## Tenstorrent Model Release Summary: Qwen3-32B on galaxy
 
 ### Metadata: Qwen3-32B on galaxy
 ```json
 {
-    "report_id": "id_qwen3-32b-galaxy_Qwen3-32B_galaxy_2026-03-03_01-53-04",
+    "report_id": "id_qwen3-32b-galaxy_Qwen3-32B_galaxy_2026-01-16_20-41-44",
     "model_name": "Qwen3-32B",
     "model_id": "id_qwen3-32b-galaxy_Qwen3-32B_galaxy",
-    "model_spec_json": "/home/ubuntu/actions-runner/_work/tt-shield/tt-shield/tt-inference-server/workflow_logs/run_specs/tt_model_spec_2026-03-03_00-00-49_id_qwen3-32b-galaxy_Qwen3-32B_galaxy_release_z26fQDA2.json",
+    "model_spec_json": "/home/ubuntu/actions-runner/_work/tt-shield/tt-shield/tt-inference-server/workflow_logs/run_specs/tt_model_spec_2026-01-16_18-47-46_id_qwen3-32b-galaxy_Qwen3-32B_galaxy_release_B-ri7fc5.json",
     "model_repo": "Qwen/Qwen3-32B",
     "model_impl": "qwen3-32b-galaxy",
     "inference_engine": "vLLM",
     "device": "galaxy",
     "server_mode": "docker",
-    "tt_metal_commit": "5fd3a04c7bae502122b7e0465dc6167ec2609567",
-    "vllm_commit": "38dee8c",
+    "tt_metal_commit": "a9b09e0b611da6deb4d8972e8296148fd864e5fd",
+    "vllm_commit": "a186bf4",
     "run_command": "python run.py --model Qwen3-32B --device galaxy --workflow release --docker-server"
 }
 ```
@@ -78,26 +80,23 @@ Models CI job: https://github.com/tenstorrent/tt-shield/actions/runs/22597865268
 
 #### vLLM Text-to-Text Performance Benchmark Sweeps for Qwen3-32B on galaxy
 
-|  ISL  | OSL  | Concurrency | N Req | TTFT (ms) | TPOT (ms) | User Output Tput (tok/s/user) | Output Tput (tok/s) | Input Tput (tok/s) | E2EL (ms) | Req Tput (RPS) | Total Tput (tokens/duration) |
+|  ISL  | OSL  | Concurrency | N Req | TTFT (ms) | TPOT (ms) | User Output Tput (tok/s/u) | Output Tput (tok/s) | Input Tput (tok/s) | E2EL (ms) | Req Tput (RPS) | Total Tput (tok/s) |
 |-------|------|-------------|-------|-----------|-----------|-----------------|-------------------|--------------------|-----------|----------------|------------------------------------------|
-|   128 |  128 |           1 |     8 |      70.8 |      22.8 |           43.9  |              43.9 |             1807.4 |    2964.1 |          0.337 |                                    86.36 |
-|   128 |  128 |          32 |   256 |     570.7 |      21.3 |           46.86 |            1499.4 |             7176.6 |    3281.2 |          9.748 |                                  2495.48 |
-|   128 | 1024 |           1 |     4 |      73.5 |      22.8 |           43.9  |              43.9 |             1741.9 |   23376.6 |          0.043 |                                    49.28 |
-|   128 | 1024 |          32 |   128 |     668.6 |      21.5 |           46.62 |            1491.8 |             6125.8 |   22612.2 |          1.414 |                                  1628.54 |
-|  1024 |  128 |           1 |     4 |     164.3 |      22.9 |           43.7  |              43.7 |             6231.6 |    3070.5 |          0.326 |                                   375.15 |
-|  1024 |  128 |          32 |   128 |    4264.4 |      23.1 |           43.27 |            1384.7 |             7684.0 |    7199.3 |          4.045 |                                  4660.34 |
-|  2048 |  128 |           1 |     4 |     295.7 |      23.3 |           42.9  |              42.9 |             6926.0 |    3256.1 |          0.307 |                                   668.24 |
-|  2048 |  128 |          32 |   128 |    8155.7 |      25.5 |           39.26 |            1256.4 |             8035.7 |   11390.2 |          2.61  |                                  5678.78 |
-|  4096 |  128 |           1 |     4 |     449.2 |      23.9 |           41.78 |              41.8 |             9118.1 |    3488.7 |          0.287 |                                  1210.68 |
-|  4096 |  128 |          32 |   128 |   12720.3 |      28.6 |           35.01 |            1120.4 |            10304.2 |   16347.7 |          1.853 |                                  7827.92 |
-|  8192 |  128 |           1 |     2 |     758.9 |      25.3 |           39.52 |              39.5 |            10794.8 |    3972.2 |          0.252 |                                  2094.41 |
-|  8192 |  128 |          32 |    64 |   21839.5 |      35.1 |           28.49 |             911.6 |            12003.2 |   26297.4 |          1.133 |                                  9427.43 |
-| 16384 |  128 |           1 |     2 |    1454.0 |      27.8 |           35.92 |              35.9 |            11267.9 |    4989.9 |          0.2   |                                  3308.92 |
-| 16384 |  128 |          31 |    62 |   37614.7 |      56.1 |           17.81 |             552.2 |            13502.8 |   44743.9 |          0.626 |                                 10334.57 |
-| 32768 |  128 |           1 |     1 |    3177.5 |      33.5 |           29.86 |              29.9 |            10312.5 |    7430.7 |          0.135 |                                  4426.83 |
-| 32768 |  128 |          15 |    15 |   37515.1 |      55.2 |           18.12 |             271.9 |            13101.9 |   44522.3 |          0.271 |                                  8922.67 |
-| 65536 |  128 |           1 |     1 |    8303.9 |      43.9 |           22.76 |              22.8 |             7892.2 |   13883.2 |          0.072 |                                  4729.63 |
-| 65536 |  128 |           7 |     7 |   41851.8 |      70.4 |           14.2  |              99.4 |            10961.3 |   50793.0 |          0.103 |                                  6774.04 |
+|   128 |  128 |           1 |     8 |      72.9 |      20.5 |           48.69 |              48.7 |             1756.6 |    2681.2 |          0.373 |                                    95.09 |
+|   128 |  128 |          32 |   256 |     568.4 |      21.8 |           45.78 |            1464.9 |             7206.8 |    3342.6 |          9.559 |                                  2437.53 |
+|   128 | 1024 |           1 |     4 |      77.8 |      21.0 |           47.6  |              47.6 |             1644.5 |   21568.6 |          0.046 |                                    53.36 |
+|   128 | 1024 |          32 |   128 |     523.4 |      22.7 |           44.0  |            1408.0 |             7825.8 |   23773.8 |          1.346 |                                  1548.9  |
+|  1024 |  128 |           1 |     4 |     171.1 |      21.4 |           46.82 |              46.8 |             5985.7 |    2883.8 |          0.347 |                                   399.07 |
+|  2048 |  128 |           1 |     4 |     311.7 |      22.1 |           45.23 |              45.2 |             6571.4 |    3119.7 |          0.32  |                                   697.02 |
+|  2048 |  128 |          32 |   128 |    9106.5 |      26.0 |           38.39 |            1228.6 |             7196.6 |   12414.4 |          2.576 |                                  5603.5  |
+|  2048 | 2048 |          32 |    64 |    9083.1 |      26.4 |           37.87 |            1211.8 |             7215.2 |   63137.1 |          0.507 |                                  2075.26 |
+|  3000 |   64 |          32 |   128 |   14467.7 |      26.1 |           38.28 |            1224.8 |             6635.5 |   16113.6 |          1.985 |                                  6080.32 |
+|  3072 |  128 |           1 |     4 |     481.4 |      22.4 |           44.7  |              44.7 |             6381.2 |    3322.4 |          0.301 |                                   962.73 |
+|  4000 |   64 |          32 |   128 |   14465.4 |      27.4 |           36.5  |            1167.9 |             8848.7 |   16191.6 |          1.975 |                                  8026.23 |
+|  4096 |  128 |           1 |     2 |     484.1 |      23.1 |           43.33 |              43.3 |             8461.6 |    3415.2 |          0.293 |                                  1236.33 |
+|  8000 |   64 |          16 |    32 |   12107.2 |      28.2 |           35.43 |             566.8 |            10572.2 |   13885.6 |          1.152 |                                  9287.49 |
+|  8192 |  128 |           1 |     2 |     800.3 |      24.8 |           40.34 |              40.3 |            10235.6 |    3948.7 |          0.253 |                                  2106.48 |
+| 16000 |   64 |           8 |    16 |   11837.1 |      29.9 |           33.5  |             268.0 |            10813.5 |   13717.8 |          0.583 |                                  9365.38 |
 
 Note: all metrics are means across benchmark run unless otherwise stated.
 > ISL: Input Sequence Length (tokens)
@@ -106,9 +105,9 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 > N Req: total number of requests (sample size, N)
 > TTFT: Time To First Token (ms)
 > TPOT: Time Per Output Token (ms)
-> User Output Tput: Throughput per user (tok/s)
-> Output Tput: Throughput for decode tokens, across all users (tok/s)
-> Input Tput: Throughput for prefill tokens (tok/s)
+> User Output Tput: Interactivity, throughput per user (tok/s/u)
+> Output Tput: Throughput for output decode tokens, across all users (tok/s)
+> Input Tput: Throughput for input prefill tokens (tok/s)
 > E2EL: End-to-End Latency (ms)
 > Req Tput: Request Throughput (RPS)
 
@@ -116,25 +115,38 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 
 #### Text-to-Text Performance Benchmark Targets Qwen3-32B on galaxy
 
-| ISL | OSL | Concurrency | TTFT (ms) | User Output Tput (tok/s/user) | Output Tput (tok/s) | Functional TTFT Check | Functional User Output Tput Check | Complete TTFT Check | Complete User Output Tput Check | Target TTFT Check | Target User Output Tput Check | Functional TTFT (ms) | Functional User Output Tput (tok/s/user) | Complete TTFT (ms) | Complete User Output Tput (tok/s/user) | Target TTFT (ms) | Target User Output Tput (tok/s/user) |
+| ISL | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) | Functional TTFT Check | Functional Tput User Check | Complete TTFT Check | Complete Tput User Check | Target TTFT Check | Target Tput User Check | Functional TTFT (ms) | Functional Tput User (TPS) | Complete TTFT (ms) | Complete Tput User (TPS) | Target TTFT (ms) | Target Tput User (TPS) |
 |-----|-----|-------------|-----------|-----------------|-------------------|-----------------------|----------------------------|---------------------|--------------------------|-------------------|------------------------|----------------------|----------------------------|--------------------|--------------------------|------------------|------------------------|
-| 128 | 128 |           1 |      70.8 |            43.9 |              43.9 | PASS ✅               | PASS ✅                    | FAIL ⛔             | FAIL ⛔                  | FAIL ⛔           | FAIL ⛔                |               300.00 |                      15.60 |              60.00 |                    78.00 |            30.00 |                 156.00 |
+| 128 | 128 |           1 |      72.9 |           48.69 |              48.7 | PASS ✅               | PASS ✅                    | FAIL ⛔             | FAIL ⛔                  | FAIL ⛔           | FAIL ⛔                |               300.00 |                      15.60 |              60.00 |                    78.00 |            30.00 |                 156.00 |
 
 Note: all metrics are means across benchmark run unless otherwise stated.
 > ISL: Input Sequence Length (tokens)
 > OSL: Output Sequence Length (tokens)
 > Concurrency: number of concurrent requests (batch size)
 > TTFT: Time To First Token (ms)
-> User Output Tput: Throughput per user (tok/s)
-> Output Tput: Throughput for decode tokens, across all users (tok/s)
+> Tput User: Throughput per user (TPS)
+> Tput Decode: Throughput for decode tokens, across all users (TPS)
+
+### Benchmark Performance Results for Qwen3-32B on galaxy
+
+**Metric Definitions:**
+> - **ISL**: Input Sequence Length (tokens)
+> - **OSL**: Output Sequence Length (tokens)
+> - **Concur**: Concurrent requests (batch size)
+> - **N**: Total number of requests
+> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)
+> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)
+> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)
+> - **Tok/s**: Output token throughput
+> - **Req/s**: Request throughput
+
 
 ### Accuracy Evaluations for Qwen3-32B on galaxy
 
-| model     | device | task_name       | accuracy_check | score | ratio_to_reference | gpu_reference_score | ratio_to_published | published_score                                                                                             |
 |-----------|--------|-----------------|----------------|-------|--------------------|---------------------|--------------------|-------------------------------------------------------------------------------------------------------------|
-| Qwen3-32B | galaxy | r1_aime24       | FAIL ⛔         | 66.67 | 0.83               | [80.00](TBD)        | 0.82               | [81.40](https://qwenlm.github.io/blog/qwen3/)                                                               |
-| Qwen3-32B | galaxy | r1_math500      | PASS ✅         | 94.00 | 0.98               | [96.10](TBD)        | 0.98               | [96.10](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
-| Qwen3-32B | galaxy | r1_gpqa_diamond | PASS ✅         | 70.00 | 1.05               | [66.80](TBD)        | 1.05               | [66.80](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
+| Qwen3-32B | galaxy | r1_aime24       | PASS ✅         | 80.00 | 1.00               | [80.00](TBD)        | 0.98               | [81.40](https://qwenlm.github.io/blog/qwen3/)                                                               |
+| Qwen3-32B | galaxy | r1_math500      | FAIL ⛔         | 85.00 | 0.88               | [96.10](TBD)        | 0.88               | [96.10](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
+| Qwen3-32B | galaxy | r1_gpqa_diamond | PASS ✅         | 65.00 | 0.97               | [66.80](TBD)        | 0.97               | [66.80](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
 
 Note: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score.
 
@@ -145,17 +157,17 @@ Note: The ratio to published scores defines if eval ran roughly correctly, as th
 | Attribute | Value |
 | --- | --- |
 | **Endpoint URL** | `http://127.0.0.1:8000/v1/chat/completions` |
-| **Test Timestamp** | N/A |
+| **Test Timestamp** | 2026-01-16 20:34:26 UTC |
 
 ### Parameter Conformance Summary
 
 | Test Case | Status | Summary |
 | --- | :---: | --- |
 | `test_determinism_parameters` | ✅ PASS | 3/3 passed |
-| `test_logprobs` | ❌ FAIL | 0/1 passed |
+| `test_logprobs` | ✅ PASS | 1/1 passed |
 | `test_max_tokens` | ✅ PASS | 2/2 passed |
 | `test_n` | ✅ PASS | 2/2 passed |
-| `test_non_uniform_seeding` | ❌ FAIL | 0/1 passed |
+| `test_non_uniform_seeding` | ✅ PASS | 1/1 passed |
 | `test_penalties` | ✅ PASS | 9/9 passed |
 | `test_seed_reproducibility` | ✅ PASS | 1/1 passed |
 | `test_stop` | ✅ PASS | 2/2 passed |
@@ -167,12 +179,12 @@ Note: The ratio to published scores defines if eval ran roughly correctly, as th
 | `test_determinism_parameters` | `test_determinism_parameters[temperature-0.0]` | ✅ PASSED |  |
 | `test_determinism_parameters` | `test_determinism_parameters[top_k-1]` | ✅ PASSED |  |
 | `test_determinism_parameters` | `test_determinism_parameters[top_p-0.01]` | ✅ PASSED |  |
-| `test_logprobs` | `test_logprobs` | ❌ FAILED | Traceback: requests.exceptions.HTTPError: API Error: 500 Server Error: Internal Server Error for url: http://127.0.0.1:8000/v1/chat/completions. Response: {'error': {'message': 'list index out of range', 'type': 'Internal Server Error', 'param': None... |
+| `test_logprobs` | `test_logprobs` | ✅ PASSED |  |
 | `test_max_tokens` | `test_max_tokens[10]` | ✅ PASSED |  |
 | `test_max_tokens` | `test_max_tokens[5]` | ✅ PASSED |  |
 | `test_n` | `test_n[2]` | ✅ PASSED |  |
 | `test_n` | `test_n[3]` | ✅ PASSED |  |
-| `test_non_uniform_seeding` | `test_non_uniform_seeding` | ❌ FAILED | Traceback: AssertionError: Determinism Failed for seed=0.   Expected 1 unique output, found 3.   Outputs: {'<think>\nOkay, the user wants a list of 10 random colors. Let me think about how to approach this. First, I need to figure out what they mean ... |
+| `test_non_uniform_seeding` | `test_non_uniform_seeding` | ✅ PASSED |  |
 | `test_penalties` | `test_penalties[frequency_penalty-1.2-natural_repetition-messages1]` | ✅ PASSED |  |
 | `test_penalties` | `test_penalties[frequency_penalty-1.2-repeat_trap-messages0]` | ✅ PASSED |  |
 | `test_penalties` | `test_penalties[frequency_penalty-1.2-semantic_repetition-messages2]` | ✅ PASSED |  |

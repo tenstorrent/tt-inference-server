@@ -6,30 +6,36 @@ This page lists all supported models organized by hardware type.
 
 ## [WH Galaxy](https://tenstorrent.com/hardware/galaxy)
 
-| Status | Type | Model |
-|--------|------|-------|
-| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_galaxy.md) |
-| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_galaxy.md) |
-| 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_galaxy.md) |
-| 🟢 Complete | Image | [stable-diffusion-3.5-large](image/stable-diffusion-3.5-large_galaxy.md) |
-| 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) |
-| 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_galaxy.md) |
-| 🟢 Complete | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_galaxy.md) |
-| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) |
-| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) |
-| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_galaxy.md) |
-| 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) |
-| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) |
-| 🟡 Functional | LLM | [Qwen2.5-72B](llm/Qwen2.5-72B_galaxy.md) |
-| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_galaxy.md) |
-| 🟡 Functional | LLM | [QwQ-32B](llm/QwQ-32B_galaxy.md) |
-| 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_galaxy.md) |
-| 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_galaxy.md) |
-| 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_galaxy.md) |
-| 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_galaxy.md) |
-| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
-| 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
-| 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
+| Status | Type | Model | Performance Summary |
+|--------|------|-------|-------|
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_galaxy.md) | - |
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_galaxy.md) | - |
+| 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_galaxy.md) | - |
+| 🟢 Complete | Image | [stable-diffusion-3.5-large](image/stable-diffusion-3.5-large_galaxy.md) | - |
+| 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) | - |
+| 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_galaxy.md) | - |
+| 🟢 Complete | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_galaxy.md) | - |
+| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) | Output Tput: 1465 (tok/s), TTFT: 70.8 (ms) |
+| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) | - |
+| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_galaxy.md) | - |
+| 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) | - |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) | - |
+| 🟡 Functional | LLM | [Qwen2.5-72B](llm/Qwen2.5-72B_galaxy.md) | - |
+| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_galaxy.md) | - |
+| 🟡 Functional | LLM | [QwQ-32B](llm/QwQ-32B_galaxy.md) | - |
+| 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_galaxy.md) | - |
+| 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_galaxy.md) | - |
+| 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_galaxy.md) | - |
+| 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_galaxy.md) | - |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) | - |
+| 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) | - |
+| 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) | - |
+
+> Note: all metrics are means across benchmark run unless otherwise stated.
+> LLM measurement parameters:
+> Input Sequence Length: 128 tokens
+> Output Sequence Length: 128 tokens
+> Concurrency: 32
 
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
