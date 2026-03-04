@@ -203,8 +203,9 @@ class Settings(BaseSettings):
                 if not devices:
                     logger.error(
                         "Galaxy TP2 (2,1): device discovery failed or returned no pairs. "
-                        "Ensure test_system_health binary is available and Cluster.ReportSystemHealth succeeds. "
-                        "Exiting."
+                        "Workers will use flat device_ids and fail to open (2,1) mesh. "
+                        "Ensure test_system_health binary is available and "
+                        "Cluster.ReportSystemHealth succeeds."
                     )
 
             elif mesh == (2, 4):
@@ -225,7 +226,9 @@ class Settings(BaseSettings):
                 )
             elif mesh in ((2, 1), (2, 4)):
                 logger.error(
-                    f"Discovery failed for mesh {mesh} - no devices. "
+                    f"Discovery failed for mesh {mesh} - no device pairs found. "
+                    f"Keeping original device_ids={self.device_ids!r} which will cause "
+                    f"workers to fail when opening mesh {mesh}. "
                     "Check tt-smi / test_system_health."
                 )
 
