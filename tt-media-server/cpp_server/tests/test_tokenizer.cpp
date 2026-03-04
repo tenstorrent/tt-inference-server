@@ -14,42 +14,32 @@
 using namespace tt::utils;
 using namespace tt::domain;
 
-static bool is_deepseek() {
-    return active_tokenizer().model_name() == "deepseek-ai/DeepSeek-V3";
-}
+// ---------------------------------------------------------------------------
+// Fixture: creates a tokenizer for the env-selected model (encode/decode tests)
+// ---------------------------------------------------------------------------
 
 class TokenizerTest : public ::testing::Test {
 protected:
     std::unique_ptr<Tokenizer> tok_;
 
     void SetUp() override {
-        std::string tokenizer_file_path = tt::config::tokenizer_path();
-        if (tokenizer_file_path.empty()) {
-            FAIL() << "Tokenizer not found at default location for model: "
-                   << active_tokenizer().model_name();
+        std::string path = tt::config::tokenizer_path();
+        if (path.empty()) {
+            FAIL() << "Tokenizer not found for model: " << active_tokenizer().model_name();
         }
-
-        try {
-            tok_ = create_tokenizer(tt::config::model_type(), tokenizer_file_path);
-            if (!tok_->is_loaded()) {
-                FAIL() << "Failed to load tokenizer from: " << tokenizer_file_path;
-            }
-        } catch (const std::runtime_error& e) {
-            FAIL() << "Exception loading tokenizer: " << e.what();
+        tok_ = create_tokenizer(tt::config::model_type(), path);
+        if (!tok_->is_loaded()) {
+            FAIL() << "Failed to load tokenizer from: " << path;
         }
     }
 
-    Tokenizer& tokenizer() {
-        return *tok_;
-    }
+    Tokenizer& tokenizer() { return *tok_; }
 };
 
 TEST_F(TokenizerTest, EncodeDecodeRoundTrip) {
     std::string prompt = "The quick brown fox jumps over the lazy dog.";
-
     auto tokens = tokenizer().encode(prompt);
     EXPECT_GT(tokens.size(), 0);
-
     std::string decoded = tokenizer().decode(tokens);
     EXPECT_FALSE(decoded.empty());
 }
@@ -64,9 +54,29 @@ TEST_F(TokenizerTest, EmptyTokensDecode) {
     EXPECT_EQ(decoded, "");
 }
 
-TEST_F(TokenizerTest, CompareWithExpectedTokens) {
-    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific token validation";
+// ---------------------------------------------------------------------------
+// Fixture: DeepSeek-specific tests (always creates a DeepSeek tokenizer)
+// ---------------------------------------------------------------------------
 
+class DeepseekTokenizerTest : public ::testing::Test {
+protected:
+    std::unique_ptr<Tokenizer> tok_;
+
+    void SetUp() override {
+        std::string path = tt::config::tokenizer_path(tt::config::ModelType::DEEPSEEK_V3);
+        if (path.empty()) {
+            GTEST_SKIP() << "DeepSeek tokenizer files not found";
+        }
+        tok_ = create_tokenizer(tt::config::ModelType::DEEPSEEK_V3, path);
+        if (!tok_->is_loaded()) {
+            FAIL() << "Failed to load DeepSeek tokenizer from: " << path;
+        }
+    }
+
+    Tokenizer& tokenizer() { return *tok_; }
+};
+
+TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
     std::map<std::string, std::vector<int>> expected_tokens = {
         {"Hello, world!", {19923, 14, 2058, 3}},
         {"The quick brown fox jumps over the lazy dog.", {671, 4787, 13769, 46012, 54994, 1060, 270, 41638, 6397, 16}},
@@ -161,9 +171,7 @@ TEST_F(TokenizerTest, CompareWithExpectedTokens) {
     std::cout << "  Mismatches:     " << total_mismatches << "\n";
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
-    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific test";
-
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplate) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -189,9 +197,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format) {
-    if (!is_deepseek()) GTEST_SKIP() << "DeepSeek-specific test";
-
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -216,9 +222,29 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
-    if (is_deepseek()) GTEST_SKIP() << "Llama-specific test";
+// ---------------------------------------------------------------------------
+// Fixture: Llama-specific tests (always creates a Llama tokenizer)
+// ---------------------------------------------------------------------------
 
+class LlamaTokenizerTest : public ::testing::Test {
+protected:
+    std::unique_ptr<Tokenizer> tok_;
+
+    void SetUp() override {
+        std::string path = tt::config::tokenizer_path(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT);
+        if (path.empty()) {
+            GTEST_SKIP() << "Llama tokenizer files not found";
+        }
+        tok_ = create_tokenizer(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT, path);
+        if (!tok_->is_loaded()) {
+            FAIL() << "Failed to load Llama tokenizer from: " << path;
+        }
+    }
+
+    Tokenizer& tokenizer() { return *tok_; }
+};
+
+TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},
@@ -247,9 +273,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
         << "  Actual length:   " << actual.size();
 }
 
-TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat) {
-    if (is_deepseek()) GTEST_SKIP() << "Llama-specific test";
-
+TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
         {"assistant", "Hi!"},

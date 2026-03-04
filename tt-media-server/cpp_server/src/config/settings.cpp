@@ -115,10 +115,10 @@ static std::filesystem::path tokenizers_dir() {
     return {};
 }
 
-std::string tokenizer_path() {
+std::string tokenizer_path(ModelType model) {
     auto base = tokenizers_dir();
     if (base.empty()) return "";
-    std::string model_dir = utils::tokenizer_dir_for_model(model_type());
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
     std::filesystem::path p = base / model_dir / "tokenizer.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
@@ -126,15 +126,23 @@ std::string tokenizer_path() {
     return "";
 }
 
-std::string tokenizer_config_path() {
+std::string tokenizer_path() {
+    return tokenizer_path(model_type());
+}
+
+std::string tokenizer_config_path(ModelType model) {
     auto base = tokenizers_dir();
     if (base.empty()) return "";
-    std::string model_dir = utils::tokenizer_dir_for_model(model_type());
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
     std::filesystem::path p = base / model_dir / "tokenizer_config.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
     }
     return "";
+}
+
+std::string tokenizer_config_path() {
+    return tokenizer_config_path(model_type());
 }
 
 std::string visible_devices_for_worker(size_t worker_index) {

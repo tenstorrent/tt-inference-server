@@ -31,9 +31,12 @@ struct TokenizerConfig {
 /**
  * Load tokenizer config from the path given by config::tokenizer_config_path(), validate
  * add_bos_token/add_eos_token vs bos_token/eos_token, and return the config.
+ * The no-arg overload caches the result (global singleton, first call wins).
+ * The path overload always loads fresh from the given file.
  * @throws std::runtime_error if config path is empty, file cannot be loaded, or tokens are missing when flags are set.
  */
 TokenizerConfig get_tokenizer_config();
+TokenizerConfig get_tokenizer_config(const std::string& config_path);
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace / SentencePiece).
@@ -86,6 +89,7 @@ public:
 
 protected:
     std::unique_ptr<tokenizers::Tokenizer> tok_;
+    TokenizerConfig cfg_;
 };
 
 /**

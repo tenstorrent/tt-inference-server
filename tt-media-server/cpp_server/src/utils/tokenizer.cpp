@@ -4,6 +4,7 @@
 #include "utils/tokenizer.hpp"
 #include "config/settings.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -38,6 +39,11 @@ Tokenizer::Tokenizer(const std::string& path) {
 
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Failed to create tokenizer from: " + path);
+    }
+
+    std::filesystem::path config_path = std::filesystem::path(path).parent_path() / "tokenizer_config.json";
+    if (std::filesystem::exists(config_path)) {
+        cfg_ = get_tokenizer_config(config_path.string());
     }
 
     std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
@@ -92,10 +98,9 @@ public:
         const std::vector<domain::ChatMessage>& messages,
         bool add_generation_prompt) const override {
 
-        static TokenizerConfig cfg = get_tokenizer_config();
         std::ostringstream out;
 
-        if (cfg.add_bos_token) out << cfg.bos_token;
+        if (cfg_.add_bos_token) out << cfg_.bos_token;
 
         for (const auto& m : messages) {
             if (m.role == "system") out << m.content;
@@ -107,7 +112,7 @@ public:
                 out << DS_USER_TAG << m.content;
             } else if (m.role == "assistant") {
                 out << DS_ASSISTANT_TAG << m.content;
-                if (cfg.add_eos_token) out << cfg.eos_token;
+                if (cfg_.add_eos_token) out << cfg_.eos_token;
             }
         }
 
@@ -141,7 +146,6 @@ public:
         const std::vector<domain::ChatMessage>& messages,
         bool add_generation_prompt) const override {
 
-        static TokenizerConfig cfg = get_tokenizer_config();
         std::ostringstream out;
 
         std::string system_content;
@@ -152,7 +156,7 @@ public:
             }
         }
 
-        if (cfg.add_bos_token) out << cfg.bos_token;
+        if (cfg_.add_bos_token) out << cfg_.bos_token;
 
         out << LLAMA_HEADER_START << "system" << LLAMA_HEADER_END << "\n\n"
             << LLAMA_SYSTEM_PREAMBLE

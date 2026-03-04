@@ -39,11 +39,15 @@ unsigned batch_timeout_ms();
 /** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH. Default: defaults::TT_PYTHON_PATH. */
 std::string python_path();
 
-/** Tokenizer path: tokenizers/tokenizer.json relative to executable. Empty if not found. */
+/** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_path();
+std::string tokenizer_path(ModelType model);
 
-/** Tokenizer config path: tokenizers/tokenizer_config.json relative to executable. Empty if not found. */
+/** Tokenizer config path: tokenizers/<model>/tokenizer_config.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_config_path();
+std::string tokenizer_config_path(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
