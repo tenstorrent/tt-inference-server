@@ -15,7 +15,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) | - |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_galaxy.md) | - |
 | 🟢 Complete | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_galaxy.md) | - |
-| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) | Output Tput: 1465 (tok/s), TTFT: 70.8 (ms) |
+| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) | 44 (tok/s/user), TTFT: 70 (ms) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) | - |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_galaxy.md) | - |
 | 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) | - |
