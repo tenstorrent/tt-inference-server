@@ -374,7 +374,7 @@ def setup_evals_audio(
         run_command(
             f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
             f"'git+https://github.com/bgoelTT/lmms-eval.git@stisi/fix-package-data#egg=lmms-eval[audio]' "
-            f"pyjwt==2.7.0 pillow==11.1",
+            f"pyjwt==2.7.0 pillow==11.1 'datasets<4.0.0'",
             logger=logger,
         )
         == 0
