@@ -2507,9 +2507,9 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        # tt_metal_commit="63988eeadf",
-        # docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
-        tt_metal_commit="be88351",
+        tt_metal_commit="63988eeadf",
+        docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
+        #tt_metal_commit="be88351",
         # docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
         impl=whisper_impl,
         min_disk_gb=15,
