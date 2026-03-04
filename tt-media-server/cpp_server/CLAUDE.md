@@ -11,7 +11,7 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 ### Building the Project
 
 ```bash
-# Standard release build
+# Standard release build (tokenizers for all models are pre-fetched automatically)
 ./build.sh
 
 # Development builds
@@ -19,6 +19,8 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 ./build.sh --asan           # AddressSanitizer + LeakSanitizer for memory debugging
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
 ```
+
+Model selection is at runtime via `LLM_DEVICE_BACKEND` env var (default: `mock` = DeepSeek V3; `llama` = Llama 3.1 8B Instruct).
 
 ### Running the Server
 
@@ -90,10 +92,14 @@ The server operates in two modes via `MODEL_SERVICE` environment variable:
 - **LLM Mode** (`llm`): Provides `/v1/completions` and `/v1/chat/completions`
 - **Embedding Mode** (`embedding`): Provides `/v1/embeddings`
 
-### Runner Types
+### Runner Types and Model Selection
 
-Single runner implementation selected via `MODEL_RUNNER` environment variable:
-- **`llm_test`**: CPU-based test runner generating 120k tokens/sec for benchmarking
+Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment variable. This selects the
+tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
+the `Tokenizer` subclass hierarchy (`utils/tokenizer.hpp`):
+
+- **`mock`** or **`ttrun`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
+- **`llama`**: Python-based runner via pybind11, Llama 3.1 8B Instruct tokenizer strategy
 
 ## Configuration System
 
@@ -102,7 +108,7 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `MODEL_RUNNER`: `llm_test` (default: `llm_test`)
+- `LLM_DEVICE_BACKEND`: `mock` or `ttrun` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
 - `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
@@ -153,16 +159,13 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 
 ### Tokenizer Support
 
-The server automatically downloads DeepSeek R1 0528 tokenizer files during build:
-- `tokenizers/tokenizer.json`
-- `tokenizers/tokenizer_config.json`
+The build script pre-fetches tokenizer files for all supported models into
+per-model subdirectories under `tokenizers/`:
+- `tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json` + `tokenizer_config.json`
+- `tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json` + `tokenizer_config.json`
 
-Manual download if needed:
-```bash
-mkdir -p tokenizers
-wget -O tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer.json
-wget -O tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer_config.json
-```
+The active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND`. To add a
+new model, manually download tokenizer files into `tokenizers/<org>/<model>/`.
 
 ## Performance Characteristics
 
