@@ -133,13 +133,13 @@ fi
 TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
 TOKENIZER_JSON="${TOKENIZER_DIR}/tokenizer.json"
 TOKENIZER_CONFIG_JSON="${TOKENIZER_DIR}/tokenizer_config.json"
-HF_DEEPSEEK_REPO="https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main"
+HF_DEEPSEEK_REPO="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main"
 
 mkdir -p "${TOKENIZER_DIR}"
 
 if [ ! -f "${TOKENIZER_JSON}" ]; then
     echo ""
-    echo "Tokenizer not found. Downloading DeepSeek V3 tokenizer..."
+    echo "Tokenizer not found. Downloading DeepSeek R1-0528 tokenizer..."
     if wget -q -O "${TOKENIZER_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer.json"; then
         echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
     else
