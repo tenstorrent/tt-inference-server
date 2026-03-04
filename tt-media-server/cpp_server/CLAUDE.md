@@ -153,15 +153,15 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 
 ### Tokenizer Support
 
-The server automatically downloads DeepSeek V3 tokenizer files during build:
+The server automatically downloads DeepSeek R1 0528 tokenizer files during build:
 - `tokenizers/tokenizer.json`
 - `tokenizers/tokenizer_config.json`
 
 Manual download if needed:
 ```bash
 mkdir -p tokenizers
-wget -O tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main/tokenizer.json
-wget -O tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main/tokenizer_config.json
+wget -O tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer.json
+wget -O tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer_config.json
 ```
 
 ## Performance Characteristics
