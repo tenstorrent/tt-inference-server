@@ -127,16 +127,20 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    uv pip install --no-cache-dir -r requirements_no_pyluwen.txt) \
-    && echo 'Running dependency fixes...' \
-    && chmod +x fix_dependencies.sh \
-    && ./fix_dependencies.sh"
+    uv pip install --no-cache-dir -r requirements_no_pyluwen.txt)"
 
 # Install tt-vllm-plugin
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
+
+# Fix dependencies after all Python packages are installed
+# (vllm/diffusers may pull CUDA-compiled packages that need replacing with CPU versions)
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && cd ${TT_METAL_HOME} \
+    && chmod +x fix_dependencies.sh \
+    && ./fix_dependencies.sh"
 
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
