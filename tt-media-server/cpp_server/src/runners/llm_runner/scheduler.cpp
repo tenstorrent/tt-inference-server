@@ -1,4 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
 #include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/interleaved_scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
 
 #include <cassert>
@@ -6,14 +11,14 @@
 
 namespace llm_engine {
 
-std::unique_ptr<ISchedulingStrategy> make_scheduling_strategy(
-    SchedulingPolicy policy) {
-  switch (policy) {
+std::unique_ptr<Scheduler> make_scheduler(const Config& config,
+                                          ITaskQueue* task_queue) {
+  switch (config.scheduling_policy) {
     case SchedulingPolicy::INTERLEAVED:
-      return std::make_unique<InterleavedStrategy>();
+      return std::make_unique<InterleavedScheduler>(config, task_queue);
     case SchedulingPolicy::PREFILL_FIRST:
     default:
-      return std::make_unique<PrefillFirstStrategy>();
+      return std::make_unique<PrefillFirstScheduler>(config, task_queue);
   }
 }
 
@@ -23,8 +28,7 @@ Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
       max_num_batched_tokens_(config.max_num_batched_tokens),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      waiting_(task_queue),
-      strategy_(make_scheduling_strategy(config.scheduling_policy)) {}
+      waiting_(task_queue) {}
 
 bool Scheduler::is_finished() const {
   return waiting_->empty() && running_.empty() && in_flight_count_ == 0;
@@ -79,18 +83,8 @@ bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
   return !scheduled_seqs.empty();
 }
 
-<<<<<<< HEAD
-  if (!scheduled_seqs.empty()) {
-    LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
-                             << " batched_tokens=" << num_batched_tokens << std::endl;
-    return {scheduled_seqs, true};
-  }
-
-  // --- Decode: process running sequences ---
-=======
 void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
                                     int& num_seqs) {
->>>>>>> d114fefb (Enable Interleaved Batching)
   while (!running_.empty() && num_seqs < max_num_seqs_) {
     Sequence* seq = running_.front();
     running_.pop_front();
@@ -122,12 +116,11 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_seqs = 0;
   int num_batched_tokens = 0;
 
-  bool prefill_first = strategy_->should_prefill_first(
+  bool prefill_first = should_prefill_first(
       !waiting_->empty(), static_cast<int>(running_.size()), max_num_seqs_);
 
   if (prefill_first) {
     if (try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens)) {
-      strategy_->on_step_complete(true);
       LLM_ENGINE_LOG("scheduler")
           << "schedule prefill n=" << scheduled_seqs.size()
           << " batched_tokens=" << num_batched_tokens << std::endl;
@@ -137,7 +130,6 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
   try_schedule_decode(scheduled_seqs, num_seqs);
   if (!scheduled_seqs.empty()) {
-    strategy_->on_step_complete(false);
     LLM_ENGINE_LOG("scheduler")
         << "schedule decode n=" << scheduled_seqs.size()
         << " scheduled_seqs=" << scheduled_seqs[0]->task_id.id

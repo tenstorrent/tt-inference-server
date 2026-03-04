@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 #pragma once
 
 #include <deque>
@@ -15,68 +18,14 @@
 namespace llm_engine {
 
 /**
- * Decides whether prefill or decode should be attempted first in each
- * scheduling step. Implementations encode different scheduling policies.
- */
-class ISchedulingStrategy {
- public:
-  virtual ~ISchedulingStrategy() = default;
-
-  /**
-   * @param has_waiting  true when the waiting queue has at least one request.
-   * @param running_count  number of sequences currently in the running queue.
-   * @param max_num_seqs  maximum batch / running capacity.
-   * @return true if the scheduler should attempt prefill before decode.
-   */
-  virtual bool should_prefill_first(bool has_waiting, int running_count,
-                                    int max_num_seqs) = 0;
-
-  /** Called after each scheduling step so the strategy can track state. */
-  virtual void on_step_complete(bool was_prefill) = 0;
-};
-
-/**
- * Always prefills when the waiting queue has requests (original behaviour).
- * Decode is only attempted when nothing can be prefilled.
- */
-class PrefillFirstStrategy : public ISchedulingStrategy {
- public:
-  bool should_prefill_first(bool has_waiting, int /*running_count*/,
-                            int /*max_num_seqs*/) override {
-    return has_waiting;
-  }
-  void on_step_complete(bool /*was_prefill*/) override {}
-};
-
-/**
- * Decodes the current batch to completion before admitting new prefills.
- *
- * Prefill is only attempted when the running queue is empty (all previous
- * requests have finished). This mirrors the AscendScheduler approach where
- * running is filled up to capacity, decoded until requests finish and free
- * slots, and only then is the next batch admitted for prefill.
- */
-class InterleavedStrategy : public ISchedulingStrategy {
- public:
-  bool should_prefill_first(bool has_waiting, int running_count,
-                            int /*max_num_seqs*/) override {
-    if (!has_waiting) return false;
-    return running_count == 0;
-  }
-  void on_step_complete(bool /*was_prefill*/) override {}
-};
-
-std::unique_ptr<ISchedulingStrategy> make_scheduling_strategy(
-    SchedulingPolicy policy);
-
-/**
  * Schedules prefill and decode batches. Each step returns either a prefill-only
- * or a decode-only batch (no mixed batches). The ordering is controlled by the
- * SchedulingPolicy in Config (PREFILL_FIRST or INTERLEAVED).
+ * or a decode-only batch (no mixed batches). Subclasses control whether prefill
+ * or decode is attempted first via should_prefill_first().
  */
 class Scheduler {
  public:
   explicit Scheduler(const Config& config, ITaskQueue* task_queue);
+  virtual ~Scheduler() = default;
 
   bool is_finished() const;
 
@@ -90,7 +39,7 @@ class Scheduler {
   /**
    * Produces the next batch to run.
    * @return Pair of (scheduled sequences, is_prefill). The batch is either
-   *         prefill-only or decode-only; the ordering strategy determines
+   *         prefill-only or decode-only; should_prefill_first() determines
    *         which is attempted first.
    */
   std::pair<std::vector<Sequence*>, bool> schedule();
@@ -102,6 +51,16 @@ class Scheduler {
   void removeSequence(TaskID task_id);
 
   bool is_stop_token(int64_t token_id) const { return stop_token_ids_.count(token_id) > 0; }
+
+ protected:
+  /**
+   * @param has_waiting  true when the waiting queue has at least one request.
+   * @param running_count  number of sequences currently in the running queue.
+   * @param max_num_seqs  maximum batch / running capacity.
+   * @return true if the scheduler should attempt prefill before decode.
+   */
+  virtual bool should_prefill_first(bool has_waiting, int running_count,
+                                    int max_num_seqs) const = 0;
 
  private:
   int block_size_;
@@ -118,7 +77,9 @@ class Scheduler {
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> running_;
   int in_flight_count_ = 0;
-  std::unique_ptr<ISchedulingStrategy> strategy_;
 };
+
+std::unique_ptr<Scheduler> make_scheduler(const Config& config,
+                                          ITaskQueue* task_queue);
 
 }  // namespace llm_engine
