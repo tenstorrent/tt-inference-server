@@ -13,6 +13,3 @@ uv pip install diffusers==0.35.1
 # Re-sync torch ecosystem: diffusers may have upgraded torch without upgrading
 # torchvision to match, causing "operator torchvision::nms does not exist"
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# Verify torch/torchvision compatibility
-python3 -c "import torch; import torchvision; print(f'torch={torch.__version__} torchvision={torchvision.__version__}')"
