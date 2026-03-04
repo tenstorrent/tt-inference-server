@@ -223,16 +223,6 @@ void LLMController::handle_streaming(
             auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
 
-            if (is_chat) {
-                std::optional<domain::CompletionUsage> initial_usage;
-                if (continuous_usage) {
-                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
-                }
-                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                    completion_id, model, created, initial_usage);
-                if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
-            }
-
             service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
@@ -263,11 +253,16 @@ void LLMController::handle_streaming(
                             auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
                                 completion_id, model, created, chunk.choices[0], usage);
                             if (first_content_chunk->exchange(false)) {
-                                if (!stream_chunk.choices.empty()) {
-                                    stream_chunk.choices[0].delta.role = "assistant";
+                                std::optional<domain::CompletionUsage> initial_usage;
+                                if (continuous_usage) {
+                                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
                                 }
+                                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+                                    completion_id, model, created, initial_usage);
+                                sse = initial_chunk.toSSE() + stream_chunk.toSSE();
+                            } else {
+                                sse = stream_chunk.toSSE();
                             }
-                            sse = stream_chunk.toSSE();
                         } else if (!chunk.choices[0].text.empty() ||
                                    !chunk.choices[0].finish_reason.has_value()) {
                             domain::StreamingChunkResponse out;
