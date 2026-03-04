@@ -143,12 +143,13 @@ Note: all metrics are means across benchmark run unless otherwise stated.
 
 ### Accuracy Evaluations for Qwen3-32B on galaxy
 
-|-----------|--------|-----------------|----------------|-------|--------------------|---------------------|--------------------|-------------------------------------------------------------------------------------------------------------|
-| Qwen3-32B | galaxy | r1_aime24       | PASS ✅         | 80.00 | 1.00               | [80.00](TBD)        | 0.98               | [81.40](https://qwenlm.github.io/blog/qwen3/)                                                               |
-| Qwen3-32B | galaxy | r1_math500      | FAIL ⛔         | 85.00 | 0.88               | [96.10](TBD)        | 0.88               | [96.10](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
-| Qwen3-32B | galaxy | r1_gpqa_diamond | PASS ✅         | 65.00 | 0.97               | [66.80](TBD)        | 0.97               | [66.80](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
+| Model     | HW     | Benchmark       | Status | Target | TT Score (norm.) | TT Score        | Ref Score (norm.) | Ref Score                                                                                                   |
+|-----------|--------|-----------------|--------|--------|------------------|-----------------|-------------------|-------------------------------------------------------------------------------------------------------------|
+| Qwen3-32B | galaxy | r1_aime24       | PASS ✅ | 80.00  | 1.00             | [80.00](TBD)    | 0.98              | [81.40](https://qwenlm.github.io/blog/qwen3/)                                                               |
+| Qwen3-32B | galaxy | r1_math500      | FAIL ⛔ | 85.00  | 0.88             | [96.10](TBD)    | 0.88              | [96.10](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
+| Qwen3-32B | galaxy | r1_gpqa_diamond | PASS ✅ | 65.00  | 0.97             | [66.80](TBD)    | 0.97              | [66.80](https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct) |
 
-Note: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score.
+> Note: The ratio to published scores defines if eval ran roughly correctly, as the exact methodology of the model publisher cannot always be reproduced. For this reason the accuracy check is based first on being equivalent to the GPU reference within a +/- tolerance. If a value GPU reference is not available, the accuracy check is based on the direct ratio to the published score.
 
 ### Test Results for Qwen3-32B on galaxy
 
