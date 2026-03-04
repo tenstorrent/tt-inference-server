@@ -2167,7 +2167,7 @@ def extract_eval_json_data(json_path: Path):
 def extract_eval_results(files):
     results = {}
     meta_data = {}
-    for json_file in files:
+    for json_file in sorted(files):
         # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         _ = meta.pop("task_name", None)
@@ -2213,7 +2213,10 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 configured_keys = kwargs.get("result_keys", [])
                 actual_data = results.get(t_key, {})
 
-                key_found = any(k in actual_data for k in configured_keys)
+                key_found = any(
+                    (k[-1] if isinstance(k, tuple) else k) in actual_data
+                    for k in configured_keys
+                )
 
                 if not key_found:
                     valid_candidates = [
@@ -2228,24 +2231,24 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                         logger.info(
                             f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid_candidates[0]}"
                         )
-                        kwargs["result_keys"] = [valid_candidates[0]]
+                        kwargs["result_keys"] = [(t_key, valid_candidates[0])]
                 try:
                     score = task.score.score_func(
                         results, task_name=t_key, kwargs=kwargs
                     )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 0.0
-                if kwargs.get("unit") == "WER":
+                    score = None
+                if score is not None and kwargs.get("unit") == "WER":
                     score = 100 - score
 
-                if task.score.published_score:
+                if score is not None and task.score.published_score:
                     assert task.score.published_score > 0, "Published score is not > 0"
                     ratio_to_published = score / task.score.published_score
                 else:
                     ratio_to_published = "N/A"
 
-                if task.score.gpu_reference_score:
+                if score is not None and task.score.gpu_reference_score:
                     assert task.score.gpu_reference_score > 0, (
                         "Reference score is not > 0"
                     )
@@ -2255,7 +2258,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     )
                 else:
                     ratio_to_reference = "N/A"
-                    if task.score.published_score:
+                    if score is not None and task.score.published_score:
                         accuracy_check = ReportCheckTypes.from_result(
                             ratio_to_published >= (1.0 - task.score.tolerance)
                         )
