@@ -8,9 +8,6 @@ uv pip uninstall xformers diffusers torch torchvision torchaudio
 # Install CPU-only versions
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Install xformers without CUDA sub-deps
-uv pip install xformers --no-deps
-
 uv pip install diffusers==0.35.1
 
 # Re-sync torch ecosystem: diffusers may have upgraded torch without upgrading
