@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙</text></svg>">
     <style>
-        body { max-width: 1600px; margin: 0 auto; padding: 1rem; font-size: 14px; }
+        body { max-width: 1800px; margin: 0 auto; padding: 1rem; font-size: 14px; }
         .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
         .left-panel, .right-panel { min-width: 0; }
         .right-panel { }
@@ -41,19 +41,21 @@
 
         .badge {
             display: inline-block; padding: 2px 10px; border-radius: 12px;
-            font-size: 0.8rem; font-weight: 600; color: #fff;
+            font-size: 0.7rem; font-weight: 600; color: #fff;
         }
-        .badge-queued, .badge-in_progress, .badge-cancelling { background: #e67e22; }
-        .badge-completed { background: #27ae60; }
-        .badge-failed, .badge-cancelled { background: #c0392b; }
+        .badge-queued, .badge-cancelling { background: #e67e22; }
+        .badge-in_progress { background: #27ae60; }
+        .badge-completed { background: #2980b9; }
+        .badge-failed { background: #c0392b; }
+        .badge-cancelled { background: #7f8c8d; }
 
         #jobs-table tbody tr { cursor: pointer; }
-        #jobs-table tbody tr:hover { background: rgba(0,0,0,0.04); }
-        #jobs-table tbody tr.selected { background: rgba(0,100,200,0.08); }
+        #jobs-table tbody tr:hover td { background: rgba(0,0,0,0.04); }
+        #jobs-table tbody tr.selected td { background: rgba(0,100,200,0.08); }
 
         #job-detail { margin-top: 1.5rem; border-top: 2px solid #ccc; padding-top: 1rem; }
         #detail-meta { columns: 2; }
-        #detail-meta dt { font-weight: 600; margin-top: 0.3rem; }
+        #detail-meta dt { font-weight: 600; margin-top: 0.3rem; break-after: avoid; }
         #detail-meta dd { margin-left: 0; margin-bottom: 0.3rem; }
 
         .error-msg { color: #c0392b; font-weight: 600; margin-top: 0.5rem; }

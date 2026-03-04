@@ -33,14 +33,14 @@ function drawChart() {
     $('metrics-heading').textContent = 'Training Metrics';
     canvas.style.display = 'block';
 
-    const minStep = Math.min(...allSteps), maxStep = Math.max(...allSteps);
-    const minVal = Math.min(...allValues), maxVal = Math.max(...allValues);
+    const minStep = 0, maxStep = Math.max(...allSteps);
+    const minVal = 0, maxVal = Math.max(...allValues);
     const valPad = (maxVal - minVal) * 0.05 || 0.001;
     const stepRange = maxStep - minStep || 1;
-    const valRange = (maxVal + valPad) - (minVal - valPad);
+    const valRange = (maxVal + valPad) - (minVal);
 
     const toX = (step) => pad.left + ((step - minStep) / stepRange) * plotW;
-    const toY = (val) => pad.top + plotH - ((val - (minVal - valPad)) / valRange) * plotH;
+    const toY = (val) => pad.top + plotH - ((val - (minVal)) / valRange) * plotH;
 
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 1;
@@ -48,7 +48,7 @@ function drawChart() {
     for (let i = 0; i <= gridLines; i++) {
         const y = pad.top + (plotH / gridLines) * i;
         ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
-        const gridVal = (minVal - valPad) + valRange * (1 - i / gridLines);
+        const gridVal = (minVal) + valRange * (1 - i / gridLines);
         ctx.fillStyle = '#888';
         ctx.font = '20px sans-serif';
         ctx.textAlign = 'right';
@@ -137,7 +137,7 @@ async function loadOptions() {
             opt.textContent = m;
             modelSel.appendChild(opt);
         }
-        $('info-text').textContent = ``;
+        $('info-text').textContent = '';
     } catch (e) {
         $('info-text').textContent = 'Failed to load options: ' + e.message;
     }
@@ -212,7 +212,6 @@ async function refreshJobs() {
 async function selectJob(jobId) {
     selectedJobId = jobId;
 
-    document.querySelectorAll('#jobs-table tbody tr').forEach(tr => tr.classList.remove('selected'));
     // Re-highlight after refresh
     refreshJobs();
 
