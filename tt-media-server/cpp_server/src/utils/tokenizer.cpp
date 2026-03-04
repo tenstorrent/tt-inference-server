@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "utils/deepseek_tokenizer.hpp"
+#include "utils/llama_tokenizer.hpp"
 #include "config/settings.hpp"
 
 #include <filesystem>
@@ -78,104 +80,6 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     }
     return tok_->Decode(token_ids);
 }
-
-// ---------------------------------------------------------------------------
-// DeepseekTokenizer
-// ---------------------------------------------------------------------------
-
-static const char* DS_USER_TAG = "<\xEF\xBD\x9C" "User\xEF\xBD\x9C>";
-static const char* DS_ASSISTANT_TAG = "<\xEF\xBD\x9C" "Assistant\xEF\xBD\x9C>";
-
-class DeepseekTokenizer final : public Tokenizer {
-public:
-    using Tokenizer::Tokenizer;
-
-    std::string model_name() const override { return "deepseek-ai/DeepSeek-V3"; }
-    int special_token_decode_threshold() const override { return -1; }
-    std::vector<int64_t> stop_token_ids() const override { return {1}; }
-
-    std::string apply_chat_template(
-        const std::vector<domain::ChatMessage>& messages,
-        bool add_generation_prompt) const override {
-
-        std::ostringstream out;
-
-        if (cfg_.add_bos_token) out << cfg_.bos_token;
-
-        for (const auto& m : messages) {
-            if (m.role == "system") out << m.content;
-        }
-
-        for (const auto& m : messages) {
-            if (m.role == "system") continue;
-            if (m.role == "user") {
-                out << DS_USER_TAG << m.content;
-            } else if (m.role == "assistant") {
-                out << DS_ASSISTANT_TAG << m.content;
-                if (cfg_.add_eos_token) out << cfg_.eos_token;
-            }
-        }
-
-        if (add_generation_prompt) {
-            out << DS_ASSISTANT_TAG;
-        }
-        return out.str();
-    }
-};
-
-// ---------------------------------------------------------------------------
-// LlamaTokenizer
-// ---------------------------------------------------------------------------
-
-static const char* LLAMA_HEADER_START = "<|start_header_id|>";
-static const char* LLAMA_HEADER_END = "<|end_header_id|>";
-static const char* LLAMA_EOT = "<|eot_id|>";
-static const char* LLAMA_SYSTEM_PREAMBLE =
-    "Cutting Knowledge Date: December 2023\n"
-    "Today Date: 26 Jul 2024\n\n";
-
-class LlamaTokenizer final : public Tokenizer {
-public:
-    using Tokenizer::Tokenizer;
-
-    std::string model_name() const override { return "meta-llama/Llama-3.1-8B-Instruct"; }
-    int special_token_decode_threshold() const override { return 128000; }
-    std::vector<int64_t> stop_token_ids() const override { return {128001, 128008, 128009}; }
-
-    std::string apply_chat_template(
-        const std::vector<domain::ChatMessage>& messages,
-        bool add_generation_prompt) const override {
-
-        std::ostringstream out;
-
-        std::string system_content;
-        for (const auto& m : messages) {
-            if (m.role == "system") {
-                if (!system_content.empty()) system_content += "\n\n";
-                system_content += m.content;
-            }
-        }
-
-        if (cfg_.add_bos_token) out << cfg_.bos_token;
-
-        out << LLAMA_HEADER_START << "system" << LLAMA_HEADER_END << "\n\n"
-            << LLAMA_SYSTEM_PREAMBLE
-            << system_content
-            << LLAMA_EOT;
-
-        for (const auto& m : messages) {
-            if (m.role == "system") continue;
-            std::string role = m.role.empty() ? "user" : m.role;
-            out << LLAMA_HEADER_START << role << LLAMA_HEADER_END << "\n\n"
-                << m.content << LLAMA_EOT;
-        }
-
-        if (add_generation_prompt) {
-            out << LLAMA_HEADER_START << "assistant" << LLAMA_HEADER_END << "\n\n";
-        }
-        return out.str();
-    }
-};
 
 // ---------------------------------------------------------------------------
 // Factory + standalone helpers
