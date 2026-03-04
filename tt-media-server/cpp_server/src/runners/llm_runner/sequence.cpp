@@ -1,18 +1,19 @@
 #include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/config.hpp"
 #include "llm_runner/sampling_params.hpp"
 #include <algorithm>
 #include <stdexcept>
 
 namespace llm_engine {
 
-Sequence::Sequence(const Config& config, std::vector<int64_t> token_ids,
+Sequence::Sequence(const int block_size, std::vector<int64_t> token_ids,
                    const SamplingParams& sampling_params)
     : task_id(TaskID{}),
       status_(SequenceStatus::WAITING),
       token_ids_(std::move(token_ids)),
       num_prompt_tokens_(token_ids_.size()),
       sampling_params(std::make_unique<SamplingParams>(sampling_params)),
-      block_size_(config.kvcache_block_size) {
+      block_size_(block_size) {
   if (!token_ids_.empty()) {
     last_token = token_ids_.back();
   }
@@ -61,7 +62,7 @@ void Sequence::serialize(std::ostream& os) const {
 
 Sequence* Sequence::deserialize(std::istream& is) {
   Config default_config;
-  Sequence* seq = new Sequence(default_config, std::vector<int64_t>{});
+  Sequence* seq = new Sequence(default_config.kvcache_block_size, std::vector<int64_t>{});
 
   size_t task_id_size;
   is.read(reinterpret_cast<char*>(&task_id_size), sizeof(task_id_size));

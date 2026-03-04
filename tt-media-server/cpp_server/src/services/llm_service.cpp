@@ -389,7 +389,8 @@ void LLMService::process_streaming_request(
         return;
     }
 
-    auto sequence = std::make_unique<llm_engine::Sequence>(tt::config::llm_engine_config(), token_ids);
+    auto sequence = std::make_unique<llm_engine::Sequence>(
+        tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
@@ -557,7 +558,8 @@ void LLMService::continue_decode_generation(const tt::sockets::PrefillResultMess
 
     std::string task_id = prefill_result.task_id;
     auto sequence = std::make_unique<llm_engine::Sequence>(
-        tt::config::llm_engine_config(), std::vector<int64_t>(prefill_result.token_ids.begin(), prefill_result.token_ids.end()));
+        tt::config::llm_engine_config().kvcache_block_size,
+        std::vector<int64_t>(prefill_result.token_ids.begin(), prefill_result.token_ids.end()));
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prefill_result.token_ids.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(

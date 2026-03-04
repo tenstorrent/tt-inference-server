@@ -12,7 +12,6 @@
 #include <vector>
 #include <memory>
 #include <optional>
-#include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/uuid/uuid.hpp>
@@ -62,7 +61,7 @@ struct TokenResult {
 
 class Sequence {
  public:
-  Sequence(const Config& config, std::vector<int64_t> token_ids,
+  Sequence(const int block_size, std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;

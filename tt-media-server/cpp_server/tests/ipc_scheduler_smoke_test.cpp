@@ -44,8 +44,8 @@ int main() {
 
   // Build two sequences with known values.
   Config seq_config;
-  Sequence seq1(seq_config, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
-  Sequence seq2(seq_config, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
+  Sequence seq1(256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
 
   std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());

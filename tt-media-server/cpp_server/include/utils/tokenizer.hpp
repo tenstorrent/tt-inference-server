@@ -94,7 +94,7 @@ protected:
 
 /**
  * Factory: create a Tokenizer for the given model, loading from path.
- * DEEPSEEK_V3 -> DeepseekTokenizer
+ * DEEPSEEK_R1_0528 -> DeepseekTokenizer
  * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
  */
 std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model, const std::string& path);

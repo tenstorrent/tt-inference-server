@@ -60,11 +60,11 @@ protected:
     std::unique_ptr<Tokenizer> tok_;
 
     void SetUp() override {
-        std::string path = tt::config::tokenizer_path(tt::config::ModelType::DEEPSEEK_V3);
+        std::string path = tt::config::tokenizer_path(tt::config::ModelType::DEEPSEEK_R1_0528);
         if (path.empty()) {
             GTEST_SKIP() << "DeepSeek tokenizer files not found";
         }
-        tok_ = create_tokenizer(tt::config::ModelType::DEEPSEEK_V3, path);
+        tok_ = create_tokenizer(tt::config::ModelType::DEEPSEEK_R1_0528, path);
         if (!tok_->is_loaded()) {
             FAIL() << "Failed to load DeepSeek tokenizer from: " << path;
         }
@@ -171,7 +171,7 @@ TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
 }
 
 
-TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
     // Same message list as used in HuggingFace docs for apply_chat_template.
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
@@ -194,7 +194,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
 }
 
 
-TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekR10528Format) {
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekR10528Format) {
     // Same message list as used in HuggingFace docs for apply_chat_template.
     std::vector<ChatMessage> messages = {
         {"user", "Hello"},
