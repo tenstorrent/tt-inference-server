@@ -365,13 +365,11 @@ void LLMService::process_streaming_request(
             throw std::runtime_error("No prefill request callback configured");
         }
 
-        // Create transport-agnostic request
         domain::PrefillRequest prefill_req;
         prefill_req.task_id = task_id;
         prefill_req.token_ids = token_ids;
         prefill_req.max_tokens = request.max_tokens;
 
-        // Deliver via callback (controller handles transport)
         bool sent = prefill_request_callback_(prefill_req);
 
         if (!sent) {
@@ -472,7 +470,6 @@ void LLMService::handle_prefill_request(
             int remaining_tokens = original_max_tokens - 1;
             bool fully_finished = is_final && remaining_tokens <= 0;
 
-            // Create transport-agnostic result
             domain::PrefillResult result;
             result.task_id = task_id;
             result.generated_text = text;
@@ -480,7 +477,6 @@ void LLMService::handle_prefill_request(
             result.remaining_tokens = remaining_tokens;
             result.finished = fully_finished;
 
-            // Deliver via callback (controller handles transport)
             if (prefill_result_callback_) {
                 prefill_result_callback_(result);
             }

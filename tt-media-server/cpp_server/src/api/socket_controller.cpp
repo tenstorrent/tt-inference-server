@@ -35,10 +35,8 @@ SocketController::SocketController(
 }
 
 void SocketController::setup_prefill_mode_handlers() {
-    // Set callback for service to deliver prefill results
     llm_service_->set_prefill_result_callback(
         [this](const domain::PrefillResult& result) {
-            // Convert domain result to socket message
             tt::sockets::PrefillResultMessage msg;
             msg.task_id = result.task_id;
             msg.generated_text = result.generated_text;
@@ -46,17 +44,12 @@ void SocketController::setup_prefill_mode_handlers() {
             msg.remaining_tokens = result.remaining_tokens;
             msg.finished = result.finished;
             msg.tokens_generated = 1;
-
-            // Send via socket
             socket_service_->sendPrefillResult(msg);
         });
 
-    // Handle incoming prefill requests from decode server
     socket_service_->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
             std::cout << "[SocketController] Received prefill request " << message.task_id << "\n" << std::flush;
-
-            // Delegate to service with transport-agnostic parameters
             llm_service_->handle_prefill_request(
                 message.task_id,
                 message.prompt,
@@ -66,10 +59,8 @@ void SocketController::setup_prefill_mode_handlers() {
 }
 
 void SocketController::setup_decode_mode_handlers() {
-    // Set callback for service to send prefill requests
     llm_service_->set_prefill_request_callback(
         [this](const domain::PrefillRequest& request) -> bool {
-            // Convert domain request to socket message
             return socket_service_->sendPrefillRequest(
                 request.task_id,
                 request.prompt,
@@ -77,20 +68,16 @@ void SocketController::setup_decode_mode_handlers() {
                 request.max_tokens);
         });
 
-    // Handle incoming prefill results from prefill server
     socket_service_->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& msg) {
             std::cout << "[SocketController] Received prefill result " << msg.task_id << "\n" << std::flush;
 
-            // Convert socket message to domain type
             domain::PrefillResult result;
             result.task_id = msg.task_id;
             result.generated_text = msg.generated_text;
             result.token_ids = msg.token_ids;
             result.remaining_tokens = msg.remaining_tokens;
             result.finished = msg.finished;
-
-            // Delegate to service with transport-agnostic type
             llm_service_->handle_prefill_complete(result);
         });
 }

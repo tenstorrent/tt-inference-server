@@ -24,7 +24,6 @@ void register_services() {
         auto llm = std::make_shared<services::LLMService>();
         llm->start();
 
-        // Create socket controller only for prefill/decode split modes
         auto mode = tt::config::llm_mode();
         if (mode != tt::config::LLMMode::REGULAR) {
             auto socket_service = llm->get_socket_service();
