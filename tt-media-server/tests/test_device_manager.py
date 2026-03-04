@@ -382,7 +382,7 @@ Mapping of trays to devices on the galaxy:
         with patch("utils.device_manager.logger") as mock_logger:
             result = self.device_manager.get_single_devices()
             self.assertEqual(result, [])
-            mock_logger.error.assert_called()
+            mock_logger.warning.assert_called()
 
 
 if __name__ == "__main__":
