@@ -18,7 +18,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 `Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
-- [BH QuietBox](Llama-3.3-70B-Instruct_p150x4.md)
+- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH LoudBox
@@ -26,6 +26,21 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e \
+  --model Llama-3.3-70B-Instruct \
+  --tt-device p150x8
+```
 
 **via run.py command**
 

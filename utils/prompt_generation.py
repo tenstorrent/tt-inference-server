@@ -14,7 +14,6 @@ import torch
 import numpy as np
 from PIL import Image
 from jinja2 import Template
-from datasets import load_dataset
 from transformers import AutoTokenizer
 
 from utils.prompt_configs import PromptConfig
@@ -79,17 +78,6 @@ def generate_random_images(
         img_data = buffered.getvalue()
 
     return img_data
-
-
-def load_alpaca_eval_dataset_samples(num_prompts):
-    # Load alpaca_eval dataset with specified number of samples
-    alpaca_ds = load_dataset(
-        "tatsu-lab/alpaca_eval",
-        "alpaca_eval",
-        split=f"eval[:{num_prompts}]",
-        trust_remote_code=True,
-    )
-    return alpaca_ds["instruction"]
 
 
 def tokenize_encode(prompt, tokenizer, max_length, tokenizer_model):
@@ -331,12 +319,7 @@ def generate_prompts(prompt_config: PromptConfig):
             prompt_config.tokenizer_model,
         )
     elif prompt_config.dataset is not None:
-        assert prompt_config.max_prompt_length > -1, (
-            "max_length must be set for datasets prompts."
-        )
-        logger.info(f"Generating prompts from the '{prompt_config.dataset}' dataset...")
-        if prompt_config.dataset == "alpaca_eval":
-            prompts = load_alpaca_eval_dataset_samples(prompt_config.num_prompts)
+        raise NotImplementedError("PromptClient Dataset feature deprecated.")
     else:
         raise ValueError("Dataset must be provided.")
 

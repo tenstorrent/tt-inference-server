@@ -59,7 +59,7 @@ class CacheMonitor:
             # Try to create a SetupConfig to get cache directory info
             setup_config = SetupConfig(model_spec=model_spec)
 
-            device_str = model_spec.cli_args.get("device")
+            device_str = model_spec.device_type.name.lower()
             device = DeviceTypes.from_string(device_str)
             mesh_device_str = device.to_mesh_device_str()
             device_cache_str = (

@@ -35,16 +35,18 @@ def latest_json_by_mtime(dir_path: Path, pattern: str) -> Optional[Path]:
     return files[0]
 
 
-def load_model_spec_json(run_specs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
-    """Load model spec JSON from run_specs directory.
+def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
+    """Load model spec JSON from model_specs directory.
+
+    Supports both the new model_specs/ directory and legacy run_specs/ as fallback.
 
     Args:
-        run_specs_dir: Path to run_specs directory
+        model_specs_dir: Path to model_specs directory
 
     Returns:
         Tuple of (model_spec_dict, model_id)
     """
-    spec_file = latest_json_by_mtime(run_specs_dir, "*.json")
+    spec_file = latest_json_by_mtime(model_specs_dir, "*.json")
     if not spec_file:
         return None, None
     try:
@@ -240,7 +242,7 @@ def parse_workflow_logs_dir(
                 "tt_metal_commit": str, # tt-metal commit parsed from docker image tag
                 "vllm_commit": str      # vllm commit parsed from docker image tag
             },
-            "run_specs": {
+            "model_specs": {
                 "model_spec": dict      # Model specification JSON
             },
             "reports_output": {
@@ -268,9 +270,11 @@ def parse_workflow_logs_dir(
         logger.error(f"Path is not a directory: {workflow_logs_dir}")
         return None
 
-    # Load model spec
-    run_specs_dir = workflow_logs_dir / "run_specs"
-    model_spec_json, model_id = load_model_spec_json(run_specs_dir)
+    # Load model spec (try new model_specs/ first, fall back to legacy run_specs/)
+    model_specs_dir = workflow_logs_dir / "runtime_model_specs"
+    if not model_specs_dir.is_dir():
+        model_specs_dir = workflow_logs_dir / "run_specs"
+    model_spec_json, model_id = load_model_spec_json(model_specs_dir)
     if not model_id:
         logger.warning(f"Could not find model_id in {workflow_logs_dir}")
         return None
@@ -327,7 +331,7 @@ def parse_workflow_logs_dir(
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
         },
-        "run_specs": model_spec_json,
+        "model_specs": model_spec_json,
         "reports_output": report_data_json,
         "tt_smi_output": tt_smi_output,
     }

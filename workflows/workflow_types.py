@@ -84,6 +84,9 @@ class DeviceTypes(IntEnum):
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 
+    def to_string(self) -> str:
+        return self.name.upper()
+
     def to_mesh_device_str(self) -> str:
         mapping = {
             DeviceTypes.CPU: "CPU",
@@ -299,6 +302,9 @@ class InferenceEngine(Enum):
     @classmethod
     def from_string(cls, name: str):
         return cls[name.upper()]
+
+    def to_string(self) -> str:
+        return self.name.lower()
 
 
 class ModelSource(Enum):

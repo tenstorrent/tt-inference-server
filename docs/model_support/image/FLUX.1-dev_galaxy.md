@@ -15,6 +15,8 @@ To use non-default weights, replace `FLUX.1-dev` in commands below.
 
 `FLUX.1-dev` is also supported on hardware:
 
+- [BH LoudBox](FLUX.1-dev_p150x8.md)
+- [BH 4xP150](FLUX.1-dev_p150x4.md)
 - [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
 
 ## Quickstart - Deploy FLUX.1-dev Inference Server on WH Galaxy
