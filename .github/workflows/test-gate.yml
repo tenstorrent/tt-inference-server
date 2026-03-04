@@ -581,7 +581,7 @@ jobs:
         run: |
           RESULT_FILE="vllm-bench-result.json"
           vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-V3.2' \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -760,7 +760,7 @@ jobs:
         run: |
           RESULT_FILE="vllm-bench-split-result.json"
           vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-V3.2' \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \

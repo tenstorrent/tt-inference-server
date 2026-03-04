@@ -463,11 +463,11 @@ The server includes tokenizer support for encode/decode:
    ./build.sh
    ```
 4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
-   To fetch DeepSeek V3 tokenizer and config from Hugging Face into `tokenizers/`:
+   To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
    mkdir -p cpp_server/tokenizers
-   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
-   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer_config.json
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer_config.json
    ```
 
 ## Performance
