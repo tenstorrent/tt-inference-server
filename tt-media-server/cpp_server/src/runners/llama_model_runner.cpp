@@ -43,7 +43,7 @@ bool LlamaModelRunner::initialize() {
     py::object runner_class = llama_mod.attr("Llama31_8BRunner");
 
     const char* env_dev = std::getenv("TT_VISIBLE_DEVICES");
-    std::string device_id = (env_dev && *env_dev) ? env_dev : "1";
+    std::string device_id = (env_dev && *env_dev) ? env_dev : "0";
     g_runner = runner_class(device_id);
 
     py::module_ asyncio = py::module_::import("asyncio");
