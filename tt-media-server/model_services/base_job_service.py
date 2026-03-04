@@ -38,3 +38,6 @@ class BaseJobService(BaseService):
 
     def cancel_job(self, job_id: str) -> bool:
         return self._job_manager.cancel_job(job_id)
+
+    def get_job_metrics(self, job_id: str) -> list:
+        return []

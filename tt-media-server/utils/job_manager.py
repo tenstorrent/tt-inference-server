@@ -29,10 +29,14 @@ class JobStatus(str, Enum):
 
 
 @dataclass
-class TrainingJobContext:
-    start_event: Event
-    cancel_event: Event
-    training_metrics: list
+class JobContext:
+    start_event: Optional[Event] = None
+    cancel_event: Optional[Event] = None
+
+
+@dataclass
+class TrainingJobContext(JobContext):
+    training_metrics: list = field(default_factory=list)
 
 
 @dataclass
@@ -47,7 +51,7 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
-    _training_context: Optional[TrainingJobContext] = None
+    _job_context: Optional[JobContext] = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -131,7 +135,7 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
-        training_context: Optional[TrainingJobContext] = None,
+        job_context: Optional[JobContext] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -146,8 +150,8 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
-            if training_context:
-                job._training_context = training_context
+            if job_context:
+                job._job_context = job_context
 
             if self.db:
                 try:
@@ -206,8 +210,8 @@ class JobManager:
     def get_training_metrics(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            if job and job._training_context:
-                return job._training_context.training_metrics
+            if job and isinstance(job._job_context, TrainingJobContext):
+                return job._job_context.training_metrics
         return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -280,7 +284,7 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
-    async def _persist_metrics_to_db(self, job: Job):
+    async def _persist_training_metrics_to_db(self, job: Job):
         metrics_list = self.get_training_metrics(job.id)
         if metrics_list is None:
             return
@@ -314,9 +318,9 @@ class JobManager:
             await asyncio.sleep(1.0)
 
     async def _mark_job_in_progress(self, job: Job):
-        training_ctx = job._training_context
-        if training_ctx and training_ctx.start_event:
-            while not training_ctx.start_event.is_set():
+        job_ctx = job._job_context
+        if job_ctx and job_ctx.start_event:
+            while not job_ctx.start_event.is_set():
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
@@ -333,9 +337,9 @@ class JobManager:
         try:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
-            if self.db and job._training_context:
+            if self.db and isinstance(job._job_context, TrainingJobContext):
                 metrics_persister = asyncio.create_task(
-                    self._persist_metrics_to_db(job)
+                    self._persist_training_metrics_to_db(job)
                 )
 
             result_path = await task_function(request)
@@ -484,10 +488,10 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            training_ctx = job._training_context
-            if training_ctx and training_ctx.cancel_event and not force:
+            job_ctx = job._job_context
+            if job_ctx and job_ctx.cancel_event and not force:
                 # runner handles cancellation
-                training_ctx.cancel_event.set()
+                job_ctx.cancel_event.set()
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
@@ -525,7 +529,7 @@ class JobManager:
                     try:
                         metrics = self.db.get_metrics_flat(job.id)
                         if metrics:
-                            job._training_context = TrainingJobContext(
+                            job._job_context = TrainingJobContext(
                                 start_event=None,
                                 cancel_event=None,
                                 training_metrics=metrics,

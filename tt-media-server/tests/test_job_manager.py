@@ -17,6 +17,7 @@ from utils.job_manager import (
     JobManager,
     JobStatus,
     get_job_manager,
+    JobContext,
     TrainingJobContext,
 )
 
@@ -1040,16 +1041,15 @@ class TestJobManager:
     async def test_cooperative_cancel_via_cancel_event(self, job_manager, mock_request):
         """Test cooperative cancellation where task checks cancel_event and returns normally."""
 
-        training_ctx = TrainingJobContext(
+        job_ctx = TrainingJobContext(
             start_event=Event(),
             cancel_event=Event(),
-            training_metrics=[],
         )
 
         async def cooperative_task(req):
-            training_ctx.start_event.set()
+            job_ctx.start_event.set()
             # Simulates a training loop checking cancel_event — same as the real runner
-            while not training_ctx.cancel_event.is_set():
+            while not job_ctx.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             return "models_save/result.pt"
 
@@ -1060,7 +1060,7 @@ class TestJobManager:
             request=mock_request,
             task_function=cooperative_task,
             result_path="models_save/result.pt",
-            training_context=training_ctx,
+            job_context=job_ctx,
         )
 
         await asyncio.sleep(0.3)
@@ -1076,7 +1076,7 @@ class TestJobManager:
             assert db_job2["status"] == "cancelling"
 
         # _cleanup_job should set the event, NOT cancel the task
-        assert training_ctx.cancel_event.is_set()
+        assert job_ctx.cancel_event.is_set()
 
         await asyncio.sleep(0.5)
 
@@ -1094,15 +1094,14 @@ class TestJobManager:
         self, job_manager, mock_request
     ):
         """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
-        training_ctx = TrainingJobContext(
+        job_ctx = JobContext(
             start_event=Event(),
             cancel_event=Event(),
-            training_metrics=[],
         )
 
         async def cooperative_task(req):
-            training_ctx.start_event.set()
-            while not training_ctx.cancel_event.is_set():
+            job_ctx.start_event.set()
+            while not job_ctx.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             return "models_save/result.pt"
 
@@ -1113,14 +1112,14 @@ class TestJobManager:
             request=mock_request,
             task_function=cooperative_task,
             result_path="models_save/result.pt",
-            training_context=training_ctx,
+            job_context=job_ctx,
         )
 
         await asyncio.sleep(0.3)
         await job_manager.shutdown()
 
         # Task should have been force-cancelled, not waiting for cooperative exit
-        assert not training_ctx.cancel_event.is_set()  # force=True skips the event
+        assert not job_ctx.cancel_event.is_set()  # force=True skips the event
 
     @pytest.mark.asyncio
     async def test_queued_job_starts_after_in_progress_job_cancelled(
@@ -1128,29 +1127,27 @@ class TestJobManager:
     ):
         """When a running job is cancelled, the next queued job should start processing."""
 
-        training_ctx_1 = TrainingJobContext(
+        job_ctx_1 = JobContext(
             start_event=Event(),
             cancel_event=Event(),
-            training_metrics=[],
         )
-        training_ctx_2 = TrainingJobContext(
+        job_ctx_2 = JobContext(
             start_event=Event(),
             cancel_event=Event(),
-            training_metrics=[],
         )
 
         runner_available = asyncio.Event()
 
         async def task_1(req):
-            training_ctx_1.start_event.set()
-            while not training_ctx_1.cancel_event.is_set():
+            job_ctx_1.start_event.set()
+            while not job_ctx_1.cancel_event.is_set():
                 await asyncio.sleep(0.05)
             runner_available.set()
             return "result_1.pt"
 
         async def task_2(req):
             await runner_available.wait()
-            training_ctx_2.start_event.set()
+            job_ctx_2.start_event.set()
             await asyncio.sleep(5)
             return "result_2.pt"
 
@@ -1161,7 +1158,7 @@ class TestJobManager:
             request=mock_request,
             task_function=task_1,
             result_path="result_1.pt",
-            training_context=training_ctx_1,
+            job_context=job_ctx_1,
         )
 
         await asyncio.sleep(0.3)
@@ -1175,7 +1172,7 @@ class TestJobManager:
             model="test-model",
             request=mock_request,
             task_function=task_2,
-            training_context=training_ctx_2,
+            job_context=job_ctx_2,
         )
 
         await asyncio.sleep(0.1)
@@ -1344,7 +1341,7 @@ class TestJobManager:
                 "timestamp": 1000,
             }
         ]
-        training_ctx = TrainingJobContext(
+        job_ctx = TrainingJobContext(
             start_event=Event(),
             cancel_event=Event(),
             training_metrics=metrics_list,
@@ -1361,7 +1358,7 @@ class TestJobManager:
             request=mock_request,
             task_function=task_func,
             result_path="result.pt",
-            training_context=training_ctx,
+            job_context=job_ctx,
         )
 
         result = job_manager.get_training_metrics("train-1")
@@ -1377,7 +1374,7 @@ class TestJobManager:
         start_event = Event()
         start_event.set()
         metrics_list = []
-        training_ctx = TrainingJobContext(
+        job_ctx = TrainingJobContext(
             start_event=start_event,
             cancel_event=Event(),
             training_metrics=metrics_list,
@@ -1413,7 +1410,7 @@ class TestJobManager:
             request=mock_request,
             task_function=task_func,
             result_path="result.pt",
-            training_context=training_ctx,
+            job_context=job_ctx,
         )
 
         # Poll DB until getting both metrics

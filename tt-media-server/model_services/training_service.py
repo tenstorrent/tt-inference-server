@@ -26,7 +26,7 @@ class TrainingService(BaseJobService):
         request._cancel_event = self._manager.Event()
         request._training_metrics = self._manager.list()
 
-        training_ctx = TrainingJobContext(
+        job_ctx = TrainingJobContext(
             start_event=request._start_event,
             cancel_event=request._cancel_event,
             training_metrics=request._training_metrics,
@@ -39,7 +39,7 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
-            training_context=training_ctx,
+            job_context=job_ctx,
         )
 
     def get_job_metrics(self, job_id: str, after: int = 0) -> list:
