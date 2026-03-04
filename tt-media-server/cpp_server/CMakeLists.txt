@@ -57,6 +57,25 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Import fmt from tt-metal for spdlog
+if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
+    set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
+    find_package(fmt REQUIRED)
+    message(STATUS "Found fmt from tt-metal: ${fmt_VERSION}")
+endif()
+
+# spdlog for logging - use tt-metal's fmt library
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.17.0
+)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(spdlog)
+
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
@@ -102,6 +121,7 @@ if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/tt_metal/api")
         "${TT_METAL_HOME}/tt_metal/third_party/tracy/public"
         "${TT_METAL_HOME}/tt_stl"
     )
+    # Include build directories
     if(EXISTS "${TT_METAL_HOME}/build_Release/include")
         list(APPEND TT_METAL_INCLUDE_DIRS
             "${TT_METAL_HOME}/build_Release/include"
@@ -142,10 +162,14 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
 )
-if(TT_METAL_API_FOUND)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
+# Add socket backend when tt-metal is available
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    list(APPEND LLM_ENGINE_SOURCES
+        src/runners/llm_runner/sockets_device_backend.cpp
+    )
+    message(STATUS "LLM engine: building with tt-metal socket integration")
 else()
-    message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
+    message(STATUS "LLM engine: building without tt-metal (tt-metal not found)")
 endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
@@ -154,7 +178,7 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL USE_METAL_CPP_LIB)
+    target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
     set(_tt_metal_lib_dir "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
@@ -164,10 +188,10 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     endif()
     if(_tt_metal_lib_dir)
         target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl)
+        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl fmt)
     endif()
 endif()
-target_link_libraries(llm_engine PUBLIC Boost::boost)
+target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
@@ -256,6 +280,7 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
+    src/utils/logger.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
@@ -279,8 +304,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${TT_METAL_INCLUDE_DIRS}
 )
 
+# Compile definitions for performance optimization
+target_compile_definitions(${PROJECT_NAME} PRIVATE)
+
 # Link Drogon and llm_engine (used by LLMService)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
 if(ENABLE_TRACY)
     target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
     target_sources(${PROJECT_NAME} PRIVATE

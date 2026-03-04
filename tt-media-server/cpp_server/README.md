@@ -1,4 +1,45 @@
 # TT Media Server - C++ Drogon Implementation
+See [FMTLOG_PERFORMANCE.md](FMTLOG_PERFORMANCE.md) for detailed performance analysis and migration guide.
+
+## LLM Engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+
+### Main featuresrmance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
+
+## Logging
+
+```cpp
+#include "utils/fmtlog_logger.hpp"
+
+// Initialize once at startup
+tt::utils::FmtlogLogger::initialize();
+
+// High-performance macros with zero overhead when disabled
+TT_LOG_DEBUG_FMTLOG("Debug info: request_id={}, latency={}ms", id, latency);
+TT_LOG_INFO_FMTLOG("Server starting on port {}", port);
+TT_LOG_ERROR_FMTLOG("Connection failed: {}", error);
+
+// Shutdown at exit
+tt::utils::FmtlogLogger::shutdown();
+```
+
+#### Configuration
+
+```bash
+# Environment variables
+export TT_LOG_LEVEL=info              # Runtime log level
+export TT_LOG_FILE=./logs/server.log  # Enable file logging
+
+# Compile-time optimization (eliminates debug logs completely)
+cmake -DFMTLOG_ACTIVE_LEVEL=FMTLOG_LEVEL_INF ..
+```
+
+See [FMTLOG_PERFORMANCE.md](FMTLOG_PERFORMANCE.md) for detailed performance analysis and migration guide.
+
+## LLM engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.dia Server - C++ Drogon Implementation
 
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
