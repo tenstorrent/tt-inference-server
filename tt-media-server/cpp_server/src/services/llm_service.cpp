@@ -5,7 +5,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/config.hpp"
-#include "utils/tokenizer_strategy.hpp"
+#include "utils/tokenizer.hpp"
 #include "worker/single_process_worker.hpp"
 #include "utils/mapper.hpp"
 #include <cassert>
@@ -60,7 +60,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
 LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
-      tokenizer_(tt::config::tokenizer_path()) {
+      tokenizer_(tt::utils::create_tokenizer(tt::config::model_type(), tt::config::tokenizer_path())) {
     std::cout << "[LLMService] Initialized (mode=" << tt::config::to_string(mode_)
               << ", workers=" << num_workers_ << ")\n" << std::flush;
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
@@ -129,7 +129,7 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
         if (cfg.add_bos_token && !cfg.bos_token.empty() && !has_bos) {
             text = cfg.bos_token + text;
         }
-        request.prompt = tokenizer_.encode(text);
+        request.prompt = tokenizer_->encode(text);
     }
     const auto& tokens = std::get<std::vector<int>>(request.prompt);
     if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
@@ -238,8 +238,8 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         return;
     }
 
-    tt::utils::Tokenizer tokenizer(tt::config::tokenizer_path());
-    const auto stop_ids = tt::utils::active_tokenizer_strategy().stop_token_ids();
+    auto tokenizer = tt::utils::create_tokenizer(tt::config::model_type(), tt::config::tokenizer_path());
+    const auto stop_ids = tokenizer->stop_token_ids();
     const std::unordered_set<int64_t> stop_token_set(stop_ids.begin(), stop_ids.end());
 
     while (running_) {
@@ -270,7 +270,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             ).count();
 
             domain::CompletionChoice choice;
-            choice.text = tokenizer.decode({static_cast<int>(token.token_id)});
+            choice.text = tokenizer->decode({static_cast<int>(token.token_id)});
             choice.index = token.token_index;
             if (token.is_error()) {
                 choice.finish_reason = "error";

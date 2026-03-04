@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
-#include "utils/tokenizer_strategy.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_message.hpp"
 
@@ -16,7 +15,7 @@ using namespace tt::utils;
 using namespace tt::domain;
 
 static bool is_deepseek() {
-    return active_tokenizer_strategy().model_name() == "deepseek-ai/DeepSeek-V3";
+    return active_tokenizer().model_name() == "deepseek-ai/DeepSeek-V3";
 }
 
 class TokenizerTest : public ::testing::Test {
@@ -27,11 +26,11 @@ protected:
         std::string tokenizer_file_path = tt::config::tokenizer_path();
         if (tokenizer_file_path.empty()) {
             FAIL() << "Tokenizer not found at default location for model: "
-                   << active_tokenizer_strategy().model_name();
+                   << active_tokenizer().model_name();
         }
 
         try {
-            tok_ = std::make_unique<Tokenizer>(tokenizer_file_path);
+            tok_ = create_tokenizer(tt::config::model_type(), tokenizer_file_path);
             if (!tok_->is_loaded()) {
                 FAIL() << "Failed to load tokenizer from: " << tokenizer_file_path;
             }
@@ -182,7 +181,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesDeepSeekV3Format) {
         user_tag + "How are you?" +
         asst_tag;
 
-    std::string actual = Tokenizer::apply_chat_template(messages, true);
+    std::string actual = tokenizer().apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
         << "apply_chat_template output should match DeepSeek V3 format.\n"
@@ -209,7 +208,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesDeepSeekV3Format
         asst_tag + "Hi!" +
         user_tag + "How are you?";
 
-    std::string actual = Tokenizer::apply_chat_template(messages, false);
+    std::string actual = tokenizer().apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
         << "apply_chat_template output should match DeepSeek V3 format.\n"
@@ -240,7 +239,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateMatchesLlama318BFormat) {
         "How are you?<|eot_id|>"
         "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
-    std::string actual = Tokenizer::apply_chat_template(messages, true);
+    std::string actual = tokenizer().apply_chat_template(messages, true);
 
     EXPECT_EQ(actual, expected)
         << "apply_chat_template output should match Llama 3.1 8B Instruct format.\n"
@@ -270,7 +269,7 @@ TEST_F(TokenizerTest, ApplyChatTemplateNoGenerationPromptMatchesLlama318BFormat)
         "<|start_header_id|>user<|end_header_id|>\n\n"
         "How are you?<|eot_id|>";
 
-    std::string actual = Tokenizer::apply_chat_template(messages, false);
+    std::string actual = tokenizer().apply_chat_template(messages, false);
 
     EXPECT_EQ(actual, expected)
         << "apply_chat_template output should match Llama 3.1 8B Instruct format.\n"

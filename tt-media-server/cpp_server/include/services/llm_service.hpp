@@ -89,7 +89,7 @@ private:
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
+    std::unique_ptr<tt::utils::Tokenizer> tokenizer_;
     std::unique_ptr<tt::sockets::InterServerService> socket_service_;
 };
 

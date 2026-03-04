@@ -3,11 +3,13 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 #include <tokenizers_cpp.h>
 
+#include "config/constants.hpp"
 #include "domain/chat_message.hpp"
 
 namespace tt::utils {
@@ -38,8 +40,8 @@ TokenizerConfig get_tokenizer_config();
  * Each instance owns its own underlying tokenizer, so separate instances are safe
  * to use from different threads without synchronization.
  *
- * Model-specific behavior (chat template format, special token decode filtering)
- * is selected at runtime via the active ITokenizerStrategy — see utils/tokenizer_strategy.hpp.
+ * Model-specific behavior (chat template format, special token decode filtering, stop tokens)
+ * is provided by subclasses: DeepseekTokenizer and LlamaTokenizer.
  */
 class Tokenizer {
 public:
@@ -48,7 +50,7 @@ public:
      * @throws std::runtime_error if path is empty, file is unreadable, or format is unsupported.
      */
     explicit Tokenizer(const std::string& path);
-    ~Tokenizer() = default;
+    virtual ~Tokenizer() = default;
 
     Tokenizer(const Tokenizer&) = delete;
     Tokenizer& operator=(const Tokenizer&) = delete;
@@ -62,24 +64,49 @@ public:
     std::vector<int> encode(const std::string& text) const;
 
     /**
-     * Decode token IDs to text. When the active model defines a special-token decode
+     * Decode token IDs to text. When the model defines a special-token decode
      * threshold (e.g. Llama 3 >= 128000), tokens at or above that ID are filtered out.
      * @throws std::runtime_error if tokenizer not loaded.
      */
     std::string decode(const std::vector<int>& token_ids) const;
 
-    /**
-     * Apply the chat template for the runtime-selected model (via active_tokenizer_strategy).
-     * Delegates to the active ITokenizerStrategy implementation.
-     */
-    static std::string apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
-        bool add_generation_prompt = true);
-
     /** Check if tokenizer is loaded and ready. */
     bool is_loaded() const;
 
-private:
+    virtual std::string model_name() const = 0;
+    virtual int special_token_decode_threshold() const = 0;
+    virtual std::vector<int64_t> stop_token_ids() const = 0;
+
+    /**
+     * Apply the model-specific chat template to a list of messages.
+     */
+    virtual std::string apply_chat_template(
+        const std::vector<tt::domain::ChatMessage>& messages,
+        bool add_generation_prompt = true) const = 0;
+
+protected:
     std::unique_ptr<tokenizers::Tokenizer> tok_;
 };
+
+/**
+ * Factory: create a Tokenizer for the given model, loading from path.
+ * DEEPSEEK_V3 -> DeepseekTokenizer
+ * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
+ */
+std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model, const std::string& path);
+
+/**
+ * Tokenizer directory name for a given model type. Used to resolve tokenizer
+ * file paths before a Tokenizer instance exists.
+ */
+std::string tokenizer_dir_for_model(config::ModelType model);
+
+/**
+ * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first access.
+ * Thread-safe (C++11 function-local static initialization).
+ * Intended for metadata access (model_name, stop_token_ids, apply_chat_template);
+ * for encode/decode in multithreaded contexts, create separate instances.
+ */
+const Tokenizer& active_tokenizer();
 
 }  // namespace tt::utils
