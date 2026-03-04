@@ -234,11 +234,19 @@ target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Logger test
+add_executable(logger_test tests/logger_test.cpp src/utils/logger.cpp)
+target_link_libraries(logger_test PRIVATE GTest::gtest_main)
+target_include_directories(logger_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(logger_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -274,6 +282,7 @@ set(SOURCES
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
+    src/utils/logger.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp

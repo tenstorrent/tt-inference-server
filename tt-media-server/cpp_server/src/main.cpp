@@ -18,6 +18,7 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
@@ -88,8 +89,15 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
+    // Initialize logger (must be done early)
+    auto logger = tt::utils::Logger::get_logger();
+    TT_LOG_INFO("TT Media Server starting up...");
+
     auto model_svc = tt::config::model_service();
     std::string service_name = tt::config::to_string(model_svc);
+
+    TT_LOG_INFO("Server configuration: host={}, port={}, threads={}, service={}",
+                host, port, threads, service_name);
 
     std::cout << "=================================================\n"
               << "  TT Media Server (C++ Drogon Implementation)\n"
@@ -157,10 +165,10 @@ int main(int argc, char* argv[]) {
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
-        .setAfterAcceptSockOptCallback([](int fd) {
-            int one = 1;
-            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-        })
+        // .setAfterAcceptSockOptCallback([](int fd) {
+        //     int one = 1;
+        //     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        // })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
         .setIdleConnectionTimeout(300)
@@ -170,6 +178,7 @@ int main(int argc, char* argv[]) {
         .setStaticFilesCacheTime(0);
 
     std::cout << "[Main] Starting Drogon server at http://" << host << ":" << port << std::endl;
+    TT_LOG_INFO("Drogon server starting at http://{}:{}", host, port);
 
     if (model_svc == tt::config::ModelService::EMBEDDING) {
         std::cout << "[Main] Endpoints:\n"
@@ -189,8 +198,10 @@ int main(int argc, char* argv[]) {
     }
 
     // Run the server
+    TT_LOG_INFO("Starting main event loop");
     drogon::app().run();
 
+    TT_LOG_INFO("Server shutdown complete");
     std::cout << "[Main] Server shutdown complete" << std::endl;
     return 0;
 }

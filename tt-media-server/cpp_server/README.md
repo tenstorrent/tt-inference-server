@@ -213,6 +213,50 @@ Client HTTP Request
 4. Decode server continues generating remaining tokens locally
 5. Decode server streams response to client
 
+### Logging Configuration
+
+The C++ server uses spdlog for structured, high-performance logging. Logging is configured through environment variables:
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `SPDLOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off` | `info` | `SPDLOG_LEVEL=debug` |
+| `TT_LOG_FILE` | Log file path (optional, defaults to console only) | - | `TT_LOG_FILE=./logs/server.log` |
+| `TT_LOG_MAX_SIZE` | Maximum log file size in MB before rotation | `10` | `TT_LOG_MAX_SIZE=50` |
+| `TT_LOG_MAX_FILES` | Number of rotated log files to keep | `3` | `TT_LOG_MAX_FILES=5` |
+
+#### Usage in Code
+
+```cpp
+#include "utils/logger.hpp"
+
+// Using the singleton logger
+auto logger = tt::utils::Logger::get_logger();
+logger->log_info("Server starting on port {}", 8001);
+logger->log_error("Failed to connect: {}", error_message);
+
+// Using convenience macros (recommended)
+TT_LOG_INFO("Request processed in {} ms", duration);
+TT_LOG_DEBUG("Debug info: user={}, request_id={}", user, req_id);
+TT_LOG_WARN("High memory usage: {} MB", memory_usage);
+TT_LOG_ERROR("Database connection failed: {}", db_error);
+```
+
+#### Examples
+
+```bash
+# Console logging only (default)
+./build/tt_media_server_cpp
+
+# Console + file logging with debug level
+SPDLOG_LEVEL=debug TT_LOG_FILE=./server.log ./build/tt_media_server_cpp
+
+# File logging with rotation (50MB files, keep 10)
+TT_LOG_FILE=./logs/server.log TT_LOG_MAX_SIZE=50 TT_LOG_MAX_FILES=10 ./build/tt_media_server_cpp
+
+# Silent mode (errors only)
+SPDLOG_LEVEL=error ./build/tt_media_server_cpp
+```
+
 ### Tracy profiling (Tracy build only)
 
 When built with Tracy, use the **C++ Server [CodeLLDB + Tracy]** launch config, then connect the Tracy Profiler UI to **localhost:8086** (main) or **localhost:8087**, **8088**, … (workers). Workers are started via fork+exec so each runs in a fresh process and starts its own Tracy listener.
