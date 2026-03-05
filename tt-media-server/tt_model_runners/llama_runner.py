@@ -161,10 +161,30 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: KV cache allocation returned None — "
                 "model.allocate_kv_cache() failed silently"
             )
+
+        # Warmup prefill
+        self.model.warmup_model_prefill(
+            kv_cache=self._kv_cache,
+            enable_trace=True,
+            can_sample_on_device=False,
+            non_greedy_decoding_on_device=False,
+        )
+
+        # Warmup decode
+        self.model.warmup_model_decode(
+            kv_cache=self._kv_cache,
+            enable_trace=True,
+            max_batch_size=self.max_batch_size,
+            num_blocks=self._max_num_blocks_per_seq,
+            can_sample_on_device=False,
+            non_greedy_decoding_on_device=False,
+        )
+
         self.logger.info(
             f"Device {self.device_id}: Warmup done (max_batch_size={self.max_batch_size}, "
             "batched decode enabled when multiple sequences per step)"
         )
+
         return True
 
     def run(
@@ -208,6 +228,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             page_table=page_table,
             kv_cache=self._kv_cache,
             prompt_lens=[prompt_len],
+            warmup_prefill=False,
         )
 
         logits_1d = logits[0, -1, :] if logits.dim() >= 3 else logits.flatten()
