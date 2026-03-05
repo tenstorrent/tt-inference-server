@@ -48,6 +48,13 @@ inline std::string to_string(RunnerType r) {
     }
 }
 
+/** Model type: drives tokenizer strategy + model-specific config. Derived from LLM_DEVICE_BACKEND env var. */
+enum class ModelType {
+    DEEPSEEK_R1_0528,
+    LLAMA_3_1_8B_INSTRUCT,
+};
+
+
 enum class LLMMode {
     REGULAR,
     PREFILL_ONLY,
@@ -74,6 +81,12 @@ inline LLMMode llm_mode_from_string(const std::string& v) {
 /** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& /*v*/) {
     return RunnerType::LLM_TEST;
+}
+
+/** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. */
+inline ModelType model_type_from_device_backend(const std::string& v) {
+    if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_R1_0528;
 }
 
 /**

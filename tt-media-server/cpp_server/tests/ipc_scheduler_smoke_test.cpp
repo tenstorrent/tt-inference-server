@@ -43,8 +43,9 @@ int main() {
       ipc::create_only, QUEUE_NAME, MAX_NUM_MSGS, MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  Sequence seq1({1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
-  Sequence seq2({10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
+  Config seq_config;
+  Sequence seq1(256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
 
   std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());

@@ -38,4 +38,4 @@ class LLMRunner : public IRunner {
   std::atomic<bool> stopped_{false};
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners
