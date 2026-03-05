@@ -83,7 +83,6 @@ class TtRunModelRunner : public IModelRunner {
     if (is_prefill) {
       for (Sequence* seq : seqs) {
         device_input_.write(seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
-        decode_callback_({seq->task_id, kWhitespaceTokenId});
       }
     } else {
       // Do nothing - device manager on device will just loop tokens on its own
