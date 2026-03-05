@@ -1730,7 +1730,7 @@ llm_templates = [
                 override_tt_config={
                     "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 56000000,
                 },
             ),
         ],
@@ -1755,7 +1755,7 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
-                max_concurrency=32 * 8,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
@@ -2496,7 +2496,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        tt_metal_commit="3b3f62b",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2527,12 +2527,30 @@ audio_tts_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="a9b09e0",
+        tt_metal_commit="5fd3a04",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2547,6 +2565,24 @@ audio_tts_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,

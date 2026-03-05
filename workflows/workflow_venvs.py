@@ -288,6 +288,77 @@ def setup_evals_vision(
     return setup_succeeded
 
 
+LIBRISPEECH_TEST_OTHER_YAML = """\
+dataset_path: lmms-lab/librispeech
+dataset_kwargs:
+  token: True
+task: "librispeech_test_other"
+test_split: librispeech_test_other
+dataset_name: librispeech_test_other
+output_type: generate_until
+doc_to_visual: !function utils.librispeech_doc_to_audio
+doc_to_text: !function utils.librispeech_doc_to_text
+doc_to_target: "gt"
+generation_kwargs:
+  max_new_tokens: 256
+  temperature: 0
+  top_p: 1.0
+  num_beams: 1
+  do_sample: false
+process_results: !function utils.librispeech_process_result
+metric_list:
+  - metric: wer
+    aggregation: !function utils.librispeech_wer
+    higher_is_better: false
+metadata:
+  - version: 0.0
+lmms_eval_specific_kwargs:
+  default:
+    pre_prompt: ""
+    post_prompt: ""
+  qwen2_audio:
+    pre_prompt: ""
+    post_prompt: " <|en|>"
+"""
+
+
+def ensure_librispeech_yaml_tasks(site_packages_path: Path) -> None:
+    """Ensure librispeech task YAML files are present in the lmms-eval installation.
+
+    The TT fork of lmms-eval includes librispeech task utils but the YAML task
+    definition files are not installed by pip. This function writes them if absent.
+    """
+    yaml_dir = Path(site_packages_path) / "lmms_eval" / "tasks" / "librispeech"
+    yaml_dir.mkdir(parents=True, exist_ok=True)
+    yaml_file = yaml_dir / "librispeech_test_other.yaml"
+    if not yaml_file.exists():
+        yaml_file.write_text(LIBRISPEECH_TEST_OTHER_YAML)
+        logger.info(f"Wrote librispeech_test_other.yaml to {yaml_file}")
+    else:
+        logger.debug(f"librispeech_test_other.yaml already exists at {yaml_file}, skipping")
+
+
+def ensure_whisper_tt_model(site_packages_path: Path) -> None:
+    """Ensure whisper_tt model module is in the lmms-eval simple models directory.
+
+    The TT fork of lmms-eval places whisper_tt.py at lmms_eval/models/whisper_tt.py,
+    but lmms-eval's get_model() expects simple models under lmms_eval/models/simple/.
+    This function copies the file to the correct location if absent.
+    """
+    src = Path(site_packages_path) / "lmms_eval" / "models" / "whisper_tt.py"
+    dst_dir = Path(site_packages_path) / "lmms_eval" / "models" / "simple"
+    dst = dst_dir / "whisper_tt.py"
+    if dst.exists():
+        logger.debug(f"whisper_tt.py already exists at {dst}, skipping")
+        return
+    if not src.exists():
+        logger.warning(f"whisper_tt.py source not found at {src}, cannot copy")
+        return
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    logger.info(f"Copied whisper_tt.py to {dst}")
+
+
 def setup_evals_audio(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -302,12 +373,16 @@ def setup_evals_audio(
     setup_succeeded = (
         run_command(
             f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
-            f"'git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]' "
-            f"pyjwt==2.7.0 pillow==11.1",
+            f"'git+https://github.com/bgoelTT/lmms-eval.git@stisi/fix-package-data#egg=lmms-eval[audio]' "
+            f"pyjwt==2.7.0 pillow==11.1 'datasets<4.0.0'",
             logger=logger,
         )
         == 0
     )
+    if setup_succeeded:
+        site_packages = venv_config.venv_path / "lib" / "python3.10" / "site-packages"
+        ensure_librispeech_yaml_tasks(site_packages)
+        ensure_whisper_tt_model(site_packages)
     return setup_succeeded
 
 
