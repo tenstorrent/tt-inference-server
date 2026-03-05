@@ -27,45 +27,6 @@ from config.constants import ModelRunners, ModelServices, SupportedModels  # noq
 from config.settings import get_settings  # noqa: E402
 from domain.image_generate_request import ImageGenerateRequest  # noqa: E402
 from domain.video_generate_request import VideoGenerateRequest  # noqa: E402
-
-_log_import("dit_runners: importing model pipelines...")
-
-_t = time.time()
-from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline  # noqa: E402
-
-_log_import(f"dit_runners: Flux1Pipeline imported in {time.time() - _t:.1f}s")
-
-_t = time.time()
-from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline  # noqa: E402
-
-_log_import(f"dit_runners: MochiPipeline imported in {time.time() - _t:.1f}s")
-
-_t = time.time()
-from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline  # noqa: E402
-
-_log_import(f"dit_runners: MotifPipeline imported in {time.time() - _t:.1f}s")
-
-_t = time.time()
-from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (  # noqa: E402
-    QwenImagePipeline,
-)
-
-_log_import(f"dit_runners: QwenImagePipeline imported in {time.time() - _t:.1f}s")
-
-_t = time.time()
-from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (  # noqa: E402
-    StableDiffusion3Pipeline,
-)
-
-_log_import(
-    f"dit_runners: StableDiffusion3Pipeline imported in {time.time() - _t:.1f}s"
-)
-
-_t = time.time()
-from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline  # noqa: E402
-
-_log_import(f"dit_runners: WanPipeline imported in {time.time() - _t:.1f}s")
-
 from telemetry.telemetry_client import TelemetryEvent  # noqa: E402
 from tt_model_runners.base_metal_device_runner import (  # noqa: E402
     BaseMetalDeviceRunner,
@@ -73,7 +34,7 @@ from tt_model_runners.base_metal_device_runner import (  # noqa: E402
 from utils.decorators import log_execution_time  # noqa: E402
 from utils.logger import log_exception_chain  # noqa: E402
 
-_log_import("dit_runners: all imports complete")
+_log_import("dit_runners: all imports complete (pipeline imports are lazy per runner)")
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -277,6 +238,17 @@ class TTSD35Runner(TTDiTRunner):
     def create_pipeline(self):
         try:
             self.logger.info(
+                f"Device {self.device_id}: Importing StableDiffusion3Pipeline..."
+            )
+            t_imp = time.time()
+            from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
+                StableDiffusion3Pipeline,
+            )
+
+            self.logger.info(
+                f"Device {self.device_id}: StableDiffusion3Pipeline imported in {time.time() - t_imp:.1f}s"
+            )
+            self.logger.info(
                 f"Device {self.device_id}: Creating SD3.5 pipeline - "
                 f"mesh_shape={tuple(self.ttnn_device.shape)}, "
                 f"num_devices={self.ttnn_device.get_num_devices()}"
@@ -315,6 +287,13 @@ class TTFlux1Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: Importing Flux1Pipeline...")
+            t_imp = time.time()
+            from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+
+            self.logger.info(
+                f"Device {self.device_id}: Flux1Pipeline imported in {time.time() - t_imp:.1f}s"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Creating Flux1 pipeline - "
                 f"checkpoint={self.settings.model_weights_path}, "
@@ -326,9 +305,8 @@ class TTFlux1Runner(TTDiTRunner):
                 checkpoint_name=self.settings.model_weights_path,
                 mesh_device=self.ttnn_device,
             )
-            elapsed = time.time() - start
             self.logger.info(
-                f"Device {self.device_id}: Flux1 pipeline created in {elapsed:.1f}s"
+                f"Device {self.device_id}: Flux1 pipeline created in {time.time() - start:.1f}s"
             )
             return pipeline
         except Exception as e:
@@ -357,6 +335,13 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: Importing MotifPipeline...")
+            t_imp = time.time()
+            from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
+
+            self.logger.info(
+                f"Device {self.device_id}: MotifPipeline imported in {time.time() - t_imp:.1f}s"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Creating Motif pipeline - "
                 f"mesh_shape={tuple(self.ttnn_device.shape)}, "
@@ -396,6 +381,15 @@ class TTQwenImageRunner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: Importing QwenImagePipeline...")
+            t_imp = time.time()
+            from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+                QwenImagePipeline,
+            )
+
+            self.logger.info(
+                f"Device {self.device_id}: QwenImagePipeline imported in {time.time() - t_imp:.1f}s"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Creating Qwen-Image pipeline - "
                 f"checkpoint={self.settings.model_weights_path}, "
@@ -436,6 +430,13 @@ class TTMochi1Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: Importing MochiPipeline...")
+            t_imp = time.time()
+            from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+
+            self.logger.info(
+                f"Device {self.device_id}: MochiPipeline imported in {time.time() - t_imp:.1f}s"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Creating Mochi pipeline - "
                 f"mesh_shape={tuple(self.ttnn_device.shape)}, "
@@ -497,6 +498,13 @@ class TTWan22Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: Importing WanPipeline...")
+            t_imp = time.time()
+            from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+
+            self.logger.info(
+                f"Device {self.device_id}: WanPipeline imported in {time.time() - t_imp:.1f}s"
+            )
             self.logger.info(
                 f"Device {self.device_id}: Creating Wan pipeline - "
                 f"mesh_shape={tuple(self.ttnn_device.shape)}, "
