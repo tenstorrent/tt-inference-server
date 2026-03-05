@@ -325,9 +325,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(

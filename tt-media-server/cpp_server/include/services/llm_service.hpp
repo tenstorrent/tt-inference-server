@@ -6,6 +6,7 @@
 #include "services/base_service.hpp"
 #include "ipc/queue_manager.hpp"
 #include "worker/single_process_worker.hpp"
+#include "config/constants.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "services/streamable.hpp"
@@ -57,10 +58,18 @@ protected:
 private:
     void start_workers();
     void start_consumers();
+    void setup_socket_callbacks();
 
     void consumer_loop_for_worker(size_t worker_idx);
 
     bool check_worker_alive(size_t worker_idx);
+
+    void handle_prefill_request(const tt::sockets::PrefillRequestMessage& message);
+    void handle_prefill_complete(const tt::sockets::PrefillResultMessage& result);
+    void continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result);
+    void handle_connection_lost();
+
+    tt::config::LLMMode mode_;
 
     std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
     size_t num_workers_;
@@ -80,7 +89,7 @@ private:
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
+    const tt::utils::Tokenizer* tokenizer_;
     std::unique_ptr<tt::sockets::InterServerService> socket_service_;
 };
 

@@ -13,9 +13,6 @@ tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoe
 # vllm-tt-metal
 vllm-tt-metal-llama3/ @tstescoTT @bgoelTT @stisiTT
 
-# docker entrypoint
-docker-entrypoint.sh @tstescoTT @bgoelTT @idjuricTT @acvejicTT
-
 # workflows
 run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
 workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners

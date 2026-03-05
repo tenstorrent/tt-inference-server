@@ -18,6 +18,7 @@ from workflows.model_spec import (
     get_model_id,
 )
 from workflows.run_workflows import run_workflows
+from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -166,32 +167,31 @@ class TestWorkflowExecution:
 
     def test_release_workflow_sequence(self):
         """Test release workflow sequence logic."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="release",
-            run_id="test",
-            disable_trace_capture=False,
-        )
         model_spec = Namespace(
-            cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
+        runtime_config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow="release",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
         )
 
         # Track workflow calls in order
         workflow_calls = []
 
-        def mock_run_single(model_spec_arg, json_fpath):
-            # Capture workflow name at time of call
-            workflow_calls.append(model_spec_arg.cli_args.workflow)
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_calls.append(runtime_config_arg.workflow)
             return 0
 
         # Mock run_single_workflow to return success codes
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(model_spec, "test_json_path.json")
+            return_codes = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
 
             # Verify all expected workflows were called
             assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
@@ -225,7 +225,6 @@ class TestHostSetupIntegration:
         env_vars = {
             "HF_TOKEN": "hf_test_token_123456",
             "JWT_SECRET": "test_jwt_secret_123",
-            "PERSISTENT_VOLUME_ROOT": str(temp_dir / "persistent_volume"),
             "HF_HOME": str(temp_dir / "hf_home"),
             "SERVICE_PORT": "8000",
         }
@@ -283,14 +282,71 @@ class TestHostSetupIntegration:
         with patch("builtins.open", mock_open(read_data=mock_meminfo)) as mock_file:
             yield mock_file
 
-    def test_setup_host_huggingface_source(
-        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
-    ):
-        """Test host setup with HuggingFace model source."""
+    def test_setup_config_default_mode(self):
+        """Test SetupConfig in default Docker volume mode (no host_volume, no host_hf_cache)."""
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
-        # Create setup manager
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+        )
+        config = manager.setup_config
+
+        assert config.docker_volume_name.startswith("volume_id_")
+        assert config.host_model_volume_root is None
+        assert config.host_model_weights_mount_dir is None
+        assert config.container_model_weights_path == (
+            config.cache_root / "weights" / model_spec.model_name
+        )
+
+    def test_setup_config_host_volume_mode(self, temp_dir):
+        """Test SetupConfig with --host-volume."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        host_volume = str(temp_dir / "persistent_volume")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_volume=host_volume,
+        )
+        config = manager.setup_config
+
+        assert config.host_model_volume_root is not None
+        assert str(config.persistent_volume_root) == host_volume
+        assert config.host_tt_metal_cache_dir is not None
+
+    def test_setup_config_host_hf_cache_mode(self, temp_dir):
+        """Test SetupConfig with --host-hf-cache."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        hf_cache = str(temp_dir / "hf_home")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_hf_cache=hf_cache,
+        )
+        config = manager.setup_config
+
+        assert config.host_hf_cache == hf_cache
+        assert config.container_readonly_model_weights_dir is not None
+        assert config.container_model_weights_mount_dir is not None
+
+    def test_setup_host_default_mode_skips_download(
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
+    ):
+        """Test default Docker volume mode: check_setup returns True, no host download."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
         manager = HostSetupManager(
             model_spec=model_spec,
             automatic=True,
@@ -298,20 +354,34 @@ class TestHostSetupIntegration:
             hf_token="hf_test_token_123456",
         )
 
-        # Mock the setup flow properly
-        with patch.object(manager, "check_setup", return_value=False), patch.object(
-            manager, "check_model_weights_dir", return_value=True
-        ), patch.object(manager, "setup_weights_huggingface") as mock_setup_weights:
-            # Run setup
-            manager.run_setup()
+        # In default mode, check_setup should return True (container handles download)
+        assert manager.check_setup() is True
 
-            # Verify that HF environment was set up
-            assert str(manager.setup_config.host_hf_home) == str(temp_dir / "hf_home")
+    def test_setup_host_host_volume_mode(
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
+    ):
+        """Test host setup with --host-volume."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        host_volume = str(temp_dir / "persistent_volume")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_volume=host_volume,
+        )
+
+        with patch.object(manager, "check_setup", return_value=False), patch.object(
+            manager, "setup_weights_huggingface"
+        ) as mock_setup_weights:
+            manager.run_setup()
             assert mock_setup_weights.called
 
-        # Verify that setup completed successfully
         assert manager.setup_config.model_source == ModelSource.HUGGINGFACE.value
-        assert manager.setup_config.persistent_volume_root.exists()
+        assert manager.setup_config.host_model_volume_root is not None
+        assert manager.setup_config.host_model_volume_root.exists()
 
     def test_error_handling_insufficient_resources(
         self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
@@ -327,11 +397,14 @@ class TestHostSetupIntegration:
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
+        host_volume = str(temp_dir / "persistent_volume")
+        (temp_dir / "persistent_volume").mkdir(parents=True, exist_ok=True)
         manager = HostSetupManager(
             model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
+            host_volume=host_volume,
         )
 
         # Should raise assertion error due to insufficient disk space
@@ -379,7 +452,6 @@ class TestMainWorkflowIntegration:
         env_vars = {
             "HF_TOKEN": "hf_test_token_123456",
             "JWT_SECRET": "test_jwt_secret_123",
-            "PERSISTENT_VOLUME_ROOT": str(temp_dir / "persistent_volume"),
             "HF_HOME": str(temp_dir / "hf_home"),
             "SERVICE_PORT": "8000",
             "AUTOMATIC_HOST_SETUP": "1",

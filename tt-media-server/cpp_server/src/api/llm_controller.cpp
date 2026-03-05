@@ -221,22 +221,13 @@ void LLMController::handle_streaming(
                 std::chrono::high_resolution_clock::now());
             auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-
-            if (is_chat) {
-                std::optional<domain::CompletionUsage> initial_usage;
-                if (continuous_usage) {
-                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
-                }
-                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                    completion_id, model, created, initial_usage);
-                if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
-            }
+            auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
 
             service_->submit_streaming_request(
                 std::move(req),
                 [loop, stream_ptr, done, completion_id, model, created,
                  is_chat, include_usage, continuous_usage, completion_tokens,
-                 start_time, first_token_time, second_token_time](
+                 start_time, first_token_time, second_token_time, first_content_chunk](
                     const domain::StreamingChunkResponse& chunk, bool is_final) {
                     if (done->load() || !*stream_ptr) {
                         return;
@@ -259,8 +250,19 @@ void LLMController::handle_streaming(
                                 // Only send token counts during streaming, timing metrics come with final chunk
                                 usage = domain::CompletionUsage{0, current_tokens, current_tokens, std::nullopt, std::nullopt};
                             }
-                            sse = domain::ChatCompletionStreamChunk::makeContentChunk(
-                                completion_id, model, created, chunk.choices[0], usage).toSSE();
+                            auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+                                completion_id, model, created, chunk.choices[0], usage);
+                            if (first_content_chunk->exchange(false)) {
+                                std::optional<domain::CompletionUsage> initial_usage;
+                                if (continuous_usage) {
+                                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
+                                }
+                                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+                                    completion_id, model, created, initial_usage);
+                                sse = initial_chunk.toSSE() + stream_chunk.toSSE();
+                            } else {
+                                sse = stream_chunk.toSSE();
+                            }
                         } else if (!chunk.choices[0].text.empty() ||
                                    !chunk.choices[0].finish_reason.has_value()) {
                             domain::StreamingChunkResponse out;
@@ -273,13 +275,15 @@ void LLMController::handle_streaming(
                         }
 
                         if (!sse.empty()) {
-                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
+                            loop->queueInLoop(
+                                [stream_ptr, sse = std::move(sse)]() {
                                 if (*stream_ptr) (*stream_ptr)->send(sse);
                             });
                         }
                     }
                     if (is_final) {
                         loop->queueInLoop(
+
                             [stream_ptr, done, is_chat, include_usage,
                              completion_id, model, created, completion_tokens,
                              start_time, first_token_time, second_token_time]() {

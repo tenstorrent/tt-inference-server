@@ -2,12 +2,20 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/tokenizer.hpp"
+#include "utils/deepseek_tokenizer.hpp"
+#include "utils/llama_tokenizer.hpp"
+#include "config/settings.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 
 namespace tt::utils {
+
+// ---------------------------------------------------------------------------
+// Tokenizer base class
+// ---------------------------------------------------------------------------
 
 Tokenizer::Tokenizer(const std::string& path) {
     if (path.empty()) {
@@ -35,6 +43,11 @@ Tokenizer::Tokenizer(const std::string& path) {
         throw std::runtime_error("[TokenizerUtil] Failed to create tokenizer from: " + path);
     }
 
+    std::filesystem::path config_path = std::filesystem::path(path).parent_path() / "tokenizer_config.json";
+    if (std::filesystem::exists(config_path)) {
+        cfg_ = get_tokenizer_config(config_path.string());
+    }
+
     std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
 }
 
@@ -53,48 +66,51 @@ std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
     if (!tok_) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer not loaded, cannot decode");
     }
+    if (token_ids.empty()) return "";
+
+    if (cached_special_token_threshold_ == -2) {
+        cached_special_token_threshold_ = special_token_decode_threshold();
+    }
+    int threshold = cached_special_token_threshold_;
+    if (threshold > 0) {
+        std::vector<int> filtered;
+        filtered.reserve(token_ids.size());
+        for (int id : token_ids) {
+            if (id < threshold) filtered.push_back(id);
+        }
+        if (filtered.empty()) return "";
+        return tok_->Decode(filtered);
+    }
     return tok_->Decode(token_ids);
 }
 
-namespace {
+// ---------------------------------------------------------------------------
+// Factory + standalone helpers
+// ---------------------------------------------------------------------------
 
-const char* USER_TAG = "<｜User｜>";
-const char* ASSISTANT_TAG = "<｜Assistant｜>";
-
-}  // namespace
-
-std::string Tokenizer::apply_chat_template(const std::vector<tt::domain::ChatMessage>& messages,
-    bool add_generation_prompt) {
-    static TokenizerConfig cfg = get_tokenizer_config();
-
-    const std::string& bos = cfg.bos_token;
-    const std::string& eos = cfg.eos_token;
-
-    std::ostringstream out;
-    std::string system_prompt;
-    bool first_system = true;
-    for (const auto& m : messages) {
-        if (m.role != "system") continue;
-        if (!first_system) system_prompt += "\n\n";
-        system_prompt += m.content;
-        first_system = false;
+std::string tokenizer_dir_for_model(config::ModelType model) {
+    switch (model) {
+        case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
+            return "meta-llama/Llama-3.1-8B-Instruct";
+        case config::ModelType::DEEPSEEK_R1_0528:
+        default:
+            return "deepseek-ai/DeepSeek-R1-0528";
     }
-    if (cfg.add_bos_token) out << bos;
-    out << system_prompt;
-    for (const auto& m : messages) {
-        std::string role = m.role.empty() ? "user" : m.role;
-        if (role == "system") continue;
-        if (role == "user") {
-            out << USER_TAG << m.content;
-        } else if (role == "assistant") {
-            out << ASSISTANT_TAG << m.content;
-            if (cfg.add_eos_token) out << eos;
-        }
+}
+
+std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model, const std::string& path) {
+    switch (model) {
+        case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
+            return std::make_unique<LlamaTokenizer>(path);
+        case config::ModelType::DEEPSEEK_R1_0528:
+        default:
+            return std::make_unique<DeepseekTokenizer>(path);
     }
-    if (add_generation_prompt) {
-        out << ASSISTANT_TAG;
-    }
-    return out.str();
+}
+
+const Tokenizer& active_tokenizer() {
+    static auto tok = create_tokenizer(config::model_type(), config::tokenizer_path());
+    return *tok;
 }
 
 }  // namespace tt::utils
