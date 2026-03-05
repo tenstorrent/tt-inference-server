@@ -20,28 +20,8 @@ namespace {
 
 constexpr int64_t kWhitespaceTokenId = 223;
 
-struct TtRunConfig {
-  TtRunConfig() {
-    const char* home = std::getenv("TT_METAL_HOME");
-    if (!home || !*home) {
-      throw std::runtime_error("TtRunModelRunner: TT_METAL_HOME not set");
-    }
-    tt_metal_home = std::string(home);
-    ttrun_py = tt_metal_home + "ttnn/ttnn/distributed/ttrun.py";
-    rank_binding = tt_metal_home + "bh_4x2_multi_mesh_rank_binding.yaml";
-
-    // Check if we should use mock runner (no tt-run needed)
-    const char* use_mock = std::getenv("TT_USE_MOCK_RUNNER");
-    if (use_mock && std::string(use_mock) == "1") {
-      script = "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/runners/mock_runner.py";
-      use_ttrun = false;
-    } else {
-      script = "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/src/runners/runner.py";
-      use_ttrun = true;
-    }
-
-    python_path = tt_metal_home + "python_env/bin/python";
-
+struct SharedMemoryConfig {
+  SharedMemoryConfig() {
     // Use environment variables if set, otherwise use defaults
     const char* c2p = std::getenv("TT_IPC_SHM_C2P");
     const char* p2c = std::getenv("TT_IPC_SHM_P2C");
@@ -51,12 +31,6 @@ struct TtRunConfig {
 
   std::string write_shm_name;
   std::string read_shm_name;
-  std::string ttrun_py;
-  std::string rank_binding;
-  std::string script;
-  std::string python_path;
-  std::string tt_metal_home;
-  bool use_ttrun = false;
 };
 
 class TtRunModelRunner : public IModelRunner {
@@ -64,12 +38,12 @@ class TtRunModelRunner : public IModelRunner {
   TtRunModelRunner(const Config& config, DecodeCallback callback)
       : config_(config),
         decode_callback_(std::move(callback)),
-        ttrun_config_(),
-        device_input_(ttrun_config_.write_shm_name),
-        device_output_(ttrun_config_.read_shm_name) {
+        sharemem_config_(),
+        device_input_(sharemem_config_.write_shm_name),
+        device_output_(sharemem_config_.read_shm_name) {
     LLM_ENGINE_LOG("model_runner:ttrun") << "Using shared memory: C2P="
-                                         << ttrun_config_.write_shm_name
-                                         << " P2C=" << ttrun_config_.read_shm_name << std::endl;
+                                         << sharemem_config_.write_shm_name
+                                         << " P2C=" << sharemem_config_.read_shm_name << std::endl;
     device_input_.open();
     device_output_.open();
     reader_thread_ = std::thread([this] { reader_loop(); });
@@ -81,78 +55,24 @@ class TtRunModelRunner : public IModelRunner {
     LLM_ENGINE_LOG("model_runner:ttrun") << (is_prefill ? "prefill" : "decode")
                                          << " batch_size=" << seqs.size() << std::endl;
     if (is_prefill) {
+      // we write for prefill only, device will loop decode tokens on its own
       for (Sequence* seq : seqs) {
+        LLM_ENGINE_LOG("model_runner:ttrun") << "Writing to device: task_id=" << seq->task_id.id
+                                         << " num_tokens=" << seq->token_ids_.size()
+                                         << " max_tokens=" << seq->sampling_params->max_tokens
+                                         << std::endl;
         device_input_.write(seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
       }
-    } else {
-      // Do nothing - device manager on device will just loop tokens on its own
-      // for (Sequence* seq : seqs) {
-      //   size_t& index = token_index_for_sequence_[seq->task_id];
-      //   if (index >= kFixedReplySequence.size()) {
-      //     index = 0;
-      //   }
-      //   int64_t token_id = kFixedReplySequence[index++];
-      //   device_input_.write(seq->task_id.id, static_cast<uint64_t>(token_id));
-      // }
     }
   }
 
   void exit() override {
     if (stop_.exchange(true)) return;
-    terminate_child();
     if (reader_thread_.joinable()) reader_thread_.join();
     LLM_ENGINE_LOG("model_runner:ttrun") << "exit" << std::endl;
   }
 
  private:
-  void ttrun() {
-    if (ttrun_config_.use_ttrun) {
-      // Launch with tt-run for multi-rank execution
-      char* argv[] = {
-          ttrun_config_.python_path.data(),
-          ttrun_config_.ttrun_py.data(),
-          const_cast<char*>("--rank-binding"),
-          ttrun_config_.rank_binding.data(),
-          ttrun_config_.script.data(),
-          nullptr};
-
-      pid_t pid = fork();
-      if (pid < 0) {
-        throw std::runtime_error("TtRunModelRunner: fork failed");
-      }
-      if (pid == 0) {
-        prctl(PR_SET_PDEATHSIG, SIGKILL);
-        setenv("TT_IPC_SHM_C2P", device_input_.getName().c_str(), 1);
-        setenv("TT_IPC_SHM_P2C", device_output_.getName().c_str(), 1);
-        setenv("TT_METAL_SLOW_DISPATCH_MODE", "1", 1);
-        execv(argv[0], argv);
-        _exit(127);
-      }
-      child_pid_ = pid;
-      LLM_ENGINE_LOG("model_runner:ttrun") << "started tt-run pid " << pid << std::endl;
-    } else {
-      // Launch mock runner directly (no tt-run)
-      char* argv[] = {
-          ttrun_config_.python_path.data(),
-          ttrun_config_.script.data(),
-          nullptr};
-
-      pid_t pid = fork();
-      if (pid < 0) {
-        throw std::runtime_error("TtRunModelRunner: fork failed");
-      }
-      if (pid == 0) {
-        prctl(PR_SET_PDEATHSIG, SIGKILL);
-        setenv("TT_IPC_SHM_C2P", device_input_.getName().c_str(), 1);
-        setenv("TT_IPC_SHM_P2C", device_output_.getName().c_str(), 1);
-        execv(argv[0], argv);
-        _exit(127);
-      }
-      child_pid_ = pid;
-      LLM_ENGINE_LOG("model_runner:ttrun") << "started mock runner pid " << pid << std::endl;
-    }
-  }
-
   void reader_loop() {
     std::vector<uint8_t> bytes;
     LLM_ENGINE_LOG("model_runner:ttrun") << "Reader loop started" << std::endl;
@@ -202,24 +122,15 @@ class TtRunModelRunner : public IModelRunner {
       }
     }
     LLM_ENGINE_LOG("model_runner:ttrun") << "Reader loop exited" << std::endl;
-  }  void terminate_child() {
-    if (child_pid_ > 0) {
-      kill(child_pid_, SIGTERM);
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      kill(child_pid_, SIGKILL);
-      waitpid(child_pid_, nullptr, WNOHANG);
-      child_pid_ = -1;
-    }
   }
 
   Config config_;
   DecodeCallback decode_callback_;
-  TtRunConfig ttrun_config_;
+  SharedMemoryConfig sharemem_config_;
   SharedMemory device_input_;
   SharedMemory device_output_;
   std::atomic<bool> stop_{false};
   std::thread reader_thread_;
-  pid_t child_pid_ = -1;
   std::unordered_map<TaskID, size_t> token_index_for_sequence_;
 };
 
