@@ -8,7 +8,6 @@ from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes, ModelNames
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
-from utils.job_manager import TrainingJobContext
 
 
 class TrainingService(BaseJobService):
@@ -26,12 +25,6 @@ class TrainingService(BaseJobService):
         request._cancel_event = self._manager.Event()
         request._training_metrics = self._manager.list()
 
-        job_ctx = TrainingJobContext(
-            start_event=request._start_event,
-            cancel_event=request._cancel_event,
-            training_metrics=request._training_metrics,
-        )
-
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
@@ -39,11 +32,13 @@ class TrainingService(BaseJobService):
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
-            job_context=job_ctx,
+            start_event=request._start_event,
+            cancel_event=request._cancel_event,
+            job_metrics=request._training_metrics,
         )
 
     def get_job_metrics(self, job_id: str, after: int = 0) -> list:
-        metrics_list = self._job_manager.get_training_metrics(job_id)
+        metrics_list = self._job_manager.get_job_metrics(job_id)
         if metrics_list is None:
             return []
         return list(metrics_list[after:])
