@@ -111,8 +111,12 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     )
 
     # create device mapping string to pass to docker run
+    # Multi-chip boards (e.g. P300 with 2 Blackhole chips) need all chips visible
+    # for tt-metal to correctly detect ClusterType. Application-level isolation via
+    # DEVICE_IDS/TT_VISIBLE_DEVICES restricts which chip(s) each worker uses.
+    _MULTI_CHIP_BOARDS = {DeviceTypes.P300, DeviceTypes.P300X2}
     device_path = "/dev/tenstorrent"
-    if not getattr(args, "device_id", None):
+    if not getattr(args, "device_id", None) or device in _MULTI_CHIP_BOARDS:
         device_map_strs = ["--device", f"{device_path}:{device_path}"]
     else:
         device_map_strs = []
@@ -135,6 +139,12 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
     }
+
+    # For multi-chip boards with --device-id, set DEVICE_IDS to restrict which
+    # chip(s) the container uses (all chips are mapped for proper ClusterType detection).
+    if getattr(args, "device_id", None) and device in _MULTI_CHIP_BOARDS:
+        device_ids_str = ",".join(f"({d})" for d in args.device_id)
+        docker_env_vars["DEVICE_IDS"] = device_ids_str
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
