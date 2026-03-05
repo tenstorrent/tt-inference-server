@@ -4,7 +4,6 @@
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/interleaved_scheduler.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
@@ -46,15 +45,6 @@ TEST(MakeSchedulerTest, PrefillFirstPolicy_CreatesPrefillFirstScheduler) {
   auto sched = make_scheduler(config, queue.get());
   ASSERT_NE(sched, nullptr);
   EXPECT_NE(dynamic_cast<PrefillFirstScheduler*>(sched.get()), nullptr);
-}
-
-TEST(MakeSchedulerTest, InterleavedPolicy_CreatesInterleavedScheduler) {
-  Config config = make_config();
-  config.scheduling_policy = SchedulingPolicy::INTERLEAVED;
-  auto queue = make_queue();
-  auto sched = make_scheduler(config, queue.get());
-  ASSERT_NE(sched, nullptr);
-  EXPECT_NE(dynamic_cast<InterleavedScheduler*>(sched.get()), nullptr);
 }
 
 // --- PrefillFirstScheduler tests ---
@@ -348,118 +338,6 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   ASSERT_TRUE(pf2) << "PrefillFirst: seq2 should be prefilled even with seq1 running";
   ASSERT_EQ(b2.size(), 1u);
   EXPECT_EQ(b2[0]->task_id, seq2_id);
-}
-
-// --- InterleavedScheduler tests ---
-
-TEST(InterleavedSchedulerTest, PrefillWhenNothingRunning) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  sched.add(seq);
-
-  auto [batch, is_prefill] = sched.schedule();
-  ASSERT_TRUE(is_prefill) << "Must prefill when nothing is running";
-  EXPECT_EQ(batch.size(), 1u);
-}
-
-TEST(InterleavedSchedulerTest, DecodeWhenAnythingRunning) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq1_id = seq1.task_id;
-  sched.add(seq1);
-  sched.add(seq2);
-
-  auto [b1, pf1] = sched.schedule();
-  ASSERT_TRUE(pf1);
-  sched.postprocess(b1, {1});
-
-  auto [b2, pf2] = sched.schedule();
-  ASSERT_FALSE(pf2) << "Must decode when any requests are running";
-  ASSERT_EQ(b2.size(), 1u);
-  EXPECT_EQ(b2[0]->task_id, seq1_id);
-}
-
-TEST(InterleavedSchedulerTest, DecodesBeforePrefillWhenRunningAtCapacity) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 2}};
-  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 2}};
-  TaskID seq1_id = seq1.task_id;
-  TaskID seq2_id = seq2.task_id;
-  sched.add(seq1);
-  sched.add(seq2);
-
-  auto [batch1, is_prefill1] = sched.schedule();
-  ASSERT_TRUE(is_prefill1);
-  ASSERT_EQ(batch1.size(), 1u);
-  EXPECT_EQ(batch1[0]->task_id, seq1_id);
-  sched.postprocess(batch1, {1});
-
-  auto [batch2, is_prefill2] = sched.schedule();
-  ASSERT_FALSE(is_prefill2) << "Interleaved: must decode seq1 before prefilling seq2";
-  ASSERT_EQ(batch2.size(), 1u);
-  EXPECT_EQ(batch2[0]->task_id, seq1_id);
-  sched.postprocess(batch2, {2});
-
-  EXPECT_TRUE(batch2[0]->is_finished());
-  auto [batch3, is_prefill3] = sched.schedule();
-  ASSERT_TRUE(is_prefill3);
-  ASSERT_EQ(batch3.size(), 1u);
-  EXPECT_EQ(batch3[0]->task_id, seq2_id);
-}
-
-TEST(InterleavedSchedulerTest, CompletesOneBeforeStartingNext) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  sched.add_request(prompt(4), {.max_tokens = 3});
-  sched.add_request(prompt(4), {.max_tokens = 3});
-
-  auto [b1, pf1] = sched.schedule();
-  ASSERT_TRUE(pf1);
-  sched.postprocess(b1, {10});
-  Sequence* first_seq = b1[0];
-
-  for (int i = 0; i < 3; ++i) {
-    auto [b, pf] = sched.schedule();
-    if (pf) {
-      FAIL() << "Interleaved scheduler prefilled a new request while seq1 was still running";
-    }
-    ASSERT_EQ(b.size(), 1u);
-    sched.postprocess(b, {static_cast<int64_t>(i + 11)});
-    if (first_seq->is_finished()) break;
-  }
-  EXPECT_TRUE(first_seq->is_finished());
-
-  auto [b_next, pf_next] = sched.schedule();
-  ASSERT_TRUE(pf_next) << "After first request finishes, second should be prefilled";
-}
-
-TEST(InterleavedSchedulerTest, NoActionWhenNothingWaiting) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  EXPECT_TRUE(sched.is_finished());
-
-  auto [batch, is_prefill] = sched.schedule();
-  EXPECT_TRUE(batch.empty());
-}
-
-TEST(InterleavedSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
-  Config config = make_config();
-  auto queue = make_queue();
-  InterleavedScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 1}};
-  sched.add(seq);
-  auto [batch, _] = sched.schedule();
-  sched.postprocess(batch, {1});
-  EXPECT_TRUE(sched.is_finished());
 }
 
 // --- make_scheduler factory test for MAX_OCCUPANCY ---

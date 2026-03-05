@@ -182,7 +182,6 @@ LLMMode llm_mode() {
 
 llm_engine::SchedulingPolicy scheduling_policy() {
     auto s = env_string("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY);
-    if (s == "interleaved") return llm_engine::SchedulingPolicy::INTERLEAVED;
     if (s == "max_occupancy") return llm_engine::SchedulingPolicy::MAX_OCCUPANCY;
     return llm_engine::SchedulingPolicy::PREFILL_FIRST;
 }

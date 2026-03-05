@@ -3,7 +3,6 @@
 
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/interleaved_scheduler.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
 
@@ -15,8 +14,6 @@ namespace llm_engine {
 std::unique_ptr<Scheduler> make_scheduler(const Config& config,
                                           ITaskQueue* task_queue) {
   switch (config.scheduling_policy) {
-    case SchedulingPolicy::INTERLEAVED:
-      return std::make_unique<InterleavedScheduler>(config, task_queue);
     case SchedulingPolicy::MAX_OCCUPANCY:
       return std::make_unique<MaxOccupancyScheduler>(config, task_queue);
     case SchedulingPolicy::PREFILL_FIRST:
