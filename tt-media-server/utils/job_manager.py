@@ -285,7 +285,7 @@ class JobManager:
         # Only persist metrics for training jobs for now.
         if job.job_type != JobTypes.TRAINING.value:
             return
-        
+
         metrics_list = self.get_job_metrics(job.id)
         if metrics_list is None:
             return
