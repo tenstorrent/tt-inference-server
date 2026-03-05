@@ -29,17 +29,6 @@ class JobStatus(str, Enum):
 
 
 @dataclass
-class JobContext:
-    start_event: Optional[Event] = None
-    cancel_event: Optional[Event] = None
-
-
-@dataclass
-class TrainingJobContext(JobContext):
-    training_metrics: list = field(default_factory=list)
-
-
-@dataclass
 class Job:
     id: str
     job_type: str
@@ -51,7 +40,9 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
-    _job_context: Optional[JobContext] = None
+    start_event: Optional[Event] = None
+    cancel_event: Optional[Event] = None
+    job_metrics: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
@@ -135,7 +126,9 @@ class JobManager:
         request: BaseRequest,
         task_function: Callable,
         result_path: Optional[str] = None,
-        job_context: Optional[JobContext] = None,
+        start_event: Optional[Event] = None,
+        cancel_event: Optional[Event] = None,
+        job_metrics: list = field(default_factory=list),
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -150,8 +143,12 @@ class JobManager:
 
             if result_path:
                 job.result_path = result_path
-            if job_context:
-                job._job_context = job_context
+            if start_event:
+                job.start_event = start_event
+            if cancel_event:
+                job.cancel_event = cancel_event
+            if job_metrics:
+                job.job_metrics = job_metrics
 
             if self.db:
                 try:
@@ -210,8 +207,8 @@ class JobManager:
     def get_job_metrics(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
-            if job and isinstance(job._job_context, TrainingJobContext):
-                return job._job_context.training_metrics
+            if job:
+                return job.job_metrics
         return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -322,9 +319,8 @@ class JobManager:
             await asyncio.sleep(1.0)
 
     async def _mark_job_in_progress(self, job: Job):
-        job_ctx = job._job_context
-        if job_ctx and job_ctx.start_event:
-            while not job_ctx.start_event.is_set():
+        if job.start_event:
+            while not job.start_event.is_set():
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
@@ -341,7 +337,7 @@ class JobManager:
         try:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
-            if self.db and isinstance(job._job_context, TrainingJobContext):
+            if self.db:
                 metrics_persister = asyncio.create_task(
                     self._persist_job_metrics_to_db(job)
                 )
@@ -492,10 +488,9 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            job_ctx = job._job_context
-            if job_ctx and job_ctx.cancel_event and not force:
+            if job.cancel_event and not force:
                 # runner handles cancellation
-                job_ctx.cancel_event.set()
+                job.cancel_event.set()
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
@@ -533,11 +528,7 @@ class JobManager:
                     try:
                         metrics = self.db.get_metrics_flat(job.id)
                         if metrics:
-                            job._job_context = TrainingJobContext(
-                                start_event=None,
-                                cancel_event=None,
-                                training_metrics=metrics,
-                            )
+                            job.job_metrics = metrics
                     except Exception as e:
                         self._logger.error(
                             f"Failed to restore metrics for job {job.id}: {e}"
