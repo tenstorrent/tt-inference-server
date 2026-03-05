@@ -90,15 +90,6 @@ def validate_runtime_args(model_spec, runtime_config):
                     "then pass them as e.g. '--device-id 0,1'."
                 )
 
-        if DeviceTypes.from_string(args.device) == DeviceTypes.P300X2:
-            if not args.device_id or len(args.device_id) != 4:
-                raise ValueError(
-                    "P300x2 requires exactly 4 device IDs specified with --device-id. "
-                    "P300x2 uses 2 P300 cards (4 P150 chips total). Run 'tt-smi' to list "
-                    "available devices and identify which 4 /dev/tenstorrent/ indices belong "
-                    "to your P300x2 setup, then pass them as e.g. '--device-id 0,1,2,3'."
-                )
-
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_SPECS
