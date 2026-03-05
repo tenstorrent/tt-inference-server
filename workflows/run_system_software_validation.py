@@ -24,6 +24,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec, VersionRequirement
+from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import SystemTopology, VersionMode, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -168,9 +169,9 @@ def parse_args():
         description="Run FW & KMD Version checking against a ModelSpec"
     )
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     ret_args = parser.parse_args()
@@ -184,7 +185,7 @@ def main():
     args = parse_args()
 
     # create ModelSpec
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
 
     # Setup TT_SMI venv and parse tt-smi FW & KMD version data
     # also get board type for all devices
@@ -229,8 +230,8 @@ def main():
         topology = SystemResourceService.get_system_topology()
 
     # enforce matching FW bundle versions across all devices
-    cli_args = model_spec.cli_args
-    if (device_ids := cli_args.get("device_id")) is not None:
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
+    if (device_ids := runtime_config.device_id) is not None:
         fw_bundle_versions = [fw_bundle_versions[i] for i in device_ids]
     if len(set(fw_bundle_versions)) != 1:
         raise ValueError(

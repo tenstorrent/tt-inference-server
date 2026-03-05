@@ -19,7 +19,7 @@ std::shared_ptr<ITaskQueue> make_queue() {
 }
 
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
-                          int eos = 0) {
+                          int eos = 32) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
