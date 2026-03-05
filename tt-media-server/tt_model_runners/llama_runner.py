@@ -110,12 +110,16 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self._max_num_blocks_per_seq = 0
 
     def get_pipeline_device_params(self):
-        return {"num_command_queues": 2, "trace_region_size": 32 * 1024 * 1024}
+        return {"num_command_queues": 1, "trace_region_size": 50_000_000}
 
     def _page_table_from_block_ids(self, block_ids: list[int], torch) -> Any:
-        """Build page_table tensor from block IDs (single sequence, shape [1, max_blocks])."""
+        """Build page_table tensor from block IDs (single sequence, shape [1, max_blocks]).
+
+        Unused entries are set to -1 (SKIP_PAGE_TABLE_ENTRY in the paged_fill_cache
+        kernel).  Zero-padding would alias with physical block 0, causing
+        paged_fill_cache to overwrite block 0's KV data with padding tokens."""
         max_blocks = self._max_num_blocks_per_seq
-        page_table = torch.zeros((1, max_blocks), dtype=torch.int32)
+        page_table = torch.full((1, max_blocks), -1, dtype=torch.int32)
         n = min(len(block_ids), max_blocks)
         page_table[0, :n] = torch.tensor(block_ids[:n], dtype=torch.int32)
         return page_table
