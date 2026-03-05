@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <thread>
 
+
 SharedMemory::SharedMemory(const std::string& name)
     : name(name[0] == '/' ? name : "/" + name) {}  // Ensure name starts with /
 
@@ -48,75 +49,34 @@ void SharedMemory::open() {
     slots = std::span<Message>(static_cast<Message*>(memPointer), SharedMemoryConfig::SLOTS);
 }
 
-void SharedMemory::write(const std::string& uuid, uint64_t token) {
+void SharedMemory::write(const std::string& task_id,
+                         const std::vector<int64_t>& token_ids,
+                         uint32_t max_tokens) {
     auto& slot = slots[current];
     while (slot.state.load(std::memory_order_acquire) != SlotState::FREE) {
         std::this_thread::yield();
     }
 
-    // Write single token (decode phase)
-    slot.payload_length = 44;  // 36 (uuid) + 8 (token)
-    slot.max_tokens = 0;       // Not used for decode
-    slot.num_token_ids = 1;    // Single token
-
-    std::memcpy(slot.payload, uuid.data(), 36);
-    std::memcpy(slot.payload + 36, &token, 8);
-
-    slot.state.store(SlotState::TAKEN, std::memory_order_release);
-    current = (current + 1) % SharedMemoryConfig::SLOTS;
-}
-
-void SharedMemory::write(const std::string& uuid, const std::vector<int64_t>& token_ids, uint32_t max_tokens) {
-    auto& slot = slots[current];
-    while (slot.state.load(std::memory_order_acquire) != SlotState::FREE) {
-        std::this_thread::yield();
-    }
-
-    // Write multiple token_ids (prefill phase)
-    size_t token_ids_bytes = token_ids.size() * sizeof(int64_t);
-    slot.payload_length = 36 + token_ids_bytes;
     slot.max_tokens = max_tokens;
-    slot.num_token_ids = token_ids.size();
-
-    std::memcpy(slot.payload, uuid.data(), 36);
-    std::memcpy(slot.payload + 36, token_ids.data(), token_ids_bytes);
+    slot.num_tokens = static_cast<uint32_t>(token_ids.size());
+    std::memset(slot.task_id, 0, sizeof(slot.task_id));
+    std::memcpy(slot.task_id, task_id.data(),
+                std::min(task_id.size(), sizeof(slot.task_id)));
+    std::memcpy(slot.tokens, token_ids.data(),
+                token_ids.size() * sizeof(int64_t));
 
     slot.state.store(SlotState::TAKEN, std::memory_order_release);
     current = (current + 1) % SharedMemoryConfig::SLOTS;
 }
 
-std::vector<uint8_t> SharedMemory::read() {
-    auto& slot = slots[current];
-    while (slot.state.load(std::memory_order_acquire) != SlotState::TAKEN) {
-        std::this_thread::yield();
-    }
-
-    uint32_t payload_length = slot.payload_length;
-    std::vector<uint8_t> bytes(payload_length + 8);  // +8 for max_tokens and num_token_ids
-
-    // Pack: max_tokens (4) + num_token_ids (4) + payload (variable)
-    std::memcpy(bytes.data(), &slot.max_tokens, 4);
-    std::memcpy(bytes.data() + 4, &slot.num_token_ids, 4);
-    std::memcpy(bytes.data() + 8, slot.payload, payload_length);
-
-    slot.state.store(SlotState::FREE, std::memory_order_release);
-    current = (current + 1) % SharedMemoryConfig::SLOTS;
-    return bytes;
-}
-
-bool SharedMemory::try_read(std::vector<uint8_t>& out) {
+bool SharedMemory::try_read(ReadResult& out) {
     auto& slot = slots[current];
     if (slot.state.load(std::memory_order_acquire) != SlotState::TAKEN) {
         return false;
     }
 
-    uint32_t payload_length = slot.payload_length;
-    out.resize(payload_length + 8);  // +8 for max_tokens and num_token_ids
-
-    // Pack: max_tokens (4) + num_token_ids (4) + payload (variable)
-    std::memcpy(out.data(), &slot.max_tokens, 4);
-    std::memcpy(out.data() + 4, &slot.num_token_ids, 4);
-    std::memcpy(out.data() + 8, slot.payload, payload_length);
+    std::memcpy(out.task_id, slot.task_id, sizeof(out.task_id));
+    out.token = (slot.num_tokens > 0) ? slot.tokens[0] : 0;
 
     slot.state.store(SlotState::FREE, std::memory_order_release);
     current = (current + 1) % SharedMemoryConfig::SLOTS;

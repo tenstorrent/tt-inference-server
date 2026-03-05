@@ -37,21 +37,25 @@ PIPELINE_CORE = ttnn.CoreCoord(0, 0)
 FABRIC_MAX_PAYLOAD = 7168
 
 # ── Shared-memory layout ─────────────────────────────────────────────────────
-# Must match the C++ SharedMemory class in shared_memory.hpp.
-# Message layout: atomic state (4 B) + pad (16 B) + payload_length (4 B) + max_tokens (4 B) + num_token_ids (4 B) + payload (8192 B) = 8224 B
-_NUM_SLOTS = 1024
-_MESSAGE_SIZE = 8224
+# Must match the C++ Message struct in shared_memory.hpp.
+#   state(4) + max_tokens(4) + num_tokens(4) + task_id(36) + reserved(16) = 64-byte header
+#   tokens: 128000 × uint64 = 1024000 bytes
+#   Total message: 1024064 bytes, 1 slot
+_NUM_SLOTS = 1
+_MAX_TOKENS_COUNT = 128000
+_HEADER_SIZE = 64
+_MAX_PAYLOAD_SIZE = _MAX_TOKENS_COUNT * 8
+_MESSAGE_SIZE = _HEADER_SIZE + _MAX_PAYLOAD_SIZE
 _SHM_SIZE = _NUM_SLOTS * _MESSAGE_SIZE
+
 _STATE_OFFSET = 0
-_PAYLOAD_LENGTH_OFFSET = 20  # 4 (state) + 16 (pad)
-_MAX_TOKENS_OFFSET = 24  # 4 (state) + 16 (pad) + 4 (payload_length)
-_NUM_TOKEN_IDS_OFFSET = 28  # 4 (state) + 16 (pad) + 4 (payload_length) + 4 (max_tokens)
-_PAYLOAD_OFFSET = (
-    32  # 4 (state) + 16 (pad) + 4 (payload_length) + 4 (max_tokens) + 4 (num_token_ids)
-)
-_MAX_PAYLOAD_SIZE = 8192
+_MAX_TOKENS_OFFSET = 4
+_NUM_TOKENS_OFFSET = 8
+_TASK_ID_OFFSET = 12
 _TASK_ID_SIZE = 36
-_TOKEN_ID_SIZE = 8
+_TOKENS_OFFSET = 64
+_TOKEN_SIZE = 8
+
 _FREE = 0
 _TAKEN = 1
 
@@ -72,10 +76,6 @@ def _shm_recv(buf, pos: int):
     """Block until a TAKEN slot is available, consume it, and return the parsed message data."""
     msg_off = pos * _MESSAGE_SIZE
     state_off = msg_off + _STATE_OFFSET
-    payload_length_off = msg_off + _PAYLOAD_LENGTH_OFFSET
-    max_tokens_off = msg_off + _MAX_TOKENS_OFFSET
-    num_token_ids_off = msg_off + _NUM_TOKEN_IDS_OFFSET
-    payload_off = msg_off + _PAYLOAD_OFFSET
 
     while not _shutdown:
         if struct.unpack_from("<i", buf, state_off)[0] == _TAKEN:
@@ -83,31 +83,23 @@ def _shm_recv(buf, pos: int):
     if _shutdown:
         return None, pos
 
-    # Read metadata
-    payload_length = struct.unpack_from("<I", buf, payload_length_off)[0]
-    max_tokens = struct.unpack_from("<I", buf, max_tokens_off)[0]
-    num_token_ids = struct.unpack_from("<I", buf, num_token_ids_off)[0]
+    max_tokens = struct.unpack_from("<I", buf, msg_off + _MAX_TOKENS_OFFSET)[0]
+    num_tokens = struct.unpack_from("<I", buf, msg_off + _NUM_TOKENS_OFFSET)[0]
+    task_id_raw = buf[msg_off + _TASK_ID_OFFSET : msg_off + _TASK_ID_OFFSET + _TASK_ID_SIZE]
+    task_id = bytes(task_id_raw).decode("utf-8", errors="ignore").rstrip("\x00")
 
-    # Read payload
-    data = bytes(buf[payload_off : payload_off + payload_length])
-
-    # Parse: task_id (36 bytes) + token_ids (variable length)
-    task_id = data[:_TASK_ID_SIZE].decode("utf-8", errors="ignore").rstrip("\x00")
+    tokens_off = msg_off + _TOKENS_OFFSET
     token_ids = []
-    if num_token_ids > 0:
-        token_bytes = data[_TASK_ID_SIZE:]
-        for i in range(num_token_ids):
-            offset = i * _TOKEN_ID_SIZE
-            if offset + _TOKEN_ID_SIZE <= len(token_bytes):
-                token_id = struct.unpack_from("<Q", token_bytes, offset)[0]
-                token_ids.append(token_id)
+    for i in range(num_tokens):
+        token_id = struct.unpack_from("<Q", buf, tokens_off + i * _TOKEN_SIZE)[0]
+        token_ids.append(token_id)
 
     struct.pack_into("<i", buf, state_off, _FREE)
 
     message_data = {
         "task_id": task_id,
         "max_tokens": max_tokens,
-        "num_token_ids": num_token_ids,
+        "num_tokens": num_tokens,
         "token_ids": token_ids,
     }
 
@@ -118,10 +110,6 @@ def _shm_send(buf, task_id: str, token_ids: list, max_tokens: int, pos: int) -> 
     """Block until a FREE slot is available, write the message, and mark TAKEN."""
     msg_off = pos * _MESSAGE_SIZE
     state_off = msg_off + _STATE_OFFSET
-    payload_length_off = msg_off + _PAYLOAD_LENGTH_OFFSET
-    max_tokens_off = msg_off + _MAX_TOKENS_OFFSET
-    num_token_ids_off = msg_off + _NUM_TOKEN_IDS_OFFSET
-    payload_off = msg_off + _PAYLOAD_OFFSET
 
     while not _shutdown:
         if struct.unpack_from("<i", buf, state_off)[0] == _FREE:
@@ -129,21 +117,15 @@ def _shm_send(buf, task_id: str, token_ids: list, max_tokens: int, pos: int) -> 
     if _shutdown:
         return pos
 
-    # Encode task_id (36 bytes) + token_ids (variable)
-    task_id_bytes = task_id.encode("utf-8")[:_TASK_ID_SIZE].ljust(
-        _TASK_ID_SIZE, b"\x00"
-    )
-    token_ids_bytes = b"".join(struct.pack("<Q", tid) for tid in token_ids)
-    payload = task_id_bytes + token_ids_bytes
-    payload_length = len(payload)
+    struct.pack_into("<I", buf, msg_off + _MAX_TOKENS_OFFSET, max_tokens)
+    struct.pack_into("<I", buf, msg_off + _NUM_TOKENS_OFFSET, len(token_ids))
 
-    # Write metadata
-    struct.pack_into("<I", buf, payload_length_off, payload_length)
-    struct.pack_into("<I", buf, max_tokens_off, max_tokens)
-    struct.pack_into("<I", buf, num_token_ids_off, len(token_ids))
+    task_id_bytes = task_id.encode("utf-8")[:_TASK_ID_SIZE].ljust(_TASK_ID_SIZE, b"\x00")
+    buf[msg_off + _TASK_ID_OFFSET : msg_off + _TASK_ID_OFFSET + _TASK_ID_SIZE] = task_id_bytes
 
-    # Write payload
-    buf[payload_off : payload_off + payload_length] = payload
+    tokens_off = msg_off + _TOKENS_OFFSET
+    for i, tid in enumerate(token_ids):
+        struct.pack_into("<Q", buf, tokens_off + i * _TOKEN_SIZE, tid)
 
     struct.pack_into("<i", buf, state_off, _TAKEN)
     return (pos + 1) % _NUM_SLOTS
