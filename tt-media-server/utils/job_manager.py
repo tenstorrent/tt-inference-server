@@ -284,7 +284,11 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
-    async def _persist_training_metrics_to_db(self, job: Job):
+    async def _persist_job_metrics_to_db(self, job: Job):
+        # Only persist metrics for training jobs for now.
+        if job.job_type != JobTypes.TRAINING.value:
+            return
+        
         metrics_list = self.get_training_metrics(job.id)
         if metrics_list is None:
             return
@@ -339,7 +343,7 @@ class JobManager:
 
             if self.db and isinstance(job._job_context, TrainingJobContext):
                 metrics_persister = asyncio.create_task(
-                    self._persist_training_metrics_to_db(job)
+                    self._persist_job_metrics_to_db(job)
                 )
 
             result_path = await task_function(request)
