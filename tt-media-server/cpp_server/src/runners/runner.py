@@ -19,11 +19,10 @@ import sys
 
 import torch
 import ttnn
-
-from models.demos.deepseek_v3_b1.micro_ops.pipeline_block.op import PipelineBlock
 from models.demos.deepseek_v3_b1.micro_ops.host_io.utils import (
     ttnn_dtype_from_torch_dtype,
 )
+from models.demos.deepseek_v3_b1.micro_ops.pipeline_block.op import PipelineBlock
 
 # ── Pipeline sizing ──────────────────────────────────────────────────────────
 # 64-byte end-to-end pages: 32 bfloat16 elements × 2 bytes = 64 bytes per row.
@@ -39,15 +38,19 @@ FABRIC_MAX_PAYLOAD = 7168
 
 # ── Shared-memory layout ─────────────────────────────────────────────────────
 # Must match the C++ SharedMemory class in shared_memory.hpp.
-# Message layout: atomic state (4 B) + pad (16 B) + payload (44 B) = 64 B
+# Message layout: atomic state (4 B) + pad (16 B) + payload_length (4 B) + max_tokens (4 B) + num_token_ids (4 B) + payload (8192 B) = 8224 B
 _NUM_SLOTS = 1024
-_MESSAGE_SIZE = 64
+_MESSAGE_SIZE = 8224
 _SHM_SIZE = _NUM_SLOTS * _MESSAGE_SIZE
 _STATE_OFFSET = 0
-_PAYLOAD_OFFSET = 20  # 4 (state) + 16 (pad)
-_PAYLOAD_SIZE = 44
+_PAYLOAD_LENGTH_OFFSET = 20  # 4 (state) + 16 (pad)
+_MAX_TOKENS_OFFSET = 24  # 4 (state) + 16 (pad) + 4 (payload_length)
+_NUM_TOKEN_IDS_OFFSET = 28  # 4 (state) + 16 (pad) + 4 (payload_length) + 4 (max_tokens)
+_PAYLOAD_OFFSET = (
+    32  # 4 (state) + 16 (pad) + 4 (payload_length) + 4 (max_tokens) + 4 (num_token_ids)
+)
+_MAX_PAYLOAD_SIZE = 8192
 _TASK_ID_SIZE = 36
-_TOKEN_ID_OFFSET = 36
 _TOKEN_ID_SIZE = 8
 _FREE = 0
 _TAKEN = 1
@@ -66,47 +69,111 @@ def _rank() -> int:
 
 
 def _shm_recv(buf, pos: int):
-    """Block until a TAKEN slot is available, consume it, and return the payload."""
+    """Block until a TAKEN slot is available, consume it, and return the parsed message data."""
     msg_off = pos * _MESSAGE_SIZE
     state_off = msg_off + _STATE_OFFSET
+    payload_length_off = msg_off + _PAYLOAD_LENGTH_OFFSET
+    max_tokens_off = msg_off + _MAX_TOKENS_OFFSET
+    num_token_ids_off = msg_off + _NUM_TOKEN_IDS_OFFSET
     payload_off = msg_off + _PAYLOAD_OFFSET
+
     while not _shutdown:
         if struct.unpack_from("<i", buf, state_off)[0] == _TAKEN:
             break
     if _shutdown:
         return None, pos
-    data = bytes(buf[payload_off : payload_off + _PAYLOAD_SIZE])
+
+    # Read metadata
+    payload_length = struct.unpack_from("<I", buf, payload_length_off)[0]
+    max_tokens = struct.unpack_from("<I", buf, max_tokens_off)[0]
+    num_token_ids = struct.unpack_from("<I", buf, num_token_ids_off)[0]
+
+    # Read payload
+    data = bytes(buf[payload_off : payload_off + payload_length])
+
+    # Parse: task_id (36 bytes) + token_ids (variable length)
+    task_id = data[:_TASK_ID_SIZE].decode("utf-8", errors="ignore").rstrip("\x00")
+    token_ids = []
+    if num_token_ids > 0:
+        token_bytes = data[_TASK_ID_SIZE:]
+        for i in range(num_token_ids):
+            offset = i * _TOKEN_ID_SIZE
+            if offset + _TOKEN_ID_SIZE <= len(token_bytes):
+                token_id = struct.unpack_from("<Q", token_bytes, offset)[0]
+                token_ids.append(token_id)
+
     struct.pack_into("<i", buf, state_off, _FREE)
-    return data, (pos + 1) % _NUM_SLOTS
+
+    message_data = {
+        "task_id": task_id,
+        "max_tokens": max_tokens,
+        "num_token_ids": num_token_ids,
+        "token_ids": token_ids,
+    }
+
+    return message_data, (pos + 1) % _NUM_SLOTS
 
 
-def _shm_send(buf, payload: bytes, pos: int) -> int:
-    """Block until a FREE slot is available, write the payload, and mark TAKEN."""
+def _shm_send(buf, task_id: str, token_ids: list, max_tokens: int, pos: int) -> int:
+    """Block until a FREE slot is available, write the message, and mark TAKEN."""
     msg_off = pos * _MESSAGE_SIZE
     state_off = msg_off + _STATE_OFFSET
+    payload_length_off = msg_off + _PAYLOAD_LENGTH_OFFSET
+    max_tokens_off = msg_off + _MAX_TOKENS_OFFSET
+    num_token_ids_off = msg_off + _NUM_TOKEN_IDS_OFFSET
     payload_off = msg_off + _PAYLOAD_OFFSET
+
     while not _shutdown:
         if struct.unpack_from("<i", buf, state_off)[0] == _FREE:
             break
     if _shutdown:
         return pos
-    padded = payload[:_PAYLOAD_SIZE].ljust(_PAYLOAD_SIZE, b"\x00")
-    buf[payload_off : payload_off + _PAYLOAD_SIZE] = padded
+
+    # Encode task_id (36 bytes) + token_ids (variable)
+    task_id_bytes = task_id.encode("utf-8")[:_TASK_ID_SIZE].ljust(
+        _TASK_ID_SIZE, b"\x00"
+    )
+    token_ids_bytes = b"".join(struct.pack("<Q", tid) for tid in token_ids)
+    payload = task_id_bytes + token_ids_bytes
+    payload_length = len(payload)
+
+    # Write metadata
+    struct.pack_into("<I", buf, payload_length_off, payload_length)
+    struct.pack_into("<I", buf, max_tokens_off, max_tokens)
+    struct.pack_into("<I", buf, num_token_ids_off, len(token_ids))
+
+    # Write payload
+    buf[payload_off : payload_off + payload_length] = payload
+
     struct.pack_into("<i", buf, state_off, _TAKEN)
     return (pos + 1) % _NUM_SLOTS
 
 
 def _open_shm(shm_name: str):
-    path = f"/dev/shm/{shm_name}"
-    if not os.path.exists(path):
-        return None
-    fd = os.open(path, os.O_RDWR)
+    """Create or open shared memory region."""
+    import posix_ipc
+
+    # Create shared memory (or open if it exists)
     try:
-        return mmap.mmap(
-            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
+        shm = posix_ipc.SharedMemory(
+            shm_name, flags=posix_ipc.O_CREAT, mode=0o666, size=_SHM_SIZE
         )
+    except posix_ipc.ExistentialError:
+        shm = posix_ipc.SharedMemory(shm_name)
+
+    try:
+        # Map the shared memory into process address space
+        buf = mmap.mmap(
+            shm.fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
+        )
+
+        # Initialize to zero if newly created
+        if buf[0:4] == b"\x00\x00\x00\x00":
+            buf[:] = b"\x00" * _SHM_SIZE
+
+        return buf
     finally:
-        os.close(fd)
+        shm.close_fd()
 
 
 def _open_mesh_device():
@@ -169,12 +236,22 @@ def _shm_pipeline_bridge(pipeline_block, c2p_buf, p2c_buf) -> None:
     send_pos = 0
 
     while not _shutdown:
-        payload, recv_pos = _shm_recv(c2p_buf, recv_pos)
-        if payload is None:
+        message_data, recv_pos = _shm_recv(c2p_buf, recv_pos)
+        if message_data is None:
             break
 
+        task_id = message_data["task_id"]
+        max_tokens = message_data["max_tokens"]
+        token_ids = message_data["token_ids"]
+
+        # Process token_ids (for now, just use the first token or all tokens)
+        # You can extend this logic based on your prefill/decode requirements
         page = bytearray(TOKEN_SIZE_BYTES)
-        page[: len(payload)] = payload
+
+        # Pack token_ids into the page
+        for i, token_id in enumerate(token_ids[:token_elems]):
+            struct.pack_into("<Q", page, i * 8, token_id)
+
         token_ints = struct.unpack_from(f"<{token_elems}I", page)
 
         input_tensor = ttnn.from_torch(
@@ -191,7 +268,9 @@ def _shm_pipeline_bridge(pipeline_block, c2p_buf, p2c_buf) -> None:
         )
         pipeline_block.read_output(output_tensor)
 
-        send_pos = _shm_send(p2c_buf, payload, send_pos)
+        # Send back response (for now, echo the first token)
+        response_token_ids = token_ids[:1] if token_ids else [0]
+        send_pos = _shm_send(p2c_buf, task_id, response_token_ids, max_tokens, send_pos)
 
 
 def _run_shm_bridge(pipeline_block) -> None:
@@ -199,16 +278,28 @@ def _run_shm_bridge(pipeline_block) -> None:
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
     if not (c2p_name and p2c_name):
+        print(
+            "Warning: TT_IPC_SHM_C2P or TT_IPC_SHM_P2C not set, skipping SHM bridge",
+            file=sys.stderr,
+        )
         return
+
     c2p_buf = _open_shm(c2p_name)
     p2c_buf = _open_shm(p2c_name)
+
     if not (c2p_buf and p2c_buf):
+        print("Warning: Failed to open shared memory buffers", file=sys.stderr)
         return
+
+    print(f"SHM bridge started: C2P={c2p_name}, P2C={p2c_name}", file=sys.stderr)
+
     try:
         _shm_pipeline_bridge(pipeline_block, c2p_buf, p2c_buf)
     finally:
-        c2p_buf.close()
-        p2c_buf.close()
+        if c2p_buf:
+            c2p_buf.close()
+        if p2c_buf:
+            p2c_buf.close()
 
 
 def main() -> None:
