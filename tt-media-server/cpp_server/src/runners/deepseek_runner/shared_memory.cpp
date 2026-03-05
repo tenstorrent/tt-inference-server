@@ -1,4 +1,4 @@
-#include "runners/llm_runner/shared_memory.hpp"
+#include "runners/deepseek_runner/shared_memory.hpp"
 
 #include <cstring>
 #include <stdexcept>
@@ -14,7 +14,7 @@ SharedMemory::SharedMemory(const std::string& name)
 
 SharedMemory::~SharedMemory() {
     if (memPointer && memPointer != MAP_FAILED) {
-        munmap(memPointer, SharedMemoryConfig::TOTAL_SIZE);
+        munmap(memPointer, SharedMemoryLayout::TOTAL_SIZE);
     }
     shm_unlink(name.c_str());
 }
@@ -25,14 +25,14 @@ void SharedMemory::open() {
         throw std::runtime_error("SharedMemory: unable to open shared memory: " + name);
     }
 
-    if (ftruncate(fd, SharedMemoryConfig::TOTAL_SIZE) == -1) {
+    if (ftruncate(fd, SharedMemoryLayout::TOTAL_SIZE) == -1) {
         close(fd);
         throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
     }
 
     memPointer = mmap(
         nullptr,
-        SharedMemoryConfig::TOTAL_SIZE,
+        SharedMemoryLayout::TOTAL_SIZE,
         PROT_READ | PROT_WRITE,
         MAP_SHARED,
         fd,
@@ -45,8 +45,8 @@ void SharedMemory::open() {
     }
     close(fd);
 
-    std::memset(memPointer, 0, SharedMemoryConfig::TOTAL_SIZE);
-    slots = std::span<Message>(static_cast<Message*>(memPointer), SharedMemoryConfig::SLOTS);
+    std::memset(memPointer, 0, SharedMemoryLayout::TOTAL_SIZE);
+    slots = std::span<Message>(static_cast<Message*>(memPointer), SharedMemoryLayout::SLOTS);
 }
 
 void SharedMemory::write(const std::string& task_id,
@@ -66,7 +66,7 @@ void SharedMemory::write(const std::string& task_id,
                 token_ids.size() * sizeof(int64_t));
 
     slot.state.store(SlotState::TAKEN, std::memory_order_release);
-    current = (current + 1) % SharedMemoryConfig::SLOTS;
+    current = (current + 1) % SharedMemoryLayout::SLOTS;
 }
 
 bool SharedMemory::try_read(ReadResult& out) {
@@ -79,6 +79,6 @@ bool SharedMemory::try_read(ReadResult& out) {
     out.token = (slot.num_tokens > 0) ? slot.tokens[0] : 0;
 
     slot.state.store(SlotState::FREE, std::memory_order_release);
-    current = (current + 1) % SharedMemoryConfig::SLOTS;
+    current = (current + 1) % SharedMemoryLayout::SLOTS;
     return true;
 }

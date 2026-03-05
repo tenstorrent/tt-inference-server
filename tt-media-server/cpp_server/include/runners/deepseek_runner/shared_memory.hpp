@@ -5,7 +5,7 @@
 #include <span>
 #include <string>
 #include <vector>
-struct SharedMemoryConfig {
+struct SharedMemoryLayout {
     // SLOTS = 1 is sufficient while max_num_seqs = 1 in config.hpp.
     // Increase if max_num_seqs grows.
     static constexpr int SLOTS = 1;
@@ -24,10 +24,10 @@ struct Message {
     char task_id[36];
     uint8_t reserved[16];
 
-    uint64_t tokens[SharedMemoryConfig::MAX_PAYLOAD_SIZE / sizeof(uint64_t)]; 
+    uint64_t tokens[SharedMemoryLayout::MAX_PAYLOAD_SIZE / sizeof(uint64_t)]; 
 };
 
-static_assert(sizeof(Message) == SharedMemoryConfig::MESSAGE_SIZE, "Message size mismatch");
+static_assert(sizeof(Message) == SharedMemoryLayout::MESSAGE_SIZE, "Message size mismatch");
 
 struct ReadResult {
     char task_id[36];

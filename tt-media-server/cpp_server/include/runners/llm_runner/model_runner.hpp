@@ -34,4 +34,7 @@ class IModelRunner {
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback);
 
+std::unique_ptr<IModelRunner> make_deepseek_model_runner(const Config& config,
+                                                         DecodeCallback callback);
+
 }  // namespace llm_engine

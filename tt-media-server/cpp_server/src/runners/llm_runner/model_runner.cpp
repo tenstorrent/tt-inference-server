@@ -18,16 +18,12 @@ std::vector<TokenResult> DecodeQueue::drain() {
 
 std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
                                                      DecodeCallback callback);
-std::unique_ptr<IModelRunner> make_ttrun_model_runner(const Config& config,
-                                                      DecodeCallback callback);
 
 std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
                                                 DecodeCallback callback) {
   switch (config.runner_type) {
     case ModelRunnerType::Mock:
       return make_mock_model_runner(config, std::move(callback));
-    case ModelRunnerType::TtRun:
-      return make_ttrun_model_runner(config, std::move(callback));
     default:
       throw std::invalid_argument("Invalid model runner type");
   }

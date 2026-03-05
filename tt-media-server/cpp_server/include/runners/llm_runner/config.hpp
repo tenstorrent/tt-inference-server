@@ -6,7 +6,7 @@ namespace llm_engine {
 
 enum class ModelRunnerType {
   Mock,
-  TtRun,
+  DeepSeek,
 };
 
 struct Config {

@@ -141,8 +141,8 @@ llm_engine::Config llm_engine_config() {
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
-        if (s == "ttrun") {
-            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+        if (s == "deepseek") {
+            cfg.runner_type = llm_engine::ModelRunnerType::DeepSeek;
         } else {
             cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
