@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import time
+
 from config.constants import ModelRunners
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -109,9 +111,14 @@ def get_device_runner(worker_id: str) -> BaseDeviceRunner:
     )
     try:
         model_runner_enum = ModelRunners(model_runner)
+        _logger.info(
+            f"get_device_runner: invoking factory for {model_runner} (import + construct)..."
+        )
+        t0 = time.time()
         runner = AVAILABLE_RUNNERS[model_runner_enum](worker_id)
         _logger.info(
-            f"get_device_runner: created {type(runner).__name__} for worker {worker_id}"
+            f"get_device_runner: created {type(runner).__name__} for worker {worker_id} "
+            f"in {time.time() - t0:.1f}s"
         )
         return runner
     except ValueError:

@@ -3,29 +3,75 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import logging
 import os
+import sys
 import time
 from abc import abstractmethod
 
-import ttnn
-from config.constants import ModelRunners, ModelServices, SupportedModels
-from config.settings import get_settings
-from domain.image_generate_request import ImageGenerateRequest
-from domain.video_generate_request import VideoGenerateRequest
-from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
-from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
-from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+_import_log = logging.getLogger("TTLogger")
+
+
+def _log_import(msg):
+    _import_log.info(msg)
+    sys.stderr.flush()
+
+
+_log_import("dit_runners: importing ttnn...")
+_t = time.time()
+import ttnn  # noqa: E402
+
+_log_import(f"dit_runners: ttnn imported in {time.time() - _t:.1f}s")
+
+from config.constants import ModelRunners, ModelServices, SupportedModels  # noqa: E402
+from config.settings import get_settings  # noqa: E402
+from domain.image_generate_request import ImageGenerateRequest  # noqa: E402
+from domain.video_generate_request import VideoGenerateRequest  # noqa: E402
+
+_log_import("dit_runners: importing model pipelines...")
+
+_t = time.time()
+from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline  # noqa: E402
+
+_log_import(f"dit_runners: Flux1Pipeline imported in {time.time() - _t:.1f}s")
+
+_t = time.time()
+from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline  # noqa: E402
+
+_log_import(f"dit_runners: MochiPipeline imported in {time.time() - _t:.1f}s")
+
+_t = time.time()
+from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline  # noqa: E402
+
+_log_import(f"dit_runners: MotifPipeline imported in {time.time() - _t:.1f}s")
+
+_t = time.time()
+from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (  # noqa: E402
     QwenImagePipeline,
 )
-from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
+
+_log_import(f"dit_runners: QwenImagePipeline imported in {time.time() - _t:.1f}s")
+
+_t = time.time()
+from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (  # noqa: E402
     StableDiffusion3Pipeline,
 )
-from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
-from telemetry.telemetry_client import TelemetryEvent
-from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
-from utils.decorators import log_execution_time
-from utils.logger import log_exception_chain
+
+_log_import(
+    f"dit_runners: StableDiffusion3Pipeline imported in {time.time() - _t:.1f}s"
+)
+
+_t = time.time()
+from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline  # noqa: E402
+
+_log_import(f"dit_runners: WanPipeline imported in {time.time() - _t:.1f}s")
+
+from telemetry.telemetry_client import TelemetryEvent  # noqa: E402
+from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner  # noqa: E402
+from utils.decorators import log_execution_time  # noqa: E402
+from utils.logger import log_exception_chain  # noqa: E402
+
+_log_import("dit_runners: all imports complete")
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
