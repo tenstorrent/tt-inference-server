@@ -98,7 +98,7 @@ private:
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
+    const tt::utils::Tokenizer* tokenizer_;
     std::shared_ptr<tt::sockets::InterServerService> socket_service_;
 
     PrefillRequestCallback prefill_request_callback_;

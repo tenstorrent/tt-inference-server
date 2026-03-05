@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "utils/tokenizer.hpp"
 
 #include <cstdlib>
 #include <cstddef>
@@ -114,8 +115,26 @@ static std::filesystem::path tokenizers_dir() {
     return {};
 }
 
+std::string tokenizer_path(ModelType model) {
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
+    std::filesystem::path p = base / model_dir / "tokenizer.json";
+    if (std::filesystem::exists(p)) {
+        return std::filesystem::absolute(p).string();
+    }
+    return "";
+}
+
 std::string tokenizer_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer.json";
+    return tokenizer_path(model_type());
+}
+
+std::string tokenizer_config_path(ModelType model) {
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
+    std::filesystem::path p = base / model_dir / "tokenizer_config.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
     }
@@ -123,11 +142,7 @@ std::string tokenizer_path() {
 }
 
 std::string tokenizer_config_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer_config.json";
-    if (std::filesystem::exists(p)) {
-        return std::filesystem::absolute(p).string();
-    }
-    return "";
+    return tokenizer_config_path(model_type());
 }
 
 std::string visible_devices_for_worker(size_t worker_index) {
@@ -138,16 +153,26 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
+    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     const char* v = std::getenv("LLM_DEVICE_BACKEND");
     if (v) {
         std::string s(v);
         if (s == "ttrun") {
             cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+        } else if (s == "llama") {
+            cfg.max_num_seqs = 16;
+            cfg.kvcache_block_size = 32;
+            cfg.max_num_batched_tokens = 16384;
+            cfg.runner_type = llm_engine::ModelRunnerType::Llama;
         } else {
             cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
     }
     return cfg;
+}
+
+ModelType model_type() {
+    return model_type_from_device_backend(env_string("LLM_DEVICE_BACKEND", "mock"));
 }
 
 LLMMode llm_mode() {
