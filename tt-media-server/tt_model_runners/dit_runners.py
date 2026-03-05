@@ -67,7 +67,9 @@ from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline  # noqa: E402
 _log_import(f"dit_runners: WanPipeline imported in {time.time() - _t:.1f}s")
 
 from telemetry.telemetry_client import TelemetryEvent  # noqa: E402
-from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner  # noqa: E402
+from tt_model_runners.base_metal_device_runner import (  # noqa: E402
+    BaseMetalDeviceRunner,
+)
 from utils.decorators import log_execution_time  # noqa: E402
 from utils.logger import log_exception_chain  # noqa: E402
 
@@ -87,10 +89,21 @@ dit_runner_log_map = {
 
 class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
+        self.logger = logging.getLogger("TTLogger")
+        self.logger.info(f"Device {device_id}: TTDiTRunner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
         self.pipeline = None
+        self.logger.info(
+            f"Device {device_id}: TTDiTRunner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def _configure_fabric(self, updated_device_params):
+        self.logger.info(
+            f"Device {self.device_id}: _configure_fabric called with params: "
+            f"{list(updated_device_params.keys())}"
+        )
+        t0 = time.time()
         try:
             fabric_config = updated_device_params.pop(
                 "fabric_config", ttnn.FabricConfig.FABRIC_1D
@@ -101,8 +114,16 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             reliability_mode = updated_device_params.pop(
                 "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
             )
+            self.logger.info(
+                f"Device {self.device_id}: Setting fabric config: "
+                f"fabric={fabric_config}, tensix={fabric_tensix_config}, "
+                f"reliability={reliability_mode}"
+            )
             ttnn.set_fabric_config(
                 fabric_config, reliability_mode, None, fabric_tensix_config
+            )
+            self.logger.info(
+                f"Device {self.device_id}: _configure_fabric completed in {time.time() - t0:.1f}s"
             )
             return fabric_config
         except Exception as e:
@@ -131,7 +152,12 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         return True  # weights will be loaded upon pipeline creation
 
     async def warmup(self) -> bool:
-        self.logger.info(f"Device {self.device_id}: Loading model...")
+        self.logger.info(
+            f"Device {self.device_id}: warmup started - "
+            f"model_service={self.settings.model_service}, "
+            f"model_runner={self.settings.model_runner}"
+        )
+        warmup_start = time.time()
         load_start = time.time()
 
         def distribute_block():
@@ -145,7 +171,9 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                     f"Device {self.device_id}: Model loading in progress... elapsed={elapsed:.0f}s"
                 )
 
-        # 20 minutes to distribute the model on device
+        self.logger.info(
+            f"Device {self.device_id}: Starting pipeline creation (timeout=1200s)..."
+        )
         weights_distribution_timeout = 1200
         heartbeat_task = asyncio.create_task(_heartbeat())
         try:
@@ -171,12 +199,14 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         load_elapsed = time.time() - load_start
         self.logger.info(
-            f"Device {self.device_id}: Model loaded successfully in {load_elapsed:.1f}s"
+            f"Device {self.device_id}: Pipeline created successfully in {load_elapsed:.1f}s"
         )
 
-        # we use model_construct to create the request without validation
-        # (warmup uses 2 inference steps which is below the normal minimum)
         if self.settings.model_service == ModelServices.IMAGE.value:
+            self.logger.info(
+                f"Device {self.device_id}: Running warmup inference (image, 2 steps)..."
+            )
+            t0 = time.time()
             self.run(
                 [
                     ImageGenerateRequest.model_construct(
@@ -186,7 +216,14 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                     )
                 ],
             )
+            self.logger.info(
+                f"Device {self.device_id}: Warmup inference completed in {time.time() - t0:.1f}s"
+            )
         elif self.settings.model_service == ModelServices.VIDEO.value:
+            self.logger.info(
+                f"Device {self.device_id}: Running warmup inference (video, 2 steps)..."
+            )
+            t0 = time.time()
             self.run(
                 [
                     VideoGenerateRequest.model_construct(
@@ -196,9 +233,13 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                     )
                 ],
             )
+            self.logger.info(
+                f"Device {self.device_id}: Warmup inference completed in {time.time() - t0:.1f}s"
+            )
 
-        self.logger.info(f"Device {self.device_id}: Model warmup completed")
-
+        self.logger.info(
+            f"Device {self.device_id}: warmup completed in {time.time() - warmup_start:.1f}s"
+        )
         return True
 
     @log_execution_time(
@@ -207,7 +248,10 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run(self, requests: list[ImageGenerateRequest]):
-        self.logger.debug(f"Device {self.device_id}: Running inference")
+        self.logger.info(
+            f"Device {self.device_id}: run() called with {len(requests)} request(s)"
+        )
+        t0 = time.time()
         request = requests[0]
         image = self.pipeline.run_single_prompt(
             prompt=request.prompt,
@@ -215,20 +259,37 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             num_inference_steps=request.num_inference_steps,
             seed=int(request.seed or 0),
         )
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        self.logger.info(
+            f"Device {self.device_id}: run() completed in {time.time() - t0:.1f}s"
+        )
         return image
 
 
 class TTSD35Runner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(f"Device {device_id}: TTSD35Runner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
+        _import_log.info(
+            f"Device {device_id}: TTSD35Runner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
-            return StableDiffusion3Pipeline.create_pipeline(
+            self.logger.info(
+                f"Device {self.device_id}: Creating SD3.5 pipeline - "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = StableDiffusion3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
             )
+            self.logger.info(
+                f"Device {self.device_id}: SD3.5 pipeline created in {time.time() - start:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -245,7 +306,12 @@ class TTSD35Runner(TTDiTRunner):
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(f"Device {device_id}: TTFlux1Runner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
+        _import_log.info(
+            f"Device {device_id}: TTFlux1Runner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
@@ -280,14 +346,31 @@ class TTFlux1Runner(TTDiTRunner):
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(
+            f"Device {device_id}: TTMotifImage6BPreviewRunner.__init__ started"
+        )
+        t0 = time.time()
         super().__init__(device_id)
+        _import_log.info(
+            f"Device {device_id}: TTMotifImage6BPreviewRunner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
-            return MotifPipeline.create_pipeline(
+            self.logger.info(
+                f"Device {self.device_id}: Creating Motif pipeline - "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = MotifPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=SupportedModels.MOTIF_IMAGE_6B_PREVIEW.value,
             )
+            self.logger.info(
+                f"Device {self.device_id}: Motif pipeline created in {time.time() - start:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -304,14 +387,30 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
 class TTQwenImageRunner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(f"Device {device_id}: TTQwenImageRunner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
+        _import_log.info(
+            f"Device {device_id}: TTQwenImageRunner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
-            return QwenImagePipeline.create_pipeline(
+            self.logger.info(
+                f"Device {self.device_id}: Creating Qwen-Image pipeline - "
+                f"checkpoint={self.settings.model_weights_path}, "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = QwenImagePipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=self.settings.model_weights_path,
             )
+            self.logger.info(
+                f"Device {self.device_id}: Qwen-Image pipeline created in {time.time() - start:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -327,16 +426,30 @@ class TTQwenImageRunner(TTDiTRunner):
 
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(f"Device {device_id}: TTMochi1Runner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
-        # setup environment for Mochi runner
         os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
+        _import_log.info(
+            f"Device {device_id}: TTMochi1Runner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
-            return MochiPipeline.create_pipeline(
+            self.logger.info(
+                f"Device {self.device_id}: Creating Mochi pipeline - "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = MochiPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=SupportedModels.MOCHI_1.value,
             )
+            self.logger.info(
+                f"Device {self.device_id}: Mochi pipeline created in {time.time() - start:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -348,20 +461,25 @@ class TTMochi1Runner(TTDiTRunner):
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
-        self.logger.debug(f"Device {self.device_id}: Running inference")
+        self.logger.info(
+            f"Device {self.device_id}: Mochi run() called with {len(requests)} request(s)"
+        )
+        t0 = time.time()
         request = requests[0]
         frames = self.pipeline(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
             num_inference_steps=request.num_inference_steps,
             guidance_scale=3.5,
-            num_frames=168,  # TODO: Parameterize output dimensions.
+            num_frames=168,
             height=480,
             width=848,
             output_type="np",
             seed=int(request.seed or 0),
         )
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        self.logger.info(
+            f"Device {self.device_id}: Mochi run() completed in {time.time() - t0:.1f}s"
+        )
         return frames
 
     def get_pipeline_device_params(self):
@@ -370,11 +488,26 @@ class TTMochi1Runner(TTDiTRunner):
 
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
+        _import_log.info(f"Device {device_id}: TTWan22Runner.__init__ started")
+        t0 = time.time()
         super().__init__(device_id)
+        _import_log.info(
+            f"Device {device_id}: TTWan22Runner.__init__ completed in {time.time() - t0:.1f}s"
+        )
 
     def create_pipeline(self):
         try:
-            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            self.logger.info(
+                f"Device {self.device_id}: Creating Wan pipeline - "
+                f"mesh_shape={tuple(self.ttnn_device.shape)}, "
+                f"num_devices={self.ttnn_device.get_num_devices()}"
+            )
+            start = time.time()
+            pipeline = WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            self.logger.info(
+                f"Device {self.device_id}: Wan pipeline created in {time.time() - start:.1f}s"
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -389,9 +522,11 @@ class TTWan22Runner(TTDiTRunner):
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
-        self.logger.debug(f"Device {self.device_id}: Running inference")
+        self.logger.info(
+            f"Device {self.device_id}: Wan run() called with {len(requests)} request(s)"
+        )
+        t0 = time.time()
         request = requests[0]
-        # TODO: Move parameterization outside of runner class.
         if tuple(self.pipeline.mesh_device.shape) == (4, 8):
             width = 1280
             height = 720
@@ -399,6 +534,10 @@ class TTWan22Runner(TTDiTRunner):
             width = 832
             height = 480
         num_frames = 81
+        self.logger.info(
+            f"Device {self.device_id}: Wan inference params: {width}x{height}, "
+            f"{num_frames} frames, {request.num_inference_steps} steps"
+        )
         frames = self.pipeline(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -410,16 +549,24 @@ class TTWan22Runner(TTDiTRunner):
             guidance_scale_2=4.0,
             seed=int(request.seed or 0),
         )
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        self.logger.info(
+            f"Device {self.device_id}: Wan run() completed in {time.time() - t0:.1f}s"
+        )
         return frames
 
     def get_pipeline_device_params(self):
         device_params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
-        if ttnn.device.is_blackhole():
+        is_bh = ttnn.device.is_blackhole()
+        mesh_shape = tuple(self.settings.device_mesh_shape)
+        if is_bh:
             device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
             device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
-        elif tuple(self.settings.device_mesh_shape) == (4, 8):
+        elif mesh_shape == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+        self.logger.info(
+            f"Device {self.device_id}: Wan get_pipeline_device_params: "
+            f"is_blackhole={is_bh}, mesh_shape={mesh_shape}, params={device_params}"
+        )
         return device_params
