@@ -64,7 +64,7 @@ class TestTrainingServiceGetJobMetrics:
             {"global_step": 2, "metric_name": "loss", "value": 0.4},
             {"global_step": 3, "metric_name": "loss", "value": 0.3},
         ]
-        service._job_manager.get_training_metrics.return_value = metrics
+        service._job_manager.get_job_metrics.return_value = metrics
 
         result_all = service.get_job_metrics("job-1", after=0)
         result_after_2 = service.get_job_metrics("job-1", after=2)

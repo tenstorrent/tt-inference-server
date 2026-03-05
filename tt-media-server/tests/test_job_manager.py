@@ -1361,7 +1361,7 @@ class TestJobManager:
             job_context=job_ctx,
         )
 
-        result = job_manager.get_training_metrics("train-1")
+        result = job_manager.get_job_metrics("train-1")
         assert result is metrics_list
 
     @pytest.mark.asyncio
@@ -1427,7 +1427,7 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_restore_training_job_restores_metrics(self, job_manager):
-        """Test the full workflow from insert_metric, over restore, to get_training_metrics."""
+        """Test the full workflow from insert_metric, over restore, to get_job_metrics."""
         if not job_manager.db:
             assert True  # skip and assert True if persistence is disabled
             return
@@ -1458,7 +1458,7 @@ class TestJobManager:
 
             m2 = JobManager()
             try:
-                metrics = m2.get_training_metrics("train-1")
+                metrics = m2.get_job_metrics("train-1")
                 assert metrics is not None
                 assert len(metrics) == 3
                 # Verify get_metrics_flat ordering: metric_name ASC, global_step ASC

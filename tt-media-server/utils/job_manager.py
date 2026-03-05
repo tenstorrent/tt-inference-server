@@ -207,7 +207,7 @@ class JobManager:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
 
-    def get_training_metrics(self, job_id: str) -> Optional[list]:
+    def get_job_metrics(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
             if job and isinstance(job._job_context, TrainingJobContext):
@@ -289,7 +289,7 @@ class JobManager:
         if job.job_type != JobTypes.TRAINING.value:
             return
         
-        metrics_list = self.get_training_metrics(job.id)
+        metrics_list = self.get_job_metrics(job.id)
         if metrics_list is None:
             return
         last_seen = 0

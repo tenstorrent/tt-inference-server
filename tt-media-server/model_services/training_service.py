@@ -43,7 +43,7 @@ class TrainingService(BaseJobService):
         )
 
     def get_job_metrics(self, job_id: str, after: int = 0) -> list:
-        metrics_list = self._job_manager.get_training_metrics(job_id)
+        metrics_list = self._job_manager.get_job_metrics(job_id)
         if metrics_list is None:
             return []
         return list(metrics_list[after:])
