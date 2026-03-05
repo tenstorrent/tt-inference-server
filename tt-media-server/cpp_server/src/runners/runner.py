@@ -289,7 +289,7 @@ def main() -> None:
             while not _shutdown:
                 signal.pause()
 
-        model_pipeline.pipeline.terminate()
+        model_pipeline.terminate()
     finally:
         if ttnn is not None:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
