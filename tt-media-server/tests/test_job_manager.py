@@ -1321,7 +1321,7 @@ class TestJobManager:
             )
 
     @pytest.mark.asyncio
-    async def test_get_training_metrics_returns_correct_list(
+    async def test_get_job_metrics_returns_correct_list(
         self, job_manager, mock_request
     ):
         metrics_list = [

@@ -128,7 +128,7 @@ class JobManager:
         result_path: Optional[str] = None,
         start_event: Optional[Event] = None,
         cancel_event: Optional[Event] = None,
-        job_metrics: list = field(default_factory=list),
+        job_metrics: list = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -147,7 +147,7 @@ class JobManager:
                 job.start_event = start_event
             if cancel_event:
                 job.cancel_event = cancel_event
-            if job_metrics:
+            if job_metrics is not None:
                 job.job_metrics = job_metrics
 
             if self.db:
