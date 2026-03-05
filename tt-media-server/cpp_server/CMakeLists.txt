@@ -144,15 +144,15 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
-    src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/ttrun_model_runner.cpp
+    src/runners/llm_runner/model_runners/mock_model_runner.cpp
+    src/runners/llm_runner/model_runners/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
 )
 if(TT_METAL_API_FOUND)
     list(APPEND LLM_ENGINE_SOURCES
-        src/runners/llama_model_runner.cpp
+        src/runners/llm_runner/model_runners/llama_model_runner.cpp
     )
 else()
     message(STATUS "LLM engine: building without tt-metal (mock device backend only)")

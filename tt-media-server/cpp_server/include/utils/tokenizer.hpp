@@ -107,7 +107,7 @@ std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model, const std::
 std::string tokenizer_dir_for_model(config::ModelType model);
 
 /**
- * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first access.
+ * Global active tokenizer, auto-initialized from MODEL_RUNNER on first access.
  * Thread-safe (C++11 function-local static initialization).
  * Intended for metadata access (model_name, stop_token_ids, apply_chat_template);
  * for encode/decode in multithreaded contexts, create separate instances.

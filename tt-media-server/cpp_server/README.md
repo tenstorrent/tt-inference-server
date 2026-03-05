@@ -15,7 +15,7 @@ The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
-**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
+**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `MODEL_RUNNER` (see Environment Variables). Default is mock.
 
 ### Run unit tests
 
@@ -80,7 +80,7 @@ tokenizers/
 Llama models are gated on HuggingFace — set `HF_TOKEN` (or
 `HUGGING_FACE_HUB_TOKEN`, or run `huggingface-cli login`) before building to
 download them. If the Llama download fails, the build continues (DeepSeek is
-required; Llama is optional unless `LLM_DEVICE_BACKEND=llama`). If both
+required; Llama is optional unless `MODEL_RUNNER=llama`). If both
 `tokenizer.json` and `tokenizer_config.json` already exist for a model, the
 build skips the download (no `HF_TOKEN` needed for subsequent builds). To force
 re-download, remove the model directory under `tokenizers/<org>/<model>/`.
@@ -99,10 +99,10 @@ wget -O tokenizers/<org>/<model>/tokenizer_config.json \
 ### Runtime model selection
 
 Model-specific behavior (chat template, stop tokens, decode filtering) is
-selected at **runtime** via the `LLM_DEVICE_BACKEND` environment variable — no
+selected at **runtime** via the `MODEL_RUNNER` environment variable — no
 recompilation needed:
 
-| `LLM_DEVICE_BACKEND` | Model | Tokenizer |
+| `MODEL_RUNNER` | Model | Tokenizer |
 |----------------------|-------|-----------|
 | `mock` or `ttrun` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
 | `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
@@ -152,7 +152,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `ttrun` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
+| `MODEL_RUNNER` | LLM device backend and model: `mock` or `ttrun` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 | `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
 | `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
@@ -408,7 +408,7 @@ cpp_server/
 │   │   └── runner_interface.hpp
 │   ├── utils/
 │   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
-│   │   └── tokenizer_strategy.hpp  # LLM_DEVICE_BACKEND → tokenizer
+│   │   └── tokenizer_strategy.hpp  # MODEL_RUNNER → tokenizer
 │   ├── services/
 │   │   ├── llm_service.hpp
 │   │   └── embedding_service.hpp
@@ -446,14 +446,14 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `llm_engine::Config` (including `model_runner` and `device` from config/settings) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/config.hpp` and `model_runner.cpp`).
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `MODEL_RUNNER`. For LLM, builds `llm_engine::Config` (including `model_runner` and `device` from config/settings) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/config.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
 
 ## Runner Types
 
-The server supports the following runner types, selected via the `LLM_DEVICE_BACKEND` environment variable:
+The server supports the following runner types, selected via the `MODEL_RUNNER` environment variable:
 
 | Runner | Value | Description |
 |--------|-------|-------------|
@@ -462,11 +462,11 @@ The server supports the following runner types, selected via the `LLM_DEVICE_BAC
 
 ### LLM mock runner (default)
 
-When `LLM_DEVICE_BACKEND` is unset or `mock`, the engine uses a stub model runner (no real device). Useful for testing the server and API without hardware.
+When `MODEL_RUNNER` is unset or `mock`, the engine uses a stub model runner (no real device). Useful for testing the server and API without hardware.
 
 ## Performance
 
-With `LLM_DEVICE_BACKEND=mock`, the stub runner can be used to benchmark server overhead (no device I/O). Real throughput with `llama` depends on the TT device and model.
+With `MODEL_RUNNER=mock`, the stub runner can be used to benchmark server overhead (no device I/O). Real throughput with `llama` depends on the TT device and model.
 
 ## Building
 
@@ -536,7 +536,7 @@ The server includes tokenizer support for encode/decode:
    ```
 <<<<<<< HEAD
 4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
-   active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
+   active tokenizer is selected at runtime based on `MODEL_RUNNER` (see
    [Runtime model selection](#runtime-model-selection) above).
 =======
 4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
