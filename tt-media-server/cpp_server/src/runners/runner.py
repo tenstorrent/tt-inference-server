@@ -22,6 +22,7 @@ from pathlib import Path
 
 import ttnn
 from models.demos.deepseek_v3_b1.demo.model_pipeline import ModelPipeline
+from models.demos.deepseek_v3_b1.demo.pipeline import create_fabric_router_config
 
 # ── Shared-memory layout ─────────────────────────────────────────────────────
 # Must match the C++ SharedMemory class in shared_memory.hpp.
@@ -66,6 +67,24 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         choices=("synthetic", "real"),
         default="synthetic",
         help="Use synthetic or real (cached) weights (default: synthetic)",
+    )
+    parser.add_argument(
+        "--fabric-max-payload-bytes",
+        type=int,
+        default=15232,
+        help="Fabric router max packet payload bytes (must match DeepSeek V3 B1 pipeline config)",
+    )
+    parser.add_argument(
+        "--trace-region-size-bytes",
+        type=int,
+        default=573440,
+        help="TTNN trace region size bytes (must match DeepSeek V3 B1 pipeline config)",
+    )
+    parser.add_argument(
+        "--fabric-router-sync-timeout-ms",
+        type=int,
+        default=30000,
+        help="Set TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS (ms).",
     )
     args, _unknown = parser.parse_known_args(argv)
     return args
@@ -120,30 +139,16 @@ def _shm_send_token(buf, task_id: bytes, token_id: int, pos: int) -> int:
 
 
 def _open_shm(shm_name: str):
-    """Create or open shared memory region."""
-    import posix_ipc
-
-    # Create shared memory (or open if it exists)
+    path = f"/dev/shm/{shm_name}"
+    if not os.path.exists(path):
+        return None
+    fd = os.open(path, os.O_RDWR)
     try:
-        shm = posix_ipc.SharedMemory(
-            shm_name, flags=posix_ipc.O_CREAT, mode=0o666, size=_SHM_SIZE
+        return mmap.mmap(
+            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
         )
-    except posix_ipc.ExistentialError:
-        shm = posix_ipc.SharedMemory(shm_name)
-
-    try:
-        # Map the shared memory into process address space
-        buf = mmap.mmap(
-            shm.fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
-        )
-
-        # Initialize to zero if newly created
-        if buf[0:4] == b"\x00\x00\x00\x00":
-            buf[:] = b"\x00" * _SHM_SIZE
-
-        return buf
     finally:
-        shm.close_fd()
+        os.close(fd)
 
 
 def _shm_is_configured() -> bool:
@@ -204,24 +209,77 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         if p2c_buf:
             p2c_buf.close()
 
+def _fabric_config_for_num_procs(num_procs: int):
+    if num_procs == 4:
+        return ttnn.FabricConfig.FABRIC_2D
+    if num_procs in (16, 64):
+        return ttnn.FabricConfig.FABRIC_2D_TORUS_Y
+    raise ValueError(f"Unsupported num_procs for fabric config: {num_procs} (expected 4, 16, or 64)")
+
+
+def _open_mesh_device(
+    fabric_max_payload_bytes: int,
+    trace_region_size_bytes: int,
+    fabric_router_sync_timeout_ms: int,
+):
+    os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(fabric_router_sync_timeout_ms)
+
+    num_procs = int(ttnn.distributed_context_get_size())
+    fabric_router_config = create_fabric_router_config(fabric_max_payload_bytes)
+    ttnn.set_fabric_config(
+        _fabric_config_for_num_procs(num_procs),
+        ttnn.FabricReliabilityMode.STRICT_INIT,
+        None,
+        ttnn.FabricTensixConfig.DISABLED,
+        ttnn.FabricUDMMode.DISABLED,
+        ttnn.FabricManagerMode.DEFAULT,
+        fabric_router_config,
+    )
+    try:
+        return ttnn.open_mesh_device(
+            mesh_shape=ttnn.MeshShape(4, 2),
+            trace_region_size=trace_region_size_bytes,
+        )
+    except TypeError:
+        return ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(4, 2))
+
 
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     rank = _rank()
     args = _parse_args(sys.argv[1:])
 
-    try:
-        shm_enabled = _shm_is_configured()
-        if not shm_enabled:
-            raise RuntimeError(
+    shm_enabled = _shm_is_configured()
+    if not shm_enabled:
+        raise RuntimeError(
                 "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
                 "and ensure both exist under /dev/shm/."
             )
+
+    try:
+        try:
+            ttnn.init_distributed_context()
+        except Exception as e:
+            # Some launchers may initialize distributed context before invoking this script.
+            if "already" not in str(e).lower():
+                raise
+        mesh_device = _open_mesh_device(
+            fabric_max_payload_bytes=args.fabric_max_payload_bytes,
+            trace_region_size_bytes=args.trace_region_size_bytes,
+            fabric_router_sync_timeout_ms=args.fabric_router_sync_timeout_ms,
+        )
+    except Exception as e:
+        print(f"Rank {rank}: failed to open mesh device: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+
 
         print(f"Rank {rank}: Opening model pipeline")
         model_pipeline = ModelPipeline(
             cache_path=args.cache_path,
             use_real_weights=args.weights == "real",
+            mesh_device=mesh_device,
         )
 
         if rank == 0:
