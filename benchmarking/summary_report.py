@@ -243,7 +243,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|P300|T3K|p150x4|p150x8|p300x2|P300x2|TG|GALAXY|n150|n300|p100|p150|p300|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
         \.json$
     """
