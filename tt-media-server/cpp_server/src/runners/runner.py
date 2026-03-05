@@ -115,7 +115,6 @@ def _shm_send_token(buf, task_id: bytes, token_id: int, pos: int) -> int:
     payload_off = msg_off + _PAYLOAD_OFFSET
     buf[payload_off : payload_off + _TASK_ID_SIZE] = task_id[:_TASK_ID_SIZE]
     struct.pack_into("<q", buf, payload_off + _TASK_ID_SIZE, int(token_id))
-
     struct.pack_into("<i", buf, state_off, _TAKEN)
     return (pos + 1) % _NUM_SLOTS
 
@@ -194,13 +193,16 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         )
     c2p_buf = _open_shm(c2p_name)
     p2c_buf = _open_shm(p2c_name)
+
     if not (c2p_buf and p2c_buf):
         raise RuntimeError("Shared memory configured but could not be opened")
     try:
         _shm_inference_loop(model_pipeline, c2p_buf, p2c_buf)
     finally:
-        c2p_buf.close()
-        p2c_buf.close()
+        if c2p_buf:
+            c2p_buf.close()
+        if p2c_buf:
+            p2c_buf.close()
 
 
 def main() -> None:
