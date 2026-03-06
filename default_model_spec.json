@@ -17385,7 +17385,7 @@
           "model_name": "whisper-large-v3",
           "inference_engine": "media",
           "device_type": "N150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N150",
             "max_concurrency": 1,
@@ -17465,9 +17465,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -17493,7 +17493,7 @@
           "model_name": "whisper-large-v3",
           "inference_engine": "media",
           "device_type": "N300",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N300",
             "max_concurrency": 1,
@@ -17536,9 +17536,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -17564,7 +17564,7 @@
           "model_name": "whisper-large-v3",
           "inference_engine": "media",
           "device_type": "GALAXY",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "GALAXY",
             "max_concurrency": 32,
@@ -17644,9 +17644,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -17672,7 +17672,7 @@
           "model_name": "whisper-large-v3",
           "inference_engine": "media",
           "device_type": "T3K",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "T3K",
             "max_concurrency": 4,
@@ -17754,9 +17754,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -17782,7 +17782,7 @@
           "model_name": "whisper-large-v3",
           "inference_engine": "media",
           "device_type": "P150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "P150",
             "max_concurrency": 1,
@@ -17862,9 +17862,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -17892,7 +17892,7 @@
           "model_name": "distil-large-v3",
           "inference_engine": "media",
           "device_type": "N150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N150",
             "max_concurrency": 1,
@@ -17972,9 +17972,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18000,7 +18000,7 @@
           "model_name": "distil-large-v3",
           "inference_engine": "media",
           "device_type": "N300",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N300",
             "max_concurrency": 1,
@@ -18043,9 +18043,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18071,7 +18071,7 @@
           "model_name": "distil-large-v3",
           "inference_engine": "media",
           "device_type": "GALAXY",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "GALAXY",
             "max_concurrency": 32,
@@ -18151,9 +18151,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18179,7 +18179,7 @@
           "model_name": "distil-large-v3",
           "inference_engine": "media",
           "device_type": "T3K",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "T3K",
             "max_concurrency": 4,
@@ -18261,9 +18261,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18289,7 +18289,7 @@
           "model_name": "distil-large-v3",
           "inference_engine": "media",
           "device_type": "P150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "P150",
             "max_concurrency": 1,
@@ -18369,9 +18369,9 @@
           "model_type": "AUDIO",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/demos/whisper",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/demos/whisper",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18399,7 +18399,7 @@
           "model_name": "speecht5_tts",
           "inference_engine": "media",
           "device_type": "N150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N150",
             "max_concurrency": 1,
@@ -18479,9 +18479,9 @@
           "model_type": "TEXT_TO_SPEECH",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/experimental/speecht5_tts",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/experimental/speecht5_tts",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18507,7 +18507,7 @@
           "model_name": "speecht5_tts",
           "inference_engine": "media",
           "device_type": "N300",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "N300",
             "max_concurrency": 1,
@@ -18589,9 +18589,9 @@
           "model_type": "TEXT_TO_SPEECH",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/experimental/speecht5_tts",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/experimental/speecht5_tts",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -18617,7 +18617,7 @@
           "model_name": "speecht5_tts",
           "inference_engine": "media",
           "device_type": "P150",
-          "tt_metal_commit": "3b3f62b",
+          "tt_metal_commit": "4c21253",
           "device_model_spec": {
             "device": "P150",
             "max_concurrency": 1,
@@ -18658,9 +18658,9 @@
           "model_type": "TEXT_TO_SPEECH",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-3b3f62b",
+          "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-4c21253",
           "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/3b3f62b/models/experimental/speecht5_tts",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/4c21253/models/experimental/speecht5_tts",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
