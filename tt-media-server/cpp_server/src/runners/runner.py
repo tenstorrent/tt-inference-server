@@ -209,12 +209,15 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         if p2c_buf:
             p2c_buf.close()
 
+
 def _fabric_config_for_num_procs(num_procs: int):
     if num_procs == 4:
         return ttnn.FabricConfig.FABRIC_2D
     if num_procs in (16, 64):
         return ttnn.FabricConfig.FABRIC_2D_TORUS_Y
-    raise ValueError(f"Unsupported num_procs for fabric config: {num_procs} (expected 4, 16, or 64)")
+    raise ValueError(
+        f"Unsupported num_procs for fabric config: {num_procs} (expected 4, 16, or 64)"
+    )
 
 
 def _open_mesh_device(
@@ -222,7 +225,9 @@ def _open_mesh_device(
     trace_region_size_bytes: int,
     fabric_router_sync_timeout_ms: int,
 ):
-    os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(fabric_router_sync_timeout_ms)
+    os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(
+        fabric_router_sync_timeout_ms
+    )
 
     num_procs = int(ttnn.distributed_context_get_size())
     fabric_router_config = create_fabric_router_config(fabric_max_payload_bytes)
@@ -252,9 +257,9 @@ def main() -> None:
     shm_enabled = _shm_is_configured()
     if not shm_enabled:
         raise RuntimeError(
-                "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
-                "and ensure both exist under /dev/shm/."
-            )
+            "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
+            "and ensure both exist under /dev/shm/."
+        )
 
     try:
         try:
@@ -273,8 +278,6 @@ def main() -> None:
         sys.exit(1)
 
     try:
-
-
         print(f"Rank {rank}: Opening model pipeline")
         model_pipeline = ModelPipeline(
             cache_path=args.cache_path,
