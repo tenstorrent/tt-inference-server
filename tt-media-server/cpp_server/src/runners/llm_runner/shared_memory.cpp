@@ -9,7 +9,7 @@
 #include <thread>
 
 SharedMemory::SharedMemory(const std::string& name)
-    : name(name[0] == '/' ? name : "/" + name) {}  // Ensure name starts with /
+    : name(name[0] == '/' ? name : "/" + name) {}
 
 SharedMemory::~SharedMemory() {
     if (memPointer && memPointer != MAP_FAILED) {
@@ -19,14 +19,9 @@ SharedMemory::~SharedMemory() {
 }
 
 void SharedMemory::open() {
-    int fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
+    int fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
         throw std::runtime_error("SharedMemory: unable to open shared memory: " + name);
-    }
-
-    if (ftruncate(fd, SharedMemoryConfig::TOTAL_SIZE) == -1) {
-        close(fd);
-        throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
     }
 
     memPointer = mmap(

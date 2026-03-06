@@ -10,6 +10,7 @@ Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
     : block_size_(config.kvcache_block_size),
       max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
+      max_in_flight_count_(config.max_in_flight_count),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
       waiting_(task_queue) {}
@@ -44,7 +45,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_batched_tokens = 0;
 
   // --- Prefill: pop from task queue ---
-  while (num_seqs < max_num_seqs_) {
+  while (num_seqs < max_num_seqs_ && in_flight_count_ < max_in_flight_count_) {
     auto seq = waiting_->try_pop();
     if (!seq) {
       break;  // Queue empty
@@ -78,7 +79,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   // --- Decode: process running sequences ---
-  while (!running_.empty() && num_seqs < max_num_seqs_) {
+  while (!running_.empty() && num_seqs < max_num_seqs_ && in_flight_count_ < max_in_flight_count_) {
     Sequence* seq = running_.front();
     running_.pop_front();
     auto self_preempt = false;
@@ -95,12 +96,10 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     if (block_manager_.can_append(*seq) && !self_preempt) {
       num_seqs += 1;
       block_manager_.may_append(*seq);
+      seq->status_ = SequenceStatus::IN_FLIGHT;
+      ++in_flight_count_;
       scheduled_seqs.push_back(seq);
     }
-  }
-  for (Sequence* seq : scheduled_seqs) {
-    seq->status_ = SequenceStatus::IN_FLIGHT;
-    ++in_flight_count_;
   }
   LLM_ENGINE_LOG("scheduler") << "schedule decode n=" << scheduled_seqs.size()
                              << " scheduled_seqs=" << (scheduled_seqs.empty() ? "none" : scheduled_seqs[0]->task_id.id)
