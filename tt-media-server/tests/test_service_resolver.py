@@ -25,7 +25,7 @@ mock_image_service.ImageService = MockImageService
 sys.modules["model_services.image_service"] = mock_image_service
 
 # Now we can safely import
-from . import service_resolver
+from resolver import service_resolver
 from model_services.base_service import BaseService
 
 
