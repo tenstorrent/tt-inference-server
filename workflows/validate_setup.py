@@ -85,7 +85,7 @@ def validate_runtime_args(model_spec, runtime_config):
             if not args.device_id or len(args.device_id) != 2:
                 raise ValueError(
                     "P300 requires exactly 2 device IDs specified with --device-id. "
-                    "A P300 card has 2 P150 chips. Run 'tt-smi' to list available devices "
+                    "A P300 card has 2 BlackHole (BH) chips. Run 'tt-smi' to list available devices "
                     "and identify which 2 /dev/tenstorrent/ indices belong to your P300 card, "
                     "then pass them as e.g. '--device-id 0,1'."
                 )
