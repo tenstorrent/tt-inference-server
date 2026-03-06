@@ -220,13 +220,12 @@ class TestModelSpecSystem:
         assert loaded_spec.model_name == original_spec.model_name
         assert loaded_spec.status == original_spec.status
 
-    def test_apply_runtime_args_overrides_commits_from_docker_image(
+    def test_apply_overrides_commits_from_docker_image(
         self, sample_impl, sample_device_model_spec
     ):
-        """Test that apply_runtime_args updates commits from docker image tag."""
-        import argparse
+        """Test that apply_overrides updates commits from docker image tag."""
+        from workflows.runtime_config import RuntimeConfig
 
-        # Create ModelSpec with default commits
         default_tt_metal_commit = "default-tt-metal-commit-1234567890"
         default_vllm_commit = "default-vllm"
         spec = ModelSpec(
@@ -241,24 +240,20 @@ class TestModelSpecSystem:
             device_model_spec=sample_device_model_spec,
         )
 
-        # Verify initial commits are the defaults
         assert spec.tt_metal_commit == default_tt_metal_commit
         assert spec.vllm_commit == default_vllm_commit
 
-        # Create args with override_docker_image containing commits in tag
-        # Format: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
         new_tt_metal_commit = "fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
         new_vllm_commit = "7a9b86f"
         docker_image_with_commits = f"ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.4.0-{new_tt_metal_commit}-{new_vllm_commit}-58111263717"
-        args = argparse.Namespace()
-        args.override_docker_image = docker_image_with_commits
-        args.override_tt_config = None
-        args.vllm_override_args = None
-        args.service_port = None
-        args.dev_mode = False
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image=docker_image_with_commits,
+        )
 
-        # Apply runtime args
-        spec.apply_runtime_args(args)
+        spec.apply_overrides(rc)
 
         assert spec.tt_metal_commit == new_tt_metal_commit
         assert spec.vllm_commit == new_vllm_commit

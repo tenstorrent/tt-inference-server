@@ -37,6 +37,7 @@ from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -511,9 +512,9 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run AIPerf benchmarks")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -554,12 +555,12 @@ def main():
 
     args = parse_args()
     jwt_secret = args.jwt_secret
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    service_port = runtime_config.service_port
 
     device = DeviceTypes.from_string(device_str)
     logger.info(f"model_spec=: {model_spec}")
@@ -606,7 +607,7 @@ def main():
         )
 
     # Check for limit_samples_mode (smoke-test, ci-commit) to enable debug mode
-    limit_samples_mode_str = cli_args.get("limit_samples_mode")
+    limit_samples_mode_str = runtime_config.limit_samples_mode
     if limit_samples_mode_str:
         from workflows.workflow_types import EvalLimitMode
 

@@ -1,4 +1,4 @@
-# vLLM TT Metalium TT-Transformer Inference API
+# vLLM tt-metal Docker image
 
 This implementation supports the following models in the [LLM model list](../README.md#llms)
 
@@ -8,61 +8,134 @@ This implementation supports the following models in the [LLM model list](../REA
   - [1. Docker Install](#1-docker-install)
   - [2. Ensure System Dependencies Installed](#2-ensure-system-dependencies-installed)
   - [3. CPU Performance Setting](#3-cpu-performance-setting)
-  - [4. Run Model in Docker with `run.py` Automation](#4-run-model-in-docker-with-runpy-automation)
+  - [4. Run Model in Docker](#4-run-model-in-docker)
+- [Container Interface (Direct Docker Run)](#container-interface-direct-docker-run)
+  - [Container CLI Arguments](#container-cli-arguments)
+  - [Secrets](#secrets)
+  - [Persistent Volume Overrides](#persistent-volume-overrides)
 - [Example Clients](#example-clients)
   - [Run Example Clients from Within Docker Container](#run-example-clients-from-within-docker-container)
 
 ## Setup and installation
 
-This guide was tested starting condition is from a fresh installation of Ubuntu 20.04 with Tenstorrent system dependencies installed. 
-Ubuntu 22.04 should also work for most if not all models. 
+See [docs/prerequisites.md](../docs/prerequisites.md)
 
-### 1. Docker install
+### Run model in Docker container
 
-see Ubuntu apt guide: https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
+There are two ways to run the inference server in Docker:
 
-Recommended to follow postinstall guide to allow $USER to run docker without sudo: https://docs.docker.com/engine/install/linux-postinstall/
+For `run.py` usage see [docs/workflows_user_guide.md](../docs/workflows_user_guide.md)
 
-### 2. Ensure system dependencies installed
+See the full [run.py CLI documentation](../workflows/README.md#runpy-cli-usage) for all options including Docker volume strategies and `--print-docker-cmd`.
 
-Follow TT guide software installation at: https://docs.tenstorrent.com/getting-started/README
+The container can be used independently from `run.py`. See the [Container Interface](#container-interface-direct-docker-run) section below.
+The inference server container can be run directly with `docker run`, without `run.py`. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec JSON.
 
-Ensure all set up:
-- firmware: tt-firmware (https://github.com/tenstorrent/tt-firmware)
-- drivers: tt-kmd (https://github.com/tenstorrent/tt-kmd)
-- hugepages: see https://docs.tenstorrent.com/getting-started/README#step-4-set-up-hugepages
-- tt-smi: https://github.com/tenstorrent/tt-smi
-
-If running on a TT-LoudBox or TT-QuietBox, you will also need:
-- topology: tt-topology https://github.com/tenstorrent/tt-topology
-  - set up mesh topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
-
-### 3. CPU performance setting
-
-In order to get peak performance increasing the CPU frequency profile is recommended. If you cannot do this for your setup, it is optional and can be skipped, though performance may be lower than otherwise expected.
+### Minimal Example
 
 ```bash
-sudo apt-get update && sudo apt-get install -y linux-tools-generic
-# enable perf mode
-sudo cpupower frequency-set -g performance
-
-# disable perf mode (if desired later)
-# sudo cpupower frequency-set -g ondemand
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_tt_transformers-Llama-3.2-1B-Instruct:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-84b4c53-222ee06 \
+  --model meta-llama/Llama-3.2-1B-Instruct \
+  --tt-device n300
 ```
 
-### 4. Run model in Docker with `run.py` automation
+Required Docker flags:
+- `--device /dev/tenstorrent` -- passes the Tenstorrent device into the container
+- `--ipc host` -- allows for shared memory with host
+- `--mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G` -- hugepages for TT Metal
 
-The `run.py` automation will setup the model
+### Container CLI Arguments
 
-model weights download, docker image download, and Python environment may take a long time on low-bandwidth network.
+These arguments are passed after the Docker image name:
 
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--model` | Yes | -- | HuggingFace model repo (e.g., `meta-llama/Llama-3.1-8B-Instruct`). |
+| `--tt-device` | Yes | -- | Device type: `n150`, `n300`, `t3k`, `galaxy`, etc. |
+| `--engine` | No | Model spec default | Inference engine override: `vllm`, `media`, `forge`. |
+| `--impl` | No | Model spec default | Implementation name override (e.g., `tt-transformers`). |
+
+### Secrets
+
+Secrets are passed to the container via Docker environment variables or an env file:
 
 ```bash
-# run inference server with docker
-python3 run.py --model Llama-3.2-1B-Instruct --device n300 --workflow server --docker-server
+# Option 1: env file
+docker run ... --env-file ./.env ...
+
+# Option 2: individual environment variables
+docker run ... -e HF_TOKEN=$HF_TOKEN -e JWT_SECRET=$JWT_SECRET ...
 ```
 
-See documentation in [Model Readiness Workflows](../docs/workflows_user_guide.md#docker-server)
+- `HF_TOKEN` -- required for downloading model weights from HuggingFace (gated models).
+- `JWT_SECRET` -- optional. When set, HTTP requests to the vLLM API require a bearer token in the `Authorization` header.
+
+### Persistent Volume Overrides
+
+By default, the container downloads model weights and stores TT Metal caches in a Docker named volume mounted at `/home/container_app_user/cache_root`. The following overrides change how persistent data is managed.
+
+Only one strategy should be used at a time.
+
+**File permissions:** The container runs as a non-root user (`container_app_user`). There is no root-level entrypoint that adjusts permissions at startup, so mounted volumes must already be accessible to the image's built-in UID (UID `1000` for default release images).
+
+| Strategy | Host permission requirement |
+|---|---|
+| Docker named volume (default) | None. Docker seeds the volume from the image with correct ownership on first creation. |
+| Host persistent volume (bind mount) | The host directory must be **writable** by the image UID (e.g. `sudo chown 1000 <path>`). If needed add Docker user UID (e.g. `1000`) to a shared group with user who owns the directoy, then `chown` to the shared group. With this, `chmod` to `775` For read+write. Alternatively, if that does not work for your usecase you can just do `chmod` to `777` without the shared group. |
+| Host weights / Host HF cache (readonly bind mounts) | The host path only needs to be **readable** by the image UID. TT Metal caches are stored in a separate Docker named volume, not on the host. |
+
+**1. Host persistent volume**
+
+Bind mount an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. The host directory must be writable by the image's built-in UID (see permissions table above). This is equivalent to `run.py --host-volume`.
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HOST_VOLUME,dst=/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
+
+**2. Host model weights directory**
+
+Mount a host directory containing pre-downloaded model weights readonly. TT Metal caches use a separate Docker named volume. This is equivalent to `run.py --host-weights-dir`.
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HOST_WEIGHTS_DIR,dst=/home/container_app_user/readonly_weights_mount/<dir-name>,readonly \
+  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<dir-name> \
+  --volume <volume-name>:/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
+
+This can also use the host's existing HuggingFace cache. When using `run.py --host-hf-cache`, pass the top-level HuggingFace cache directory (typically `~/.cache/huggingface`). `run.py` automatically resolves the snapshot path inside the cache, mounts the model repo directory, and sets `MODEL_WEIGHTS_DIR` to point at the correct snapshot inside the container.
+
+When using `docker run` directly, you must resolve the snapshot path yourself and pass it as the bind-mount source. The HF cache layout is typically like:
+```
+~/.cache/huggingface/hub/models--<org>--<model-name>/snapshots/<revision-hash>/
+```
+
+Set `$HF_CACHE_SNAPSHOT` to that resolved path, for example:
+
+```bash
+HF_CACHE_SNAPSHOT=~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-1B-Instruct/snapshots/<revision-hash>
+```
+
+```bash
+docker run \
+  ... \
+  --mount type=bind,src=$HF_CACHE_SNAPSHOT,dst=/home/container_app_user/readonly_weights_mount/<model-name>,readonly \
+  -e MODEL_WEIGHTS_DIR=/home/container_app_user/readonly_weights_mount/<model-name> \
+  --volume <volume-name>:/home/container_app_user/cache_root \
+  <image> --model <model> --tt-device <device>
+```
 
 ### Example clients
 

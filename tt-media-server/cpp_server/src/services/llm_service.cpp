@@ -5,9 +5,11 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "utils/tokenizer.hpp"
 #include "worker/single_process_worker.hpp"
 #include "utils/mapper.hpp"
 #include <cassert>
+#include <unordered_set>
 #include <chrono>
 #include <climits>
 #include <condition_variable>
@@ -58,7 +60,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
 LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
-      tokenizer_(tt::config::tokenizer_path()) {
+      tokenizer_(&tt::utils::active_tokenizer()) {
     std::cout << "[LLMService] Initialized (mode=" << tt::config::to_string(mode_)
               << ", workers=" << num_workers_ << ")\n" << std::flush;
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
@@ -121,7 +123,13 @@ SystemStatus LLMService::get_system_status() const {
 void LLMService::pre_process(domain::CompletionRequest& request) const {
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
-        request.prompt = tokenizer_.encode(text);
+        static auto cfg = tt::utils::get_tokenizer_config();
+        bool has_bos = text.size() >= cfg.bos_token.size() &&
+                       text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
+        if (cfg.add_bos_token && !cfg.bos_token.empty() && !has_bos) {
+            text = cfg.bos_token + text;
+        }
+        request.prompt = tokenizer_->encode(text);
     }
     const auto& tokens = std::get<std::vector<int>>(request.prompt);
     if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
@@ -230,7 +238,8 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         return;
     }
 
-    tt::utils::Tokenizer tokenizer(tt::config::tokenizer_path());
+    const auto stop_ids = tokenizer_->stop_token_ids();
+    const std::unordered_set<int64_t> stop_token_set(stop_ids.begin(), stop_ids.end());
 
     while (running_) {
         if (!check_worker_alive(worker_idx)) {
@@ -260,11 +269,16 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             ).count();
 
             domain::CompletionChoice choice;
-            choice.text = tokenizer.decode({static_cast<int>(token.token_id)});
+            choice.text = tokenizer_->decode({static_cast<int>(token.token_id)});
             choice.index = token.token_index;
-            choice.token_id = static_cast<int64_t>(token.token_id);
-            if (token.is_final()) {
-                choice.finish_reason = "stop";
+            if (token.is_error()) {
+                choice.finish_reason = "error";
+            } else {
+                choice.token_id = static_cast<int64_t>(token.token_id);
+                if (token.is_final()) {
+                    bool is_stop = stop_token_set.count(static_cast<int64_t>(token.token_id)) > 0;
+                    choice.finish_reason = is_stop ? "stop" : "length";
+                }
             }
             response.choices.push_back(std::move(choice));
 
@@ -361,20 +375,21 @@ void LLMService::process_streaming_request(
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
 
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
-        bool sent = socket_service_->forwardTask(
+        bool sent = socket_service_->sendPrefillRequest(
             task_id, "", token_ids, request.max_tokens);
 
         if (!sent) {
             stream_callbacks_.erase(task_id);
             pending_tasks_.fetch_sub(1);
-            throw std::runtime_error("Failed to forward task to prefill server (not connected)");
+            throw std::runtime_error("Failed to send prefill request (not connected)");
         }
-        std::cout << "[LLMService] Forwarded task " << task_id
-                  << " to prefill server (" << token_ids.size() << " tokens)\n" << std::flush;
+        std::cout << "[LLMService:DECODE] Sent prefill request " << task_id
+                  << " (" << token_ids.size() << " tokens)\n" << std::flush;
         return;
     }
 
-    auto sequence = std::make_unique<llm_engine::Sequence>(token_ids);
+    auto sequence = std::make_unique<llm_engine::Sequence>(
+        tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
@@ -388,12 +403,12 @@ void LLMService::post_process(domain::CompletionResponse&) const {
 void LLMService::setup_socket_callbacks() {
     if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
         socket_service_->onPrefillComplete(
-            [this](const tt::sockets::TaskResultMessage& result) {
+            [this](const tt::sockets::PrefillResultMessage& result) {
                 handle_prefill_complete(result);
             });
     } else if (mode_ == tt::config::LLMMode::PREFILL_ONLY) {
         socket_service_->onPrefillRequested(
-            [this](const tt::sockets::TaskForwardMessage& message) {
+            [this](const tt::sockets::PrefillRequestMessage& message) {
                 handle_prefill_request(message);
             });
     }
@@ -433,8 +448,8 @@ void LLMService::handle_connection_lost() {
     stream_callbacks_.clear();
 }
 
-void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& message) {
-    std::cout << "[LLMService:PREFILL] Received task " << message.task_id
+void LLMService::handle_prefill_request(const tt::sockets::PrefillRequestMessage& message) {
+    std::cout << "[LLMService:PREFILL] Received prefill request " << message.task_id
               << " (" << message.token_ids.size() << " tokens, max_tokens=" << message.max_tokens << ")\n" << std::flush;
 
     domain::CompletionRequest request;
@@ -469,26 +484,26 @@ void LLMService::handle_prefill_request(const tt::sockets::TaskForwardMessage& m
             int remaining_tokens = original_max_tokens - 1;
             bool fully_finished = is_final && remaining_tokens <= 0;
 
-            tt::sockets::TaskResultMessage result_msg;
+            tt::sockets::PrefillResultMessage result_msg;
             result_msg.task_id = task_id;
             result_msg.generated_text = text;
             result_msg.finished = fully_finished;
             result_msg.tokens_generated = 1;
             result_msg.token_ids = *token_ids_ptr;
             result_msg.remaining_tokens = remaining_tokens;
-            socket_service_->sendTaskResult(result_msg);
+            socket_service_->sendPrefillResult(result_msg);
 
             if (is_final) {
-                std::cout << "[LLMService:PREFILL] Sent first token for task " << task_id
+                std::cout << "[LLMService:PREFILL] Sent prefill result " << task_id
                           << " (remaining: " << remaining_tokens << ", token_ids: "
                           << token_ids_ptr->size() << ")\n" << std::flush;
             }
         });
 }
 
-void LLMService::handle_prefill_complete(const tt::sockets::TaskResultMessage& result) {
+void LLMService::handle_prefill_complete(const tt::sockets::PrefillResultMessage& result) {
     const std::string& task_id = result.task_id;
-    std::cout << "[LLMService:DECODE] Received result for task " << task_id
+    std::cout << "[LLMService:DECODE] Received prefill result " << task_id
               << " (finished=" << result.finished << ", remaining=" << result.remaining_tokens
               << ", token_ids=" << result.token_ids.size() << ")\n" << std::flush;
 
@@ -532,7 +547,7 @@ void LLMService::handle_prefill_complete(const tt::sockets::TaskResultMessage& r
     }
 }
 
-void LLMService::continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result) {
+void LLMService::continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result) {
     domain::CompletionRequest request;
     request.task_id = prefill_result.task_id;
 
@@ -542,6 +557,7 @@ void LLMService::continue_decode_generation(const tt::sockets::TaskResultMessage
 
     std::string task_id = prefill_result.task_id;
     auto sequence = std::make_unique<llm_engine::Sequence>(
+        tt::config::llm_engine_config().kvcache_block_size,
         std::vector<int64_t>(prefill_result.token_ids.begin(), prefill_result.token_ids.end()));
     sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prefill_result.token_ids.size();
