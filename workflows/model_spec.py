@@ -2571,7 +2571,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="a9b09e0",
+        tt_metal_commit="3b3f62b",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
