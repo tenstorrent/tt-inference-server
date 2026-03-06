@@ -64,6 +64,7 @@ class Scheduler {
   int block_size_;
   int max_num_seqs_;
   int max_num_batched_tokens_;
+  int max_in_flight_count_;
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* waiting_;
