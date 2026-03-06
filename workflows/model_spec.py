@@ -1042,14 +1042,13 @@ llm_templates = [
                 max_context=32 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
@@ -1876,9 +1875,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
@@ -1891,9 +1888,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
@@ -1901,6 +1896,7 @@ vlm_templates = [
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1921,9 +1917,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 51934848,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -1941,9 +1935,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21921792,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -1962,9 +1954,7 @@ vlm_templates = [
                     "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 49544000,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -1973,6 +1963,7 @@ vlm_templates = [
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[

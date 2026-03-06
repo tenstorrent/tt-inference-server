@@ -110,12 +110,16 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self._max_num_blocks_per_seq = 0
 
     def get_pipeline_device_params(self):
-        return {"num_command_queues": 2, "trace_region_size": 32 * 1024 * 1024}
+        return {"num_command_queues": 2, "trace_region_size": 50000000}
 
     def _page_table_from_block_ids(self, block_ids: list[int], torch) -> Any:
-        """Build page_table tensor from block IDs (single sequence, shape [1, max_blocks])."""
+        """Build page_table tensor from block IDs (single sequence, shape [1, max_blocks]).
+
+        Unused entries are set to -1 (SKIP_PAGE_TABLE_ENTRY in the paged_fill_cache
+        kernel).
+        """
         max_blocks = self._max_num_blocks_per_seq
-        page_table = torch.zeros((1, max_blocks), dtype=torch.int32)
+        page_table = torch.full((1, max_blocks), -1, dtype=torch.int32)
         n = min(len(block_ids), max_blocks)
         page_table[0, :n] = torch.tensor(block_ids[:n], dtype=torch.int32)
         return page_table
@@ -161,6 +165,25 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: KV cache allocation returned None — "
                 "model.allocate_kv_cache() failed silently"
             )
+
+        # Warmup prefill
+        self.model.warmup_model_prefill(
+            kv_cache=self._kv_cache,
+            enable_trace=True,
+            can_sample_on_device=False,
+            non_greedy_decoding_on_device=False,
+        )
+
+        # Warmup decode
+        self.model.warmup_model_decode(
+            kv_cache=self._kv_cache,
+            enable_trace=True,
+            max_batch_size=self.max_batch_size,
+            num_blocks=self._max_num_blocks_per_seq,
+            can_sample_on_device=False,
+            non_greedy_decoding_on_device=False,
+        )
+
         self.logger.info(
             f"Device {self.device_id}: Warmup done (max_batch_size={self.max_batch_size}, "
             "batched decode enabled when multiple sequences per step)"
@@ -208,6 +231,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             page_table=page_table,
             kv_cache=self._kv_cache,
             prompt_lens=[prompt_len],
+            warmup_prefill=False,
         )
 
         logits_1d = logits[0, -1, :] if logits.dim() >= 3 else logits.flatten()

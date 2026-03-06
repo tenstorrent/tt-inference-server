@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-
 from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
@@ -81,6 +79,29 @@ async def get_fine_tuning_job_metadata(
         raise HTTPException(status_code=404, detail="Fine-tuning job not found")
 
     return JSONResponse(content=job_data)
+
+
+@router.get("/jobs/{job_id}/metrics")
+async def get_training_metrics(
+    job_id: str,
+    after: int = 0,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    job_data = service.get_job_metadata(job_id)
+    if not job_data:
+        raise HTTPException(404, "Job not found")
+
+    metrics = service.get_job_metrics(job_id, after)
+    is_final = job_data.get("status") in ("completed", "failed", "cancelled")
+
+    return JSONResponse(
+        content={
+            "data": metrics,
+            "next_after": after + len(metrics),
+            "is_final": is_final,
+        }
+    )
 
 
 @router.post("/jobs/{job_id}/cancel")
