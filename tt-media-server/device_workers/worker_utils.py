@@ -8,7 +8,9 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
-WARMUP_TIMEOUT_SECONDS = 900  # 15 min: covers model download + TTNN compile + warmup inference
+WARMUP_TIMEOUT_SECONDS = (
+    900  # 15 min: covers model download + TTNN compile + warmup inference
+)
 
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):
