@@ -89,6 +89,7 @@ class ModelRunners(Enum):
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
     LLM_TEST = "llm_test"
+    LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
@@ -119,6 +120,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLM,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
+        ModelRunners.LLAMA_RUNNER,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,

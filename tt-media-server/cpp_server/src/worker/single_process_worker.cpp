@@ -11,7 +11,7 @@
 namespace tt::worker {
 
 SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
-    : cfg(move(cfg)) {
+    : cfg(std::move(cfg)) {
 
     pid = getpid();
     worker_id = cfg.worker_id;
