@@ -11,12 +11,12 @@ Launch directly with:
     python mock_runner.py
 """
 
-import mmap
 import os
 import signal
 import struct
 import sys
 import time
+from multiprocessing import shared_memory
 
 # ── Shared-memory layout ─────────────────────────────────────────────────────
 # Must match the C++ SharedMemory class in shared_memory.hpp.
@@ -128,43 +128,19 @@ def _shm_send(buf, task_id: str, token_ids: list, max_tokens: int, pos: int) -> 
     # Write payload
     buf[payload_off : payload_off + payload_length] = payload
 
-    # Ensure all writes are visible before marking TAKEN
-    # This is critical for cross-process communication with C++ atomic operations
-    buf.flush()
-
     struct.pack_into("<i", buf, state_off, _TAKEN)
-
-    # Flush again to ensure TAKEN state is visible
-    buf.flush()
 
     return (pos + 1) % _NUM_SLOTS
 
 
-def _open_shm(shm_name: str):
-    """Create or open shared memory region."""
-    import posix_ipc
-
-    # Create shared memory (or open if it exists)
+def _open_shm(shm_name: str) -> shared_memory.SharedMemory:
+    name = shm_name.lstrip('/')
     try:
-        shm = posix_ipc.SharedMemory(
-            shm_name, flags=posix_ipc.O_CREAT, mode=0o666, size=_SHM_SIZE
-        )
-    except posix_ipc.ExistentialError:
-        shm = posix_ipc.SharedMemory(shm_name)
-
-    try:
-        # Map the shared memory into process address space
-        buf = mmap.mmap(
-            shm.fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
-        )
-
-        # Initialize to zero if newly created
-        if buf[0:4] == b"\x00\x00\x00\x00":
-            buf[:] = b"\x00" * _SHM_SIZE
-
-        return buf
-    finally:
-        shm.close_fd()
+        shm = shared_memory.SharedMemory(name=name, create=True, size=_SHM_SIZE)
+    except FileExistsError:
+        shm = shared_memory.SharedMemory(name=name)
+    os.chmod(f"/dev/shm/{name}", 0o666)
+    return shm
 
 
 def _mock_echo_bridge(c2p_buf, p2c_buf) -> None:
@@ -244,24 +220,18 @@ def _run_mock_bridge() -> None:
         file=sys.stderr,
     )
 
-    c2p_buf = _open_shm(c2p_name)
-    p2c_buf = _open_shm(p2c_name)
-
-    if not (c2p_buf and p2c_buf):
-        print("Error: Failed to open shared memory buffers", file=sys.stderr)
-        sys.exit(1)
+    c2p_shm = _open_shm(c2p_name)
+    p2c_shm = _open_shm(p2c_name)
 
     print("Mock runner: SHM bridge started successfully", file=sys.stderr)
 
     try:
-        _mock_echo_bridge(c2p_buf, p2c_buf)
+        _mock_echo_bridge(c2p_shm.buf, p2c_shm.buf)
     except KeyboardInterrupt:
         print("\nMock runner: Interrupted by user", file=sys.stderr)
     finally:
-        if c2p_buf:
-            c2p_buf.close()
-        if p2c_buf:
-            p2c_buf.close()
+        c2p_shm.close()
+        p2c_shm.close()
         print("Mock runner: Shutdown complete", file=sys.stderr)
 
 

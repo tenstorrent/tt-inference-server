@@ -13,11 +13,11 @@ Launch with:
 """
 
 import argparse
-import mmap
 import os
 import signal
 import struct
 import sys
+from multiprocessing import shared_memory
 from pathlib import Path
 
 import ttnn
@@ -138,27 +138,22 @@ def _shm_send_token(buf, task_id: bytes, token_id: int, pos: int) -> int:
     return (pos + 1) % _NUM_SLOTS
 
 
-def _open_shm(shm_name: str):
-    path = f"/dev/shm/{shm_name}"
-    if not os.path.exists(path):
-        return None
-    fd = os.open(path, os.O_RDWR)
+def _open_shm(shm_name: str) -> shared_memory.SharedMemory:
+    name = shm_name.lstrip('/')
     try:
-        return mmap.mmap(
-            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
-        )
-    finally:
-        os.close(fd)
+        shm = shared_memory.SharedMemory(name=name, create=True, size=_SHM_SIZE)
+    except FileExistsError:
+        shm = shared_memory.SharedMemory(name=name)
+    os.chmod(f"/dev/shm/{name}", 0o666)
+    return shm
+
 
 
 def _shm_is_configured() -> bool:
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
-    if not (c2p_name and p2c_name):
-        return False
-    return os.path.exists(f"/dev/shm/{c2p_name}") and os.path.exists(
-        f"/dev/shm/{p2c_name}"
-    )
+    # ONLY check if the strings exist. The files will be created in _run_shm_bridge
+    return bool(c2p_name and p2c_name)
 
 
 def _shm_inference_loop(model_pipeline: ModelPipeline, c2p_buf, p2c_buf) -> None:
@@ -196,18 +191,13 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         raise RuntimeError(
             "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C."
         )
-    c2p_buf = _open_shm(c2p_name)
-    p2c_buf = _open_shm(p2c_name)
-
-    if not (c2p_buf and p2c_buf):
-        raise RuntimeError("Shared memory configured but could not be opened")
+    c2p_shm = _open_shm(c2p_name)
+    p2c_shm = _open_shm(p2c_name)
     try:
-        _shm_inference_loop(model_pipeline, c2p_buf, p2c_buf)
+        _shm_inference_loop(model_pipeline, c2p_shm.buf, p2c_shm.buf)
     finally:
-        if c2p_buf:
-            c2p_buf.close()
-        if p2c_buf:
-            p2c_buf.close()
+        c2p_shm.close()
+        p2c_shm.close()
 
 
 def _fabric_config_for_num_procs(num_procs: int):

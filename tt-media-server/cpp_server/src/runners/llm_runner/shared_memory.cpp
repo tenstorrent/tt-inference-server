@@ -19,18 +19,9 @@ SharedMemory::~SharedMemory() {
 }
 
 void SharedMemory::open() {
-    int fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
+    int fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
         throw std::runtime_error("SharedMemory: unable to open shared memory: " + name);
-    }
-
-    if (ftruncate(fd, SharedMemoryConfig::TOTAL_SIZE) == -1) {
-        close(fd);
-        throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
-    }
-    if (fchmod(fd, 0666) == -1) {
-        close(fd);
-        throw std::runtime_error("SharedMemory: fchmod failed: " + name);
     }
 
     memPointer = mmap(
