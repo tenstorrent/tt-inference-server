@@ -89,7 +89,9 @@ class StressTestsArgs:
             device=runtime_config.device,
             service_port=runtime_config.service_port,
             # From RuntimeConfig (stress tests configuration)
-            disable_trace_capture=runtime_config.disable_trace_capture,
+            # Auto-disable trace capture if model has builtin warmup and user hasn't explicitly overridden
+            disable_trace_capture=runtime_config.disable_trace_capture
+            or getattr(model_spec, "has_builtin_warmup", False),
             run_mode=parsed_workflow_args.get("run_mode", "multiple"),
             max_context_length=parsed_workflow_args.get("max_context_length"),
             endurance_mode=parsed_workflow_args.get("endurance_mode", False),

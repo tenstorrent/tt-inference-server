@@ -15,23 +15,23 @@
 namespace tt::sockets {
 
 /**
- * @brief Service for managing inter-server communication
+ * @brief Service for managing inter-server communication in prefill/decode split mode
  *
- * Handles task forwarding, load balancing, and health checks
- * between multiple cpp_server instances. Initializes based on
- * configuration settings.
+ * Handles prefill requests/results and health checks between prefill and decode
+ * server instances. The decode server sends prefill requests to the prefill server,
+ * which processes them and returns prefill results.
  */
 class InterServerService {
 public:
     /**
-     * @brief Task result callback type (extended for prefill/decode split)
+     * @brief Callback type for when prefill completes
      */
-    using TaskCallback = std::function<void(const TaskResultMessage& result)>;
+    using PrefillCompleteCallback = std::function<void(const PrefillResultMessage& result)>;
 
     /**
-     * @brief Task forward callback type (includes token_ids for pre-tokenized prompts)
+     * @brief Callback type for when prefill is requested
      */
-    using TaskForwardCallback = std::function<void(const TaskForwardMessage& message)>;
+    using PrefillRequestedCallback = std::function<void(const PrefillRequestMessage& message)>;
 
     /**
      * @brief Health info callback type
@@ -63,24 +63,24 @@ public:
     bool isEnabled() const;
 
     /**
-     * @brief Forward a task to the connected server
+     * @brief Send prefill request to the prefill server
      * @param task_id Unique task identifier
      * @param prompt Task prompt (text)
      * @param token_ids Pre-tokenized prompt token IDs
      * @param max_tokens Maximum tokens to generate
      * @return true if sent successfully
      */
-    bool forwardTask(const std::string& task_id,
+    bool sendPrefillRequest(const std::string& task_id,
                     const std::string& prompt,
                     const std::vector<int64_t>& token_ids,
                     int max_tokens = 100);
 
     /**
-     * @brief Send task result to connected server
-     * @param message Pre-built TaskResultMessage
+     * @brief Send prefill result back to the decode server
+     * @param message Pre-built PrefillResultMessage
      * @return true if sent successfully
      */
-    bool sendTaskResult(const TaskResultMessage& message);
+    bool sendPrefillResult(const PrefillResultMessage& message);
 
     /**
      * @brief Send health check information
@@ -99,13 +99,13 @@ public:
      * @brief Set callback for when prefill server receives a request
      * @param callback Function to call when prefill request is received
      */
-    void onPrefillRequested(TaskForwardCallback callback);
+    void onPrefillRequested(PrefillRequestedCallback callback);
 
     /**
      * @brief Set callback for when decode server receives prefill completion
      * @param callback Function to call when prefill is complete
      */
-    void onPrefillComplete(TaskCallback callback);
+    void onPrefillComplete(PrefillCompleteCallback callback);
 
     /**
      * @brief Set callback for received health checks
@@ -133,8 +133,8 @@ private:
     void setupMessageHandlers();
 
     SocketManager& socket_manager_;
-    TaskForwardCallback task_forward_callback_;
-    TaskCallback task_result_callback_;
+    PrefillRequestedCallback prefill_requested_callback_;
+    PrefillCompleteCallback prefill_complete_callback_;
     HealthCallback health_check_callback_;
     bool enabled_ = false;
 };

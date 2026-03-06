@@ -12,9 +12,9 @@
 namespace tt::sockets {
 
 /**
- * @brief Task forwarding message - send tasks to remote server
+ * @brief Prefill request message - sent from decode server to prefill server
  */
-struct TaskForwardMessage {
+struct PrefillRequestMessage {
     std::string task_id;
     std::string prompt;
     std::vector<int64_t> token_ids;
@@ -27,13 +27,11 @@ struct TaskForwardMessage {
 };
 
 /**
- * @brief Task result message - receive results from remote server
+ * @brief Prefill result message - sent from prefill server back to decode server
  *
- * In prefill/decode split mode:
- * - Prefill server sends the first token along with the updated sequence
- * - Decode server continues generating remaining tokens using token_ids
+ * Contains the first token and updated sequence for decode server to continue generation.
  */
-struct TaskResultMessage {
+struct PrefillResultMessage {
     std::string task_id;
     std::string generated_text;
     bool finished = false;

@@ -64,9 +64,9 @@ private:
 
     bool check_worker_alive(size_t worker_idx);
 
-    void handle_prefill_request(const tt::sockets::TaskForwardMessage& message);
-    void handle_prefill_complete(const tt::sockets::TaskResultMessage& result);
-    void continue_decode_generation(const tt::sockets::TaskResultMessage& prefill_result);
+    void handle_prefill_request(const tt::sockets::PrefillRequestMessage& message);
+    void handle_prefill_complete(const tt::sockets::PrefillResultMessage& result);
+    void continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result);
     void handle_connection_lost();
 
     tt::config::LLMMode mode_;
@@ -89,7 +89,7 @@ private:
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
+    const tt::utils::Tokenizer* tokenizer_;
     std::unique_ptr<tt::sockets::InterServerService> socket_service_;
 };
 
