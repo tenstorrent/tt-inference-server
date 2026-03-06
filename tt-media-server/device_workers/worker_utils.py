@@ -8,6 +8,8 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
+WARMUP_TIMEOUT_SECONDS = 900  # 15 min: covers model download + TTNN compile + warmup inference
+
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):
     """Initialize device runner and event loop for worker"""
@@ -23,7 +25,18 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
         device_runner.set_device()
         # Use the same loop for model loading
         try:
-            loop.run_until_complete(device_runner.warmup())
+            loop.run_until_complete(
+                asyncio.wait_for(device_runner.warmup(), timeout=WARMUP_TIMEOUT_SECONDS)
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"Worker {worker_id} warmup timed out after {WARMUP_TIMEOUT_SECONDS}s"
+            )
+            device_runner.close_device()
+            loop.close()
+            raise RuntimeError(
+                f"Worker {worker_id}: warmup timed out after {WARMUP_TIMEOUT_SECONDS}s"
+            )
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
