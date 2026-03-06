@@ -3119,10 +3119,8 @@ def benchmarks_release_data_format(
                 self.model_spec = model_spec
 
         wrapper = ModelSpecWrapper(model_spec)
-        streaming_enabled = is_streaming_enabled_for_whisper(wrapper, runtime_config)
-        preprocessing_enabled = is_preprocessing_enabled_for_whisper(
-            wrapper, runtime_config
-        )
+        streaming_enabled = is_streaming_enabled_for_whisper(wrapper)
+        preprocessing_enabled = is_preprocessing_enabled_for_whisper(wrapper)
 
         benchmark_summary["streaming_enabled"] = streaming_enabled
         benchmark_summary["preprocessing_enabled"] = preprocessing_enabled
