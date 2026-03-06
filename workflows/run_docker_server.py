@@ -246,7 +246,7 @@ def generate_docker_run_command(
             ]
         else:
             docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
         # fmt: on
 

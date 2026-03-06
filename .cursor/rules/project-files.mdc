@@ -544,7 +544,7 @@
 │   │   └── image_client_inpainting_payload
 │   └── vllm_run_utils.py
 ├── VERSION
-├── vllm-tt-metal-llama3
+├── vllm-tt-metal
 │   ├── docs
 │   │   ├── development.md
 │   │   └── manual_setup.md

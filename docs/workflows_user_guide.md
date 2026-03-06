@@ -3,7 +3,7 @@
 The `run.py` CLI is the main entry point for running workflows against Tenstorrent inference servers. There are two independent ways to run the inference server:
 
 1. **`run.py --docker-server`** -- automates Docker setup, weight downloads, and container launch.
-2. **Direct `docker run`** -- run the container independently with `--model` and `--tt-device`. See the [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run).
+2. **Direct `docker run`** -- run the container independently with `--model` and `--tt-device`. See the [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run).
 
 Client-side workflows (`benchmarks`, `evals`, `reports`) can run against any compatible model server, whether started by `run.py` or externally. For LLMs we use vLLM and the [tt-media-server](../tt-media-server) otherwise.
 
@@ -212,7 +212,7 @@ docker run \
   --tt-device n300
 ```
 
-See the full [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run) for all container CLI args, secrets, and persistent volume overrides.
+See the full [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run) for all container CLI args, secrets, and persistent volume overrides.
 
 #### First run
 
@@ -425,7 +425,7 @@ The logs have the following structure:
 ## Additional Documentation
 
 - [Workflows Reference](../workflows/README.md) -- CLI reference, architecture diagrams, model config
-- [Container Interface](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run) -- Direct Docker run, container CLI args
+- [Container Interface](../vllm-tt-metal/README.md#container-interface-direct-docker-run) -- Direct Docker run, container CLI args
 - [Development](development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)
