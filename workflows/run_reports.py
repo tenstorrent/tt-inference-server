@@ -2166,16 +2166,17 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
+    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
     for json_file in files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         _ = meta.pop("task_name", None)
         for task_dict in res:
             for specific_task_name, metrics in task_dict.items():
-                results[specific_task_name] = metrics
-                meta_data[specific_task_name] = meta
+                if specific_task_name not in results:
+                    results[specific_task_name] = metrics
+                    meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -2401,6 +2402,7 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
+    list_files = sorted(list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
 
@@ -2420,19 +2422,15 @@ def process_list_format_eval_files(list_files):
             # Extract task name if available
             task_name = eval_data.get("task_name", "image_generation")
 
-            # Store metrics under task name
-            if task_name not in results:
-                results[task_name] = {}
+            if task_name in results:
+                continue
 
-            # Add all metrics from this eval data
-            results[task_name].update(eval_data)
+            results[task_name] = eval_data
 
-            # Store metadata
-            if task_name not in meta_data:
-                meta_data[task_name] = {
-                    "task_name": task_name,
-                    "dataset_path": eval_data.get("dataset_path", "N/A"),
-                }
+            meta_data[task_name] = {
+                "task_name": task_name,
+                "dataset_path": eval_data.get("dataset_path", "N/A"),
+            }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
 
@@ -2510,6 +2508,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         logger.info(f"Image Files: {image_files}")
         files.extend(image_files)
+    files = list(dict.fromkeys(files))
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (
@@ -2623,9 +2622,9 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
             None,
             None,
         )
-    # TODO: Support handling of multiple test reports
-    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    files = files[0]
+    # When multiple test runs exist, use only the most recent result
+    files = max(files, key=lambda f: Path(f).stat().st_mtime)
+    logger.info(f"Selected most recent test report: {files}")
 
     # generate vLLM parameter coverage report
     markdown_str = generate_vllm_parameter_report(
@@ -2638,8 +2637,11 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     test_dir_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
     )
-    test_dirs = glob(test_dir_path_pattern)
-
+    test_dirs = sorted(
+        glob(test_dir_path_pattern),
+        key=lambda d: Path(d).stat().st_mtime,
+        reverse=True,
+    )
     for test_dir in test_dirs:
         parameter_report_path = Path(test_dir) / "parameter_report.json"
         if parameter_report_path.exists():
