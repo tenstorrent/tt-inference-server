@@ -5670,6 +5670,19 @@
                     }
                 }
             }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 50,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
         ]
     },
     "Wan2.2-T2V-A14B-Diffusers": {
@@ -5729,6 +5742,21 @@
                         "end_to_end_latency_ms": 321490,
                         "inference_steps_per_second": 0.1244,
                         "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
                     }
                 }
             }

@@ -8,12 +8,12 @@ from abc import abstractmethod
 
 import ttnn
 from domain.image_generate_request import ImageGenerateRequest
-from models.experimental.stable_diffusion_xl_base.tests.test_common import (
+from models.demos.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
     SDXL_TRACE_REGION_SIZE,
 )
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
 )
 from telemetry.telemetry_client import TelemetryEvent
