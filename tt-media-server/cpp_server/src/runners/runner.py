@@ -254,7 +254,6 @@ def main() -> None:
     rank = _rank()
     args = _parse_args(sys.argv[1:])
 
-<<<<<<< HEAD
     if rank == 0:
         shm_enabled = _shm_is_configured()
         if not shm_enabled:
@@ -262,14 +261,6 @@ def main() -> None:
                     "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
                     "and ensure both exist under /dev/shm/."
                 )
-=======
-    shm_enabled = _shm_is_configured()
-    if not shm_enabled:
-        raise RuntimeError(
-            "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
-            "and ensure both exist under /dev/shm/."
-        )
->>>>>>> 0fec149d0ede244a5a89833193bd09fd2ebba4f4
 
     try:
         try:
