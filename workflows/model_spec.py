@@ -1980,7 +1980,6 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={"num_scheduler_steps": 1},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
