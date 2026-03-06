@@ -80,6 +80,9 @@ bool enable_accumulated_streaming();
 /** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default: defaults::MAX_ACCUMULATED_TOKENS. */
 size_t max_accumulated_tokens();
 
+/** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default: defaults::MAX_QUEUE_SIZE. */
+size_t max_queue_size();
+
 /** Scheduling policy from SCHEDULING_POLICY. Default: defaults::SCHEDULING_POLICY ("prefill_first"). */
 llm_engine::SchedulingPolicy scheduling_policy();
 

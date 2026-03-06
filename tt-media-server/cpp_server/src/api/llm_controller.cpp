@@ -138,6 +138,14 @@ void LLMController::completions(
         return;
     }
 
+    if (service_->is_queue_full()) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
+        resp->setStatusCode(drogon::k429TooManyRequests);
+        callback(resp);
+        return;
+    }
+
     if (request->stream) {
         handle_streaming(request, std::move(callback), false);
     } else {
@@ -201,6 +209,14 @@ void LLMController::chat_completions(
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json("Model is not ready", "service_unavailable"));
         resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+    }
+
+    if (service_->is_queue_full()) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
+        resp->setStatusCode(drogon::k429TooManyRequests);
         callback(resp);
         return;
     }

@@ -43,6 +43,7 @@ public:
     void stop() override;
 
     bool is_model_ready() const override;
+    bool is_queue_full() const override;
     SystemStatus get_system_status() const override;
 
     using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;
@@ -91,7 +92,7 @@ private:
     std::atomic<bool> is_ready_{false};
     std::atomic<bool> running_{false};
 
-    size_t max_queue_size_ = 10000;
+    size_t max_queue_size_;
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;

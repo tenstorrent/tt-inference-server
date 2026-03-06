@@ -219,4 +219,8 @@ uint16_t socket_port() {
     return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
 }
 
+size_t max_queue_size() {
+    return static_cast<size_t>(env_ulong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+}
+
 }  // namespace tt::config

@@ -66,6 +66,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
 LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
+      max_queue_size_(tt::config::max_queue_size()),
       tokenizer_(&tt::utils::active_tokenizer()) {
     TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
                 tt::config::to_string(mode_), num_workers_);
@@ -105,6 +106,10 @@ void LLMService::start() {
 
 bool LLMService::is_model_ready() const {
     return is_ready_.load();
+}
+
+bool LLMService::is_queue_full() const {
+    return pending_tasks_.load() >= max_queue_size_;
 }
 
 SystemStatus LLMService::get_system_status() const {
