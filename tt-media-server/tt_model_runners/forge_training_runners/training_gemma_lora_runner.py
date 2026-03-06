@@ -113,7 +113,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.model = torch.compile(
             self._peft_model,
             backend="tt",
-            options={"tt_enable_torch_fx_fusion_pass": False},
+            options={
+                "tt_enable_torch_fx_fusion_pass": False,
+                "tt_legacy_compile": True,
+            },
         )
 
         self.optimizer = torch.optim.AdamW(
