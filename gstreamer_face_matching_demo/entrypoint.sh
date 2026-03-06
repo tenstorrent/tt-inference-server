@@ -6,11 +6,10 @@ set -e
 source /home/container_app_user/python_env_gst/bin/activate
 cd /home/container_app_user/tt-metal
 
-# Set environment
+# Set environment (GStreamer Python plugin loader looks in GST_PLUGIN_PATH/python/ for .py files)
 export GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
-# Note: Don't override PYTHONPATH with tt-metal root - pip install -e . handles this correctly
-# Only add /app/models for local model imports
-export PYTHONPATH=/app/models:$PYTHONPATH
+# PYTHONPATH so the face_recognition plugin can import ttnn when loaded by gst-launch (uses process env)
+export PYTHONPATH=/app/models:/home/container_app_user/tt-metal:/home/container_app_user/python_env_gst/lib/python3.10/site-packages:${PYTHONPATH:-}
 export GST_DEBUG=${GST_DEBUG:-1}
 
 # Enable pipeline timing if BENCHMARK mode
@@ -137,12 +136,11 @@ case $MODE in
     
     "stream-webcam")
         DEVICE=${1:-/dev/video0}
-        echo "Streaming from USB webcam: $DEVICE"
+        echo "Streaming from USB webcam: $DEVICE (Python mode)"
         echo "  Browser: http://localhost:$STREAM_PORT"
         start_http_wrapper
-        gst-launch-1.0 v4l2src device=$DEVICE ! \
-            "video/x-raw,width=640,height=640,framerate=30/1" ! \
-            $FACE_PROCESS ! $STREAM_OUTPUT
+        # Use Python script (no GStreamer plugin required); streams MJPEG to TCP 8081
+        exec python3 /app/stream_webcam_python.py "$DEVICE" --port $TCP_PORT
         ;;
 
     "parallel-8device")
@@ -150,7 +148,20 @@ case $MODE in
         if [ $# -gt 0 ]; then
             VIDEO_ARGS="$@"
         else
-            VIDEO_ARGS="/app/demo/test_video.mp4"
+            # Device 0: current video; Device 1: Mohamed+Jim+Jonathan; Device 2: attached photos+Teja+Jim; Device 3: current video
+            if [ -f /app/demo/test_video.mp4 ]; then
+                if [ ! -f /app/demo/video_device1.mp4 ] || [ ! -f /app/demo/video_device2.mp4 ]; then
+                    echo "Creating device 1 & 2 videos from face photos..."
+                    python3 /app/demo/create_device_videos_from_faces.py || true
+                fi
+                if [ -f /app/demo/video_device1.mp4 ] && [ -f /app/demo/video_device2.mp4 ]; then
+                    VIDEO_ARGS="/app/demo/test_video.mp4 /app/demo/video_device1.mp4 /app/demo/video_device2.mp4 /app/demo/test_video.mp4"
+                else
+                    VIDEO_ARGS="/app/demo/test_video.mp4"
+                fi
+            else
+                VIDEO_ARGS="/app/demo/test_video.mp4"
+            fi
         fi
         echo ""
         echo "Starting 8-Device Parallel Face Recognition Demo..."

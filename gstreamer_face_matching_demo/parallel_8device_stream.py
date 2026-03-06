@@ -25,14 +25,13 @@ import torch
 os.environ["TT_METAL_LOGGER_LEVEL"] = "ERROR"
 os.environ["LOGURU_LEVEL"] = "WARNING"
 
-# Enable ethernet dispatch for multi-device mesh (required for 8-device T3K)
-os.environ["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
-
+# Blackhole: no WH_ARCH_YAML. (Wormhole 8-device mesh would set WH_ARCH_YAML here.)
 import ttnn
 
 # Global state
 frame_buffers = {}  # device_id -> latest frame with detections
 frame_locks = {}
+NUM_DEVICES = 4  # set in main() from ttnn.get_device_ids()
 stats = {
     "raw_inference_fps": 0,
     "loop_fps": 0,
@@ -661,26 +660,44 @@ class StreamHandler(BaseHTTPRequestHandler):
             self.send_error(404)
     
     def _create_grid(self):
-        """Create 2x4 grid of all 8 device outputs."""
+        """Create 2x2 grid with larger tiles (640x480 each) for 4 devices."""
+        global NUM_DEVICES
+        n = NUM_DEVICES
+        if n <= 0:
+            return np.zeros((480, 640, 3), dtype=np.uint8)
+        # 2x2 layout for 4 devices; double tile size (640x480)
+        ncols = 2 if n <= 4 else min(4, n)
+        nrows = (n + ncols - 1) // ncols
+        tile_w, tile_h = 640, 480
         rows = []
-        for row in range(2):
+        for row in range(nrows):
             cols = []
-            for col in range(4):
-                idx = row * 4 + col
+            for col in range(ncols):
+                idx = row * ncols + col
+                if idx >= n:
+                    cols.append(np.zeros((tile_h, tile_w, 3), dtype=np.uint8))
+                    continue
                 with frame_locks[idx]:
                     frame = frame_buffers[idx].copy()
-                # Resize to fit grid
-                frame_small = cv2.resize(frame, (320, 240))
-                cols.append(frame_small)
+                # Frames are already 640x480 from pipeline; use as-is for large grid
+                if frame.shape[1] != tile_w or frame.shape[0] != tile_h:
+                    frame = cv2.resize(frame, (tile_w, tile_h))
+                cols.append(frame)
             rows.append(np.hstack(cols))
         grid = np.vstack(rows)
+        # Pad to fixed 1280x960 (2x2 of 640x480)
+        target_h, target_w = 960, 1280
+        if grid.shape[0] != target_h or grid.shape[1] != target_w:
+            out = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+            out[: grid.shape[0], : grid.shape[1]] = grid
+            return out
         return grid
     
     def _get_html(self):
         return '''<!DOCTYPE html>
 <html>
 <head>
-    <title>8-Device Face Recognition - Tenstorrent</title>
+    <title>Device-Parallel Face Recognition</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -722,8 +739,7 @@ class StreamHandler(BaseHTTPRequestHandler):
     </style>
 </head>
 <body>
-    <h1>8-Device Parallel Face Recognition</h1>
-    <p class="subtitle">YuNet + SFace running on 8 Tenstorrent devices in parallel</p>
+    <h1>Device-Parallel Face Recognition</h1>
     
     <div class="stats-bar">
         <div class="stat">
@@ -737,7 +753,7 @@ class StreamHandler(BaseHTTPRequestHandler):
     </div>
     
     <div class="grid-container">
-        <img src="/stream/grid" width="1280" height="480">
+        <img src="/stream/grid" width="1280" height="960">
     </div>
     
     <script>
@@ -763,7 +779,7 @@ def main():
     parser = argparse.ArgumentParser(description="8-Device Parallel Face Recognition")
     parser.add_argument("videos", nargs="*", default=[], help="Video paths (will cycle for 8 devices)")
     parser.add_argument("--port", type=int, default=8080, help="HTTP port")
-    parser.add_argument("--max-frames", type=int, default=1024, help="Auto-stop after N frames (default: 1024, divisible by 8)")
+    parser.add_argument("--max-frames", type=int, default=10000, help="Auto-stop after N frames (default: 10000; open browser quickly)")
     args = parser.parse_args()
     
     # Default video if none provided
@@ -788,6 +804,8 @@ def main():
     # Get available devices
     device_ids = ttnn.get_device_ids()
     num_devices = len(device_ids)
+    global NUM_DEVICES
+    NUM_DEVICES = num_devices
     print(f"[Parallel] Found {num_devices} TT devices: {device_ids}")
     
     # Add models to path
@@ -852,11 +870,11 @@ def main():
     
     # Create YuNet on mesh device (weights replicated to all devices)
     print(f"[Parallel] Creating YuNet model on mesh...", flush=True)
-    yunet_model = create_yunet_model(mesh_device, yunet_torch, weights_mesh_mapper=weights_mesh_mapper)
-    
+    yunet_model = create_yunet_model(mesh_device, yunet_torch)
+
     # Create SFace on mesh device (will batch faces to 8 and run in parallel)
     print(f"[Parallel] Creating SFace model on mesh...", flush=True)
-    sface_model = create_sface_model(mesh_device, sface_torch, weights_mesh_mapper=weights_mesh_mapper)
+    sface_model = create_sface_model(mesh_device, sface_torch)
     print(f"[Parallel] SFace model created!", flush=True)
     
     # Warmup YuNet on mesh

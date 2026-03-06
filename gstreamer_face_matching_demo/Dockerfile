@@ -1,16 +1,15 @@
-# GStreamer Face Recognition Demo on Tenstorrent
+# GStreamer Face Recognition Demo on Tenstorrent (Blackhole)
 # YuNet (Face Detection) + SFace (Face Recognition)
 #
-# Usage:
-#   docker build -t face-matching-demo .
-#   docker run --rm --network host --device /dev/tenstorrent:/dev/tenstorrent \
-#     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-#     face-matching-demo
+# Base image must be a tt-metal Blackhole image with SFace + YUNet already built (e.g. tt-metal-base-sface:blackhole).
+# We do not copy sface/yunet or run setup.sh — everything comes from the base.
 #
-# Base image: tt-metal with commit 3d6d9a05 (has YuNet in models/experimental/)
-# SFace needs to be copied from tvardhineni/sface_model_bringup branch
+# Usage (run from gstreamer_face_matching_demo/ so context has plugins/, entrypoint.sh, demo/, etc.):
+#   cd gstreamer_face_matching_demo && docker build -f Dockerfile -t face-matching-demo:blackhole .
+#   docker run --rm -it --device /dev/tenstorrent -v /dev/hugepages-1G:/dev/hugepages-1G \
+#     -v ~/faces:/app/registered_faces -p 8080:8080 -p 8765:8765 face-matching-demo:blackhole
 
-ARG BASE_IMAGE=tt-metal-base:3d6d9a05
+ARG BASE_IMAGE=tt-metal-base-sface:blackhole
 FROM ${BASE_IMAGE}
 
 USER root
@@ -39,12 +38,12 @@ COPY plugins/yunet_sface.py /app/gstreamer_plugins/plugins/python/
 WORKDIR /home/container_app_user/tt-metal
 RUN python3 -m venv /home/container_app_user/python_env_gst --system-site-packages
 
-# Install all required dependencies
+# Install all required dependencies (incl. ultralytics for YOLOv8s demo)
 RUN /home/container_app_user/python_env_gst/bin/pip install --upgrade pip && \
     /home/container_app_user/python_env_gst/bin/pip install \
         torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     /home/container_app_user/python_env_gst/bin/pip install \
-        graphviz numpy_ringbuffer opencv-python-headless pytest websockets onnx scikit-learn
+        graphviz numpy_ringbuffer opencv-python-headless pytest websockets onnx scikit-learn ultralytics
 
 # Install tt-metal
 RUN /home/container_app_user/python_env_gst/bin/pip install -e .
@@ -53,19 +52,11 @@ RUN /home/container_app_user/python_env_gst/bin/pip install -e .
 RUN touch /home/container_app_user/tt-metal/tests/__init__.py && \
     touch /home/container_app_user/tt-metal/tests/ttnn/__init__.py
 
-# YuNet is already in base image at models/experimental/yunet/
-# Clone YUNet reference repo (github.com/jahongir7174/YUNet) via setup.sh
-RUN cd /home/container_app_user/tt-metal/models/experimental/yunet && bash setup.sh
+# SFace, YUNet, and fixes are already in the base image — do not copy or overwrite.
 
-# Copy SFace model (not in base image)
-COPY --chown=container_app_user:container_app_user models/sface /home/container_app_user/tt-metal/models/experimental/sface/
-
-# Copy patched model files with mesh/data-parallel support
-COPY --chown=container_app_user:container_app_user model_patches/ttnn_yunet.py /home/container_app_user/tt-metal/models/experimental/yunet/tt/ttnn_yunet.py
-COPY --chown=container_app_user:container_app_user model_patches/ttnn_sface.py /home/container_app_user/tt-metal/models/experimental/sface/tt/ttnn_sface.py
-
-# Set ownership
-RUN chown -R container_app_user:container_app_user /home/container_app_user/python_env_gst /app
+# Set ownership and add container user to video group so /dev/video0 is accessible
+RUN chown -R container_app_user:container_app_user /home/container_app_user/python_env_gst /app && \
+    (getent group video >/dev/null || groupadd -g 44 video) && usermod -aG video container_app_user
 
 USER container_app_user
 
@@ -73,8 +64,6 @@ USER container_app_user
 ENV GST_PLUGIN_PATH=/app/gstreamer_plugins/plugins
 ENV PYTHONPATH=/home/container_app_user/tt-metal
 ENV GST_DEBUG=1
-# Enable ethernet dispatch for multi-device mesh (8-device parallel mode)
-ENV WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
 
 # Copy entrypoint and server scripts
 COPY --chown=container_app_user:container_app_user entrypoint.sh /app/entrypoint.sh
@@ -83,10 +72,17 @@ COPY --chown=container_app_user:container_app_user websocket_server.py /app/webs
 COPY --chown=container_app_user:container_app_user parallel_8device_stream.py /app/parallel_8device_stream.py
 COPY --chown=container_app_user:container_app_user benchmark_gst_elements.py /app/benchmark_gst_elements.py
 COPY --chown=container_app_user:container_app_user benchmark_lfw.py /app/benchmark_lfw.py
+COPY --chown=container_app_user:container_app_user stream_webcam_python.py /app/stream_webcam_python.py
 
 # Copy demo videos if available (optional)
-# Copy demo assets including test video
+# Copy demo assets including test video and device2 photos
 COPY --chown=container_app_user:container_app_user demo/ /app/demo/
+
+# Copy pre-registered faces into the image (Jim, Jonathan Su, Mohamed, Teja)
+COPY --chown=container_app_user:container_app_user registered_faces/ /app/registered_faces/
+
+# Generate device 1 & 2 videos from face photos so they're always in the image (skip if already present)
+RUN /home/container_app_user/python_env_gst/bin/python /app/demo/create_device_videos_from_faces.py || true
 
 RUN chmod +x /app/entrypoint.sh
 

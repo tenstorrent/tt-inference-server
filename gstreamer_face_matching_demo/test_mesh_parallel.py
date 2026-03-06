@@ -3,7 +3,6 @@
 
 import os
 os.environ["TT_METAL_LOGGER_LEVEL"] = "ERROR"
-os.environ["WH_ARCH_YAML"] = "wormhole_b0_80_arch_eth_dispatch.yaml"
 
 import time
 import torch

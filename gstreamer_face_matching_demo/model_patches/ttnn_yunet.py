@@ -202,8 +202,8 @@ class TTNNMaxPool:
         self.device = device
         self.kernel_size, self.stride, self.padding = kernel_size, stride, padding
         self._pool_cache = {}
-        # Check if Wormhole - needs ROW_MAJOR workaround for max_pool2d
-        self._is_wormhole = device.arch() == Arch.WORMHOLE_B0
+        # Wormhole and Blackhole need ROW_MAJOR workaround for max_pool2d
+        self._use_pool_workaround = device.arch() in (Arch.WORMHOLE_B0, Arch.BLACKHOLE)
 
     def _get_pool(self, batch_size: int, h: int, w: int, c: int):
         key = (batch_size, h, w, c)
@@ -224,8 +224,8 @@ class TTNNMaxPool:
     def __call__(
         self, x: ttnn.Tensor, batch_size: int, height: int, width: int, channels: int
     ) -> Tuple[ttnn.Tensor, int, int]:
-        """Pool needs NHWC. On Wormhole, requires ROW_MAJOR to avoid sharding hang."""
-        if self._is_wormhole:
+        """Pool needs NHWC. On Wormhole/Blackhole, requires ROW_MAJOR to avoid sharding hang."""
+        if self._use_pool_workaround:
             # Wormhole workaround: convert to DRAM + ROW_MAJOR before pool
             if x.memory_config().is_sharded():
                 x = ttnn.sharded_to_interleaved(x, memory_config=ttnn.DRAM_MEMORY_CONFIG)
