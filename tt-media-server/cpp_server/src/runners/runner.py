@@ -89,9 +89,12 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
             "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C."
         )
 
-    shutdown_check = lambda: _shutdown
-    with SharedMemory(c2p_name, is_shutdown=shutdown_check) as c2p, \
-         SharedMemory(p2c_name, is_shutdown=shutdown_check) as p2c:
+    def is_shutdown() -> bool:
+        return _shutdown
+
+    with SharedMemory(c2p_name, is_shutdown=is_shutdown) as c2p, SharedMemory(
+        p2c_name, is_shutdown=is_shutdown
+    ) as p2c:
         print("Starting inference loop")
         while not _shutdown:
             msg = c2p.read()

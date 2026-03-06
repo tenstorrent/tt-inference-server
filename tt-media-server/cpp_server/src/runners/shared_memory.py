@@ -106,7 +106,9 @@ class SharedMemory:
         struct.pack_into("<i", buf, state_off, self._FREE)
         self._pos = (self._pos + 1) % self.SLOTS
 
-        return PrefillMessage(task_id=task_id, token_ids=token_ids, max_tokens=max_tokens)
+        return PrefillMessage(
+            task_id=task_id, token_ids=token_ids, max_tokens=max_tokens
+        )
 
     def write_token(self, task_id: bytes, token_id: int) -> None:
         """Write a single generated token (decode phase)."""
@@ -130,7 +132,9 @@ class SharedMemory:
         struct.pack_into("<I", buf, msg_off + self._NUM_TOKEN_IDS_OFF, 1)
 
         payload_off = msg_off + self._PAYLOAD_OFF
-        buf[payload_off : payload_off + self.TASK_ID_SIZE] = task_id[: self.TASK_ID_SIZE]
+        buf[payload_off : payload_off + self.TASK_ID_SIZE] = task_id[
+            : self.TASK_ID_SIZE
+        ]
         struct.pack_into("<q", buf, payload_off + self.TASK_ID_SIZE, int(token_id))
 
         struct.pack_into("<i", buf, state_off, self._TAKEN)

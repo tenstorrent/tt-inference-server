@@ -47,10 +47,13 @@ def _run_mock_bridge() -> None:
         file=sys.stderr,
     )
 
-    shutdown_check = lambda: _shutdown
+    def is_shutdown() -> bool:
+        return _shutdown
+
     try:
-        with SharedMemory(c2p_name, is_shutdown=shutdown_check) as c2p, \
-             SharedMemory(p2c_name, is_shutdown=shutdown_check) as p2c:
+        with SharedMemory(c2p_name, is_shutdown=is_shutdown) as c2p, SharedMemory(
+            p2c_name, is_shutdown=is_shutdown
+        ) as p2c:
             print("Mock runner: SHM bridge started successfully", file=sys.stderr)
 
             while not _shutdown:
@@ -58,8 +61,12 @@ def _run_mock_bridge() -> None:
                 if msg is None:
                     break
 
-                task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
-                tokens_to_generate = msg.max_tokens if msg.max_tokens > 0 else len(msg.token_ids)
+                task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip(
+                    "\x00"
+                )
+                tokens_to_generate = (
+                    msg.max_tokens if msg.max_tokens > 0 else len(msg.token_ids)
+                )
 
                 print(
                     f"Mock runner: Received task_id={task_id_str}, "
