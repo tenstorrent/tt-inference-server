@@ -554,7 +554,7 @@ jobs:
       - name: Start C++ server (test runner mode)
         run: |
           cd cpp_server/build
-          ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
+          MAX_QUEUE_SIZE=50 ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -604,7 +604,8 @@ jobs:
 
           COMPLETED=$(jq -r '.completed // 0' "$RESULT_FILE")
           FAILED=$(jq -r '.failed // 0' "$RESULT_FILE")
-          if [ "$COMPLETED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
+
+          if [ "$COMPLETED" -eq 0 ]; then
             echo "❌ All requests failed (completed=0, failed=$FAILED)"
             exit 1
           fi
@@ -630,6 +631,10 @@ jobs:
               echo "❌ mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_THRESHOLD_MS}ms"
               FAIL=1
             fi
+          fi
+          if [ "$FAILED" -eq 0 ]; then
+            echo "❌ No requests were denied (expected some 429s with small MAX_QUEUE_SIZE)"
+            FAIL=1
           fi
 
           echo "MEAN_TPOT_MS=$MEAN_TPOT_MS" >> $GITHUB_ENV
