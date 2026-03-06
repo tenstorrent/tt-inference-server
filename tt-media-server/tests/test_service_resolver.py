@@ -4,6 +4,7 @@
 
 from unittest.mock import Mock
 import sys
+from config.constants import ModelServices
 
 # Mock ALL problematic modules BEFORE any imports
 sys.modules["ttnn"] = Mock()
@@ -53,8 +54,16 @@ def test_service_resolver_returns_image_service(monkeypatch):
 
 
 def test_service_resolver_returns_base_service(monkeypatch):
-    # Mock the settings directly instead of environment variables
-    monkeypatch.setattr("resolver.service_resolver.settings.model_service", "OTHER")
+    class MockLLMService(BaseService):
+        def __init__(self):
+            pass
+
+    monkeypatch.setattr("resolver.service_resolver.settings.model_service", "llm")
+    monkeypatch.setitem(
+        service_resolver._SUPPORTED_MODEL_SERVICES,
+        ModelServices.LLM,
+        lambda: MockLLMService(),
+    )
     # Reset singleton to ensure clean test
     service_resolver._service_holders = {}
 
