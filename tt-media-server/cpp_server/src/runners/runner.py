@@ -80,72 +80,23 @@ def _shm_is_configured() -> bool:
     return bool(c2p_name and p2c_name)
 
 
-_CONTROL_STEP = 1
-_CONTROL_STOP = -1
+def _run_dummy_inference_step(model_pipeline: ModelPipeline) -> None:
+    """Keep all ranks aligned when there's no real input to process.
 
-
-def _signal_intermediate_ranks(model_pipeline: ModelPipeline, token: int) -> None:
-    """Send a control token to ranks that are neither input nor output.
-
-    Important: do NOT send control tokens to the output rank, since ModelPipeline.run_inference
-    uses send_token/recv_token between input<->output and mixing protocols would corrupt the stream.
+    ModelPipeline.run_inference has internal input/output-rank communication,
+    so all ranks must enter it (even with dummy args) to avoid deadlock.
     """
-    world_size = int(ttnn.distributed_context_get_size())
-    for r in range(world_size):
-        if r in (model_pipeline.input_rank, model_pipeline.output_rank):
-            continue
-        ttnn.send_token(token, ttnn.Rank(r))
-
-
-def _run_inference_step(
-    model_pipeline: ModelPipeline,
-    *,
-    c2p: SharedMemory | None,
-    p2c: SharedMemory | None,
-    rank: int,
-) -> bool:
-    """Run exactly one distributed inference step.
-
-    - Input rank: reads/writes shared memory and calls ModelPipeline.run_inference().
-    - Output rank: calls ModelPipeline.run_inference() (it must send tokens back to input rank).
-    - Intermediate ranks: call ModelPipeline.run_inference() with None inputs and synchronize.
-
-    Returns True to continue, False to stop.
-    """
-    stop_after_step = False
-    prompt_token_ids = None
-    max_new_tokens = None
-    on_token = None
-
     if model_pipeline.is_input_rank:
-        assert c2p is not None and p2c is not None
-        msg = c2p.read()
-        if msg is None:
-            # SharedMemory.read() returns None only when shutdown is signalled.
-            # Tell intermediate ranks to exit after completing this final step.
-            _signal_intermediate_ranks(model_pipeline, _CONTROL_STOP)
-            prompt_token_ids = []
-            max_new_tokens = 0
-            stop_after_step = True
-        else:
-            _signal_intermediate_ranks(model_pipeline, _CONTROL_STEP)
-            prompt_token_ids = msg.token_ids
-            max_new_tokens = msg.max_tokens
-            on_token = lambda tid: p2c.write_token(msg.task_id, tid)
-    elif rank != model_pipeline.output_rank:
-        token = int(ttnn.recv_token(ttnn.Rank(model_pipeline.input_rank)))
-        if token == _CONTROL_STOP:
-            stop_after_step = True
-        elif token != _CONTROL_STEP:
-            raise RuntimeError(f"Unexpected control token from input rank: {token}")
+        # Only used on shutdown when c2p.read() returns None.
+        # Input rank must drive input/output coordination (and cannot pass None).
+        prompt_token_ids = []
+        max_new_tokens = 0
+    else:
+        prompt_token_ids = None
+        max_new_tokens = None
 
-    model_pipeline.run_inference(
-        prompt_token_ids=prompt_token_ids,
-        max_new_tokens=max_new_tokens,
-        on_token=on_token,
-    )
+    model_pipeline.run_inference(prompt_token_ids=prompt_token_ids, max_new_tokens=max_new_tokens)
     model_pipeline.barrier()
-    return not stop_after_step
 
 
 def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
@@ -165,8 +116,24 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
     ) as p2c:
         print("Starting inference loop")
         while not _shutdown:
-            if not _run_inference_step(model_pipeline, c2p=c2p, p2c=p2c, rank=model_pipeline.input_rank):
-                break
+            msg = c2p.read()
+            if msg is None:
+                # Shutdown can arrive while we're blocked in c2p.read(); run one final dummy step
+                # so non-zero ranks can complete their matching step + barrier and exit cleanly.
+                _run_dummy_inference_step(model_pipeline)
+                continue
+            print(f"Received message: {msg}")
+            print(
+                f"Running inference for task {msg.task_id} with "
+                f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
+            )
+            model_pipeline.run_inference(
+                prompt_token_ids=msg.token_ids,
+                max_new_tokens=msg.max_tokens,
+                on_token=lambda tid: p2c.write_token(msg.task_id, tid),
+            )
+            # Synchronize all ranks at request boundary (non-zero ranks run dummy steps).
+            model_pipeline.barrier()
             print("Inference completed")
 
 
@@ -183,8 +150,7 @@ def _run_distributed_inference_loop(model_pipeline: ModelPipeline, rank: int) ->
 
     print(f"Rank {rank}: Entering distributed inference loop (no shared memory)")
     while not _shutdown:
-        if not _run_inference_step(model_pipeline, c2p=None, p2c=None, rank=rank):
-            break
+        _run_dummy_inference_step(model_pipeline)
 
 
 def _fabric_config_for_num_procs(num_procs: int):
