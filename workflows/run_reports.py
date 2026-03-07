@@ -30,6 +30,7 @@ from stress_tests.stress_tests_summary_report import (
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
@@ -217,9 +218,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM reports")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -1587,9 +1588,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_audio_display_dict,
         create_display_dict,
         create_embedding_display_dict,
-        create_vlm_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
+        create_vlm_display_dict,
         get_markdown_table,
         save_markdown_table,
         save_to_csv,
@@ -1620,6 +1621,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
@@ -1670,6 +1672,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_cnn_md = get_markdown_table(vllm_cnn_display)
             cnn_sections.append(
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
         if vllm_video:
@@ -1765,6 +1776,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # to match what benchmarks actually use
     _model_max_concurrency = model_spec.device_model_spec.max_concurrency
     _max_context = model_spec.device_model_spec.max_context
+    _max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
@@ -1772,7 +1784,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     perf_refs = [
         cap_benchmark_params(
-            params, _max_context, _model_max_concurrency, model_spec.model_name
+            params,
+            _max_context,
+            _max_tokens_all_users,
+            _model_max_concurrency,
+            model_spec.model_name,
         )
         for params in raw_perf_refs
     ]
@@ -2119,34 +2135,29 @@ def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    extracted = []
-
     results = data.get("results", {})
     configs = data.get("configs", {})
 
     first_key = list(results.keys())[0]
 
-    for result_key, result_metrics in results.items():
-        extracted_metrics = {
-            k: v
-            for k, v in result_metrics.items()
-            if "alias" not in k and "_stderr" not in k
-        }
+    # extract first results' metrics
+    first_results = results[first_key]
+    extracted_metrics = {
+        k: v
+        for k, v in first_results.items()
+        if "alias" not in k and "_stderr" not in k
+    }
+    extracted = [{first_key: extracted_metrics}]
 
-        extracted.append({result_key: extracted_metrics})
     config = configs.get(first_key, {})
-    task_name = config.get("task")
-    if task_name is None:
-        group_subtasks = data.get("group_subtasks")
-        if group_subtasks:
-            task_name = list(group_subtasks.keys())[0]
-            config = configs.get(group_subtasks[task_name][0], {})
+    task_name = config.get("task", first_key)
 
-    if task_name != first_key:
-        if first_key == "mmmu_val":
-            task_name = "mmmu_val"
+    # assert that all configs have the same dataset path
+    dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
+    for config in configs.values():
+        config_dataset_path = config.get("dataset_path")
+        assert dataset_path == config_dataset_path
 
-    dataset_path = config.get("dataset_path", "N/A")
     assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
@@ -2155,16 +2166,17 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
+    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
     for json_file in files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         _ = meta.pop("task_name", None)
         for task_dict in res:
             for specific_task_name, metrics in task_dict.items():
-                results[specific_task_name] = metrics
-                meta_data[specific_task_name] = meta
+                if specific_task_name not in results:
+                    results[specific_task_name] = metrics
+                    meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -2390,6 +2402,7 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
+    list_files = sorted(list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
 
@@ -2409,19 +2422,15 @@ def process_list_format_eval_files(list_files):
             # Extract task name if available
             task_name = eval_data.get("task_name", "image_generation")
 
-            # Store metrics under task name
-            if task_name not in results:
-                results[task_name] = {}
+            if task_name in results:
+                continue
 
-            # Add all metrics from this eval data
-            results[task_name].update(eval_data)
+            results[task_name] = eval_data
 
-            # Store metadata
-            if task_name not in meta_data:
-                meta_data[task_name] = {
-                    "task_name": task_name,
-                    "dataset_path": eval_data.get("dataset_path", "N/A"),
-                }
+            meta_data[task_name] = {
+                "task_name": task_name,
+                "dataset_path": eval_data.get("dataset_path", "N/A"),
+            }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
 
@@ -2499,6 +2508,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         logger.info(f"Image Files: {image_files}")
         files.extend(image_files)
+    files = list(dict.fromkeys(files))
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (
@@ -2612,9 +2622,9 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
             None,
             None,
         )
-    # TODO: Support handling of multiple test reports
-    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    files = files[0]
+    # When multiple test runs exist, use only the most recent result
+    files = max(files, key=lambda f: Path(f).stat().st_mtime)
+    logger.info(f"Selected most recent test report: {files}")
 
     # generate vLLM parameter coverage report
     markdown_str = generate_vllm_parameter_report(
@@ -2627,8 +2637,11 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     test_dir_path_pattern = (
         f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
     )
-    test_dirs = glob(test_dir_path_pattern)
-
+    test_dirs = sorted(
+        glob(test_dir_path_pattern),
+        key=lambda d: Path(d).stat().st_mtime,
+        reverse=True,
+    )
     for test_dir in test_dirs:
         parameter_report_path = Path(test_dir) / "parameter_report.json"
         if parameter_report_path.exists():
@@ -2735,9 +2748,13 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -2882,9 +2899,13 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -3053,7 +3074,9 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
     return stress_test_release_str, release_raw, summary_fpath, data_fpath
 
 
-def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+def benchmarks_release_data_format(
+    model_spec, device_str, benchmark_summary_data, runtime_config=None
+):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
@@ -3258,6 +3281,8 @@ def calculate_target_metrics(metrics_config):
     def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
         if not ref_metric:
             return "Undefined", "Undefined"
+        if not avg_metric:
+            return 0.0, 1
         ratio = avg_metric / ref_metric
         if is_ascending_metric:
             check = 2 if ratio > 1.0 else 3
@@ -3368,13 +3393,13 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    model = cli_args.get("model")
-    device_str = cli_args.get("device")
-    docker_server = cli_args.get("docker_server", False)
+    # runtime config loaded from JSON
+    model = runtime_config.model
+    device_str = runtime_config.device
+    docker_server = runtime_config.docker_server
 
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -3402,7 +3427,7 @@ def main():
         "report_id": report_id,
         "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
-        "model_spec_json": args.model_spec_json,
+        "runtime_model_spec_json": args.runtime_model_spec_json,
         "model_repo": model_spec.hf_model_repo,
         "model_impl": model_spec.impl.impl_name,
         "inference_engine": model_spec.inference_engine,
@@ -3419,22 +3444,26 @@ def main():
     # Create a simple args object for the report generation functions
     class SimpleArgs:
         def __init__(
-            self, output_path, model, device, model_spec_json, percentile_report=False
+            self,
+            output_path,
+            model,
+            device,
+            runtime_model_spec_json,
+            percentile_report=False,
         ):
             self.output_path = output_path
             self.model = model
             self.device = device
-            self.model_spec_json = model_spec_json
+            self.runtime_model_spec_json = runtime_model_spec_json
             self.percentile_report = percentile_report
 
-    # Extract percentile_report flag from cli_args
-    percentile_report = cli_args.get("percentile_report", False)
+    percentile_report = runtime_config.percentile_report
 
     simple_args = SimpleArgs(
         args.output_path,
         model,
         device_str,
-        args.model_spec_json,
+        args.runtime_model_spec_json,
         percentile_report=percentile_report,
     )
 
@@ -3563,8 +3592,7 @@ def main():
             or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -3673,7 +3701,7 @@ def main():
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
             benchmarks_release_data = benchmarks_release_data_format(
-                model_spec, device_str, benchmark_summary_data
+                model_spec, device_str, benchmark_summary_data, runtime_config
             )
 
             # Add target_checks to the existing benchmark object
@@ -3682,8 +3710,7 @@ def main():
 
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
