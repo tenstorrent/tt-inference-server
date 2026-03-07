@@ -80,6 +80,25 @@ def _shm_is_configured() -> bool:
     return bool(c2p_name and p2c_name)
 
 
+def _run_dummy_inference_step(model_pipeline: ModelPipeline) -> None:
+    """Keep all ranks aligned when there's no real input to process.
+
+    ModelPipeline.run_inference has internal input/output-rank communication,
+    so all ranks must enter it (even with dummy args) to avoid deadlock.
+    """
+    if model_pipeline.is_input_rank:
+        # Only used on shutdown when c2p.read() returns None.
+        # Input rank must drive input/output coordination (and cannot pass None).
+        prompt_token_ids = []
+        max_new_tokens = 0
+    else:
+        prompt_token_ids = None
+        max_new_tokens = None
+
+    model_pipeline.run_inference(prompt_token_ids=prompt_token_ids, max_new_tokens=max_new_tokens)
+    model_pipeline.barrier()
+
+
 def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
     """Open shared-memory buffers and run the inference loop."""
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
@@ -99,7 +118,10 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         while not _shutdown:
             msg = c2p.read()
             if msg is None:
-                break
+                # Shutdown can arrive while we're blocked in c2p.read(); run one final dummy step
+                # so non-zero ranks can complete their matching step + barrier and exit cleanly.
+                _run_dummy_inference_step(model_pipeline)
+                continue
             print(f"Received message: {msg}")
             print(
                 f"Running inference for task {msg.task_id} with "
@@ -110,7 +132,25 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
                 max_new_tokens=msg.max_tokens,
                 on_token=lambda tid: p2c.write_token(msg.task_id, tid),
             )
+            # Synchronize all ranks at request boundary (non-zero ranks run dummy steps).
+            model_pipeline.barrier()
             print("Inference completed")
+
+
+def _run_distributed_inference_loop(model_pipeline: ModelPipeline, rank: int) -> None:
+    """Run inference on all ranks; only rank 0 bridges shared memory."""
+    if rank == 0 and not model_pipeline.is_input_rank:
+        raise RuntimeError(
+            "Rank 0 is expected to be the pipeline input rank for the shared-memory bridge."
+        )
+
+    if rank == 0:
+        _run_shm_bridge(model_pipeline)
+        return
+
+    print(f"Rank {rank}: Entering distributed inference loop (no shared memory)")
+    while not _shutdown:
+        _run_dummy_inference_step(model_pipeline)
 
 
 def _fabric_config_for_num_procs(num_procs: int):
@@ -188,13 +228,7 @@ def main() -> None:
             use_real_weights=args.weights == "real",
             mesh_device=mesh_device,
         )
-
-        if rank == 0:
-            _run_shm_bridge(model_pipeline)
-        else:
-            print(f"Rank {rank}: Waiting (non-host)")
-            while not _shutdown:
-                signal.pause()
+        _run_distributed_inference_loop(model_pipeline, rank)
 
         model_pipeline.terminate()
     finally:
