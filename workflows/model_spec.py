@@ -2487,7 +2487,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="3b3f62b",
+        tt_metal_commit="27483bc",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2541,7 +2541,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="3b3f62b",
+        tt_metal_commit="27483bc",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
