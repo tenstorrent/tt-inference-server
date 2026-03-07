@@ -234,8 +234,8 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 1,
+                "num_prompts": 8,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -244,7 +244,7 @@
                     "theoretical": {
                         "ttft_ms": 46,
                         "tput_user": 37,
-                        "tput": 1184
+                        "tput": 37
                     }
                 }
             }
@@ -485,25 +485,6 @@
                 }
             }
         ],
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 15,
-                        "tput_user": 125,
-                        "tput": 125
-                    }
-                }
-            }
-        ],
         "t3k": [
             {
                 "isl": 128,
@@ -525,6 +506,25 @@
         ]
     },
     "Llama-3.3-70B-Instruct": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -747,6 +747,25 @@
         ]
     },
     "Llama-3.1-70B": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -4452,6 +4471,25 @@
                 }
             }
         ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "galaxy": [
             {
                 "isl": 128,
@@ -5015,6 +5053,25 @@
         ]
     },
     "Llama-3.3-70B-Instruct": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "p150x4": [
             {
                 "isl": 128,
@@ -5039,6 +5096,25 @@
                     "theoretical": {
                         "ttft_ms": 64,
                         "tput_user": 18
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
                     }
                 }
             }
@@ -5410,6 +5486,19 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 28,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
         ]
     },
     "FLUX.1-schnell": {
@@ -5466,6 +5555,19 @@
             }
         ],
         "p300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300x2": [
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 4,
@@ -5660,6 +5762,19 @@
                 }
             }
         ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 50,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "tput_user": 0.003
+                    }
+                }
+            }
+        ],
         "p150x8": [
             {
                 "max_concurrency": 1,
@@ -5669,6 +5784,19 @@
                     "theoretical": {
                         "ttft_ms": 330000,
                         "tput_user": 0.003
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 50,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
                     }
                 }
             }
@@ -5705,6 +5833,21 @@
                 }
             }
         ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
         "p150x8": [
             {
                 "max_concurrency": 1,
@@ -5716,6 +5859,21 @@
                         "end_to_end_latency_ms": 321490,
                         "inference_steps_per_second": 0.1244,
                         "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
                     }
                 }
             }
