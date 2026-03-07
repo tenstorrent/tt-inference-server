@@ -1884,26 +1884,6 @@ llm_templates = [
                     "trace_region_size": 56000000,
                 },
             ),
-        ],
-        status=ModelStatusTypes.COMPLETE,
-    ),
-    ModelSpecTemplate(
-        weights=["meta-llama/Llama-3.1-8B-Instruct"],
-        impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=19.2.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.5.0",
-                mode=VersionMode.STRICT,
-            ),
-        ),
-        tt_metal_commit="1a6cf27",
-        vllm_commit="22be241",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P300,
                 max_concurrency=32,
@@ -1915,7 +1895,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],

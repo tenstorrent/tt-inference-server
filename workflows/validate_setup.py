@@ -81,15 +81,6 @@ def validate_runtime_args(model_spec, runtime_config):
                     "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
                 )
 
-        if DeviceTypes.from_string(args.device) == DeviceTypes.P300:
-            if not args.device_id or len(args.device_id) != 2:
-                raise ValueError(
-                    "P300 requires exactly 2 device IDs specified with --device-id. "
-                    "A P300 card has 2 BlackHole (BH) chips. Run 'tt-smi' to list available devices "
-                    "and identify which 2 /dev/tenstorrent/ indices belong to your P300 card, "
-                    "then pass them as e.g. '--device-id 0,1'."
-                )
-
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and benchmarks
         # today this will stop models defined in MODEL_SPECS
