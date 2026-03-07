@@ -1108,11 +1108,11 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1128,9 +1128,6 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
-        env_vars={
-            "VLLM_USE_V1": "1",
-        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1255,11 +1252,11 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1619,11 +1616,11 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1642,9 +1639,6 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
-        env_vars={
-            "VLLM_USE_V1": "1",
-        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1868,11 +1862,11 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1892,20 +1886,17 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
-        env_vars={
-            "VLLM_USE_V1": "1",
-        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
@@ -1925,9 +1916,6 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
-        env_vars={
-            "VLLM_USE_V1": "1",
-        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
