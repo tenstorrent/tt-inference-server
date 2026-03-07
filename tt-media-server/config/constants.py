@@ -599,6 +599,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -621,6 +633,18 @@ ModelConfigs = {
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
