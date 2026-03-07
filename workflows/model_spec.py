@@ -2487,7 +2487,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="27483bc",
+        tt_metal_commit="cce3da6",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2518,6 +2518,18 @@ audio_tts_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
+        tt_metal_commit="3b3f62b",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.AUDIO,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150,
                 max_concurrency=1,
@@ -2541,7 +2553,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="27483bc",
+        tt_metal_commit="cce3da6",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2560,6 +2572,18 @@ audio_tts_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
             ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["microsoft/speecht5_tts"],
+        tt_metal_commit="3b3f62b",
+        impl=speecht5_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TEXT_TO_SPEECH,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150,
                 max_concurrency=1,
