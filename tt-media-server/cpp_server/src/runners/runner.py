@@ -121,7 +121,7 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
                 # Shutdown can arrive while we're blocked in c2p.read(); run one final dummy step
                 # so non-zero ranks can complete their matching step + barrier and exit cleanly.
                 _run_dummy_inference_step(model_pipeline)
-                continue
+                break
             print(f"Received message: {msg}")
             print(
                 f"Running inference for task {msg.task_id} with "

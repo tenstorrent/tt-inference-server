@@ -60,8 +60,17 @@ void LLMRunner::step() {
 void LLMRunner::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     Sequence* seq = scheduler_->find_sequence(dr.task_id);
-    assert(seq);
-    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
+    if (!seq) {
+      // Device-side runners can emit late tokens after a sequence is finalized/evicted.
+      // Dropping them is safer than aborting the worker process.
+      LLM_ENGINE_LOG("llm_engine") << "dropping token for unknown task_id=" << dr.task_id << std::endl;
+      continue;
+    }
+    if (seq->status_ != SequenceStatus::IN_FLIGHT) {
+      LLM_ENGINE_LOG("llm_engine") << "dropping token for non-inflight task_id=" << dr.task_id
+                                   << " status=" << static_cast<int>(seq->status_) << std::endl;
+      continue;
+    }
 
     if (dr.is_error) {
       LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
