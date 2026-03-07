@@ -106,14 +106,12 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
 
 
 def _setup_openai_api_key(args, logger):
-    """Setup OPENAI_API_KEY environment variable for media server models (audio, image, etc).
-    Uses API_KEY env var directly — JWT_SECRET is not applicable here (it is a signing secret
-    for LLM/vLLM JWT tokens, not the media server's bearer token).
+    """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
     Args:
         args: Parsed command line arguments
         logger: Logger instance
     """
-    api_key = os.getenv("API_KEY", "your-secret-key")
+    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
     os.environ["OPENAI_API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set.")
 
