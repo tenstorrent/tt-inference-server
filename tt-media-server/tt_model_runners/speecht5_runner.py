@@ -52,8 +52,9 @@ DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
 MAX_KV_STEPS = 800
 
 # Encoder sizes to warm-up and capture traces for.
+# 32/64 cover short texts; 128/256 cover typical chunked inputs.
 # 384 causes L1 OOM on N150 — max supported is 256.
-WARMUP_ENCODER_SIZES = [128, 256]
+WARMUP_ENCODER_SIZES = [32, 64, 128, 256]
 
 
 def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None) -> List[str]:
@@ -170,10 +171,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Load all required components for inference
             self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
             self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
+            self.model.eval()
             # Vocoder is always the same for all SpeechT5 models (standard HiFi-GAN vocoder)
             self.vocoder = SpeechT5HifiGan.from_pretrained(
                 SpeechT5Constants.HIFIGAN_VOCODER_REPO
             )
+            self.vocoder.eval()
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully loaded HuggingFace model components"
@@ -370,11 +373,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         # First compile encoder and postnet kernels with dummy inputs
         self._warmup_encoder_and_postnet()
 
-        # Synthetic texts: token counts that pad to 128 and 256 respectively.
+        # Synthetic texts: token counts that pad to 32, 64, 128, 256 respectively.
         # These are the same texts used in demo_ttnn.py's warm-up.
         warmup_texts_per_size = {
-            128: "Hello there.",  # ~14 tokens -> pads to 128
-            256: "A " * 65,       # ~131 tokens -> pads to 256
+            32:  "Hi.",              # ~5 tokens  -> pads to 32
+            64:  "A " * 17,          # ~35 tokens -> pads to 64
+            128: "A " * 35,          # ~71 tokens -> pads to 128
+            256: "A " * 65,          # ~131 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
@@ -400,10 +405,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         - This pre-compiles encoder kernels for both canonical shapes so any real
           input reuses the cached kernel → consistent TTFT on cold and warm cache.
         """
-        # Synthetic texts: produce token counts that pad to 128 and 256 respectively
+        # Synthetic texts: produce token counts that pad to 32, 64, 128, 256 respectively
         warmup_texts_per_size = {
-            128: "Hello there.",   # ~14 tokens -> pads to 128
-            256: "A " * 65,        # ~131 tokens -> pads to 256
+            32:  "Hi.",              # ~5 tokens  -> pads to 32
+            64:  "A " * 17,          # ~35 tokens -> pads to 64
+            128: "A " * 35,          # ~71 tokens -> pads to 128
+            256: "A " * 65,          # ~131 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
