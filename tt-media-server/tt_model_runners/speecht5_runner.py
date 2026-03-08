@@ -45,55 +45,84 @@ from utils.decorators import log_execution_time
 from utils.speaker_embeddings import SpeakerEmbeddingsManager
 
 
-DEFAULT_CHUNK_SIZE = 300  # Maximum characters per text chunk (matches demo_ttnn.py)
+DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
+
+# Maximum KV cache slots pre-allocated in the generator.
+# ~3 mel frames per input token * 256 max tokens = 768, rounded up to 800.
+MAX_KV_STEPS = 800
+
+# Encoder sizes to warm-up and capture traces for.
+# 384 causes L1 OOM on N150 — max supported is 256.
+WARMUP_ENCODER_SIZES = [128, 256]
 
 
-def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE) -> List[str]:
-    """Split long text into smaller chunks at sentence/word boundaries (same as demo_ttnn.py)."""
+def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None) -> List[str]:
+    """Split text into chunks that always end at sentence boundaries.
+
+    Sentences are packed greedily into chunks until adding the next sentence
+    would exceed max_chunk_size characters. A single sentence that exceeds
+    max_chunk_size is kept as one chunk (never split mid-sentence).
+
+    The only exception: if a sentence exceeds MAX_ENCODER_TOKENS tokens (hard
+    device limit), it is split at the last clause boundary (,;) within that
+    token budget to avoid L1 OOM.
+    """
+    MAX_ENCODER_TOKENS = 250  # conservative limit below the 256 padded size
+
     if len(text) <= max_chunk_size:
         return [text]
 
-    chunks = []
-    remaining = text.strip()
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    if not sentences:
+        return [text]
 
-    while remaining:
-        if len(remaining) <= max_chunk_size:
-            chunks.append(remaining)
-            break
-
-        chunk_candidate = remaining[:max_chunk_size]
-        sentence_end = -1
-        for match in re.finditer(r"[.!?]\s+", chunk_candidate):
-            sentence_end = match.end()
-
-        if sentence_end > max_chunk_size // 3:
-            chunk = remaining[:sentence_end].strip()
-            remaining = remaining[sentence_end:].strip()
-        else:
-            clause_end = -1
-            for match in re.finditer(r"[,;]\s+", chunk_candidate):
-                clause_end = match.end()
-
-            if clause_end > max_chunk_size // 2:
-                chunk = remaining[:clause_end].strip()
-                remaining = remaining[clause_end:].strip()
+    def split_oversized(sentence):
+        if processor is None:
+            return [sentence]
+        n_tokens = processor(text=sentence, return_tensors="pt")["input_ids"].shape[1]
+        if n_tokens <= MAX_ENCODER_TOKENS:
+            return [sentence]
+        clauses = re.split(r"(?<=[,;])\s+", sentence)
+        parts = []
+        current = ""
+        for clause in clauses:
+            candidate = (current + " " + clause).strip() if current else clause
+            n = processor(text=candidate, return_tensors="pt")["input_ids"].shape[1]
+            if n <= MAX_ENCODER_TOKENS:
+                current = candidate
             else:
-                last_space = chunk_candidate.rfind(" ")
-                if last_space > max_chunk_size // 2:
-                    chunk = remaining[:last_space].strip()
-                    remaining = remaining[last_space:].strip()
-                else:
-                    chunk = remaining[:max_chunk_size].strip()
-                    remaining = remaining[max_chunk_size:].strip()
+                if current:
+                    parts.append(current)
+                current = clause
+        if current:
+            parts.append(current)
+        return parts if parts else [sentence]
 
-        if chunk:
-            chunks.append(chunk)
+    flat_sentences = []
+    for s in sentences:
+        s = s.strip()
+        if s:
+            flat_sentences.extend(split_oversized(s))
+
+    chunks = []
+    current = ""
+    for sentence in flat_sentences:
+        if not current:
+            current = sentence
+        elif len(current) + 1 + len(sentence) <= max_chunk_size:
+            current = current + " " + sentence
+        else:
+            chunks.append(current)
+            current = sentence
+
+    if current:
+        chunks.append(current)
 
     return chunks
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 768  # Current optimal value
+    MAX_STEPS = 300         # Default per-chunk step cap (auto-scaled per chunk at runtime)
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
     HIFIGAN_VOCODER_REPO = (
@@ -113,7 +142,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.generator = None  # For trace execution
         self.speaker_manager = None
         self.decoder_config = None
-        self._baked_speaker_embedding = None  # Tracks which speaker is baked into decoder params
+        self._baked_speaker_id = None  # Tracks which speaker ID is baked into decoder params
 
         # Explicitly disable fabric for non-galaxy devices
         if not settings.is_galaxy:
@@ -191,6 +220,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 speech_decoder_prenet_layers=model.config.speech_decoder_prenet_layers,
                 speech_decoder_prenet_dropout=model.config.speech_decoder_prenet_dropout,
                 speaker_embedding_dim=model.config.speaker_embedding_dim,
+                use_fp32=True,  # Enable FP32 for precision (matches demo_ttnn.py)
             )
 
             postnet_config = TTNNPostNetConfig(
@@ -202,20 +232,29 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 postnet_kernel=model.config.speech_decoder_postnet_kernel,
             )
 
-            # Get a default speaker embedding for model initialization
+            # Get a default speaker embedding for model initialization.
+            # Use speaker_7306 (cmu_us_slt_arctic, female) to match demo_ttnn.py which uses
+            # embeddings_dataset[7306] from Matthijs/cmu-arctic-xvectors.
+            DEFAULT_SPEAKER_ID = "speaker_7306"
             available_speakers = self.speaker_manager.list_available_speakers()
             if not available_speakers:
-                # Create a zero embedding if no speakers are available
                 self.logger.warning(
                     "No speaker embeddings available, using zero embedding for initialization"
                 )
                 default_speaker_embedding = torch.zeros(
                     self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
                 ).unsqueeze(0)
+                self._baked_speaker_id = None
+            elif DEFAULT_SPEAKER_ID in available_speakers:
+                default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
+                    DEFAULT_SPEAKER_ID
+                )
+                self._baked_speaker_id = DEFAULT_SPEAKER_ID
             else:
                 default_speaker_embedding = self.speaker_manager.get_speaker_embedding(
                     available_speakers[0]
                 )
+                self._baked_speaker_id = available_speakers[0]
 
             # Create TTNN models
             self.logger.info(f"Device {self.device_id}: Creating TTNN encoder")
@@ -228,7 +267,6 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             )
 
             self.decoder_config = decoder_config
-            self._baked_speaker_embedding = default_speaker_embedding
 
             self.logger.info(f"Device {self.device_id}: Creating TTNN decoder")
             self.ttnn_decoder = TTNNSpeechT5Decoder(
@@ -240,6 +278,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     default_speaker_embedding,
                 ),
                 decoder_config,
+                max_sequence_length=512,
             )
 
             self.logger.info(f"Device {self.device_id}: Creating TTNN postnet")
@@ -259,7 +298,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     self.ttnn_postnet,
                     self.ttnn_device,
                     decoder_config,
-                    max_steps=SpeechT5Constants.MAX_STEPS,
+                    max_steps=MAX_KV_STEPS,  # Pre-allocate KV cache for up to 800 steps
                     max_batch_size=1,
                 )
                 self.logger.info(
@@ -301,19 +340,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 self.logger.error(f"Device {device_id_int}: Model initialization failed: {e}")
                 raise
 
-            await asyncio.to_thread(self._warmup_encoder_and_postnet)
-            self.logger.info(f"Device {device_id_int}: Encoder + postnet kernels compiled")
-
-            if self.generator is not None:
-                try:
-                    self.logger.info(f"Device {device_id_int}: Capturing traces for all encoder sizes...")
-                    await asyncio.to_thread(self.generator.capture_all_traces, self.processor)
-                    self.logger.info(f"Device {device_id_int}: Trace compilation completed")
-                except Exception as e:
-                    self.logger.warning(f"Device {device_id_int}: Trace compilation failed: {e}")
-                    self.generator = None
-
-            self.logger.info(f"Device {device_id_int}: Model loaded successfully")
+            # Whisper-style warm-up: call _generate_mel_for_chunk with synthetic texts for
+            # each canonical encoder size, exactly as Whisper calls pipeline(dummy_audio).
+            # This runs the SAME code path as real inference, ensuring the program cache,
+            # trace, and device L2 cache are all hot before the first request arrives.
+            await asyncio.to_thread(self._warmup_full_pipeline)
             self.logger.info(f"Device {device_id_int}: Model warmup completed")
             return True
 
@@ -323,17 +354,72 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             raise RuntimeError(f"Device {device_id_int}: Model loading failed: {str(e)}") from e
 
 
+    def _warmup_full_pipeline(self):
+        """Warm up by calling _generate_mel_for_chunk with synthetic texts.
+
+        Mirrors the Whisper runner pattern: whisper calls pipeline(dummy_audio) which
+        runs the exact same code path as real inference. Here we call _generate_mel_for_chunk
+        with synthetic texts that pad to each canonical encoder size [128, 256].
+
+        This ensures:
+        1. All TTNN kernels compiled for each encoder shape
+        2. Trace captured for each encoder size (128, 256)
+        3. 300 traced steps executed per size → device L2 cache fully hot
+        4. No idle gap between warm-up and first real request (warmup IS the last thing run)
+        """
+        # First compile encoder and postnet kernels with dummy inputs
+        self._warmup_encoder_and_postnet()
+
+        # Synthetic texts: token counts that pad to 128 and 256 respectively.
+        # These are the same texts used in demo_ttnn.py's warm-up.
+        warmup_texts_per_size = {
+            128: "Hello there.",  # ~14 tokens -> pads to 128
+            256: "A " * 65,       # ~131 tokens -> pads to 256
+        }
+
+        for enc_size in WARMUP_ENCODER_SIZES:
+            warmup_text = warmup_texts_per_size[enc_size]
+            self.logger.info(
+                f"Device {self.device_id}: Warm-up for encoder_size={enc_size} "
+                f"via _generate_mel_for_chunk..."
+            )
+            # Call the exact same inference path as real requests.
+            # This captures the trace on first call and runs 300 traced steps,
+            # exactly as demo_ttnn.py does with max_steps=300 during warm-up.
+            _ = self._generate_mel_for_chunk(warmup_text)
+            self.logger.info(
+                f"Device {self.device_id}: Warm-up done for encoder_size={enc_size}"
+            )
+
     def _warmup_encoder_and_postnet(self):
-        """Compile encoder and postnet TTNN kernels before the first real request."""
-        # Encoder warmup: compile encoder with actual tokenized text so the program
-        # cache is pre-populated for realistic input lengths (not zero-padded tokens).
-        # Multiple texts cover short and medium length inputs.
-        warmup_texts = [
-            "Hello world",
-            "Hello world, this is a test of the speech synthesis system today.",
-        ]
-        for warmup_text in warmup_texts:
+        """Compile encoder and postnet TTNN kernels before the first real request.
+
+        Uses the same input-independent warm-up strategy as demo_ttnn.py:
+        - Synthetic texts chosen so their tokenized length lands in each canonical
+          encoder bucket (128, 256) after PAD-token padding.
+        - This pre-compiles encoder kernels for both canonical shapes so any real
+          input reuses the cached kernel → consistent TTFT on cold and warm cache.
+        """
+        # Synthetic texts: produce token counts that pad to 128 and 256 respectively
+        warmup_texts_per_size = {
+            128: "Hello there.",   # ~14 tokens -> pads to 128
+            256: "A " * 65,        # ~131 tokens -> pads to 256
+        }
+
+        for enc_size in WARMUP_ENCODER_SIZES:
+            warmup_text = warmup_texts_per_size[enc_size]
             warmup_ids = self.processor(text=warmup_text, return_tensors="pt")["input_ids"]
+            real_seq_len = warmup_ids.shape[1]
+            padded_seq_len = get_padded_encoder_seq_len(real_seq_len)
+
+            # Pad with the model's <pad> token (id=1), not zero.
+            # Token id 0 is a real vocabulary entry and corrupts encoder representations.
+            if real_seq_len < padded_seq_len:
+                pad = torch.full(
+                    (1, padded_seq_len - real_seq_len), 1, dtype=warmup_ids.dtype
+                )
+                warmup_ids = torch.cat([warmup_ids, pad], dim=1)
+
             dummy_ttnn_ids = ttnn.from_torch(
                 warmup_ids,
                 dtype=ttnn.uint32,
@@ -343,51 +429,66 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             )
             _ = self.ttnn_encoder(dummy_ttnn_ids)
             ttnn.deallocate(dummy_ttnn_ids)
+            self.logger.info(
+                f"Device {self.device_id}: Encoder warm-up done for size {enc_size}"
+            )
 
-        # Postnet warmup: compile postnet kernels with a dummy decoder output
+        # Postnet warmup: compile postnet kernels with a dummy FP32 decoder output
         dummy_decoder_output = ttnn.from_torch(
             torch.randn(1, 1, 1, self.decoder_config.hidden_size),
-            dtype=ttnn.bfloat16,
+            dtype=ttnn.float32,  # FP32 matches decoder use_fp32=True
             layout=ttnn.TILE_LAYOUT,
             device=self.ttnn_device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         _ = self.ttnn_postnet(dummy_decoder_output)
         ttnn.deallocate(dummy_decoder_output)
+        self.logger.info(f"Device {self.device_id}: Postnet warm-up done")
 
-    def _prepare_speaker_embedding(self, request) -> torch.Tensor:
-        """Prepare speaker embedding for the request"""
+    def _prepare_speaker_embedding(self, request):
+        """Prepare speaker embedding for the request. Returns (embedding, speaker_id)."""
+        DEFAULT_SPEAKER_ID = "speaker_7306"
         if hasattr(request, 'speaker_embedding') and request.speaker_embedding:
-            return self.speaker_manager.process_user_embedding(request.speaker_embedding)
+            return self.speaker_manager.process_user_embedding(request.speaker_embedding), None
         elif hasattr(request, 'speaker_id') and request.speaker_id:
-            return self.speaker_manager.get_speaker_embedding(request.speaker_id)
+            return self.speaker_manager.get_speaker_embedding(request.speaker_id), request.speaker_id
         else:
             available_speakers = self.speaker_manager.list_available_speakers()
-            if available_speakers:
-                return self.speaker_manager.get_speaker_embedding(available_speakers[0])
+            if DEFAULT_SPEAKER_ID in available_speakers:
+                speaker_id = DEFAULT_SPEAKER_ID
+            elif available_speakers:
+                speaker_id = available_speakers[0]
             else:
                 self.logger.warning('No speaker embeddings available, using zero embedding')
                 return torch.zeros(
                     self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
-                ).unsqueeze(0)
+                ).unsqueeze(0), None
+            return self.speaker_manager.get_speaker_embedding(speaker_id), speaker_id
 
     def _generate_mel_for_chunk(self, text: str) -> torch.Tensor:
         """
         Run encoder + autoregressive decoder loop for one text chunk.
         Returns mel spectrogram: [1, steps * REDUCTION_FACTOR, num_mel_bins]
-        Matches the per-chunk mel generation in demo_ttnn.py generate_speech_long().
+        Matches the per-chunk mel generation in demo_ttnn.py generate_speech_fp32().
         """
         inputs = self.processor(text=text, return_tensors="pt")
         token_ids = inputs["input_ids"]
-
+        real_seq_len = token_ids.shape[1]
         batch_size = token_ids.shape[0]
         num_mel_bins = 80
 
-        # Run encoder on ACTUAL tokens only (no pre-padding).
-        # copy_encoder_output zero-pads the encoder output to the nearest supported
-        # size and creates the correct cross-attention mask, so the decoder never
-        # attends to padding positions. Pre-padding token_ids contaminates real-token
-        # representations with padding context, degrading audio quality.
+        # Pad with the model's <pad> token (id=1) to the canonical encoder size.
+        # Token id 0 is a real vocabulary entry and would corrupt encoder representations.
+        # Using pad_token_id=1 matches the model's training padding scheme, so the encoder
+        # treats padded positions correctly. The cross-attention mask (-1e9 on padded
+        # positions) prevents the decoder from attending to them.
+        padded_seq_len = get_padded_encoder_seq_len(real_seq_len)
+        if real_seq_len < padded_seq_len:
+            pad = torch.full(
+                (1, padded_seq_len - real_seq_len), 1, dtype=token_ids.dtype
+            )
+            token_ids = torch.cat([token_ids, pad], dim=1)
+
         ttnn_input_ids = ttnn.from_torch(
             token_ids,
             dtype=ttnn.uint32,
@@ -396,47 +497,47 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
 
-        # Run encoder once before the generation loop
-        # TTNNSpeechT5Encoder.__call__ returns (hidden_states,) tuple
         encoder_hidden_states = self.ttnn_encoder(ttnn_input_ids)[0]
 
         use_trace = self.generator is not None
 
+        # Scale max_steps by token count: ~3 mel frames per input token.
+        # Capped at MAX_KV_STEPS to stay within pre-allocated KV cache.
+        chunk_max_steps = min(
+            max(SpeechT5Constants.MAX_STEPS, real_seq_len * 3), MAX_KV_STEPS
+        )
+
         import time as _time
         if use_trace:
-            # Trace path: reset state, copy encoder output into pre-allocated
-            # tensors at stable memory addresses (required for trace reuse)
             _t0 = _time.perf_counter()
             self.generator._reset_kv_caches()
             self.logger.info(f"_reset_kv_caches: {_time.perf_counter()-_t0:.3f}s")
             self.generator._reset_decode_pos(0, batch_size)
-            self.generator.copy_encoder_output(encoder_hidden_states)
+            # Pass real_seq_len so copy_encoder_output sets the cross-attention mask
+            # correctly — masking out the <pad>-token positions.
+            self.generator.copy_encoder_output(encoder_hidden_states, real_seq_len=real_seq_len)
         else:
-            # Non-trace path: initialize fresh KV cache per inference
-            encoder_seq_len = token_ids.shape[1]
             kv_cache, cross_attn_cache = init_kv_cache(
                 self.decoder_config,
                 self.ttnn_device,
                 max_batch_size=batch_size,
-                max_seq_len=SpeechT5Constants.MAX_STEPS + 10,
-                encoder_seq_len=encoder_seq_len,
+                max_seq_len=chunk_max_steps + 10,
+                encoder_seq_len=padded_seq_len,
             )
 
-        # Initial decoder input: zeros [batch, 1, num_mel_bins]
         decoder_input = ttnn.from_torch(
             torch.zeros(batch_size, 1, num_mel_bins),
-            dtype=ttnn.bfloat16,
+            dtype=ttnn.float32,  # FP32 matches decoder use_fp32=True
             layout=ttnn.TILE_LAYOUT,
             device=self.ttnn_device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
 
-        spectrogram_frames_cpu = []  # Accumulate on CPU — avoids device allocs during active trace
+        spectrogram_frames_cpu = []
         steps_completed = 0
         _t_loop_start = _time.perf_counter()
 
-        # Autoregressive generation loop — single-frame decode per step
-        for step in range(SpeechT5Constants.MAX_STEPS):
+        for step in range(chunk_max_steps):
             if use_trace:
                 # Update position counter in-place (stable memory address for trace)
                 self.generator._reset_decode_pos(step, batch_size)
@@ -464,8 +565,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                         preprocessed_hidden_states=preprocessed,
                         encoder_attention_mask=self.generator.encoder_attention_mask,
                     )
+                    self.generator.cross_attn_cache_valid = True
                     if step <= 2:
                         self.logger.info("Step %d: decoder=%.3fs" % (step, _time.perf_counter()-_ta))
+                    # Capture trace after step 0 if not yet captured for this encoder size
+                    # (mirrors demo_ttnn.py: capture happens on first run, reused on all subsequent)
+                    if not self.generator.trace_compiled:
+                        self.generator._capture_decoder_trace(preprocessed)
                 else:
                     # Traced steps 1+: execute compiled trace
                     # (cross_attn_cache already populated from step 0)
@@ -511,11 +617,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             mel_after_cpu = ttnn.to_torch(mel_after)
             spectrogram_frames_cpu.append(mel_after_cpu)
 
-            # Next decoder input: same spec as capture_all_traces dummy input
-            # (from_torch with bfloat16 + TILE_LAYOUT + L1 matches trace compile context)
+            # Next decoder input: last mel frame, FP32 to match decoder use_fp32=True
             decoder_input = ttnn.from_torch(
                 mel_after_cpu[:, -1:, :],
-                dtype=ttnn.bfloat16,
+                dtype=ttnn.float32,
                 layout=ttnn.TILE_LAYOUT,
                 device=self.ttnn_device,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
@@ -558,7 +663,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Generate audio with automatic chunking for long texts (matches demo_ttnn.py)."""
         try:
-            chunks = chunk_text(text)
+            chunks = chunk_text(text, processor=self.processor)
             if len(chunks) > 1:
                 self.logger.info(f"Long text ({len(text)} chars) split into {len(chunks)} chunks")
 
@@ -625,23 +730,29 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             if not request.text or not request.text.strip():
                 raise ValueError("Text cannot be empty")
 
-            speaker_embedding = self._prepare_speaker_embedding(request)
+            speaker_embedding, speaker_id = self._prepare_speaker_embedding(request)
             request._speaker_embedding_array = speaker_embedding.detach().numpy()
-            if not torch.equal(speaker_embedding, self._baked_speaker_embedding):
+            # Compare by ID when available (avoids float-equality mismatch for same speaker).
+            # Fall back to True (always update) only for custom embeddings (speaker_id=None).
+            speaker_changed = (
+                speaker_id != self._baked_speaker_id
+                if speaker_id is not None
+                else True
+            )
+            if speaker_changed:
                 self.logger.info(
-                    f"Device {self.device_id}: Re-baking decoder parameters for new speaker"
+                    f"Device {self.device_id}: Updating speaker embedding in-place (no trace re-capture needed)"
                 )
-                self.ttnn_decoder = TTNNSpeechT5Decoder(
-                    self.ttnn_device,
-                    preprocess_decoder_parameters(
-                        self.model.speecht5.decoder,
-                        self.decoder_config,
-                        self.ttnn_device,
-                        speaker_embedding,
-                    ),
-                    self.decoder_config,
+                # Update the speaker embedding tensor in DRAM directly — this overwrites only the
+                # speaker_embeddings_normalized tensor inside the prenet, leaving decoder weights,
+                # layers, and all captured traces intact. The prenet runs OUTSIDE the trace
+                # (it's position-dependent), so changing the speaker here takes effect immediately
+                # without any trace invalidation or re-capture.
+                self.ttnn_decoder.update_speaker_embedding(speaker_embedding)
+                self._baked_speaker_id = speaker_id
+                self.logger.info(
+                    f"Device {self.device_id}: Speaker embedding updated successfully"
                 )
-                self._baked_speaker_embedding = speaker_embedding
 
             final_result = None
             async for result in self._generate_audio_sync(request.text):

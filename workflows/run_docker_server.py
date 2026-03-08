@@ -135,6 +135,7 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
         "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
         "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
+        "SERVICE_PORT": args.service_port,
     }
 
     if (
