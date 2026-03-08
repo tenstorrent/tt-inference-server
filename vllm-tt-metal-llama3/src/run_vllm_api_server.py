@@ -102,6 +102,8 @@ DEVICE_TO_MESH_STR = {
     "P150X8": "P150x8",
     "N150X4": "N150x4",
     "N300": "N300",
+    "P300": "P300",
+    "P300X2": "P300x2",
     "T3K": "T3K",
     "GALAXY": "TG",
     "GALAXY_T3K": "T3K",

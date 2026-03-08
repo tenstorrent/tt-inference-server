@@ -229,6 +229,25 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 37,
+                        "tput": 37
+                    }
+                }
+            }
         ]
     },
     "Mistral-Small-3.1-24B-Instruct-2503": {
@@ -487,6 +506,25 @@
         ]
     },
     "Llama-3.3-70B-Instruct": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -709,6 +747,25 @@
         ]
     },
     "Llama-3.1-70B": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
@@ -4414,6 +4471,25 @@
                 }
             }
         ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "galaxy": [
             {
                 "isl": 128,
@@ -4977,6 +5053,25 @@
         ]
     },
     "Llama-3.3-70B-Instruct": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
+                    }
+                }
+            }
+        ],
         "p150x4": [
             {
                 "isl": 128,
@@ -5001,6 +5096,25 @@
                     "theoretical": {
                         "ttft_ms": 64,
                         "tput_user": 18
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 89.0,
+                        "tput_user": 17.0,
+                        "tput": 17.0
                     }
                 }
             }
@@ -5171,6 +5285,25 @@
                     "theoretical": {
                         "ttft_ms": 11,
                         "tput_user": 170
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 15,
+                        "tput_user": 125,
+                        "tput": 125
                     }
                 }
             }
