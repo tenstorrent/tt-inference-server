@@ -180,10 +180,7 @@ def build_eval_command(
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
-        # dont double apply the chat template
-        assert not task.apply_chat_template, "chat api already applies chat template"
-        # chat end point applies chat template by default, this is required for most instruct models
-        api_url = f"{base_url}"
+        api_url = f"{base_url}/chat/completions"
     else:
         api_url = f"{base_url}/completions"
 
@@ -208,8 +205,6 @@ def build_eval_command(
         WorkflowVenvType.EVALS_AUDIO,
     ]:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
-    elif task.workflow_venv_type == WorkflowVenvType.EVALS_GPT_OSS:
-        lm_eval_exec = f"{task_venv_config.venv_python} -m gpt_oss.evals"
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
@@ -258,17 +253,6 @@ def build_eval_command(
             "--batch_size", str(task.batch_size),
             "--output_path", str(output_dir_path),
             "--log_samples",
-        ]
-    elif task.workflow_venv_type == WorkflowVenvType.EVALS_GPT_OSS:
-        cmd = [
-            *(str(lm_eval_exec).split(" ")),
-            "--model", model_spec.hf_model_repo,
-            "--reasoning-effort", task.gen_kwargs["reasoning_effort"],
-            "--sampler", "chat_completions" if task.use_chat_api else "responses",
-            "--base-url", base_url,
-            "--eval", task.task_name,
-            "--n-threads", task.max_concurrent,
-            "--output-path", str(output_dir_path),
         ]
     else:
         cmd = [
@@ -333,6 +317,16 @@ def main():
     cli_args = model_spec.cli_args
     device_str = cli_args.get("device")
     disable_trace_capture = cli_args.get("disable_trace_capture", False)
+
+    # Automatically control trace capture based on has_builtin_warmup
+    # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
+    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
+        if model_spec.has_builtin_warmup:
+            disable_trace_capture = True
+            logger.info(
+                "Model has builtin warmup (has_builtin_warmup=True), "
+                "automatically disabling trace capture for evals workflow"
+            )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG

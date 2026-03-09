@@ -1,4 +1,4 @@
-# BGE-Large-EN-v1.5 Tenstorrent Support on N150/N300
+# bge-large-en-v1.5 Tenstorrent Support on N150/N300
 
 #### Useful links
 
@@ -6,12 +6,12 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`BGE-Large-EN-v1.5` is also supported on hardware:
+`bge-large-en-v1.5` is also supported on hardware:
 
-- [WH Galaxy](BGE-Large-EN-v1.5_galaxy.md)
-- [WH LoudBox/QuietBox](BGE-Large-EN-v1.5_t3k.md)
+- [WH Galaxy](bge-large-en-v1.5_galaxy.md)
+- [WH LoudBox/QuietBox](bge-large-en-v1.5_t3k.md)
 
-## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on n150
+## Quickstart - Deploy bge-large-en-v1.5 Inference Server on n150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -20,7 +20,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model BGE-Large-EN-v1.5 --device n150 --workflow server --docker-server
+python3 run.py --model bge-large-en-v1.5 --device n150 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -44,7 +44,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 **via run.py command**
 
 ```bash
-python3 run.py --model BGE-Large-EN-v1.5 --device n300 --workflow server --docker-server
+python3 run.py --model bge-large-en-v1.5 --device n300 --workflow server --docker-server
 ```
 
 ### Model Parameters

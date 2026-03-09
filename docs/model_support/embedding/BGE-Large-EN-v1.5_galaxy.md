@@ -1,4 +1,4 @@
-# BGE-Large-EN-v1.5 Tenstorrent Support on WH Galaxy
+# bge-large-en-v1.5 Tenstorrent Support on WH Galaxy
 
 #### Useful links
 
@@ -6,12 +6,12 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`BGE-Large-EN-v1.5` is also supported on hardware:
+`bge-large-en-v1.5` is also supported on hardware:
 
-- [WH LoudBox/QuietBox](BGE-Large-EN-v1.5_t3k.md)
-- [N150/N300](BGE-Large-EN-v1.5_n150.md)
+- [WH LoudBox/QuietBox](bge-large-en-v1.5_t3k.md)
+- [N150/N300](bge-large-en-v1.5_n150.md)
 
-## Quickstart - Deploy BGE-Large-EN-v1.5 Inference Server on WH Galaxy
+## Quickstart - Deploy bge-large-en-v1.5 Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -20,7 +20,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model BGE-Large-EN-v1.5 --device galaxy --workflow server --docker-server
+python3 run.py --model bge-large-en-v1.5 --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

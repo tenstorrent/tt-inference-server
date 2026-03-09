@@ -19,7 +19,7 @@ public:
     METHOD_LIST_END
 
     void getOpenAPISpec(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         auto spec = buildOpenAPISpec();
@@ -29,7 +29,7 @@ public:
     }
 
     void getSwaggerUI(
-        const drogon::HttpRequestPtr& req,
+        const drogon::HttpRequestPtr& /* req */,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
 
         std::string html = R"html(
@@ -117,7 +117,7 @@ private:
         tags.append(completionsTag);
         Json::Value healthTag;
         healthTag["name"] = "Health";
-        healthTag["description"] = "Server health and readiness endpoints";
+        healthTag["description"] = "Server health and liveness endpoints";
         tags.append(healthTag);
         spec["tags"] = tags;
 
@@ -133,8 +133,8 @@ private:
         // GET /health
         paths["/health"]["get"] = buildHealthEndpoint();
 
-        // GET /ready
-        paths["/ready"]["get"] = buildReadyEndpoint();
+        // GET /tt-liveness
+        paths["/tt-liveness"]["get"] = buildLivenessEndpoint();
 
         spec["paths"] = paths;
 
@@ -278,12 +278,12 @@ private:
         return endpoint;
     }
 
-    Json::Value buildReadyEndpoint() {
+    Json::Value buildLivenessEndpoint() {
         Json::Value endpoint;
         endpoint["tags"].append("Health");
-        endpoint["summary"] = "Readiness check";
-        endpoint["description"] = "Returns detailed system status including model readiness, queue size, and worker information.";
-        endpoint["operationId"] = "readinessCheck";
+        endpoint["summary"] = "Liveness check";
+        endpoint["description"] = "Returns detailed system status including model liveness, queue size, and worker information.";
+        endpoint["operationId"] = "livenessCheck";
 
         Json::Value responses;
         Json::Value resp200;
@@ -568,6 +568,14 @@ private:
 
         props["total_tokens"]["type"] = "integer";
         props["total_tokens"]["description"] = "Total tokens used";
+
+        props["ttft_ms"]["type"] = "number";
+        props["ttft_ms"]["description"] = "Time to first token in milliseconds";
+        props["ttft_ms"]["nullable"] = true;
+
+        props["tps"]["type"] = "number";
+        props["tps"]["description"] = "Tokens per second (excluding first token)";
+        props["tps"]["nullable"] = true;
 
         schema["properties"] = props;
         return schema;

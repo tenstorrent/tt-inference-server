@@ -43,6 +43,18 @@ from workflows.model_spec import (
 )
 
 
+def load_module_from_path(module_name: str, module_path: Path):
+    """Load a module from a file path and register it in sys.modules."""
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def map_perf_status_to_model_status(perf_status):
     """Map CI perf_status string to ModelStatusTypes enum value."""
     status_map = {
@@ -457,9 +469,7 @@ def export_model_specs_json(model_spec_path, output_json_path):
         sys.path.insert(0, str(repo_root))
 
     # Dynamically import the updated model_spec module
-    spec = importlib.util.spec_from_file_location("model_spec", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec", model_spec_path)
 
     # Get MODEL_SPECS dictionary from the module
     model_specs = model_spec_module.MODEL_SPECS
@@ -503,9 +513,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    spec = importlib.util.spec_from_file_location("model_spec_docs", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec_docs", model_spec_path)
 
     templates = model_spec_module.spec_templates
     output_path = Path(output_dir)
@@ -589,9 +597,7 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    spec = importlib.util.spec_from_file_location("model_spec_readme", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec_readme", model_spec_path)
     templates = model_spec_module.spec_templates
 
     # Generate the model support content directly (no intermediate file)
@@ -717,9 +723,6 @@ def main():
 
         # Update README.md Model Support section and regenerate docs/model_support/
         update_readme_model_support(model_spec_path, args.readme_path)
-
-        # Update experimental models doc
-        update_experimental_models_doc(model_spec_path)
 
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
@@ -891,8 +894,6 @@ def main():
             # Update README.md Model Support section and regenerate docs/model_support/
             update_readme_model_support(model_spec_path)
 
-            # Update experimental models doc
-            update_experimental_models_doc(model_spec_path)
     else:
         print("\nNo updates needed.")
 

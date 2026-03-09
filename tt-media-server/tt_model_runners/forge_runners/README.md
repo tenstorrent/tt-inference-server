@@ -30,7 +30,7 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
-   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"   
+   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"
    pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
@@ -72,7 +72,7 @@ Interactive API documentation is available at:
 
 ### Demo
 
-Resnet Demo 
+Resnet Demo
 - http://127.0.0.1:8000/static/demos/resnet.html
 
 ### Making Inference Requests
@@ -80,7 +80,7 @@ Resnet Demo
 #### Using cURL
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/cnn/search-image' \
+  'http://127.0.0.1:8000/v1/cnn/search-image' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \
@@ -104,3 +104,45 @@ pip install pytest
 pip install pytest-asyncio
 tt-inference-server/tt-media-server$ pytest tt_model_runners/forge_runners/test_forge_models.py
 ```
+
+## Onboard a New Forge LLM Model to TT-Inference-Server
+
+### Repository Changes
+
+#### tt-media-server
+- Add the new model to `ModelNames` and `SupportedModels` enums if they don't already exist there
+
+#### tt-inference-server
+- Add new model spec with forge vllm plugin implementation (model_spec.py)
+- If the model does not exist in eval_config.py, you can add your eval_config, but the eval tasks should be the same as other tasks from other eval_configs from the model's family. Check NOTES below as well.
+
+#### tt-shield
+- Add model names in `on-dispatch.yml` dropdown when selecting models
+
+### Local Testing
+
+Model should first be tested locally:
+
+1. In tt-media-server, in `config/vllm_settings`, choose the desired model from the `SupportedModels` enum
+2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLM.value`
+3. Create a python3.11 venv with the forge vllm plugin and activate
+4. Do a `pip install -r` in both tt-inference-server and tt-media-server
+5. Do `export VLLM_TARGET_DEVICE="empty"`
+6. Run the tt-media-server with python3.11 venv (exec the `run_uvicorn.sh`)
+7. You can send completion requests via `localhost:8000/docs` page
+
+### CI
+
+To run the forge model, select the `forge-vllm-plugin` implementation when running the dispatch workflow in tt-shield. This will trigger the building of a tt-media-server container running the forge vllm plugin.
+
+Add the model into the options dropdown(under the model input) in on-dispatch.yml in .github/workflows/on-dispatch.yml file
+
+To add models into the on-nightly workflow, navigate to tt-shield repo, and add the model into the model matrix in .github/workflows/on-dispatch.yml , under   run-evals-on-media-inference-server-forge job
+
+NOTES:
+- We are unable to run evaluations on Forge models that exist in metal.
+Reasons:
+   - current eval_configs send a seed parameter, which xla does not support per request
+   - current eval_configs specify max_model_lenght that will crash the FORGE LLM model.
+   - We cannot support two eval_configs for the same model at the moment.
+   - If the model only exists on forge, eval can be ran, but make sure that you limit max model len + add the limit of how many requests eval will send(limit_samples_map)

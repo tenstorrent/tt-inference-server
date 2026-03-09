@@ -38,7 +38,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers) |
-| tt-metal Commit | `9b67e09` |
-| vLLM Commit | `a91b644` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-9b67e09-a91b644` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/84b4c53/models/tt_transformers) |
+| tt-metal Commit | `84b4c53` |
+| vLLM Commit | `222ee06` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-84b4c53-222ee06` |

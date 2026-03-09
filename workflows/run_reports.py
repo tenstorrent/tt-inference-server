@@ -1587,9 +1587,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_audio_display_dict,
         create_display_dict,
         create_embedding_display_dict,
-        create_vlm_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
+        create_vlm_display_dict,
         get_markdown_table,
         save_markdown_table,
         save_to_csv,
@@ -1620,6 +1620,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
 
         if vllm_text:
@@ -1670,6 +1671,15 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_cnn_md = get_markdown_table(vllm_cnn_display)
             cnn_sections.append(
                 f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
             )
 
         if vllm_video:
@@ -1765,6 +1775,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # to match what benchmarks actually use
     _model_max_concurrency = model_spec.device_model_spec.max_concurrency
     _max_context = model_spec.device_model_spec.max_context
+    _max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
@@ -1772,7 +1783,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     perf_refs = [
         cap_benchmark_params(
-            params, _max_context, _model_max_concurrency, model_spec.model_name
+            params,
+            _max_context,
+            _max_tokens_all_users,
+            _model_max_concurrency,
+            model_spec.model_name,
         )
         for params in raw_perf_refs
     ]
@@ -2119,34 +2134,29 @@ def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    extracted = []
-
     results = data.get("results", {})
     configs = data.get("configs", {})
 
     first_key = list(results.keys())[0]
 
-    for result_key, result_metrics in results.items():
-        extracted_metrics = {
-            k: v
-            for k, v in result_metrics.items()
-            if "alias" not in k and "_stderr" not in k
-        }
+    # extract first results' metrics
+    first_results = results[first_key]
+    extracted_metrics = {
+        k: v
+        for k, v in first_results.items()
+        if "alias" not in k and "_stderr" not in k
+    }
+    extracted = [{first_key: extracted_metrics}]
 
-        extracted.append({result_key: extracted_metrics})
     config = configs.get(first_key, {})
-    task_name = config.get("task")
-    if task_name is None:
-        group_subtasks = data.get("group_subtasks")
-        if group_subtasks:
-            task_name = list(group_subtasks.keys())[0]
-            config = configs.get(group_subtasks[task_name][0], {})
+    task_name = config.get("task", first_key)
 
-    if task_name != first_key:
-        if first_key == "mmmu_val":
-            task_name = "mmmu_val"
+    # assert that all configs have the same dataset path
+    dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
+    for config in configs.values():
+        config_dataset_path = config.get("dataset_path")
+        assert dataset_path == config_dataset_path
 
-    dataset_path = config.get("dataset_path", "N/A")
     assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
@@ -2735,9 +2745,13 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -2882,9 +2896,13 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         row_dict = {}
         for col_name, display_header in display_cols:
             if col_name == "isl":
-                value = row.get("isl", NOT_MEASURED_STR)
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
             elif col_name == "osl":
-                value = row.get("osl", NOT_MEASURED_STR)
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
             elif col_name == "max_concurrency":
                 value = row.get("max_con", NOT_MEASURED_STR)
             elif col_name == "num_prompts":
@@ -3258,6 +3276,8 @@ def calculate_target_metrics(metrics_config):
     def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
         if not ref_metric:
             return "Undefined", "Undefined"
+        if not avg_metric:
+            return 0.0, 1
         ratio = avg_metric / ref_metric
         if is_ascending_metric:
             check = 2 if ratio > 1.0 else 3

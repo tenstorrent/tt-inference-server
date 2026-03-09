@@ -8,9 +8,17 @@ Usage: python test_embedding.py [--host HOST] [--port PORT]
 
 import argparse
 import json
+import os
 import time
 
 import requests
+
+DEFAULT_API_KEY = "your-secret-key"
+
+
+def _auth_headers() -> dict:
+    token = os.environ.get("OPENAI_API_KEY", DEFAULT_API_KEY)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_health_check(base_url: str) -> bool:
@@ -26,11 +34,11 @@ def test_health_check(base_url: str) -> bool:
         return False
 
 
-def test_ready_check(base_url: str) -> bool:
-    """Test the readiness endpoint."""
-    print("\n=== Testing Ready Check ===")
+def test_liveness_check(base_url: str) -> bool:
+    """Test the liveness endpoint."""
+    print("\n=== Testing Liveness Check ===")
     try:
-        response = requests.get(f"{base_url}/ready", timeout=5)
+        response = requests.get(f"{base_url}/tt-liveness", timeout=5)
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text}")
         return response.status_code == 200
@@ -52,7 +60,7 @@ def test_single_embedding(base_url: str, model: str = "BAAI/bge-large-en-v1.5") 
         response = requests.post(
             f"{base_url}/v1/embeddings",
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **_auth_headers()},
             timeout=60,
         )
         elapsed = time.time() - start_time
@@ -111,7 +119,7 @@ def test_batch_embedding(base_url: str, model: str = "BAAI/bge-large-en-v1.5") -
             response = requests.post(
                 f"{base_url}/v1/embeddings",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **_auth_headers()},
                 timeout=60,
             )
             elapsed = time.time() - start_time
@@ -155,7 +163,7 @@ def test_throughput(
             response = requests.post(
                 f"{base_url}/v1/embeddings",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **_auth_headers()},
                 timeout=60,
             )
             elapsed = time.time() - start_time
@@ -206,7 +214,7 @@ def test_error_handling(base_url: str) -> bool:
             response = requests.post(
                 f"{base_url}/v1/embeddings",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **_auth_headers()},
                 timeout=10,
             )
             print(f"  {name}: Status {response.status_code}")
@@ -230,7 +238,15 @@ def main():
     parser.add_argument(
         "--skip-throughput", action="store_true", help="Skip throughput test"
     )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="Bearer token (defaults to OPENAI_API_KEY env or 'your-secret-key')",
+    )
     args = parser.parse_args()
+
+    if args.api_key:
+        os.environ["OPENAI_API_KEY"] = args.api_key
 
     base_url = f"http://{args.host}:{args.port}"
     print(f"Testing embedding endpoint at {base_url}")
@@ -240,7 +256,7 @@ def main():
 
     # Run tests
     results["health"] = test_health_check(base_url)
-    results["ready"] = test_ready_check(base_url)
+    results["tt-liveness"] = test_liveness_check(base_url)
     results["single"] = test_single_embedding(base_url, args.model)
     results["batch"] = test_batch_embedding(base_url, args.model)
 

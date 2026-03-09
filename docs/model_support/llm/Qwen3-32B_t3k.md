@@ -9,6 +9,7 @@
 `Qwen3-32B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-32B_galaxy.md)
+- [BH QuietBox GE (2xP300)](Qwen3-32B_p300x2.md)
 - [BH LoudBox](Qwen3-32B_p150x8.md)
 
 ## Quickstart - Deploy Qwen3-32B Inference Server on WH LoudBox/QuietBox
@@ -35,4 +36,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
 | tt-metal Commit | `e95ffa5` |
 | vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e95ffa5-48eba14` |

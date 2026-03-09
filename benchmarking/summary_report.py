@@ -97,7 +97,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     aiperf_image_pattern = r"""
         ^aiperf_benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -140,7 +140,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     aiperf_text_pattern = r"""
         ^aiperf_benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -168,7 +168,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -213,7 +213,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -239,10 +239,11 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Try CNN benchmark pattern (for SDXL and similar models)
     # Example: benchmark_id_tt-transformers_resnet-50_n150_1764676297.9903493.json
+    # Device list now include BH devices
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
         _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
         \.json$
     """
@@ -250,7 +251,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(cnn_pattern, filename, re.VERBOSE)
 
     if match:
-        logger.info(f"Found CNN benchmark pattern in filename: {filename}")
+        logger.info(
+            f"Found id/device/timestamp benchmark pattern in filename: {filename}"
+        )
         # Check if this is actually an audio model or image model based on model_id
         model_id = match.group(
             "model_id"
@@ -294,6 +297,7 @@ def format_metrics(metrics):
 
 def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     """Process a single benchmark file and extract relevant metrics."""
+    logger.info(f"Processing benchmark file: {filepath}")
     with open(filepath, "r") as f:
         data = json.load(f)
 
@@ -302,6 +306,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     # Handle aiperf benchmark files
     if params.get("backend") == "aiperf":
+        logger.info(f"Processing AIPerf benchmark file: {filepath}")
         # AIPerf files already contain metrics in vLLM-compatible format
         mean_tpot_ms = data.get("mean_tpot_ms", 0)
         if mean_tpot_ms and mean_tpot_ms > 0:
@@ -361,6 +366,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     # These have task_type "cnn" or "image" but use a different JSON format
     benchmarks_data = data.get("benchmarks: ", data)
     if benchmarks_data and benchmarks_data.get("benchmarks"):
+        logger.info(f"Processing CNN/SDXL-style benchmark file: {filename}")
         # This is a CNN/SDXL-style benchmark
         if params.get("task_type") == "cnn":
             logger.info(f"Processing CNN benchmark file: {filename}")
@@ -524,6 +530,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         return format_metrics(metrics)
 
     # Calculate statistics for text/image benchmarks
+    logger.info(
+        f"Default benchmark file processing (task_type={params.get('task_type')})"
+    )
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
         mean_tpot = max(data.get("mean_tpot_ms"), 1e-6)  # Avoid division by zero
@@ -588,15 +597,15 @@ def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, An
     """Process benchmark files from multiple files matching the given pattern."""
     results = []
 
-    print(f"Processing {len(files)} files")
+    logger.info(f"Processing {len(files)} files")
 
     for filepath in files:
-        print(f"Processing: {filepath} ...")
+        logger.info(f"Processing: {filepath} ...")
         try:
             metrics = process_benchmark_file(filepath)
             results.append(metrics)
         except Exception as e:
-            print(f"Error processing file {filepath}: {str(e)}")
+            logger.exception(f"Error processing file {filepath}: {e}")
 
     if not results:
         raise ValueError("No benchmark files were successfully processed")

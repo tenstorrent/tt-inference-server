@@ -19,11 +19,12 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+from utils.logger import log_exception_chain
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.tt_sdxl: TtSDXLPipeline = None
         self.batch_size = 0
         self.pipeline = None
@@ -39,13 +40,31 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         return device_params
 
     def _configure_fabric(self, updated_device_params):
-        fabric_config = updated_device_params.pop("fabric_config", None)
-        if fabric_config:
-            ttnn.set_fabric_config(fabric_config)
-        return None
+        try:
+            fabric_config = updated_device_params.pop("fabric_config", None)
+            if fabric_config:
+                ttnn.set_fabric_config(fabric_config)
+            return None
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Fabric configuration failed",
+                e,
+            )
+            raise RuntimeError(f"Fabric configuration failed: {str(e)}") from e
 
     def load_weights(self):
-        self._load_pipeline()
+        try:
+            self._load_pipeline()
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Exception during pipeline load",
+                e,
+            )
+            raise
         return True
 
     @log_execution_time(
@@ -58,7 +77,16 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         self.batch_size = self.settings.max_batch_size
 
         # 1. Load components
-        self._load_pipeline()
+        try:
+            self._load_pipeline()
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Exception during pipeline load",
+                e,
+            )
+            raise
 
         self.logger.info(
             f"Device {self.device_id}: Model weights downloaded successfully"
@@ -78,8 +106,11 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Exception during model loading: {e}"
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Exception during model loading",
+                e,
             )
             raise
 
@@ -98,8 +129,11 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             )
             raise
         except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: Exception during warmup inference: {e}"
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Exception during warmup inference",
+                e,
             )
             raise
 

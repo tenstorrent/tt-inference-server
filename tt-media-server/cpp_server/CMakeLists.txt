@@ -1,19 +1,39 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find Drogon
+# Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
+endif()
+
+# Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
+find_package(jsoncpp REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
-# Test build (used by PR gate). Pass -DTEST=ON or use build.sh --test.
-option(TEST "Build for PR gate: LLM only, no embedding (no Python required)" OFF)
-if(NOT TEST)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+# Try to find cereal, or fetch it if not available
+find_package(cereal QUIET)
+if(NOT cereal_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        cereal
+        GIT_REPOSITORY https://github.com/USCiLab/cereal.git
+        GIT_TAG v1.3.2
+    )
+
+    # Disable cereal tests and examples
+    set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+    set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
+    set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(cereal)
 endif()
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
@@ -37,30 +57,143 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# Option for TTNN support
-option(ENABLE_TTNN "Enable TTNN test runner" OFF)
+# Boost (header-only Boost.Interprocess for IPC message queue)
+find_package(Boost REQUIRED)
+
+# Option for Tracy support
+option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
+        GIT_TAG master
+    )
+    FetchContent_MakeAvailable(tracy)
+endif()
+
+# Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
+set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    tokenizers_cpp
+    GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+    GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
+    GIT_SUBMODULES "msgpack" "sentencepiece"
+)
+FetchContent_MakeAvailable(tokenizers_cpp)
+
+# TT Metal C++ API: headers from TT_METAL_HOME (for referencing Metal API, intellisense)
+if(NOT DEFINED TT_METAL_HOME AND DEFINED ENV{TT_METAL_HOME})
+    set(TT_METAL_HOME "$ENV{TT_METAL_HOME}" CACHE PATH "TT Metal home (from TT_METAL_HOME env)")
+endif()
+if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/tt_metal/api")
+    set(TT_METAL_API_FOUND ON)
+    set(TT_METAL_INCLUDE_DIRS
+        "${TT_METAL_HOME}"
+        "${TT_METAL_HOME}/tt_metal"
+        "${TT_METAL_HOME}/tt_metal/api"
+        "${TT_METAL_HOME}/tt_metal/third_party/umd"
+        "${TT_METAL_HOME}/tt_metal/third_party/umd/device/api"
+        "${TT_METAL_HOME}/tt_metal/hostdevcommon/api"
+        "${TT_METAL_HOME}/tt_metal/hw/inc"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/wormhole"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/wormhole/wormhole_b0_defines"
+        "${TT_METAL_HOME}/tt_metal/hw/inc/internal/tt-1xx/blackhole"
+        "${TT_METAL_HOME}/tt_metal/third_party/tracy/public"
+        "${TT_METAL_HOME}/tt_stl"
+    )
+    if(EXISTS "${TT_METAL_HOME}/build_Release/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build_Release/include"
+            "${TT_METAL_HOME}/build_Release/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS
+            "${TT_METAL_HOME}/build/include"
+            "${TT_METAL_HOME}/build/include/metalium-thirdparty")
+    elseif(EXISTS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+        list(APPEND TT_METAL_INCLUDE_DIRS "${TT_METAL_HOME}/build/_deps/enchantum-src/include")
+    elseif(EXISTS "${TT_METAL_HOME}/.cpmcache/enchantum")
+        file(GLOB _enchantum_dirs "${TT_METAL_HOME}/.cpmcache/enchantum/*/enchantum/include")
+        if(_enchantum_dirs)
+            list(GET _enchantum_dirs 0 _enchantum_include)
+            list(APPEND TT_METAL_INCLUDE_DIRS "${_enchantum_include}")
+        endif()
+    endif()
+    message(STATUS "TT Metal C++ API: ${TT_METAL_HOME} (includes + intellisense)")
+else()
+    set(TT_METAL_API_FOUND OFF)
+    set(TT_METAL_INCLUDE_DIRS "")
+    if(TT_METAL_HOME)
+        message(STATUS "TT Metal C++ API: TT_METAL_HOME set but tt_metal/api not found, skipping")
+    endif()
+endif()
 
 # LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
+# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
 set(LLM_ENGINE_SOURCES
-    src/runners/llm_engine/engine/block_manager.cpp
-    src/runners/llm_engine/engine/hash.cpp
-    src/runners/llm_engine/engine/llm_engine.cpp
-    src/runners/llm_engine/engine/model_runner.cpp
-    src/runners/llm_engine/engine/scheduler.cpp
-    src/runners/llm_engine/engine/sequence.cpp
+    src/runners/llm_runner/block_manager.cpp
+    src/ipc/boost_ipc_task_queue.cpp
+    src/runners/llm_runner/device_backend.cpp
+    src/runners/llm_runner/mock_device_backend.cpp
+    src/runners/llm_runner/hash.cpp
+    src/runners/llm_runner.cpp
+    src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/scheduler.cpp
+    src/runners/llm_runner/sequence.cpp
+    src/runners/llm_runner/sampling_params.cpp
 )
+if(TT_METAL_API_FOUND)
+    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
+else()
+    message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
+endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
 )
-target_compile_features(llm_engine PUBLIC cxx_std_17)
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL USE_METAL_CPP_LIB)
+    # Find tt_metal library directory
+    set(_tt_metal_lib_dir "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
+    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
+    endif()
+    if(_tt_metal_lib_dir)
+        target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
+        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl)
+    endif()
+endif()
+target_link_libraries(llm_engine PUBLIC Boost::boost)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(llm_engine PUBLIC rt)
+endif()
+target_compile_features(llm_engine PUBLIC cxx_std_20)
 
-add_executable(engine_demo src/runners/llm_engine/demo.cpp)
-target_link_libraries(engine_demo PRIVATE llm_engine)
-target_include_directories(engine_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/runners)
+option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
+if(LLM_ENGINE_DEBUG_BUILD)
+    target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_DEBUG)
+endif()
 
-# Unit tests (LLM engine scheduler)
+option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
+option(SANITIZE_ADDRESS "Build with AddressSanitizer (ASan) and LeakSanitizer for memory errors and leak detection" OFF)
+if(SANITIZE_THREAD AND SANITIZE_ADDRESS)
+    message(FATAL_ERROR "SANITIZE_THREAD and SANITIZE_ADDRESS are mutually exclusive; enable only one.")
+endif()
+if(SANITIZE_THREAD)
+    target_compile_options(llm_engine PUBLIC -fsanitize=thread -g)
+    target_link_options(llm_engine PUBLIC -fsanitize=thread)
+endif()
+if(SANITIZE_ADDRESS)
+    set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
+    target_compile_options(llm_engine PUBLIC ${ASAN_FLAGS})
+    target_link_options(llm_engine PUBLIC -fsanitize=address)
+endif()
+
+# Unit tests (LLM engine)
 enable_testing()
 add_executable(scheduler_test tests/scheduler_test.cpp)
 target_link_libraries(scheduler_test PRIVATE llm_engine GTest::gtest_main)
@@ -68,31 +201,72 @@ target_include_directories(scheduler_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+add_executable(llm_runner_test tests/llm_runner_test.cpp)
+target_link_libraries(llm_runner_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(llm_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(sequence_test tests/sequence_test.cpp)
+target_link_libraries(sequence_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(sequence_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Tokenizer test
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
+target_include_directories(test_tokenizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
+gtest_discover_tests(llm_runner_test)
+gtest_discover_tests(sequence_test)
+gtest_discover_tests(test_tokenizer)
+
+# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
+add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_engine)
+target_include_directories(ipc_scheduler_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+
+# Tokenizer benchmark
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+target_include_directories(tokenizer_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
 # Source files
 set(SOURCES
     src/main.cpp
+    src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/filters/security_filter.cpp
-    src/scheduler/multiprocess_scheduler.cpp
-    src/services/base_service.cpp
+    src/services/llm_service.cpp
+    src/utils/tokenizer.cpp
+    src/worker/single_process_worker.cpp
+    src/utils/service_factory.cpp
+    src/utils/runner_factory.cpp
+    src/utils/tokenizer_config_loader.cpp
+    src/utils/mapper.cpp
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/inter_server_service.cpp
 )
-if(NOT TEST)
-    list(APPEND SOURCES
-        src/api/embedding_controller.cpp
-        src/runners/embedding_runner.cpp
-        src/services/embedding_service.cpp
-    )
-endif()
-
-# Conditionally include embedding_runner.cpp only if ENABLE_TTNN is ON
-if(ENABLE_TTNN)
-    list(APPEND SOURCES src/runners/embedding_runner.cpp)
-endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -100,22 +274,32 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
 )
 
-# Link Drogon (Python only when embedding is built, i.e. NOT TEST)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
-if(TEST)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TEST)
+# Link Drogon and llm_engine (used by LLMService)
+target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal)
+if(ENABLE_TRACY)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
+        src/profiling/tracy_alloc.cpp
+    )
+    # TRACY_DELAYED_INIT + TRACY_MANUAL_LIFETIME: init profiler after fork so main/workers
+    # each call StartupProfiler() on their own port (see tracy_config::TracyStartupSchedulerParent etc.).
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        TT_ENABLE_TRACY
+        TRACY_ENABLE
+        TRACY_DELAYED_INIT
+        TRACY_MANUAL_LIFETIME
+    )
 endif()
-if(NOT TEST)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
 
-# TTNN support (optional)
-if(ENABLE_TTNN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TTNN)
-endif()
+# Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -127,4 +311,19 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 # Release optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+endif()
+
+# AddressSanitizer for executables (must be after all add_executable calls)
+if(SANITIZE_ADDRESS)
+    set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
+    target_compile_options(${PROJECT_NAME} PRIVATE ${ASAN_FLAGS})
+    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+    target_compile_options(scheduler_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(scheduler_test PRIVATE -fsanitize=address)
+    target_compile_options(llm_runner_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(llm_runner_test PRIVATE -fsanitize=address)
+    target_compile_options(sequence_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(sequence_test PRIVATE -fsanitize=address)
+    target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
 endif()

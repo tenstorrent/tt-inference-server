@@ -147,19 +147,18 @@ class TestDeviceWorker:
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
-        mock_get_device_runner.assert_called_once_with("worker_0", 1)
+        mock_get_device_runner.assert_called_once_with("worker_0")
         fresh_device_runner.set_device.assert_called_once()
         mock_loop.run_until_complete.assert_called_once()
         warmup_signals_queue.put.assert_called_once_with("worker_0", timeout=2.0)
@@ -175,14 +174,13 @@ class TestDeviceWorker:
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                device_worker(
-                    "worker_0",
-                    task_queue,
-                    result_queue,
-                    warmup_signals_queue,
-                    error_queue,
-                )
+            device_worker(
+                "worker_0",
+                task_queue,
+                result_queue,
+                warmup_signals_queue,
+                error_queue,
+            )
 
         error_queue.put.assert_called_once_with(
             ("worker_0", -1, "Device initialization failed")
@@ -214,17 +212,16 @@ class TestDeviceWorker:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         assert fresh_device_runner.run.call_count == 1
         call_args = fresh_device_runner.run.call_args[0][0]
@@ -268,17 +265,16 @@ class TestDeviceWorker:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         assert error_queue.put.call_count == 2
         calls = error_queue.put.call_args_list
@@ -311,17 +307,16 @@ class TestDeviceWorker:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         assert error_queue.put.call_count == 2
         calls = error_queue.put.call_args_list
@@ -374,15 +369,14 @@ class TestDeviceWorker:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with pytest.raises(WorkerExitException):
-                    device_worker(
-                        "worker_0",
-                        task_queue,
-                        result_queue,
-                        warmup_signals_queue,
-                        error_queue,
-                    )
+            with pytest.raises(WorkerExitException):
+                device_worker(
+                    "worker_0",
+                    task_queue,
+                    result_queue,
+                    warmup_signals_queue,
+                    error_queue,
+                )
 
         assert len(results_captured) == 3
         assert results_captured[0] == ("worker_0", "stream_task_1", "chunk_1")
@@ -418,17 +412,16 @@ class TestDeviceWorker:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         assert task_queue.get_many.call_count == 3
         assert fresh_device_runner.run.call_count == 1
@@ -461,17 +454,16 @@ class TestDeviceWorkerIntegration:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         mock_timer.assert_called_once()
         timeout_callback = mock_timer.call_args[0][1]
@@ -514,17 +506,16 @@ class TestDeviceWorkerIntegration:
             "device_workers.worker_utils.get_device_runner",
             return_value=fresh_device_runner,
         ):
-            with patch("device_workers.worker_utils.get_telemetry_client", Mock()):
-                with patch("asyncio.new_event_loop", return_value=mock_loop):
-                    with patch("asyncio.set_event_loop", Mock()):
-                        with pytest.raises(WorkerExitException):
-                            device_worker(
-                                "worker_0",
-                                task_queue,
-                                result_queue,
-                                warmup_signals_queue,
-                                error_queue,
-                            )
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop", Mock()):
+                    with pytest.raises(WorkerExitException):
+                        device_worker(
+                            "worker_0",
+                            task_queue,
+                            result_queue,
+                            warmup_signals_queue,
+                            error_queue,
+                        )
 
         assert error_queue.put.call_count >= 1
         calls = error_queue.put.call_args_list

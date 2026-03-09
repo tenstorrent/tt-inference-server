@@ -242,6 +242,14 @@ def start_trace_capture(model_spec_json):
         "disable_trace_capture", False
     )
 
+    # Models with builtin warmup handle their own trace capture internally
+    if not disable_trace_capture and model_spec_json.get("has_builtin_warmup", False):
+        disable_trace_capture = True
+        logger.info(
+            "Model has builtin warmup (has_builtin_warmup=True), "
+            "skipping background trace capture"
+        )
+
     if not disable_trace_capture:
         # Start background trace capture process
         service_port = model_spec_json.get("cli_args", {}).get(

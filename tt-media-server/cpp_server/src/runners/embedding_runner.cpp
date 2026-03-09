@@ -318,7 +318,7 @@ struct EmbeddingRunner::Impl {
 // Public interface implementation
 
 EmbeddingRunner::EmbeddingRunner(const std::string& device_id, int visible_device)
-    : BaseEmbeddingRunner(device_id)
+    : device_id_(device_id)
     , visible_device_(visible_device)
     , impl_(std::make_unique<Impl>(device_id)) {
     EMBED_LOG_INFO << "EmbeddingRunner created for device " << device_id
@@ -372,6 +372,20 @@ std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
     }
 
     return impl_->run_inference(requests);
+}
+
+// IRunner interface implementation
+void EmbeddingRunner::run() {
+    // For embedding runners, this could be a service loop
+    // For now, we'll just do warmup since embeddings are request-response based
+    if (!warmup()) {
+        throw std::runtime_error("Failed to initialize EmbeddingRunner");
+    }
+    EMBED_LOG_INFO << "EmbeddingRunner ready for requests on device " << device_id_;
+}
+
+void EmbeddingRunner::stop() {
+    close();
 }
 
 } // namespace tt::runners

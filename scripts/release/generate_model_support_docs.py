@@ -32,11 +32,11 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workflows.model_spec import (
-    ModelSpecTemplate,
-    spec_templates,
-    model_weights_to_model_name,
-    generate_default_docker_link,
     VERSION,
+    ModelSpecTemplate,
+    generate_default_docker_link,
+    model_weights_to_model_name,
+    spec_templates,
 )
 from workflows.workflow_types import (
     DeviceTypes,
@@ -79,7 +79,9 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.GALAXY_T3K: "https://tenstorrent.com/hardware/galaxy",
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
+    DeviceTypes.P300: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
+    DeviceTypes.P300X2: "https://tenstorrent.com/hardware/tt-quietbox",
     DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
 }
 
@@ -104,11 +106,13 @@ _BH_SINGLE_CARD_PAGE_GROUP = HardwarePageGroup(
 DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     DeviceTypes.GALAXY: _GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY_T3K: _GALAXY_PAGE_GROUP,
+    DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
+    DeviceTypes.P300: _BH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
     DeviceTypes.N300: _WH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.N150: _WH_SINGLE_CARD_PAGE_GROUP,
 }
@@ -205,8 +209,6 @@ def generate_section_anchor(section_title: str) -> str:
 
 def get_model_display_name(template: ModelSpecTemplate) -> str:
     """Get the display name for a model template."""
-    if template.display_name:
-        return template.display_name
     return model_weights_to_model_name(template.weights[0])
 
 

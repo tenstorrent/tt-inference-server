@@ -16,7 +16,7 @@ from PIL import Image
 from tests.server_tests.base_test import BaseTest
 from tests.server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
-    SERVER_DEFAULT_URL,
+    SERVER_BASE_URL,
 )
 from tests.server_tests.test_classes import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
@@ -31,7 +31,7 @@ VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
-VIDEO_GENERATION_ENDPOINT = "video/generations"
+VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
 DATASET_DIR = "tests/server_tests/datasets/videos"
 
 
@@ -192,7 +192,7 @@ class VideoGenerationEvalsTest(BaseTest):
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed - server not ready")
 
-        base_url = server_url or SERVER_DEFAULT_URL
+        base_url = server_url or SERVER_BASE_URL
         videos_info = []
 
         headers = {
