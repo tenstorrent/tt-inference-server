@@ -1032,8 +1032,8 @@ llm_templates = [
             "google/gemma-3-1b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="a7fe69f9",
-        vllm_commit="c4f2327",
+        tt_metal_commit="81810b6",
+        vllm_commit="6dbf6ca",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1041,27 +1041,13 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
-                override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
-                    # "fabric_config": "FABRIC_1D",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=32,
-                max_context=32 * 1024,
-                default_impl=True,
                 env_vars={
                     "VLLM_USE_V1": "1",
                 },
-                vllm_args={"num_scheduler_steps": 1},
                 override_tt_config={
                     "l1_small_size": 24576,
                     "worker_l1_size": 1344544,
                     "trace_region_size": 21448704,
-                    "fabric_config": "FABRIC_1D",
                 },
             ),
         ],

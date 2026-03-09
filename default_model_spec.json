@@ -680,7 +680,7 @@
           "model_name": "gemma-3-1b-it",
           "inference_engine": "vLLM",
           "device_type": "N150",
-          "tt_metal_commit": "c254ee3",
+          "tt_metal_commit": "81810b6",
           "device_model_spec": {
             "device": "N150",
             "max_concurrency": 32,
@@ -696,17 +696,17 @@
               "max_num_batched_tokens": "32768",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}"
+              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704}"
             },
             "override_tt_config": {
               "l1_small_size": 24576,
               "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
-              "fabric_config": "FABRIC_1D"
+              "trace_region_size": 21448704
             },
             "env_vars": {
               "MESH_DEVICE": "N150",
-              "ARCH_NAME": "wormhole_b0"
+              "ARCH_NAME": "wormhole_b0",
+              "VLLM_USE_V1": "1"
             }
           },
           "system_requirements": null,
@@ -716,9 +716,10 @@
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
             "MESH_DEVICE": "N150",
-            "ARCH_NAME": "wormhole_b0"
+            "ARCH_NAME": "wormhole_b0",
+            "VLLM_USE_V1": "1"
           },
-          "vllm_commit": "c4f2327",
+          "vllm_commit": "6dbf6ca",
           "hf_weights_repo": "google/gemma-3-1b-it",
           "param_count": 1,
           "min_disk_gb": 22,
@@ -726,14 +727,13 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-81810b6-6dbf6ca",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/81810b6/models/tt_transformers",
           "override_tt_config": {
             "l1_small_size": 24576,
             "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
-            "fabric_config": "FABRIC_1D"
+            "trace_region_size": 21448704
           },
           "supported_modalities": [
             "text"
