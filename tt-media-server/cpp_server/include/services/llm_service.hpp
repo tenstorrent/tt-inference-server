@@ -10,13 +10,13 @@
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "domain/prefill_request.hpp"
-#include "domain/prefill_result.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
 
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include "utils/concurrent_map.hpp"
@@ -32,7 +32,6 @@ class LLMService
     , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
     using PrefillRequestCallback = std::function<bool(const domain::PrefillRequest&)>;
-    using PrefillResultCallback = std::function<void(const domain::PrefillResult&)>;
 
     LLMService();
     ~LLMService() override;
@@ -46,12 +45,13 @@ public:
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
 
-    void handle_prefill_request(const domain::PrefillRequest& request);
-    void handle_prefill_complete(const domain::PrefillResult& result);
+    using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;
+    std::optional<StreamCallback> detach_stream_callback(const std::string& task_id);
+    void submit_decode_continuation(domain::CompletionRequest request, StreamCallback callback);
+
     void handle_connection_lost();
 
     void set_prefill_request_callback(PrefillRequestCallback callback);
-    void set_prefill_result_callback(PrefillResultCallback callback);
 
     std::shared_ptr<tt::sockets::InterServerService> get_socket_service() const;
 
@@ -75,8 +75,6 @@ private:
     void consumer_loop_for_worker(size_t worker_idx);
 
     bool check_worker_alive(size_t worker_idx);
-
-    void continue_decode_generation(const domain::PrefillResult& prefill_result);
 
     tt::config::LLMMode mode_;
 
@@ -102,7 +100,6 @@ private:
     std::shared_ptr<tt::sockets::InterServerService> socket_service_;
 
     PrefillRequestCallback prefill_request_callback_;
-    PrefillResultCallback prefill_result_callback_;
 };
 
 }

@@ -2,11 +2,13 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "api/socket_controller.hpp"
+#include "domain/completion_request.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "config/settings.hpp"
 
 #include <iostream>
+#include <memory>
 
 namespace tt::api {
 
@@ -35,27 +37,52 @@ SocketController::SocketController(
 }
 
 void SocketController::setup_prefill_mode_handlers() {
-    llm_service_->set_prefill_result_callback(
-        [this](const domain::PrefillResult& result) {
-            tt::sockets::PrefillResultMessage msg;
-            msg.task_id = result.task_id;
-            msg.generated_text = result.generated_text;
-            msg.token_ids = result.token_ids;
-            msg.remaining_tokens = result.remaining_tokens;
-            msg.finished = result.finished;
-            msg.tokens_generated = 1;
-            socket_service_->sendPrefillResult(msg);
-        });
-
     socket_service_->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
             std::cout << "[SocketController] Received prefill request " << message.task_id << "\n" << std::flush;
-            domain::PrefillRequest request;
+
+            domain::CompletionRequest request;
             request.task_id = message.task_id;
-            request.prompt = message.prompt;
-            request.token_ids = message.token_ids;
-            request.max_tokens = message.max_tokens;
-            llm_service_->handle_prefill_request(request);
+            if (!message.token_ids.empty()) {
+                std::vector<int> tokens(message.token_ids.begin(), message.token_ids.end());
+                request.prompt = std::move(tokens);
+            } else {
+                request.prompt = message.prompt;
+            }
+            const int original_max_tokens = message.max_tokens;
+            request.max_tokens = 1;
+
+            auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(message.token_ids);
+            std::string task_id = message.task_id;
+
+            llm_service_->submit_streaming_request(std::move(request),
+                [this, task_id, token_ids_ptr, original_max_tokens]
+                (const domain::StreamingChunkResponse& chunk, bool is_final) {
+                    std::string text;
+                    if (!chunk.choices.empty()) {
+                        text = chunk.choices[0].text;
+                        if (chunk.choices[0].token_id.has_value()) {
+                            token_ids_ptr->push_back(chunk.choices[0].token_id.value());
+                        }
+                    }
+
+                    int remaining_tokens = original_max_tokens - 1;
+
+                    tt::sockets::PrefillResultMessage msg;
+                    msg.task_id = task_id;
+                    msg.generated_text = text;
+                    msg.token_ids = *token_ids_ptr;
+                    msg.remaining_tokens = remaining_tokens;
+                    msg.finished = is_final && remaining_tokens <= 0;
+                    msg.tokens_generated = 1;
+                    socket_service_->sendPrefillResult(msg);
+
+                    if (is_final) {
+                        std::cout << "[SocketController] Completed prefill " << task_id
+                                  << " (remaining: " << remaining_tokens << ", token_ids: "
+                                  << token_ids_ptr->size() << ")\n" << std::flush;
+                    }
+                });
         });
 }
 
@@ -73,13 +100,46 @@ void SocketController::setup_decode_mode_handlers() {
         [this](const tt::sockets::PrefillResultMessage& msg) {
             std::cout << "[SocketController] Received prefill result " << msg.task_id << "\n" << std::flush;
 
-            domain::PrefillResult result;
-            result.task_id = msg.task_id;
-            result.generated_text = msg.generated_text;
-            result.token_ids = msg.token_ids;
-            result.remaining_tokens = msg.remaining_tokens;
-            result.finished = msg.finished;
-            llm_service_->handle_prefill_complete(result);
+            auto taken = llm_service_->detach_stream_callback(msg.task_id);
+            if (!taken.has_value()) {
+                std::cerr << "[SocketController] No callback for task_id: " << msg.task_id << "\n" << std::flush;
+                return;
+            }
+            auto callback = std::move(taken.value());
+
+            domain::StreamingChunkResponse response;
+            response.id = msg.task_id;
+            response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+            domain::CompletionChoice choice;
+            choice.text = msg.generated_text;
+            choice.index = 0;
+            response.choices.push_back(std::move(choice));
+            callback(response, false);
+
+            if (msg.remaining_tokens > 0 && !msg.token_ids.empty()) {
+                domain::CompletionRequest request;
+                request.task_id = msg.task_id;
+                std::vector<int> tokens(msg.token_ids.begin(), msg.token_ids.end());
+                request.prompt = std::move(tokens);
+                request.max_tokens = msg.remaining_tokens;
+
+                llm_service_->submit_decode_continuation(
+                    std::move(request), std::move(callback));
+            } else {
+                domain::StreamingChunkResponse final_response;
+                final_response.id = msg.task_id;
+                final_response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+                domain::CompletionChoice final_choice;
+                final_choice.text = "";
+                final_choice.index = 0;
+                final_choice.finish_reason = "stop";
+                final_response.choices.push_back(std::move(final_choice));
+                callback(final_response, true);
+            }
         });
 
     socket_service_->setConnectionLostCallback([this]() {
