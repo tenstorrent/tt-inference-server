@@ -382,6 +382,7 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     has_builtin_warmup: bool = False
+    skip_build: bool = False
 
     # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
     cli_args: Dict[str, str] = field(default_factory=dict)
@@ -797,6 +798,7 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
+    skip_build: bool = False
 
     def __post_init__(self):
         self._validate_data()
@@ -889,6 +891,7 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
+                    skip_build=self.skip_build,
                 )
 
                 specs.append(spec)
@@ -989,6 +992,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
         vllm_commit="35f023f",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         # need to add default sampling params here because they're
         # not in generation_config.json
@@ -1034,6 +1038,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c254ee3",
         vllm_commit="c4f2327",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1118,6 +1123,7 @@ llm_templates = [
         ),
         tt_metal_commit="e867533",
         vllm_commit="22be241",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1175,6 +1181,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
         vllm_commit="48eba14",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1262,6 +1269,7 @@ llm_templates = [
         ),
         tt_metal_commit="e867533",
         vllm_commit="22be241",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1281,6 +1289,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="9b67e09",
         vllm_commit="a91b644",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1312,6 +1321,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
         vllm_commit="48eba14",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1357,6 +1367,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="13f44c5",
         vllm_commit="0edd242",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1407,6 +1418,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="5b5db8a",
         vllm_commit="e771fff",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1476,6 +1488,7 @@ llm_templates = [
         impl=deepseek_r1_galaxy_impl,
         tt_metal_commit="e3d97e5",
         vllm_commit="a186bf4",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1522,6 +1535,7 @@ llm_templates = [
         ),
         tt_metal_commit="0b10c51",
         vllm_commit="3499ffa",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1560,6 +1574,7 @@ llm_templates = [
         ),
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1625,6 +1640,7 @@ llm_templates = [
         ),
         tt_metal_commit="e867533",
         vllm_commit="22be241",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1659,6 +1675,7 @@ llm_templates = [
         ),
         tt_metal_commit="v0.62.0-rc33",
         vllm_commit="e7c329b",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1714,6 +1731,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="20edc39",
         vllm_commit="03cb300",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1743,6 +1761,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="3f72232",
         vllm_commit="409b1cd",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1783,6 +1802,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1808,6 +1828,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1871,6 +1892,7 @@ llm_templates = [
         ),
         tt_metal_commit="e867533",
         vllm_commit="22be241",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1952,6 +1974,7 @@ llm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="17a5973",
         vllm_commit="aa4ae1e",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1993,6 +2016,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c254ee3",
         vllm_commit="c4f2327",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2035,6 +2059,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="0b10c51",
         vllm_commit="3499ffa",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2126,6 +2151,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -2155,6 +2181,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -2187,6 +2214,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -2210,6 +2238,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
         vllm_commit="b2894d3",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -2237,6 +2266,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
         vllm_commit="5cbc982",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2264,6 +2294,7 @@ vlm_templates = [
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
         vllm_commit="5cbc982",
+        skip_build=True,
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
