@@ -114,10 +114,8 @@ class TestModelSpecTemplateSystem:
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
 
-    def test_system_requirements(self, sample_impl):
+    def test_system_requirement_template_level(self, sample_impl):
         """Test that SystemRequirements propagate correctly from templates and device specs."""
-
-        # Case 1: SystemRequirements defined at template-level only
         template1 = ModelSpecTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.0.0",
@@ -143,7 +141,6 @@ class TestModelSpecTemplateSystem:
             weights=["test/model-1"],
         )
 
-        # Expand and verify template-level requirements are used
         specs1 = template1.expand_to_specs()
         assert len(specs1) == 1
         assert specs1[0].system_requirements is not None
@@ -152,7 +149,7 @@ class TestModelSpecTemplateSystem:
         assert specs1[0].system_requirements.kmd.specifier == ">=2.1.0"
         assert specs1[0].system_requirements.kmd.mode == VersionMode.STRICT
 
-        # Case 2: SystemRequirements defined at device-model-spec-level only
+    def test_system_requirements_device_model_spec_level(self, sample_impl):
         template2 = ModelSpecTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.1.0",
@@ -178,7 +175,6 @@ class TestModelSpecTemplateSystem:
             weights=["test/model-2"],
         )
 
-        # Expand and verify device-level requirements are used
         specs2 = template2.expand_to_specs()
         assert len(specs2) == 1
         assert specs2[0].system_requirements is not None
@@ -187,7 +183,7 @@ class TestModelSpecTemplateSystem:
         assert specs2[0].system_requirements.kmd.specifier == ">=2.2.0"
         assert specs2[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
 
-        # Case 3: SystemRequirements defined at both levels - device-level should override
+    def test_system_requirements_both_levels(self, sample_impl):
         template3 = ModelSpecTemplate(
             impl=sample_impl,
             tt_metal_commit="v1.2.0",
@@ -223,11 +219,9 @@ class TestModelSpecTemplateSystem:
             weights=["test/model-3"],
         )
 
-        # Expand and verify device-level requirements override template-level
         specs3 = template3.expand_to_specs()
         assert len(specs3) == 1
         assert specs3[0].system_requirements is not None
-        # Should use device-level requirements, not template-level
         assert specs3[0].system_requirements.firmware.specifier == ">=18.12.0"
         assert specs3[0].system_requirements.firmware.mode == VersionMode.SUGGESTED
         assert specs3[0].system_requirements.kmd.specifier == ">=2.4.1"
