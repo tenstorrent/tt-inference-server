@@ -421,7 +421,7 @@ std::optional<LLMService::StreamCallback> LLMService::detach_stream_callback(con
 
 void LLMService::submit_decode_continuation(
     domain::CompletionRequest request, StreamCallback callback) {
-    std::string task_id = request.task_id;
+    std::string task_id = request.task_id.id;
 
     pending_tasks_.fetch_add(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
