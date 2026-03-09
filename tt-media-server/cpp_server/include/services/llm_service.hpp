@@ -9,12 +9,14 @@
 #include "config/constants.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
+#include "domain/prefill_request.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
 
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include "utils/concurrent_map.hpp"
@@ -29,6 +31,7 @@ class LLMService
     : public BaseService<domain::CompletionRequest, domain::CompletionResponse>
     , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
 public:
+    using PrefillRequestCallback = std::function<bool(const domain::PrefillRequest&)>;
 
     LLMService();
     ~LLMService() override;
@@ -41,6 +44,16 @@ public:
 
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
+
+    using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;
+    std::optional<StreamCallback> detach_stream_callback(const std::string& task_id);
+    void submit_decode_continuation(domain::CompletionRequest request, StreamCallback callback);
+
+    void handle_connection_lost();
+
+    void set_prefill_request_callback(PrefillRequestCallback callback);
+
+    std::shared_ptr<tt::sockets::InterServerService> get_socket_service() const;
 
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
@@ -58,16 +71,10 @@ protected:
 private:
     void start_workers();
     void start_consumers();
-    void setup_socket_callbacks();
 
     void consumer_loop_for_worker(size_t worker_idx);
 
     bool check_worker_alive(size_t worker_idx);
-
-    void handle_prefill_request(const tt::sockets::PrefillRequestMessage& message);
-    void handle_prefill_complete(const tt::sockets::PrefillResultMessage& result);
-    void continue_decode_generation(const tt::sockets::PrefillResultMessage& prefill_result);
-    void handle_connection_lost();
 
     tt::config::LLMMode mode_;
 
@@ -90,7 +97,9 @@ private:
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
     const tt::utils::Tokenizer* tokenizer_;
-    std::unique_ptr<tt::sockets::InterServerService> socket_service_;
+    std::shared_ptr<tt::sockets::InterServerService> socket_service_;
+
+    PrefillRequestCallback prefill_request_callback_;
 };
 
 }
