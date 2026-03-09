@@ -750,6 +750,14 @@ def main():
     updates_made = 0
     update_records = []  # Track updates for markdown generation
 
+    # Templates that should never be updated by this script, identified by
+    # (impl_id, first_weight, frozenset of device names).
+    SKIP_TEMPLATES = {
+        ("qwen3_32b_galaxy", "Qwen/Qwen3-32B", frozenset({"GALAXY"})),
+        ("llama3_70b_galaxy", "meta-llama/Llama-3.3-70B-Instruct", frozenset({"GALAXY"})),
+        ("tt_transformers", "meta-llama/Llama-3.1-8B", frozenset({"GALAXY", "GALAXY_T3K"})),
+    }
+
     for template in spec_templates:
         # Log template being processed
         impl_name = template.impl.impl_name
@@ -759,6 +767,16 @@ def main():
         print(
             f"Processing template: impl={impl_name}, weights={weights}, devices={devices}"
         )
+
+        # Check if this template is in the skip list
+        template_key = (
+            template.impl.impl_id,
+            weights[0] if weights else "",
+            frozenset(devices),
+        )
+        if template_key in SKIP_TEMPLATES:
+            print("  Template is in SKIP_TEMPLATES list. Skipping.")
+            continue
 
         # Get commits and status for this template from CI data
         tt_metal_commit, vllm_commit, status, should_update, selected_model_id = (
