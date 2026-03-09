@@ -534,17 +534,14 @@ The server includes tokenizer support for encode/decode:
    ```bash
    ./build.sh
    ```
-<<<<<<< HEAD
-4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
-   active tokenizer is selected at runtime based on `MODEL_RUNNER` (see
-   [Runtime model selection](#runtime-model-selection) above).
-=======
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
-   To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
+
+4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The active tokenizer is selected at runtime based on `MODEL_RUNNER` (see [Runtime model selection](#runtime-model-selection) above).
+
+   To manually fetch the DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
-   mkdir -p cpp_server/tokenizers
-   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer.json
-   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer_config.json
+   mkdir -p cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528
+   wget -q -O cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main/tokenizer_config.json
    ```
 
 ## Performance
@@ -555,7 +552,6 @@ Token generation timing:
 - Target: 120,000 tokens/second
 - Token interval: ~8.33 microseconds
 - Uses `std::chrono::high_resolution_clock` for precise timing
->>>>>>> dev
 
 ## Comparison with Python FastAPI
 

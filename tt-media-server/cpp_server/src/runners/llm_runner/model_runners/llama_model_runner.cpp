@@ -25,6 +25,7 @@ bool LlamaModelRunner::initialize() {
     py::initialize_interpreter();
   }
 
+  bool success = false;
   try {
     py::module_ sys_mod = py::module_::import("sys");
     py::list sys_path = sys_mod.attr("path");
@@ -50,18 +51,17 @@ bool LlamaModelRunner::initialize() {
     bool warmup_ok = asyncio.attr("run")(g_runner.attr("warmup")()).cast<bool>();
     if (!warmup_ok) {
       std::cerr << "[LlamaModelRunner] Warmup failed\n";
-      return false;
+    } else {
+      std::cout << "[LlamaModelRunner] Llama runner ready (in-process)\n";
+      initialized_ = true;
+      success = true;
     }
-
-    std::cout << "[LlamaModelRunner] Llama runner ready (in-process)\n";
-    initialized_ = true;
-    PyEval_SaveThread();
-    return true;
   } catch (const py::error_already_set& e) {
     std::cerr << "[LlamaModelRunner] Python init error: " << e.what() << "\n";
-    PyEval_SaveThread();
-    return false;
   }
+
+  PyEval_SaveThread();
+  return success;
 }
 
 void LlamaModelRunner::fail_sequences(const std::vector<Sequence*>& seqs) {

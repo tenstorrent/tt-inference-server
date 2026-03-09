@@ -154,6 +154,16 @@
         }
       }
     },
+    "Qwen3-VL-32B-Instruct": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "T3K"
+          ]
+        }
+      }
+    },
     "Qwen2.5-VL-32B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
