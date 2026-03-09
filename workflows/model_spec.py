@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 VERSION = get_version()
 
+
 def generate_docker_tag(
     version: str, tt_metal_commit: str, vllm_commit: Optional[str]
 ) -> str:
@@ -38,6 +39,7 @@ def generate_docker_tag(
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
+
 
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: Optional[str]
@@ -48,6 +50,7 @@ def generate_default_docker_link(
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
+
 
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
@@ -62,7 +65,9 @@ def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskPar
         data = json.load(f)
     return data
 
+
 model_performance_reference = read_performance_reference_json()
+
 
 def get_perf_reference_map(
     model_name: str, perf_targets_map: Dict[str, float]
@@ -113,6 +118,7 @@ def get_perf_reference_map(
         perf_reference_map[device_type] = params_list
     return perf_reference_map
 
+
 def scale_llm_perf_targets(
     task: BenchmarkTaskParams, data_parallel: int
 ) -> BenchmarkTaskParams:
@@ -143,6 +149,7 @@ def scale_llm_perf_targets(
         num_inference_steps=task.num_inference_steps,
     )
 
+
 def get_perf_reference(device_model_spec, perf_reference_map):
     # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
     data_parallel = device_model_spec.override_tt_config.get("data_parallel")
@@ -159,8 +166,10 @@ def get_perf_reference(device_model_spec, perf_reference_map):
         perf_reference = perf_reference_map.get(device_model_spec.device, [])
     return perf_reference
 
+
 def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
+
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
@@ -180,12 +189,14 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
 
+
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
     impl_name: str
     repo_url: str
     code_path: str
+
 
 tt_transformers_impl = ImplSpec(
     impl_id="tt_transformers",
@@ -242,6 +253,7 @@ tt_vllm_plugin_impl = ImplSpec(
     code_path="tt_vllm_plugin",
 )
 
+
 @dataclass(frozen=True)
 class VersionRequirement:
     """Represents a software version requirement with a specific mode."""
@@ -249,12 +261,14 @@ class VersionRequirement:
     specifier: str
     mode: VersionMode
 
+
 @dataclass(frozen=True)
 class SystemRequirements:
     """Represents system software version requirements."""
 
     firmware: VersionRequirement = None
     kmd: VersionRequirement = None
+
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -326,6 +340,7 @@ class DeviceModelSpec:
             **self.env_vars,
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
+
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -747,6 +762,7 @@ class ModelSpec:
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
 
+
 @dataclass(frozen=True)
 class ModelSpecTemplate:
     """
@@ -780,6 +796,7 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
+
     def __post_init__(self):
         self._validate_data()
         self._infer_data()
@@ -871,11 +888,11 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
-
                 )
 
                 specs.append(spec)
         return specs
+
 
 # Model specification templates - these get expanded into individual specs
 # order: spec_templates = (
@@ -3143,6 +3160,7 @@ spec_templates = [
     *cnn_templates,
 ]
 
+
 def get_model_spec_map(
     templates: List[ModelSpecTemplate],
 ) -> Dict[str, ModelSpec]:
@@ -3160,6 +3178,7 @@ def get_model_spec_map(
         for spec in template.expand_to_specs():
             model_spec_map[spec.model_id] = spec
     return model_spec_map
+
 
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
     """Export MODEL_SPECS to a nested JSON file.
@@ -3194,55 +3213,31 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 
     return num_specs
 
+
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
-def get_runtime_model_spec(
-    model: str,
-    device: str,
-    engine: Optional[str] = None,
-    impl: Optional[str] = None,
-) -> Tuple[ModelSpec, str, str]:
-    """Select a ModelSpec from MODEL_SPECS.
 
-    Pure function -- does **not** mutate any external state.
+def get_runtime_model_spec(args):
+    # Infer the impl from the default for given model_name if not provided
+    if not args.impl:
+        device_type = DeviceTypes.from_string(args.device)
+        for _, model_spec in MODEL_SPECS.items():
+            if (
+                model_spec.model_name == args.model
+                and model_spec.device_type == device_type
+                and model_spec.device_model_spec.default_impl
+            ):
+                args.impl = model_spec.impl.impl_name
+                break
 
-    Returns ``(model_spec, resolved_impl, resolved_engine)`` so the caller
-    can construct a fully-initialised RuntimeConfig in one step.
-    """
-    device_type = DeviceTypes.from_string(device)
-
-    candidate_specs = [
-        spec
-        for spec in MODEL_SPECS.values()
-        if spec.model_name == model
-        and spec.device_type == device_type
-        and (not engine or spec.inference_engine == engine)
-        and (not impl or spec.impl.impl_name == impl)
-    ]
-
-    if not candidate_specs:
-        engine_msg = f", engine={engine}" if engine else ""
-        impl_msg = f", impl={impl}" if impl else ""
+    if not args.impl:
         raise ValueError(
-            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg}"
+            f"Model:={args.model} does not have a default impl, you must pass --impl"
         )
 
-    default_spec = next(
-        (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
-        None,
-    )
-    selected_spec = default_spec or (candidate_specs[0] if impl else None)
+    model_id = get_model_id(args.impl, args.model, args.device)
+    model_spec = MODEL_SPECS[model_id]
+    model_spec.apply_runtime_args(args)
 
-    if selected_spec is None:
-        raise ValueError(
-            f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine}; "
-            f"you must pass --impl"
-        )
-
-    resolved_impl = selected_spec.impl.impl_name
-    resolved_engine = engine if engine else selected_spec.inference_engine
-
-    model_spec = MODEL_SPECS[selected_spec.model_id]
-    return model_spec, resolved_impl, resolved_engine
+    return model_spec
