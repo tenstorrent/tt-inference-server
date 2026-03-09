@@ -23,7 +23,7 @@ class SpeechT5TTSTest(BaseTest):
 
     async def _test_basic_tts(self):
         """Test basic text-to-speech generation"""
-        url = f"http://localhost:{self.service_port}/audio/speech"
+        url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
         payload = {
             "text": "Hello world, this is a test of SpeechT5 text to speech synthesis.",

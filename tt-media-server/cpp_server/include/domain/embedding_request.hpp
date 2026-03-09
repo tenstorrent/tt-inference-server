@@ -6,6 +6,7 @@
 #include <string>
 #include <optional>
 #include <json/json.h>
+#include "domain/base_request.hpp"
 
 namespace tt::domain {
 
@@ -13,7 +14,7 @@ namespace tt::domain {
  * OpenAI-compatible embedding request.
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/create
  */
-struct EmbeddingRequest {
+struct EmbeddingRequest: BaseRequest {
     // Required: Model to use for embedding
     std::string model;
 
@@ -22,9 +23,6 @@ struct EmbeddingRequest {
 
     // Optional: User identifier
     std::optional<std::string> user;
-
-    // Internal: Task ID for tracking
-    std::string task_id;
 
     /**
      * Parse from JSON.
@@ -45,7 +43,7 @@ struct EmbeddingRequest {
         }
 
         if (json.isMember("task_id")) {
-            req.task_id = json["task_id"].asString();
+            req.task_id = TaskID(json["task_id"].asString());
         }
 
         return req;
@@ -58,7 +56,7 @@ struct EmbeddingRequest {
         Json::Value json;
         json["model"] = model;
         json["input"] = input;
-        json["task_id"] = task_id;
+        json["task_id"] = task_id.id;
         if (user) {
             json["user"] = *user;
         }

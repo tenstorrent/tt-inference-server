@@ -7,6 +7,7 @@ import os
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
 
+from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
 
 
@@ -14,22 +15,29 @@ def setup_runner_environment(
     device_id: str, cpu_threads: str = "2", num_torch_threads: int = 1
 ):
     """Set up environment variables and configuration for a device runner"""
+    _logger = TTLogger()
+    _logger.info(
+        f"setup_runner_environment: device_id={device_id!r}, "
+        f"is_galaxy={settings.is_galaxy}, "
+        f"device_mesh_shape={settings.device_mesh_shape}, "
+        f"model_runner={settings.model_runner!r}"
+    )
     setup_cpu_threading_limits(cpu_threads, num_torch_threads)
 
-    # Set device visibility
     if device_id:
         os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
+        _logger.info(f"setup_runner_environment: TT_VISIBLE_DEVICES={device_id}")
 
     if settings.enable_telemetry:
         get_telemetry_client()
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
-    # use cache per device to reduce number of "binary not found" errors
     os.environ["TT_METAL_CACHE"] = (
         f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}"
     )
 
     if settings.is_galaxy:
+        _logger.info("setup_runner_environment: applying galaxy mesh config")
         _setup_galaxy_mesh_config(tt_metal_home)
 
 

@@ -2,14 +2,16 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include <drogon/drogon.h>
+#include <atomic>
+#include <chrono>
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <sys/stat.h>
+#include <netinet/tcp.h>
 
-#ifndef TEST
-#endif
 #include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
@@ -36,8 +38,22 @@ int main(int argc, char* argv[]) {
         tracy_config::TracyStartupWorker(worker_id);
         tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
         tt::worker::SingleProcessWorker worker(cfg);
+
+        static std::atomic<bool> worker_shutdown{false};
+        std::signal(SIGTERM, [](int) { worker_shutdown.store(true); });
+        std::signal(SIGINT, [](int) { worker_shutdown.store(true); });
+
+        std::thread shutdown_monitor([&worker] {
+            while (!worker_shutdown.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            worker.stop();
+        });
+
         worker.start();
-        _exit(0);
+        worker_shutdown.store(true);
+        if (shutdown_monitor.joinable()) shutdown_monitor.join();
+        return 0;
     }
 
     // Parse command line arguments
@@ -99,8 +115,8 @@ int main(int argc, char* argv[]) {
 
             const std::string& path = req->path();
 
-            // Skip authentication for health, ready, docs, and openapi endpoints
-            if (path == "/health" || path == "/ready" ||
+            // Skip authentication for health, tt-liveness, docs, and openapi endpoints
+            if (path == "/health" || path == "/tt-liveness" ||
                 path == "/docs" || path == "/swagger" || path == "/openapi.json") {
                 chainCallback();
                 return;
@@ -137,13 +153,17 @@ int main(int argc, char* argv[]) {
 
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kWarn)
+        .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
+        .setAfterAcceptSockOptCallback([](int fd) {
+            int one = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
-        .setIdleConnectionTimeout(60)
+        .setIdleConnectionTimeout(300)
         .setKeepaliveRequestsNumber(0)  // No limit
         .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
         .setClientMaxMemoryBodySize(100 * 1024 * 1024)
@@ -155,16 +175,16 @@ int main(int argc, char* argv[]) {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
                   << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
+                  << "  GET  /tt-liveness     - Liveness check\n"
                   << std::endl;
     } else {
         std::cout << "[Main] Endpoints:\n"
                   << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions - OpenAI-compatible chat completions\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /ready           - Readiness check\n"
-                  << "  GET  /docs            - Swagger UI\n"
-                  << "  GET  /openapi.json    - OpenAPI specification\n"
+                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
+                  << "  GET  /health               - Health check\n"
+                  << "  GET  /tt-liveness          - Liveness check\n"
+                  << "  GET  /docs                 - Swagger UI\n"
+                  << "  GET  /openapi.json         - OpenAPI specification\n"
                   << std::endl;
     }
 

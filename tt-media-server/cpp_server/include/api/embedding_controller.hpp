@@ -17,14 +17,12 @@ namespace tt::api {
  * Endpoints:
  * - POST /v1/embeddings - Create embeddings
  * - GET /health - Health check
- * - GET /ready - Readiness check
+ * - GET /tt-liveness - Liveness check
  */
 class EmbeddingController : public drogon::HttpController<EmbeddingController> {
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(EmbeddingController::create_embedding, "/v1/embeddings", drogon::Post);
-    ADD_METHOD_TO(EmbeddingController::health, "/health", drogon::Get);
-    ADD_METHOD_TO(EmbeddingController::ready, "/ready", drogon::Get);
     METHOD_LIST_END
 
     EmbeddingController();
@@ -35,22 +33,6 @@ public:
      * Create embeddings for the provided input text.
      */
     void create_embedding(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    /**
-     * GET /health
-     * Basic health check.
-     */
-    void health(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback);
-
-    /**
-     * GET /ready
-     * Detailed readiness check with system status.
-     */
-    void ready(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 

@@ -9,7 +9,6 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 
 # Parse arguments
-TEST="OFF"
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 TOOLCHAIN_PATH_ARG=""
@@ -18,10 +17,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
             BUILD_TYPE="Debug"
-            shift
-            ;;
-        --test)
-            TEST="ON"
             shift
             ;;
         --tsan)
@@ -47,7 +42,6 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --debug              Build in Debug mode (default: Release)"
-            echo "  --test               Build for PR gate: LLM only (no Python required)"
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
@@ -71,7 +65,6 @@ fi
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
-echo "  Test build: ${TEST}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "=============================================="
@@ -136,38 +129,85 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     fi
 fi
 
-# Download tokenizer and tokenizer_config if not present
+# ---------------------------------------------------------------------------
+# Pre-fetch tokenizer files for all supported models
+# ---------------------------------------------------------------------------
 TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
-TOKENIZER_JSON="${TOKENIZER_DIR}/tokenizer.json"
-TOKENIZER_CONFIG_JSON="${TOKENIZER_DIR}/tokenizer_config.json"
-HF_DEEPSEEK_REPO="https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main"
-
 mkdir -p "${TOKENIZER_DIR}"
 
-if [ ! -f "${TOKENIZER_JSON}" ]; then
-    echo ""
-    echo "Tokenizer not found. Downloading DeepSeek V3 tokenizer..."
-    if wget -q -O "${TOKENIZER_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer.json"; then
-        echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
-    else
-        echo "Warning: Failed to download tokenizer. You can manually download it later:"
-        echo "  mkdir -p cpp_server/tokenizers"
-        echo "  wget -O cpp_server/tokenizers/tokenizer.json ${HF_DEEPSEEK_REPO}/tokenizer.json"
-    fi
-    echo ""
+HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
+if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
+    HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
 fi
 
-if [ ! -f "${TOKENIZER_CONFIG_JSON}" ]; then
-    echo ""
-    echo "Tokenizer config not found. Downloading tokenizer_config.json..."
-    if wget -q -O "${TOKENIZER_CONFIG_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer_config.json"; then
-        echo "Tokenizer config downloaded successfully to ${TOKENIZER_CONFIG_JSON}"
-    else
-        echo "Warning: Failed to download tokenizer_config.json. Chat template may use defaults."
-        echo "  wget -O cpp_server/tokenizers/tokenizer_config.json ${HF_DEEPSEEK_REPO}/tokenizer_config.json"
+download_tokenizer() {
+    local model_name="$1"
+    local hf_repo="$2"
+    local requires_auth="$3"
+
+    local model_dir="${TOKENIZER_DIR}/${model_name}"
+    local tok_json="${model_dir}/tokenizer.json"
+    local tok_config="${model_dir}/tokenizer_config.json"
+
+    # Skip download if tokenizer files already exist (faster rebuilds, no HF_TOKEN needed)
+    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ]; then
+        echo "  Using existing ${model_name} tokenizer."
+        return 0
     fi
-    echo ""
-fi
+
+    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
+        return 0
+    fi
+
+    local wget_args=()
+    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
+        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
+    fi
+
+    mkdir -p "${model_dir}"
+
+    echo "Downloading ${model_name} tokenizer..."
+    if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
+        echo "  tokenizer.json downloaded to ${tok_json}"
+    else
+        rm -f "${tok_json}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer.json."
+        echo "  URL: ${hf_repo}/tokenizer.json"
+        if [ "${requires_auth}" = "true" ]; then
+            echo "  This is a gated model. Make sure you have:"
+            echo "    1. A valid HF_TOKEN set in your environment"
+            echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
+        fi
+        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
+        return 1
+    fi
+
+    if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
+        echo "  tokenizer_config.json downloaded to ${tok_config}"
+    else
+        rm -f "${tok_config}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
+        return 1
+    fi
+}
+
+echo ""
+echo "Pre-fetching tokenizer files for supported models..."
+
+# DeepSeek R1-0528 (public, no auth) — required for default build
+download_tokenizer \
+    "deepseek-ai/DeepSeek-R1-0528" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
+    "false"
+
+# Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
+download_tokenizer \
+    "meta-llama/Llama-3.1-8B-Instruct" \
+    "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
+    "true"
+
+echo ""
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -218,7 +258,6 @@ CMAKE_ARGS=(
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     -DLLM_ENGINE_DEBUG_BUILD=OFF
-    -DTEST="${TEST}"
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
 )
@@ -260,10 +299,6 @@ echo "  Build complete!"
 echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
 echo "=============================================="
 echo ""
-if [ -f "${BUILD_DIR}/engine_demo" ] 2>/dev/null; then
-    echo "LLM engine demo: ./build/engine_demo"
-    echo ""
-fi
 echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"

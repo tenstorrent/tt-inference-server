@@ -89,6 +89,7 @@ class ModelRunners(Enum):
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
     LLM_TEST = "llm_test"
+    LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
@@ -119,6 +120,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLM,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
+        ModelRunners.LLAMA_RUNNER,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
@@ -197,6 +199,7 @@ class DeviceTypes(Enum):
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"
     FasterFifo = "FasterFifo"
+    BatchFifo = "BatchFifo"
     TTQueue = "TTQueue"
 
 
@@ -401,6 +404,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -436,6 +446,13 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -454,6 +471,13 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
+    (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
@@ -537,7 +561,7 @@ ModelConfigs = {
         "download_weights_from_service": False,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X8): {
-        "device_mesh_shape": (1, 8),
+        "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
@@ -578,13 +602,15 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "max_batch_size": 2,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 1,
+        "max_batch_size": 2,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),

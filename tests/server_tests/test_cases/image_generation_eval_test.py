@@ -39,7 +39,7 @@ class AccuracyResult(IntEnum):
 class ImageGenConfig:
     """Image generation configuration."""
 
-    ENDPOINT: str = "image/generations"
+    ENDPOINT: str = "v1/images/generations"
     DEFAULT_INFERENCE_STEPS: int = 20
     DEFAULT_NUM_PROMPTS: int = 100
     NEGATIVE_PROMPT: str = (
@@ -157,12 +157,20 @@ class ImageGenerationEvalsTest(BaseTest):
             if accuracy_check in AccuracyResult._value2member_map_
             else f"UNKNOWN({accuracy_check})"
         )
-        logger.info(
-            f"Eval summary for {request.model_name}:\n"
-            f"  num_prompts={request.num_prompts}, num_inference_steps={request.num_inference_steps}\n"
-            f"  FID={fid_score:.4f}, CLIP={avg_clip:.4f} ± {std_clip:.4f}\n"
-            f"  accuracy_check={accuracy_check} ({result_name}), success={success}"
+        status_icon = "✅" if success else "❌"
+        clip_display = f"{avg_clip:.4f} ± {std_clip:.4f}"
+        header = (
+            f"{'Model':25} {'Prompts':>8} {'Steps':>6} "
+            f"{'FID':>10} {'CLIP (avg ± std)':>20} {'Result':>8} {'Status':>8}"
         )
+        row = (
+            f"{request.model_name:25} {request.num_prompts:>8} {request.num_inference_steps:>6} "
+            f"{fid_score:>10.4f} {clip_display:>20} {result_name:>8} {status_icon:>8}"
+        )
+        logger.info("Image Generation Eval Summary:")
+        logger.info(header)
+        logger.info("-" * len(header))
+        logger.info(row)
 
         return {
             "success": success,

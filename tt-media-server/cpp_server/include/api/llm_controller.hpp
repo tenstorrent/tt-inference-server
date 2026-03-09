@@ -20,8 +20,6 @@ public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
     ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions", drogon::Post);
-    ADD_METHOD_TO(LLMController::health, "/health", drogon::Get);
-    ADD_METHOD_TO(LLMController::ready, "/ready", drogon::Get);
     METHOD_LIST_END
 
     LLMController();
@@ -43,38 +41,17 @@ public:
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-    /**
-     * GET /health
-     * Health check endpoint.
-     */
-    void health(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
-    /**
-     * GET /ready
-     * Readiness check endpoint.
-     */
-    void ready(
-        const drogon::HttpRequestPtr& req,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
 private:
     std::shared_ptr<services::LLMService> service_;
 
     /**
-     * Handle streaming text completion request (SSE).
+     * Handle streaming completion (SSE). When is_chat is true, emits
+     * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      */
     void handle_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
-    /**
-     * Handle streaming chat completion request (SSE).
-     */
-    void handle_chat_streaming(
-        const domain::CompletionRequest& request,
-        std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+        domain::CompletionRequest request,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        bool is_chat) const;
 
     /**
      * Generate a unique completion ID (hex string).

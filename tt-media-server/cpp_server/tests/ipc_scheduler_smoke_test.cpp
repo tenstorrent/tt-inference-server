@@ -12,11 +12,11 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include "llm_engine/config.hpp"
-#include "llm_engine/engine/boost_ipc_task_queue.hpp"
-#include "llm_engine/engine/scheduler.hpp"
-#include "llm_engine/engine/sequence.hpp"
-#include "llm_engine/sampling_params.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "ipc/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 
@@ -43,8 +43,9 @@ int main() {
       ipc::create_only, QUEUE_NAME, MAX_NUM_MSGS, MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  Sequence seq1({1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
-  Sequence seq2({10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
+  Config seq_config;
+  Sequence seq1(256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
 
   std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());
@@ -54,7 +55,7 @@ int main() {
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {
-    BoostIpcTaskQueue producer(QUEUE_NAME);
+    tt::ipc::BoostIpcTaskQueue producer(QUEUE_NAME);
     producer.push(seq1);
     producer.push(seq2);
   }
@@ -80,7 +81,7 @@ int main() {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<BoostIpcTaskQueue>(QUEUE_NAME);
+    auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
     Scheduler sched(config, queue.get());
 
     auto [batch, is_prefill] = sched.schedule();
@@ -91,8 +92,8 @@ int main() {
     for (auto* s : batch) {
       std::cout << "[child]    task_id=" << s->task_id
                 << " size=" << s->size()
-                << " max_tokens=" << s->max_tokens
-                << " temperature=" << s->temperature
+                << " max_tokens=" << s->sampling_params->max_tokens
+                << " temperature=" << s->sampling_params->temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -114,7 +115,7 @@ int main() {
     if (ok) {
       if (batch[0]->task_id.id != seq1_id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->max_tokens != 10) fail("seq1 max_tokens mismatch");
+      if (batch[0]->sampling_params->max_tokens != 10) fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 ||
           (*batch[0])[2] != 3 || (*batch[0])[3] != 4)
         fail("seq1 token values mismatch");

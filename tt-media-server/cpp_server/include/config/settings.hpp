@@ -4,7 +4,7 @@
 #pragma once
 
 #include "config/constants.hpp"
-#include "runners/llm_engine/config.hpp"
+#include "runners/llm_runner/config.hpp"
 #include <cstddef>
 #include <string>
 
@@ -24,6 +24,9 @@ bool is_embedding_service();
 /** True when model_service() == LLM. */
 bool is_llm_service_enabled();
 
+/** Get runner type string based on current model service configuration. */
+std::string runner_type();
+
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t num_workers();
 
@@ -36,11 +39,15 @@ unsigned batch_timeout_ms();
 /** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH. Default: defaults::TT_PYTHON_PATH. */
 std::string python_path();
 
-/** Tokenizer path: tokenizers/tokenizer.json relative to executable. Empty if not found. */
+/** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_path();
+std::string tokenizer_path(ModelType model);
 
-/** Tokenizer config path: tokenizers/tokenizer_config.json relative to executable. Empty if not found. */
+/** Tokenizer config path: tokenizers/<model>/tokenizer_config.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_config_path();
+std::string tokenizer_config_path(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
@@ -51,5 +58,17 @@ std::string tokenizer_config_path();
 std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
+
+/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
+ModelType model_type();
+
+/** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
+LLMMode llm_mode();
+
+/** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
+std::string socket_host();
+
+/** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
+uint16_t socket_port();
 
 }  // namespace tt::config

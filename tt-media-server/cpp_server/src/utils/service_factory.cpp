@@ -5,13 +5,17 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
+#include "services/embedding_service.hpp"
+#include "config/constants.hpp"
+#include "api/socket_controller.hpp"
 
 #include <iostream>
-#include <unordered_map>
 
 namespace tt::utils::service_factory {
 
-static std::unordered_map<std::string, std::shared_ptr<services::BaseService>> services;
+namespace {
+    std::unique_ptr<tt::api::SocketController> socket_controller_;
+}
 
 void register_services() {
     tracy_config::TracyStartMainProcess();
@@ -19,15 +23,29 @@ void register_services() {
     if (tt::config::is_llm_service_enabled()) {
         auto llm = std::make_shared<services::LLMService>();
         llm->start();
-        services["llm"] = std::move(llm);
+
+        if (tt::config::llm_mode() != tt::config::LLMMode::REGULAR) {
+            socket_controller_ = std::make_unique<tt::api::SocketController>(llm, llm->get_socket_service());
+        }
+
+        register_service(std::move(llm));
         std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
+    }
+
+    if (tt::config::is_embedding_service()) {
+        auto emb = std::make_shared<services::EmbeddingService>();
+        emb->start();
+        register_service(std::move(emb));
+        std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
     }
 }
 
-std::shared_ptr<services::BaseService> get_service(const std::string& name) {
-    auto it = services.find(name);
-    if (it != services.end()) {
-        return it->second;
+std::shared_ptr<services::IService> get_configured_service() {
+    switch (tt::config::model_service()) {
+        case tt::config::ModelService::LLM:
+            return get_service_by_type<services::LLMService>();
+        case tt::config::ModelService::EMBEDDING:
+            return get_service_by_type<services::EmbeddingService>();
     }
     return nullptr;
 }

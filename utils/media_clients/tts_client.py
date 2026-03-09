@@ -14,8 +14,6 @@ from typing import Optional
 
 
 import aiohttp
-from transformers import AutoTokenizer
-
 
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import TtsTestStatus
@@ -40,9 +38,10 @@ class TtsClientStrategy(BaseMediaStrategy):
     def __init__(self, all_params, model_spec, device, output_path, service_port):
         super().__init__(all_params, model_spec, device, output_path, service_port)
 
-        # Initialize tokenizer for text token counting
         self.tokenizer = None
         try:
+            from transformers import AutoTokenizer
+
             self.tokenizer = AutoTokenizer.from_pretrained(model_spec.hf_model_repo)
             logger.info(f"✅ Loaded tokenizer for {model_spec.hf_model_repo}")
         except Exception as e:
@@ -273,7 +272,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
                 - audio_duration: Duration of generated audio in seconds
         """
-        logger.info("🔊 Calling TTS /audio/speech endpoint")
+        logger.info("🔊 Calling TTS /v1/audio/speech endpoint")
 
         # For eval workflow, all_params is an object with tasks attribute
         # For benchmark workflow, all_params is a list, so use default text
@@ -295,7 +294,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         }
         payload = {"text": text, "response_format": "json"}
 
-        url = f"{self.base_url}/audio/speech"
+        url = f"{self.base_url}/v1/audio/speech"
         start_time = time.monotonic()
         ttft_ms = None
         audio_duration = None
@@ -306,7 +305,9 @@ class TtsClientStrategy(BaseMediaStrategy):
                     url,
                     json=payload,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=90),
+                    timeout=aiohttp.ClientTimeout(
+                        total=120
+                    ),  # cold start can exceed 90s
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -370,7 +371,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             return True, total_duration, ttft_ms, rtr, audio_duration
 
         except Exception as e:
-            logger.error(f"TTS generation failed: {e}")
+            logger.error(f"TTS generation failed: {type(e).__name__}: {e}")
             return False, 0.0, None, None, None
 
     def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:

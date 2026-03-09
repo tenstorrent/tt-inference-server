@@ -695,6 +695,40 @@
                 }
             },
             {
+                "name": "AudioTranscriptionLoadDp2Chunk5Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=5 (start server with AUDIO_CHUNK_DURATION_SECONDS=5)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk30Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=30 (start server with AUDIO_CHUNK_DURATION_SECONDS=30)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
+                }
+            },
+            {
                 "name": "AudioTranscriptionLoadTest",
                 "module": "tests.server_tests.test_cases.audio_transcription_load_test",
                 "enabled": true,
@@ -948,6 +982,40 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk5Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=5 (start server with AUDIO_CHUNK_DURATION_SECONDS=5)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk30Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=30 (start server with AUDIO_CHUNK_DURATION_SECONDS=30)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
                 }
             },
             {
@@ -2527,7 +2595,7 @@
         "weights": [
             "FLUX.1-dev"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2891,7 +2959,7 @@
         "weights": [
             "FLUX.1-schnell"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",

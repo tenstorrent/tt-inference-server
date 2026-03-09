@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 
+#include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
 #include "domain/completion_request.hpp"
 #include "utils/tokenizer.hpp"
@@ -27,8 +28,7 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-struct ChatCompletionRequest {
-    std::string task_id;
+struct ChatCompletionRequest: BaseRequest {
     std::optional<std::string> model;
 
     std::vector<ChatMessage> messages;
@@ -153,7 +153,7 @@ struct ChatCompletionRequest {
         CompletionRequest out;
         out.task_id = task_id;
         out.model = model;
-        out.prompt = tt::utils::Tokenizer::apply_chat_template(messages);
+        out.prompt = tt::utils::active_tokenizer().apply_chat_template(messages);
 
         out.echo = echo;
         out.max_tokens = max_tokens;

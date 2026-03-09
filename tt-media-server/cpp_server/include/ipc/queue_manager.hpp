@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ipc/shared_memory.hpp"
-#include "runners/llm_engine/engine/boost_ipc_task_queue.hpp"
+#include "ipc/boost_ipc_task_queue.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,12 +22,12 @@ constexpr size_t RING_BUFFER_CAPACITY = 65536;
  */
 class QueueManager {
 public:
-    shared_ptr<llm_engine::BoostIpcTaskQueue> task_queue;
+    shared_ptr<BoostIpcTaskQueue> task_queue;
     vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
 
     explicit QueueManager(int num_workers) {
-        llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        task_queue = make_shared<llm_engine::BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+        BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+        task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
         result_queues.reserve(num_workers);
         for (int i = 0; i < num_workers; i++) {
             result_queues.emplace_back(make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
@@ -41,7 +41,7 @@ public:
     }
     
     void clear() {
-        llm_engine::BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+        BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
         for (auto& queue : result_queues) {
             queue->shutdown();
         }

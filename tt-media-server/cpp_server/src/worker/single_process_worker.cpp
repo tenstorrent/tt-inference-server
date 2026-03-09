@@ -1,5 +1,7 @@
 #include "worker/single_process_worker.hpp"
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/runner_factory.hpp"
 #include <csignal>
 #include <sys/wait.h>
 #include <iostream>
@@ -8,30 +10,15 @@
 
 namespace tt::worker {
 
-SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg, const llm_engine::Config& llm_engine_config)
-    : cfg(move(cfg)), llm_engine_config_(llm_engine_config) {
-    
+SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
+    : cfg(std::move(cfg)) {
+
     pid = getpid();
     worker_id = cfg.worker_id;
-    
-    on_token_ = [this](llm_engine::TaskID task_id, uint64_t token_id, bool finished) {
-        auto token = ipc::SharedToken{
-            .token_index = 0,
-            .flags = static_cast<uint32_t>(finished ? 1 : 0),
-            .token_id = token_id,
-            .task_id = {},
-            .padding = {},
-        };
-        strncpy(token.task_id, task_id.id.c_str(), sizeof(token.task_id) - 1);
-        token.task_id[sizeof(token.task_id) - 1] = '\0';
-        this->cfg.result_queue->push(token);
-    };
     is_ready = true;
 }
 
-SingleProcessWorker::~SingleProcessWorker() {
-    stop();
-}
+SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
     tracy_config::TracySetThreadName(
@@ -43,32 +30,30 @@ void SingleProcessWorker::start() {
 
     {
         ZoneScopedN("Worker::init");
-        auto scheduler = make_unique<llm_engine::Scheduler>(
-            llm_engine_config_, cfg.task_queue.get()
-        );
-        llm_engine_ = make_unique<llm_engine::LLMEngine>(
-            llm_engine_config_,
-            on_token_,
-            move(scheduler)
+        runner_ = tt::utils::runner_factory::create_runner(
+            tt::config::model_service(),
+            cfg.runner_config,
+            cfg.result_queue.get(),
+            cfg.task_queue.get()
         );
     }
-    llm_engine_->run();
+    runner_->run();
 }
 
 void SingleProcessWorker::stop() {
-    if (llm_engine_) {
-        llm_engine_->stop();
+    if (runner_) {
+        runner_->stop();
     }
     if (pid > 0) {
-        kill(pid, SIGTERM);
+        killpg(pid, SIGTERM);
 
         int status;
         int wait_result = waitpid(pid, &status, WNOHANG);
         if (wait_result == 0) {
-            this_thread::sleep_for(chrono::milliseconds(100));
+            this_thread::sleep_for(chrono::milliseconds(500));
             wait_result = waitpid(pid, &status, WNOHANG);
             if (wait_result == 0) {
-                kill(pid, SIGKILL);
+                killpg(pid, SIGKILL);
                 waitpid(pid, &status, 0);
             }
         }
