@@ -6,6 +6,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 #include <gtest/gtest.h>
+#include <optional>
 #include <vector>
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 
@@ -17,12 +18,16 @@ namespace {
   }
 
 Config make_config(int num_blocks = 32, int block_size = 8,
-                   int max_batched_tokens = 256, int eos = 0) {
+                   int max_batched_tokens = 256, int eos = 0,
+                   std::optional<std::vector<int64_t>> stop_ids = std::nullopt) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
   c.max_num_batched_tokens = max_batched_tokens;
   c.eos = eos;
+  if (stop_ids) {
+    c.stop_token_ids = std::move(*stop_ids);
+  }
   return c;
 }
 
@@ -42,7 +47,7 @@ TEST(SchedulerTest, IsFinished_AfterAdd_ReturnsFalse) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   sched.add(seq);
   EXPECT_FALSE(sched.is_finished());
 }
@@ -51,7 +56,7 @@ TEST(SchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
@@ -79,7 +84,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -95,7 +100,7 @@ TEST(SchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
 }
 
 TEST(SchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
-  Config config = make_config(32, 8, 256, 99);
+  Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
   sched.add_request(prompt(4), {.max_tokens = 10, .ignore_eos = false});
@@ -146,7 +151,7 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
   Scheduler sched{config, queue.get()};
   SamplingParams params;
   params.max_tokens = 2;
-  Sequence seq{prompt(2), params};
+  Sequence seq{256, prompt(2), params};
   sched.add(seq);
   auto [batch1, _1] = sched.schedule();
   ASSERT_EQ(batch1.size(), 1u);
@@ -159,10 +164,10 @@ TEST(SchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
 }
 
 TEST(SchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
-  Config config = make_config(32, 8, 256, 99);
+  Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
+  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
   ASSERT_EQ(batch.size(), 1u);
@@ -174,7 +179,7 @@ TEST(SchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
@@ -192,8 +197,8 @@ TEST(SchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 10}};
-  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID seq2_task_id = seq2.task_id;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
@@ -210,8 +215,8 @@ TEST(SchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   Config config = make_config(32, 8, 20, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq1{prompt(15), SamplingParams{.max_tokens = 5}};
-  Sequence seq2{prompt(15), SamplingParams{.max_tokens = 5}};
+  Sequence seq1{256, prompt(15), SamplingParams{.max_tokens = 5}};
+  Sequence seq2{256, prompt(15), SamplingParams{.max_tokens = 5}};
   sched.add(seq1);
   sched.add(seq2);
   auto [batch, is_prefill] = sched.schedule();
@@ -223,9 +228,9 @@ TEST(SchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
   Config config = make_config(32, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq1{prompt(4), SamplingParams{.max_tokens = 5}};
-  Sequence seq2{prompt(4), SamplingParams{.max_tokens = 5}};
-  Sequence seq3{prompt(4), SamplingParams{.max_tokens = 5}};
+  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 5}};
+  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 5}};
+  Sequence seq3{256, prompt(4), SamplingParams{.max_tokens = 5}};
   sched.add(seq1);
   sched.add(seq2);
   sched.add(seq3);
@@ -238,7 +243,7 @@ TEST(SchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   Config config = make_config();
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(2), SamplingParams{.max_tokens = 1}};
+  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 1}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
   sched.postprocess(batch, {1});
@@ -249,7 +254,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSched
   Config config = make_config(1, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -277,7 +282,7 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   Config config = make_config(2, 8, 256, 0);
   auto queue = make_queue();
   Scheduler sched{config, queue.get()};
-  Sequence seq{prompt(4), SamplingParams{.max_tokens = 20}};
+  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -302,5 +307,159 @@ TEST(SchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContin
   }
 }
 
-} 
+// --- max_in_flight_count tests ---
+
+TEST(SchedulerTest, MaxInFlight_LimitsPrefillBatchSize) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 3;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  for (int i = 0; i < 10; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 20});
+  }
+
+  auto [batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  EXPECT_EQ(batch.size(), 3u) << "Prefill batch capped by max_in_flight_count=3";
+}
+
+TEST(SchedulerTest, MaxInFlight_LimitsDecodeBatchSize) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 3;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  // Prefill 3, then add 3 more waiting to force a second prefill round
+  for (int i = 0; i < 6; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 20});
+  }
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(b1.size(), 3u);
+  sched.postprocess(b1, {1, 1, 1});
+
+  // 3 running, 3 waiting. Prefill wins (waiting non-empty).
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_TRUE(pf2);
+  ASSERT_EQ(b2.size(), 3u);
+  sched.postprocess(b2, {1, 1, 1});
+
+  // 6 running, 0 waiting. Decode capped at 3.
+  auto [b3, pf3] = sched.schedule();
+  ASSERT_FALSE(pf3);
+  EXPECT_EQ(b3.size(), 3u) << "Decode batch capped by max_in_flight_count=3";
+}
+
+TEST(SchedulerTest, MaxInFlight_PrefillPrioritizedOverDecodeWhenWaiting) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 3;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  for (int i = 0; i < 5; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 20});
+  }
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(b1.size(), 3u);
+  sched.postprocess(b1, {1, 1, 1});
+
+  // 3 running, 2 waiting: prefill wins over decode
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_TRUE(pf2) << "With waiting requests, prefill should be chosen over decode";
+  EXPECT_EQ(b2.size(), 2u) << "Remaining 2 waiting should be prefilled";
+}
+
+TEST(SchedulerTest, MaxInFlight_DecodesWhenNothingWaiting) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 3;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  for (int i = 0; i < 3; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 20});
+  }
+
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(b1.size(), 3u);
+  sched.postprocess(b1, {1, 1, 1});
+
+  // 3 running, 0 waiting → decode
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  EXPECT_EQ(b2.size(), 3u);
+}
+
+TEST(SchedulerTest, MaxInFlight_DecodesRemainingAfterSeqFinishes) {
+  Config config = make_config(64, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 3;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  sched.add_request(prompt(4), {.max_tokens = 1});
+  sched.add_request(prompt(4), {.max_tokens = 20});
+  sched.add_request(prompt(4), {.max_tokens = 20});
+
+  // Prefill all 3
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(b1.size(), 3u);
+  sched.postprocess(b1, {1, 1, 1});
+
+  // short_seq already finished in postprocess (max_tokens=1, got 1 completion token)
+  // running=2, waiting=0. Decode remaining 2.
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_FALSE(pf2);
+  EXPECT_EQ(b2.size(), 2u) << "Only 2 remain after short seq finished during prefill postprocess";
+}
+
+TEST(SchedulerTest, MaxInFlight_RefillsAfterBatchDrains) {
+  Config config = make_config(128, 8, 256, 0);
+  config.max_num_seqs = 16;
+  config.max_in_flight_count = 4;
+  auto queue = make_queue();
+  Scheduler sched{config, queue.get()};
+
+  // 4 short requests then 4 long requests
+  for (int i = 0; i < 4; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 2});
+  }
+  for (int i = 0; i < 4; ++i) {
+    sched.add_request(prompt(4), {.max_tokens = 20});
+  }
+
+  // Prefill 4 short
+  auto [b1, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(b1.size(), 4u);
+  sched.postprocess(b1, {1, 1, 1, 1});
+
+  // 4 running, 4 waiting. Prefill wins → prefill 4 long
+  auto [b2, pf2] = sched.schedule();
+  ASSERT_TRUE(pf2) << "Waiting is non-empty, prefill takes priority";
+  ASSERT_EQ(b2.size(), 4u);
+  sched.postprocess(b2, {1, 1, 1, 1});
+
+  // 8 running, 0 waiting. Decode 4 (capped by max_in_flight=4)
+  auto [b3, pf3] = sched.schedule();
+  ASSERT_FALSE(pf3);
+  EXPECT_EQ(b3.size(), 4u);
+  sched.postprocess(b3, {2, 2, 2, 2});
+
+  // 4 short seqs finished (max_tokens=2), 4 long remain. Decode 4.
+  auto [b4, pf4] = sched.schedule();
+  ASSERT_FALSE(pf4);
+  EXPECT_EQ(b4.size(), 4u) << "Long requests continue decoding at full capacity";
+}
+
+}
 }
