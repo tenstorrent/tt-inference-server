@@ -8,8 +8,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_compile_options(-g)
-
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
@@ -146,7 +144,6 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp

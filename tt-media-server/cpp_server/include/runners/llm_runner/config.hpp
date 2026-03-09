@@ -19,7 +19,7 @@ struct Config {
   std::vector<int64_t> stop_token_ids;  // Set by llm_engine_config() from active tokenizer strategy
   int eos = 1;
   int kvcache_block_size = 256;
-  int num_kvcache_blocks = 1024;
+  int num_kvcache_blocks = 512;
   ModelRunnerType runner_type = ModelRunnerType::Mock;
 };
 
