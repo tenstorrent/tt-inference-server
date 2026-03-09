@@ -90,30 +90,29 @@ jobs:
 
           mkdir -p "$OUTPUT_DIR"
 
-          echo "📥 Downloading all artifacts from run $RUN_ID..."
+          echo "📥 Searching for tt-inference-server build metadata artifact from run $RUN_ID..."
 
-          ARTIFACTS_JSON=$(gh api repos/$REPO/actions/runs/$RUN_ID/artifacts)
-          ARTIFACTS=$(echo "$ARTIFACTS_JSON" | jq -r '.artifacts')
+          # Find the build metadata artifact (name starts with "tt-inference-server-build-")
+          ARTIFACT=$(gh api repos/$REPO/actions/runs/$RUN_ID/artifacts --paginate --jq '.artifacts[] | select(.name | startswith("tt-inference-server-build-"))' | jq -s '.[0]')
 
-          ARTIFACT_COUNT=$(echo "$ARTIFACTS" | jq -r 'length')
-          echo "✓ Found $ARTIFACT_COUNT artifact(s)"
+          ARTIFACT_ID=$(echo "$ARTIFACT" | jq -r '.id // empty')
+          ARTIFACT_NAME=$(echo "$ARTIFACT" | jq -r '.name // empty')
 
-          echo "$ARTIFACTS" | jq -r '.[] | "\(.id)|\(.name)"' | while IFS='|' read -r ARTIFACT_ID ARTIFACT_NAME; do
-            [ -z "$ARTIFACT_ID" ] && continue
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "❌ Error: No artifact matching 'tt-inference-server-build-*' found in run $RUN_ID"
+            exit 1
+          fi
 
-            ARTIFACT_DIR="$OUTPUT_DIR/$ARTIFACT_NAME"
-            mkdir -p "$ARTIFACT_DIR"
+          echo "✓ Found artifact: $ARTIFACT_NAME (ID: $ARTIFACT_ID)"
 
-            ARTIFACT_ZIP="$ARTIFACT_DIR/$ARTIFACT_NAME.zip"
+          ARTIFACT_DIR="$OUTPUT_DIR/$ARTIFACT_NAME"
+          mkdir -p "$ARTIFACT_DIR"
+          ARTIFACT_ZIP="$ARTIFACT_DIR/$ARTIFACT_NAME.zip"
 
-            if gh api repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip > "$ARTIFACT_ZIP" 2>/dev/null; then
-              if [ -s "$ARTIFACT_ZIP" ]; then
-                unzip -q -o "$ARTIFACT_ZIP" -d "$ARTIFACT_DIR"
-                rm -f "$ARTIFACT_ZIP"
-                echo "✓ Extracted: $ARTIFACT_NAME"
-              fi
-            fi
-          done
+          gh api repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip > "$ARTIFACT_ZIP"
+          unzip -q -o "$ARTIFACT_ZIP" -d "$ARTIFACT_DIR"
+          rm -f "$ARTIFACT_ZIP"
+          echo "✓ Extracted: $ARTIFACT_NAME"
 
           echo "artifacts_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
