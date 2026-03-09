@@ -31,7 +31,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 128 |
 | Max Context Length | 131072 |
-| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/60ffb199/models/demos/gpt_oss) |
-| tt-metal Commit | `60ffb199` |
-| vLLM Commit | `3499ffa1` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.8.0-60ffb199-3499ffa1` |
+| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/gpt_oss) |
+| tt-metal Commit | `e867533` |
+| vLLM Commit | `8f36910` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910` |

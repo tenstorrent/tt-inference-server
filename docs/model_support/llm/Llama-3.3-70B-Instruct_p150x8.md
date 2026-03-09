@@ -18,7 +18,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 `Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
-- [BH QuietBox](Llama-3.3-70B-Instruct_p150x4.md)
+- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH LoudBox
@@ -42,7 +42,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers) |
-| tt-metal Commit | `55fd115` |
-| vLLM Commit | `aa4ae1e` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
+| tt-metal Commit | `555f240` |
+| vLLM Commit | `22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241` |

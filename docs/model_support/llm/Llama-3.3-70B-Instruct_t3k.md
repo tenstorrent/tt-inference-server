@@ -19,7 +19,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
-- [BH QuietBox](Llama-3.3-70B-Instruct_p150x4.md)
+- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on WH LoudBox/QuietBox
 
@@ -45,4 +45,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers) |
 | tt-metal Commit | `0b10c51` |
 | vLLM Commit | `3499ffa` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-0b10c51-3499ffa` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-0b10c51-3499ffa` |

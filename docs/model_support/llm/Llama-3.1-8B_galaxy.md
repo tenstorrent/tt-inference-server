@@ -16,7 +16,7 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 `Llama-3.1-8B` is also supported on hardware:
 
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
-- [BH QuietBox](Llama-3.1-8B_p150x4.md)
+- [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [P100/P150](Llama-3.1-8B_p100.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
 - [N150/N300](Llama-3.1-8B_n150.md)
@@ -41,11 +41,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 128 |
-| Max Context Length | 65536 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
-| tt-metal Commit | `65718bb` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |
+| Max Context Length | 131072 |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
+| tt-metal Commit | `555f240` |
+| vLLM Commit | `22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241` |
 
 ---
 
@@ -67,7 +67,7 @@ python3 run.py --model Llama-3.1-8B --device galaxy_t3k --workflow server --dock
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
-| tt-metal Commit | `65718bb` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
+| tt-metal Commit | `555f240` |
+| vLLM Commit | `22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241` |
