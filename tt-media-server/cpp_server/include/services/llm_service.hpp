@@ -61,7 +61,6 @@ protected:
     domain::CompletionResponse process_request(
         domain::CompletionRequest request) override;
 
-    void streaming_pre_process(domain::CompletionRequest& request) const override { pre_process(request); }
     void streaming_post_process(domain::StreamingChunkResponse&) const override {}
     void process_streaming_request(
         domain::CompletionRequest request,

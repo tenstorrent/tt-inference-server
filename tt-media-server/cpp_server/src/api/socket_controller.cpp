@@ -55,7 +55,7 @@ void SocketController::setup_prefill_mode_handlers() {
             auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(message.token_ids);
             std::string task_id = message.task_id.id;
 
-            llm_service_->submit_streaming_request(std::move(request),
+            llm_service_->submit_streaming_request(request,
                 [this, task_id, token_ids_ptr, original_max_tokens]
                 (const domain::StreamingChunkResponse& chunk, bool is_final) {
                     std::string text;

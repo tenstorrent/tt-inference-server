@@ -135,6 +135,8 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
             "Input too long: " + std::to_string(tokens.size()) +
             " tokens exceeds maximum of " + std::to_string(llm_engine::Config::MAX_INPUT_TOKENS));
     }
+    // Set prompt token count after tokenization
+    request.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
 void LLMService::start_workers() {
