@@ -101,7 +101,7 @@ class TtRunModelRunner : public IModelRunner {
 
         // Extract task_id (first 36 bytes of payload)
         TokenResult result;
-        result.task_id = TaskID::deserialize(
+        result.task_id = TaskID::ipc_deserialize(
             reinterpret_cast<const char*>(payload), TaskID::kSerializedSize);
 
         // Extract first token_id if available (next 8 bytes after task_id)

@@ -56,6 +56,7 @@ class RuntimeConfig:
     # Workflow control
     tools: str = "vllm"
     disable_trace_capture: bool = False
+    disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
     percentile_report: bool = False
     streaming: Optional[str] = None
@@ -116,6 +117,7 @@ class RuntimeConfig:
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
             disable_trace_capture=args.disable_trace_capture,
+            disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
             percentile_report=args.percentile_report,
             streaming=args.streaming,

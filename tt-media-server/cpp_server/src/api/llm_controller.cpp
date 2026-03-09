@@ -136,7 +136,7 @@ void LLMController::chat_completions(
     domain::ChatCompletionRequest chat_req;
     try {
         chat_req = domain::ChatCompletionRequest::fromJson(*json);
-        chat_req.task_id = generate_completion_id();
+        chat_req.task_id = domain::TaskID(generate_completion_id());
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
