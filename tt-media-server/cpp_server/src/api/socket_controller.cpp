@@ -81,14 +81,14 @@ void SocketController::setup_decode_mode_handlers() {
             result.finished = msg.finished;
             llm_service_->handle_prefill_complete(result);
         });
+
+    socket_service_->setConnectionLostCallback([this]() {
+        std::cout << "[SocketController] Connection to prefill server lost\n" << std::flush;
+        llm_service_->handle_connection_lost();
+    });
 }
 
 void SocketController::setup_common_handlers() {
-    socket_service_->setConnectionLostCallback([this]() {
-        std::cout << "[SocketController] Connection lost\n" << std::flush;
-        llm_service_->handle_connection_lost();
-    });
-
     socket_service_->setHealthCheckCallback(
         [](const std::string& server_id, double /*cpu*/, double /*memory*/, int tasks) {
             std::cout << "[SocketController] Health check from " << server_id
