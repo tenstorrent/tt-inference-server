@@ -2,8 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
-#include "runners/llm_runner/debug.hpp"
-
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -18,8 +16,6 @@ SpPipelineRunner::SpPipelineRunner(
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       result_queue_(result_queue),
       task_queue_(task_queue) {
-  LLM_ENGINE_LOG("sp_pipeline") << "construct" << std::endl;
-
   auto decode_cb = [this](const llm_engine::TokenResult& result) {
     decode_queue_.push(result);
   };
@@ -29,17 +25,14 @@ SpPipelineRunner::SpPipelineRunner(
 
 SpPipelineRunner::~SpPipelineRunner() {
   if (model_runner_) {
-    LLM_ENGINE_LOG("sp_pipeline") << "exit" << std::endl;
     model_runner_->exit();
   }
 }
 
 void SpPipelineRunner::run() {
-  LLM_ENGINE_LOG("sp_pipeline") << "run" << std::endl;
   while (!stopped_.load(std::memory_order_relaxed)) {
     step();
   }
-  LLM_ENGINE_LOG("sp_pipeline") << "run done" << std::endl;
 }
 
 void SpPipelineRunner::stop() {
@@ -55,12 +48,7 @@ void SpPipelineRunner::step() {
   std::unique_ptr<llm_engine::Sequence> owned(seq);
   llm_engine::TaskID task_id = seq->task_id;
 
-  LLM_ENGINE_LOG("sp_pipeline") << "accepted task_id=" << task_id
-                                << " num_tokens=" << seq->token_ids_.size()
-                                << " max_tokens=" << seq->sampling_params->max_tokens
-                                << std::endl;
-
-  model_runner_->write_prefill(
+  model_runner_->write(
       seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
@@ -69,11 +57,13 @@ void SpPipelineRunner::step() {
 void SpPipelineRunner::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     auto it = active_sequences_.find(dr.task_id);
-    if (it == active_sequences_.end()) continue;
+    if (it == active_sequences_.end()) { // safeguard for too many decode results
+      std::cout << "SpPipelineRunner: task_id not found in active_sequences_: " << dr.task_id << std::endl;
+      continue;
+    }
     llm_engine::Sequence* seq = it->second.get();
 
     if (dr.is_error) {
-      LLM_ENGINE_LOG("sp_pipeline") << "error task_id=" << dr.task_id << std::endl;
       push_error_token(dr.task_id);
       active_sequences_.erase(it);
       continue;
@@ -89,9 +79,6 @@ void SpPipelineRunner::drain_decode_results() {
     push_token(dr.task_id, dr.token_id, finished);
 
     if (finished) {
-      LLM_ENGINE_LOG("sp_pipeline") << "finished task_id=" << dr.task_id
-                                    << " completion_tokens=" << seq->num_completion_tokens()
-                                    << std::endl;
       active_sequences_.erase(it);
     }
   }

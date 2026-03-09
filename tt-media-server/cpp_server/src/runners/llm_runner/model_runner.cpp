@@ -10,18 +10,6 @@
 
 namespace llm_engine {
 
-void DecodeQueue::push(const TokenResult& result) {
-  std::lock_guard lock(mutex_);
-  pending_.push_back(result);
-}
-
-std::vector<TokenResult> DecodeQueue::drain() {
-  std::lock_guard lock(mutex_);
-  std::vector<TokenResult> out;
-  out.swap(pending_);
-  return out;
-}
-
 std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
                                                      DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB
