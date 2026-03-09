@@ -2,14 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from __future__ import annotations
-
 import json
 import os
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, make_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -24,9 +22,6 @@ from workflows.workflow_types import (
     ModelType,
     VersionMode,
 )
-
-if TYPE_CHECKING:
-    from workflows.runtime_config import RuntimeConfig
 
 VERSION = get_version()
 
@@ -203,6 +198,18 @@ tt_transformers_impl = ImplSpec(
     impl_name="tt-transformers",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/tt_transformers",
+)
+llama3_impl = ImplSpec(
+    impl_id="llama3",
+    impl_name="llama3",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3",
+)
+t3000_llama2_70b_impl = ImplSpec(
+    impl_id="llama2_70b",
+    impl_name="llama2-70b",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/t3000/llama2_70b",
 )
 llama3_70b_galaxy_impl = ImplSpec(
     impl_id="llama3_70b_galaxy",
@@ -381,9 +388,8 @@ class ModelSpec:
         None  # Used for data-parallel configurations
     )
     uses_tensor_model_cache: bool = True
-    has_builtin_warmup: bool = False
-    # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
     cli_args: Dict[str, str] = field(default_factory=dict)
+    has_builtin_warmup: bool = False
 
     def __post_init__(self):
         default_env_vars = {
@@ -589,10 +595,6 @@ class ModelSpec:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # Handle combined format: {"runtime_model_spec": …, "runtime_config": …}
-        if "runtime_model_spec" in data and "runtime_config" in data:
-            data = data["runtime_model_spec"]
-
         def deserialize_enum(enum_class, value):
             """Helper to deserialize enum values."""
             if isinstance(value, str):
@@ -698,66 +700,87 @@ class ModelSpec:
         # Create and return the ModelSpec instance
         return cls(**data)
 
-    def apply_overrides(self, runtime_config: RuntimeConfig):
-        """Apply spec-mutating runtime overrides from RuntimeConfig.
+    def apply_runtime_args(self, args):
+        # handle runtime model spec overrides
+        def is_mutable(obj):
+            return isinstance(obj, (list, dict, set))
 
-        Only modifies fields that are part of the model specification itself
-        (vllm_args, override_tt_config, docker_image, commits).  Orchestration
-        and workflow state belong in RuntimeConfig, not here.
-        """
-        if runtime_config.override_tt_config:
-            override_config_from_cli = json.loads(runtime_config.override_tt_config)
+        def _build_field(key, value):
+            typ = type(value)
+            if is_mutable(value):
+                return (key, typ, field(default_factory=lambda v=value: v.copy()))
+            else:
+                return (key, typ, value)
 
+        fields = [_build_field(key, value) for key, value in args.__dict__.items()]
+        CliArgsClass = make_dataclass("cli_args", fields)
+        cli_args = CliArgsClass(**args.__dict__)
+        object.__setattr__(self, "cli_args", cli_args)
+
+        if args.override_tt_config:
+            # Parse the override config from CLI
+            override_config_from_cli = json.loads(args.override_tt_config)
+
+            # Start with existing override_tt_config
             merged_override_config = dict(self.device_model_spec.override_tt_config)
 
+            # Apply overrides from CLI, removing keys with null values
             for key, value in override_config_from_cli.items():
                 if value is None:
+                    # Remove the key if it exists
                     merged_override_config.pop(key, None)
                 else:
+                    # Add or update the key
                     merged_override_config[key] = value
 
+            # Set the merged config
             object.__setattr__(
                 self.device_model_spec,
                 "override_tt_config",
                 merged_override_config,
             )
+            # Update vllm_args to include the new override_tt_config
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
                 "override_tt_config": json.dumps(merged_override_config),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+        if args.vllm_override_args:
+            # Parse the vllm override args from CLI
+            vllm_override_args_from_cli = json.loads(args.vllm_override_args)
 
-        if runtime_config.vllm_override_args:
-            vllm_override_args_from_cli = json.loads(runtime_config.vllm_override_args)
-
+            # Start with existing vllm_args
             merged_vllm_args = dict(self.device_model_spec.vllm_args)
 
+            # Apply overrides from CLI, removing keys with null values
             for key, value in vllm_override_args_from_cli.items():
                 if value is None:
+                    # Remove the key if it exists
                     merged_vllm_args.pop(key, None)
                 else:
+                    # Add or update the key
                     merged_vllm_args[key] = value
 
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if runtime_config.service_port:
+        if args.service_port:
+            # Add service port to vllm_args
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "port": runtime_config.service_port,
+                **{"port": args.service_port},
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if runtime_config.dev_mode:
+        if args.dev_mode:
             object.__setattr__(
                 self, "docker_image", self.docker_image.replace("-release-", "-dev-")
             )
 
-        if runtime_config.override_docker_image:
-            object.__setattr__(
-                self, "docker_image", runtime_config.override_docker_image
-            )
+        if args.override_docker_image:
+            object.__setattr__(self, "docker_image", args.override_docker_image)
+            # Parse commits from docker image tag and update model_spec
             tt_metal_commit, vllm_commit = parse_commits_from_docker_image(
-                runtime_config.override_docker_image
+                args.override_docker_image
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
@@ -3178,40 +3201,6 @@ def get_model_spec_map(
         for spec in template.expand_to_specs():
             model_spec_map[spec.model_id] = spec
     return model_spec_map
-
-
-def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
-    """Export MODEL_SPECS to a nested JSON file.
-
-    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
-
-    Args:
-        model_specs: Dictionary mapping model_id to ModelSpec objects.
-        output_path: Path where the JSON file should be written.
-
-    Returns:
-        Number of model specs exported.
-    """
-    nested_specs = {}
-    num_specs = 0
-    for model_id, model_spec in model_specs.items():
-        hf_repo = model_spec.hf_model_repo
-        device = model_spec.device_type.to_string()
-        engine = model_spec.inference_engine
-        impl_id = model_spec.impl.impl_id
-
-        nested_specs.setdefault(hf_repo, {})
-        nested_specs[hf_repo].setdefault(device, {})
-        nested_specs[hf_repo][device].setdefault(engine, {})
-        nested_specs[hf_repo][device][engine][impl_id] = (
-            model_spec.get_serialized_dict()
-        )
-        num_specs += 1
-
-    with open(output_path, "w") as f:
-        json.dump(nested_specs, f, indent=2)
-
-    return num_specs
 
 
 # Final model specifications generated from templates
