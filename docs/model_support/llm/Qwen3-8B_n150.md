@@ -27,7 +27,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd \
   --model Qwen3-8B \
   --tt-device n150
 ```
@@ -47,10 +47,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 40960 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
-| tt-metal Commit | `e95ffa5` |
-| vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e0e0500/models/tt_transformers) |
+| tt-metal Commit | `e0e0500` |
+| vLLM Commit | `409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd` |
 
 ---
 
@@ -68,7 +68,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd \
   --model Qwen3-8B \
   --tt-device n300
 ```
@@ -87,7 +87,7 @@ python3 run.py --model Qwen3-8B --device n300 --workflow server --docker-server
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 40960 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
-| tt-metal Commit | `e95ffa5` |
-| vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e0e0500/models/tt_transformers) |
+| tt-metal Commit | `e0e0500` |
+| vLLM Commit | `409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd` |
