@@ -106,6 +106,7 @@ This page lists all supported models organized by hardware type.
 
 | Status | Type | Model |
 |--------|------|-------|
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_n300.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n300.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n300.md) |
 | 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n300.md) |

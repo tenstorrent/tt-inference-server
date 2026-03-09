@@ -38,6 +38,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/cce3da6/models/demos/whisper) |
-| tt-metal Commit | `cce3da6` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-cce3da6` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/555f240/models/demos/whisper) |
+| tt-metal Commit | `555f240` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240` |
