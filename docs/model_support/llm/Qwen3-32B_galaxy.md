@@ -17,6 +17,21 @@ See [prerequisites](../../prerequisites.md) for system software setup, e.g. for 
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
 
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e95ffa5-48eba14 \
+  --model Qwen3-32B \
+  --tt-device galaxy
+```
+
 **via run.py command**
 
 ```bash
@@ -29,19 +44,34 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) |
-| Model Status | 🟢 Complete |
-| Max Batch Size | 32 |
+| Model Status | 🟡 Functional |
+| Max Batch Size | 128 |
 | Max Context Length | 131072 |
-| Implementation Code | [qwen3-32b-galaxy](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/demos/llama3_70b_galaxy) |
-| tt-metal Commit | `65718bb` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
+| tt-metal Commit | `e95ffa5` |
+| vLLM Commit | `48eba14` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e95ffa5-48eba14` |
 
 ---
 
 ## GALAXY_T3K Configuration
 
 ### Quickstart - Deploy on WH Galaxy
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e95ffa5-48eba14 \
+  --model Qwen3-32B \
+  --tt-device galaxy_t3k
+```
 
 **via run.py command**
 
@@ -60,4 +90,4 @@ python3 run.py --model Qwen3-32B --device galaxy_t3k --workflow server --docker-
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
 | tt-metal Commit | `e95ffa5` |
 | vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e95ffa5-48eba14` |

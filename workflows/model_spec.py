@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import json
 import os
 import re
-from dataclasses import asdict, dataclass, field, make_dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -23,8 +25,10 @@ from workflows.workflow_types import (
     VersionMode,
 )
 
-VERSION = get_version()
+if TYPE_CHECKING:
+    from workflows.runtime_config import RuntimeConfig
 
+VERSION = get_version()
 
 def generate_docker_tag(
     version: str, tt_metal_commit: str, vllm_commit: Optional[str]
@@ -35,7 +39,6 @@ def generate_docker_tag(
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
-
 def generate_default_docker_link(
     version: str, tt_metal_commit: str, vllm_commit: Optional[str]
 ) -> str:
@@ -45,7 +48,6 @@ def generate_default_docker_link(
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
-
 
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
@@ -60,9 +62,7 @@ def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskPar
         data = json.load(f)
     return data
 
-
 model_performance_reference = read_performance_reference_json()
-
 
 def get_perf_reference_map(
     model_name: str, perf_targets_map: Dict[str, float]
@@ -113,7 +113,6 @@ def get_perf_reference_map(
         perf_reference_map[device_type] = params_list
     return perf_reference_map
 
-
 def scale_llm_perf_targets(
     task: BenchmarkTaskParams, data_parallel: int
 ) -> BenchmarkTaskParams:
@@ -144,7 +143,6 @@ def scale_llm_perf_targets(
         num_inference_steps=task.num_inference_steps,
     )
 
-
 def get_perf_reference(device_model_spec, perf_reference_map):
     # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
     data_parallel = device_model_spec.override_tt_config.get("data_parallel")
@@ -161,10 +159,8 @@ def get_perf_reference(device_model_spec, perf_reference_map):
         perf_reference = perf_reference_map.get(device_model_spec.device, [])
     return perf_reference
 
-
 def model_weights_to_model_name(model_weights: str) -> str:
     return Path(model_weights).name
-
 
 def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     # Validate that all parameters are strings
@@ -184,7 +180,6 @@ def get_model_id(impl_name: str, model_name: str, device: str) -> str:
     model_id = f"id_{impl_name}_{model_name}_{device}"
     return model_id
 
-
 @dataclass(frozen=True)
 class ImplSpec:
     impl_id: str
@@ -192,24 +187,11 @@ class ImplSpec:
     repo_url: str
     code_path: str
 
-
 tt_transformers_impl = ImplSpec(
     impl_id="tt_transformers",
     impl_name="tt-transformers",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/tt_transformers",
-)
-llama3_impl = ImplSpec(
-    impl_id="llama3",
-    impl_name="llama3",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/llama3",
-)
-t3000_llama2_70b_impl = ImplSpec(
-    impl_id="llama2_70b",
-    impl_name="llama2-70b",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/t3000/llama2_70b",
 )
 llama3_70b_galaxy_impl = ImplSpec(
     impl_id="llama3_70b_galaxy",
@@ -260,7 +242,6 @@ tt_vllm_plugin_impl = ImplSpec(
     code_path="tt_vllm_plugin",
 )
 
-
 @dataclass(frozen=True)
 class VersionRequirement:
     """Represents a software version requirement with a specific mode."""
@@ -268,14 +249,12 @@ class VersionRequirement:
     specifier: str
     mode: VersionMode
 
-
 @dataclass(frozen=True)
 class SystemRequirements:
     """Represents system software version requirements."""
 
     firmware: VersionRequirement = None
     kmd: VersionRequirement = None
-
 
 @dataclass(frozen=True)
 class DeviceModelSpec:
@@ -348,7 +327,6 @@ class DeviceModelSpec:
         }
         object.__setattr__(self, "env_vars", merged_env_vars)
 
-
 @dataclass(frozen=True)
 class ModelSpec:
     """
@@ -388,8 +366,9 @@ class ModelSpec:
         None  # Used for data-parallel configurations
     )
     uses_tensor_model_cache: bool = True
-    cli_args: Dict[str, str] = field(default_factory=dict)
     has_builtin_warmup: bool = False
+    # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
+    cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         default_env_vars = {
@@ -595,6 +574,10 @@ class ModelSpec:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # Handle combined format: {"runtime_model_spec": …, "runtime_config": …}
+        if "runtime_model_spec" in data and "runtime_config" in data:
+            data = data["runtime_model_spec"]
+
         def deserialize_enum(enum_class, value):
             """Helper to deserialize enum values."""
             if isinstance(value, str):
@@ -700,91 +683,69 @@ class ModelSpec:
         # Create and return the ModelSpec instance
         return cls(**data)
 
-    def apply_runtime_args(self, args):
-        # handle runtime model spec overrides
-        def is_mutable(obj):
-            return isinstance(obj, (list, dict, set))
+    def apply_overrides(self, runtime_config: RuntimeConfig):
+        """Apply spec-mutating runtime overrides from RuntimeConfig.
 
-        def _build_field(key, value):
-            typ = type(value)
-            if is_mutable(value):
-                return (key, typ, field(default_factory=lambda v=value: v.copy()))
-            else:
-                return (key, typ, value)
+        Only modifies fields that are part of the model specification itself
+        (vllm_args, override_tt_config, docker_image, commits).  Orchestration
+        and workflow state belong in RuntimeConfig, not here.
+        """
+        if runtime_config.override_tt_config:
+            override_config_from_cli = json.loads(runtime_config.override_tt_config)
 
-        fields = [_build_field(key, value) for key, value in args.__dict__.items()]
-        CliArgsClass = make_dataclass("cli_args", fields)
-        cli_args = CliArgsClass(**args.__dict__)
-        object.__setattr__(self, "cli_args", cli_args)
-
-        if args.override_tt_config:
-            # Parse the override config from CLI
-            override_config_from_cli = json.loads(args.override_tt_config)
-
-            # Start with existing override_tt_config
             merged_override_config = dict(self.device_model_spec.override_tt_config)
 
-            # Apply overrides from CLI, removing keys with null values
             for key, value in override_config_from_cli.items():
                 if value is None:
-                    # Remove the key if it exists
                     merged_override_config.pop(key, None)
                 else:
-                    # Add or update the key
                     merged_override_config[key] = value
 
-            # Set the merged config
             object.__setattr__(
                 self.device_model_spec,
                 "override_tt_config",
                 merged_override_config,
             )
-            # Update vllm_args to include the new override_tt_config
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
                 "override_tt_config": json.dumps(merged_override_config),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
-        if args.vllm_override_args:
-            # Parse the vllm override args from CLI
-            vllm_override_args_from_cli = json.loads(args.vllm_override_args)
 
-            # Start with existing vllm_args
+        if runtime_config.vllm_override_args:
+            vllm_override_args_from_cli = json.loads(runtime_config.vllm_override_args)
+
             merged_vllm_args = dict(self.device_model_spec.vllm_args)
 
-            # Apply overrides from CLI, removing keys with null values
             for key, value in vllm_override_args_from_cli.items():
                 if value is None:
-                    # Remove the key if it exists
                     merged_vllm_args.pop(key, None)
                 else:
-                    # Add or update the key
                     merged_vllm_args[key] = value
 
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if args.service_port:
-            # Add service port to vllm_args
+        if runtime_config.service_port:
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                **{"port": args.service_port},
+                "port": runtime_config.service_port,
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if args.dev_mode:
+        if runtime_config.dev_mode:
             object.__setattr__(
                 self, "docker_image", self.docker_image.replace("-release-", "-dev-")
             )
 
-        if args.override_docker_image:
-            object.__setattr__(self, "docker_image", args.override_docker_image)
-            # Parse commits from docker image tag and update model_spec
+        if runtime_config.override_docker_image:
+            object.__setattr__(
+                self, "docker_image", runtime_config.override_docker_image
+            )
             tt_metal_commit, vllm_commit = parse_commits_from_docker_image(
-                args.override_docker_image
+                runtime_config.override_docker_image
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
-
 
 @dataclass(frozen=True)
 class ModelSpecTemplate:
@@ -819,7 +780,6 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
-
     def __post_init__(self):
         self._validate_data()
         self._infer_data()
@@ -911,11 +871,11 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
+
                 )
 
                 specs.append(spec)
         return specs
-
 
 # Model specification templates - these get expanded into individual specs
 # order: spec_templates = (
@@ -927,7 +887,6 @@ class ModelSpecTemplate:
 #     + embedding_templates
 #     + cnn_templates
 # )
-
 
 # =============================================================================
 # llm_templates
@@ -1064,20 +1023,19 @@ llm_templates = [
                 max_context=32 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="e0e0500",
+        vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1254,8 +1212,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1615,8 +1573,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1705,8 +1663,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="9b67e09",
-        vllm_commit="a91b644",
+        tt_metal_commit="84b4c53",
+        vllm_commit="222ee06",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1730,6 +1688,7 @@ llm_templates = [
         ],
         env_vars={"VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1},
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
@@ -1763,8 +1722,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="25305db",
-        vllm_commit="6e67d2d",
+        tt_metal_commit="3f72232",
+        vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1859,8 +1818,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2026,9 +1985,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
@@ -2041,9 +1998,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21448704,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                 },
             ),
@@ -2051,6 +2006,7 @@ vlm_templates = [
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -2071,9 +2027,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 51934848,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -2091,9 +2045,7 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 21921792,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -2112,9 +2064,7 @@ vlm_templates = [
                     "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
-                    "l1_small_size": 24576,
-                    "worker_l1_size": 1344544,
-                    "trace_region_size": 49544000,
+                    "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                 },
@@ -2123,6 +2073,7 @@ vlm_templates = [
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -2318,7 +2269,7 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2369,7 +2320,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2430,7 +2381,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2529,7 +2480,7 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2646,7 +2597,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        tt_metal_commit="555f240",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2655,6 +2606,12 @@ audio_tts_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
@@ -2777,7 +2734,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-8B"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3186,7 +3143,6 @@ spec_templates = [
     *cnn_templates,
 ]
 
-
 def get_model_spec_map(
     templates: List[ModelSpecTemplate],
 ) -> Dict[str, ModelSpec]:
@@ -3205,31 +3161,88 @@ def get_model_spec_map(
             model_spec_map[spec.model_id] = spec
     return model_spec_map
 
+def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
+    """Export MODEL_SPECS to a nested JSON file.
+
+    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
+
+    Args:
+        model_specs: Dictionary mapping model_id to ModelSpec objects.
+        output_path: Path where the JSON file should be written.
+
+    Returns:
+        Number of model specs exported.
+    """
+    nested_specs = {}
+    num_specs = 0
+    for model_id, model_spec in model_specs.items():
+        hf_repo = model_spec.hf_model_repo
+        device = model_spec.device_type.to_string()
+        engine = model_spec.inference_engine
+        impl_id = model_spec.impl.impl_id
+
+        nested_specs.setdefault(hf_repo, {})
+        nested_specs[hf_repo].setdefault(device, {})
+        nested_specs[hf_repo][device].setdefault(engine, {})
+        nested_specs[hf_repo][device][engine][impl_id] = (
+            model_spec.get_serialized_dict()
+        )
+        num_specs += 1
+
+    with open(output_path, "w") as f:
+        json.dump(nested_specs, f, indent=2)
+
+    return num_specs
 
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
+def get_runtime_model_spec(
+    model: str,
+    device: str,
+    engine: Optional[str] = None,
+    impl: Optional[str] = None,
+) -> Tuple[ModelSpec, str, str]:
+    """Select a ModelSpec from MODEL_SPECS.
 
-def get_runtime_model_spec(args):
-    # Infer the impl from the default for given model_name if not provided
-    if not args.impl:
-        device_type = DeviceTypes.from_string(args.device)
-        for _, model_spec in MODEL_SPECS.items():
-            if (
-                model_spec.model_name == args.model
-                and model_spec.device_type == device_type
-                and model_spec.device_model_spec.default_impl
-            ):
-                args.impl = model_spec.impl.impl_name
-                break
+    Pure function -- does **not** mutate any external state.
 
-    if not args.impl:
+    Returns ``(model_spec, resolved_impl, resolved_engine)`` so the caller
+    can construct a fully-initialised RuntimeConfig in one step.
+    """
+    device_type = DeviceTypes.from_string(device)
+
+    candidate_specs = [
+        spec
+        for spec in MODEL_SPECS.values()
+        if spec.model_name == model
+        and spec.device_type == device_type
+        and (not engine or spec.inference_engine == engine)
+        and (not impl or spec.impl.impl_name == impl)
+    ]
+
+    if not candidate_specs:
+        engine_msg = f", engine={engine}" if engine else ""
+        impl_msg = f", impl={impl}" if impl else ""
         raise ValueError(
-            f"Model:={args.model} does not have a default impl, you must pass --impl"
+            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg}"
         )
 
-    model_id = get_model_id(args.impl, args.model, args.device)
-    model_spec = MODEL_SPECS[model_id]
-    model_spec.apply_runtime_args(args)
+    default_spec = next(
+        (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
+        None,
+    )
+    selected_spec = default_spec or (candidate_specs[0] if impl else None)
 
-    return model_spec
+    if selected_spec is None:
+        raise ValueError(
+            f"Model:={model} does not have a default impl for "
+            f"device:={device}, engine:={engine}; "
+            f"you must pass --impl"
+        )
+
+    resolved_impl = selected_spec.impl.impl_name
+    resolved_engine = engine if engine else selected_spec.inference_engine
+
+    model_spec = MODEL_SPECS[selected_spec.model_id]
+    return model_spec, resolved_impl, resolved_engine
