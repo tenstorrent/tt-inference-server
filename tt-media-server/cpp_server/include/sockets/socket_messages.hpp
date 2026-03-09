@@ -9,13 +9,15 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 
+#include "domain/task_id.hpp"
+
 namespace tt::sockets {
 
 /**
  * @brief Prefill request message - sent from decode server to prefill server
  */
 struct PrefillRequestMessage {
-    std::string task_id;
+    tt::domain::TaskID task_id;
     std::string prompt;
     std::vector<int64_t> token_ids;
     int max_tokens = 0;
@@ -32,7 +34,7 @@ struct PrefillRequestMessage {
  * Contains the first token and updated sequence for decode server to continue generation.
  */
 struct PrefillResultMessage {
-    std::string task_id;
+    tt::domain::TaskID task_id;
     std::string generated_text;
     bool finished = false;
     int tokens_generated = 0;

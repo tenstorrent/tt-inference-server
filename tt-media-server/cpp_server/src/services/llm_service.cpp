@@ -308,7 +308,7 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
         ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
         : 0;
-    const std::string task_id = request.task_id;
+    const std::string task_id = request.task_id.id;
     const std::string model = request.model.value_or("default");
 
     process_streaming_request(std::move(request),
@@ -353,10 +353,10 @@ void LLMService::process_streaming_request(
     assert(callback != nullptr);
 
     ZoneScopedN("LLMService::process_streaming_request");
-    if (request.task_id.empty()) {
+    if (request.task_id.id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
-    std::string task_id = request.task_id;
+    std::string task_id = request.task_id.id;
 
     pending_tasks_.fetch_add(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
@@ -380,7 +380,7 @@ void LLMService::process_streaming_request(
         }
 
         domain::PrefillRequest prefill_req;
-        prefill_req.task_id = task_id;
+        prefill_req.task_id = domain::TaskID(task_id);
         prefill_req.token_ids = token_ids;
         prefill_req.max_tokens = request.max_tokens;
 
@@ -465,7 +465,7 @@ void LLMService::handle_prefill_request(const domain::PrefillRequest& prefill_re
     pre_process(request);
 
     auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(std::move(original_token_ids));
-    std::string task_id = prefill_req.task_id;
+    std::string task_id = prefill_req.task_id.id;
 
     process_streaming_request(std::move(request),
         [this, task_id, token_ids_ptr,
@@ -482,7 +482,7 @@ void LLMService::handle_prefill_request(const domain::PrefillRequest& prefill_re
             bool fully_finished = is_final && remaining_tokens <= 0;
 
             domain::PrefillResult result;
-            result.task_id = task_id;
+            result.task_id = domain::TaskID(task_id);
             result.generated_text = text;
             result.token_ids = *token_ids_ptr;
             result.remaining_tokens = remaining_tokens;
@@ -501,7 +501,7 @@ void LLMService::handle_prefill_request(const domain::PrefillRequest& prefill_re
 }
 
 void LLMService::handle_prefill_complete(const domain::PrefillResult& result) {
-    const std::string& task_id = result.task_id;
+    const std::string& task_id = result.task_id.id;
 
     auto val = stream_callbacks_.get(task_id);
     if (!val.has_value()) {
@@ -551,7 +551,7 @@ void LLMService::continue_decode_generation(const domain::PrefillResult& prefill
     request.prompt = std::move(tokens);
     request.max_tokens = prefill_result.remaining_tokens;
 
-    std::string task_id = prefill_result.task_id;
+    std::string task_id = prefill_result.task_id.id;
     auto sequence = std::make_unique<llm_engine::Sequence>(
         tt::config::llm_engine_config().kvcache_block_size,
         std::vector<int64_t>(prefill_result.token_ids.begin(), prefill_result.token_ids.end()));

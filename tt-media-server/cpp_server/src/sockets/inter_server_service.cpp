@@ -70,7 +70,7 @@ bool InterServerService::isEnabled() const {
     return enabled_;
 }
 
-bool InterServerService::sendPrefillRequest(const std::string& task_id,
+bool InterServerService::sendPrefillRequest(const tt::domain::TaskID& task_id,
                                     const std::string& prompt,
                                     const std::vector<int64_t>& token_ids,
                                     int max_tokens) {

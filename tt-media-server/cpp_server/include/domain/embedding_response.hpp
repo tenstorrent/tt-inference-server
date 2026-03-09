@@ -86,7 +86,7 @@ struct EmbeddingResponse : BaseResponse {
         }
 
         if (json.isMember("task_id")) {
-            resp.task_id = json["task_id"].asString();
+            resp.task_id = TaskID(json["task_id"].asString());
         }
 
         if (json.isMember("error")) {
