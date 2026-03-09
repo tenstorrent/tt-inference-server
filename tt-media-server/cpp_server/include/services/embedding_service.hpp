@@ -28,6 +28,7 @@ public:
     void start() override;
     void stop() override;
     bool is_model_ready() const override;
+    bool is_queue_full() const override;
     SystemStatus get_system_status() const override;
 
 protected:
