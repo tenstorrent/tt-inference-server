@@ -754,8 +754,16 @@ def main():
     # (impl_id, first_weight, frozenset of device names).
     SKIP_TEMPLATES = {
         ("qwen3_32b_galaxy", "Qwen/Qwen3-32B", frozenset({"GALAXY"})),
-        ("llama3_70b_galaxy", "meta-llama/Llama-3.3-70B-Instruct", frozenset({"GALAXY"})),
-        ("tt_transformers", "meta-llama/Llama-3.1-8B", frozenset({"GALAXY", "GALAXY_T3K"})),
+        (
+            "llama3_70b_galaxy",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            frozenset({"GALAXY"}),
+        ),
+        (
+            "tt_transformers",
+            "meta-llama/Llama-3.1-8B",
+            frozenset({"GALAXY", "GALAXY_T3K"}),
+        ),
     }
 
     for template in spec_templates:

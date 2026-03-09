@@ -909,9 +909,7 @@ def list_image_combinations(model_configs, build_metal_commit=None):
         1 for config in model_configs.values() if config.vllm_commit is None
     )
 
-    skip_build_count = sum(
-        1 for config in model_configs.values() if config.skip_build
-    )
+    skip_build_count = sum(1 for config in model_configs.values() if config.skip_build)
 
     if skip_build_count > 0:
         logger.info(f"Skipped {skip_build_count} model config(s) with skip_build=True")
