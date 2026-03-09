@@ -26,6 +26,7 @@ Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue)
     : block_size_(config.kvcache_block_size),
       max_num_seqs_(config.max_num_seqs),
       max_num_batched_tokens_(config.max_num_batched_tokens),
+      max_in_flight_count_(config.max_in_flight_count),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
       waiting_(task_queue) {}
@@ -58,7 +59,7 @@ Sequence* Scheduler::find_sequence(TaskID task_id) {
 bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
                                      int& num_seqs, int& num_batched_tokens,
                                      int seq_limit) {
-  while (num_seqs < seq_limit) {
+  while (num_seqs < seq_limit && in_flight_count_ < max_in_flight_count_) {
     auto seq = waiting_->try_pop();
     if (!seq) break;
 
@@ -86,7 +87,7 @@ bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
 
 void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
                                     int& num_seqs) {
-  while (!running_.empty() && num_seqs < max_num_seqs_) {
+  while (!running_.empty() && num_seqs < max_num_seqs_ && in_flight_count_ < max_in_flight_count_) {
     Sequence* seq = running_.front();
     running_.pop_front();
     auto self_preempt = false;
@@ -103,12 +104,10 @@ void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
     if (block_manager_.can_append(*seq) && !self_preempt) {
       num_seqs += 1;
       block_manager_.may_append(*seq);
+      seq->status_ = SequenceStatus::IN_FLIGHT;
+      ++in_flight_count_;
       scheduled_seqs.push_back(seq);
     }
-  }
-  for (Sequence* seq : scheduled_seqs) {
-    seq->status_ = SequenceStatus::IN_FLIGHT;
-    ++in_flight_count_;
   }
 }
 
@@ -133,17 +132,10 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   try_schedule_decode(scheduled_seqs, num_seqs);
-  if (!scheduled_seqs.empty()) {
-    LLM_ENGINE_LOG("scheduler")
-        << "schedule decode n=" << scheduled_seqs.size()
-        << " scheduled_seqs=" << scheduled_seqs[0]->task_id.id
-        << " in_flight=" << in_flight_count_ << std::endl;
-    return {scheduled_seqs, false};
-  }
+  LLM_ENGINE_LOG("scheduler")
+      << "schedule decode n=" << scheduled_seqs.size()
+      << " in_flight=" << in_flight_count_ << std::endl;
 
-  LLM_ENGINE_LOG("scheduler") << "schedule decode n=0 scheduled_seqs=none"
-                               << " in_flight=" << in_flight_count_
-                               << std::endl;
   return {scheduled_seqs, false};
 }
 

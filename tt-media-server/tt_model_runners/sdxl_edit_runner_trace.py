@@ -8,7 +8,7 @@ import torch
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_edit_request import ImageEditRequest
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline import (
     TtSDXLInpaintingPipeline,
     TtSDXLInpaintingPipelineConfig,
 )

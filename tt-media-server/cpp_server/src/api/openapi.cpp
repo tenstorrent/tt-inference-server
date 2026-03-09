@@ -432,6 +432,7 @@ private:
         messageSchema["required"].append("content");
         messageSchema["properties"]["role"]["type"] = "string";
         messageSchema["properties"]["role"]["description"] = "Message role: system, user, or assistant";
+        messageSchema["properties"]["role"]["default"] = "user";
         messageSchema["properties"]["content"]["type"] = "string";
         messageSchema["properties"]["content"]["description"] = "Message content";
 
