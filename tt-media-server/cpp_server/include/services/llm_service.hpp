@@ -43,7 +43,7 @@ public:
     void stop() override;
 
     bool is_model_ready() const override;
-    bool is_queue_full() const override;
+    void validate() const override;
     SystemStatus get_system_status() const override;
 
     using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;

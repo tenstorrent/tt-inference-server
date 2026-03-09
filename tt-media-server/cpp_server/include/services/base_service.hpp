@@ -39,7 +39,7 @@ public:
     virtual void stop() = 0;
     virtual bool is_model_ready() const = 0;
     virtual SystemStatus get_system_status() const = 0;
-    virtual bool is_queue_full() const = 0;
+    virtual void validate() const = 0;
 };
 
 template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>

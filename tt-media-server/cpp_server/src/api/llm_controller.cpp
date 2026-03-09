@@ -263,9 +263,11 @@ void LLMController::handle_streaming(
 
     ZoneScopedN("API::handle_streaming");
 
-    if (service_->is_queue_full()) {
+    try {
+        service_->validate();
+    } catch (const services::QueueFullException& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
+            error_json(e.what(), "rate_limit_exceeded"));
         resp->setStatusCode(drogon::k429TooManyRequests);
         callback(resp);
         return;

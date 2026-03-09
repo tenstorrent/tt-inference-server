@@ -108,8 +108,10 @@ bool LLMService::is_model_ready() const {
     return is_ready_.load();
 }
 
-bool LLMService::is_queue_full() const {
-    return pending_tasks_.load() >= max_queue_size_;
+void LLMService::validate() const {
+    if (pending_tasks_.load() >= max_queue_size_) {
+        throw QueueFullException{};
+    }
 }
 
 SystemStatus LLMService::get_system_status() const {
@@ -130,9 +132,6 @@ SystemStatus LLMService::get_system_status() const {
 }
 
 void LLMService::pre_process(domain::CompletionRequest& request) const {
-    if (is_queue_full()) {
-        throw QueueFullException{};
-    }
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
         static auto cfg = tt::utils::get_tokenizer_config();

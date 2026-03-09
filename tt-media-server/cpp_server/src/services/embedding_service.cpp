@@ -652,9 +652,11 @@ bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-bool EmbeddingService::is_queue_full() const {
+void EmbeddingService::validate() const {
     std::lock_guard lock(impl_->queue_mutex_);
-    return impl_->request_queue_.size() >= impl_->max_queue_size_;
+    if (impl_->request_queue_.size() >= impl_->max_queue_size_) {
+        throw QueueFullException{};
+    }
 }
 
 void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
