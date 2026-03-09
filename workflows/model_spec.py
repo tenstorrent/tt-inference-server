@@ -936,8 +936,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="e867533",
-        vllm_commit="8f36910",
+        tt_metal_commit="555f240",
+        vllm_commit="1f567b7",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
