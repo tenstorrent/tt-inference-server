@@ -80,7 +80,7 @@ void LLMController::completions(
     auto request = std::make_shared<domain::CompletionRequest>();
     try {
         *request = domain::CompletionRequest::fromJson(*json);
-        request->task_id = generate_completion_id();
+        request->task_id = domain::TaskID(generate_completion_id());
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
@@ -195,7 +195,7 @@ void LLMController::handle_streaming(
     ZoneScopedN("API::handle_streaming");
 
     const std::string completion_id =
-        (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id;
+        (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id.id;
     const std::string model = req_ptr->model.value_or("default");
     const int64_t created = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
