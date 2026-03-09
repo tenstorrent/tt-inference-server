@@ -13,10 +13,8 @@ Launch with:
 """
 
 import argparse
-import mmap
 import os
 import signal
-import struct
 import sys
 from pathlib import Path
 
@@ -24,21 +22,7 @@ import ttnn
 from models.demos.deepseek_v3_b1.demo.model_pipeline import ModelPipeline
 from models.demos.deepseek_v3_b1.demo.pipeline import create_fabric_router_config
 
-# ── Shared-memory layout ─────────────────────────────────────────────────────
-# Must match the C++ SharedMemory class in shared_memory.hpp.
-# Message layout: state(4) + pad(16) + payload_length(4) + max_tokens(4) + num_token_ids(4) + payload(8192)
-_NUM_SLOTS = 1024
-_MESSAGE_SIZE = 8224
-_SHM_SIZE = _NUM_SLOTS * _MESSAGE_SIZE
-_STATE_OFFSET = 0
-_PAYLOAD_LENGTH_OFFSET = 20  # 4 (state) + 16 (pad)
-_MAX_TOKENS_OFFSET = 24
-_NUM_TOKEN_IDS_OFFSET = 28
-_PAYLOAD_OFFSET = 32
-_TASK_ID_SIZE = 36
-_TOKEN_ID_SIZE = 8
-_FREE = 0
-_TAKEN = 1
+from shared_memory import SharedMemory
 
 _shutdown = False
 
@@ -90,102 +74,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
-def _shm_recv(buf, pos: int):
-    """Block until a TAKEN slot is available, consume it, return (task_id, token_ids, max_tokens)."""
-    msg_off = pos * _MESSAGE_SIZE
-    state_off = msg_off + _STATE_OFFSET
-    while not _shutdown:
-        if struct.unpack_from("<i", buf, state_off)[0] == _TAKEN:
-            break
-    if _shutdown:
-        return None, pos
-
-    max_tokens = struct.unpack_from("<I", buf, msg_off + _MAX_TOKENS_OFFSET)[0]
-    num_token_ids = struct.unpack_from("<I", buf, msg_off + _NUM_TOKEN_IDS_OFFSET)[0]
-
-    payload_off = msg_off + _PAYLOAD_OFFSET
-    task_id = bytes(buf[payload_off : payload_off + _TASK_ID_SIZE])
-
-    token_ids = []
-    token_data_off = payload_off + _TASK_ID_SIZE
-    for i in range(num_token_ids):
-        tid = struct.unpack_from("<q", buf, token_data_off + i * _TOKEN_ID_SIZE)[0]
-        token_ids.append(tid)
-
-    struct.pack_into("<i", buf, state_off, _FREE)
-    return (task_id, token_ids, max_tokens), (pos + 1) % _NUM_SLOTS
-
-
-def _shm_send_token(buf, task_id: bytes, token_id: int, pos: int) -> int:
-    """Write a single generated token back to the C++ server."""
-    msg_off = pos * _MESSAGE_SIZE
-    state_off = msg_off + _STATE_OFFSET
-    while not _shutdown:
-        if struct.unpack_from("<i", buf, state_off)[0] == _FREE:
-            break
-    if _shutdown:
-        return pos
-
-    payload_length = _TASK_ID_SIZE + _TOKEN_ID_SIZE
-    struct.pack_into("<I", buf, msg_off + _PAYLOAD_LENGTH_OFFSET, payload_length)
-    struct.pack_into("<I", buf, msg_off + _MAX_TOKENS_OFFSET, 0)
-    struct.pack_into("<I", buf, msg_off + _NUM_TOKEN_IDS_OFFSET, 1)
-
-    payload_off = msg_off + _PAYLOAD_OFFSET
-    buf[payload_off : payload_off + _TASK_ID_SIZE] = task_id[:_TASK_ID_SIZE]
-    struct.pack_into("<q", buf, payload_off + _TASK_ID_SIZE, int(token_id))
-    struct.pack_into("<i", buf, state_off, _TAKEN)
-    return (pos + 1) % _NUM_SLOTS
-
-
-def _open_shm(shm_name: str):
-    path = f"/dev/shm/{shm_name}"
-    if not os.path.exists(path):
-        return None
-    fd = os.open(path, os.O_RDWR)
-    try:
-        return mmap.mmap(
-            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
-        )
-    finally:
-        os.close(fd)
-
-
 def _shm_is_configured() -> bool:
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
-    if not (c2p_name and p2c_name):
-        return False
-    return os.path.exists(f"/dev/shm/{c2p_name}") and os.path.exists(
-        f"/dev/shm/{p2c_name}"
-    )
-
-
-def _shm_inference_loop(model_pipeline: ModelPipeline, c2p_buf, p2c_buf) -> None:
-    """Read prefill requests from C++, run full inference, stream tokens back."""
-    recv_pos = 0
-    send_pos = 0
-    print("Starting inference loop")
-    while not _shutdown:
-        msg, recv_pos = _shm_recv(c2p_buf, recv_pos)
-        if msg is None:
-            break
-        print(f"Received message: {msg}")
-        task_id, token_ids, max_tokens = msg
-
-        def send_token(generated_token_id: int) -> None:
-            nonlocal send_pos
-            send_pos = _shm_send_token(p2c_buf, task_id, generated_token_id, send_pos)
-
-        print(
-            f"Running inference for task {task_id} with {len(token_ids)} token_ids and max_tokens {max_tokens}"
-        )
-        model_pipeline.run_inference(
-            prompt_token_ids=token_ids,
-            max_new_tokens=max_tokens,
-            on_token=send_token,
-        )
-        print("Inference completed")
+    return bool(c2p_name and p2c_name)
 
 
 def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
@@ -196,18 +88,29 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
         raise RuntimeError(
             "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C."
         )
-    c2p_buf = _open_shm(c2p_name)
-    p2c_buf = _open_shm(p2c_name)
 
-    if not (c2p_buf and p2c_buf):
-        raise RuntimeError("Shared memory configured but could not be opened")
-    try:
-        _shm_inference_loop(model_pipeline, c2p_buf, p2c_buf)
-    finally:
-        if c2p_buf:
-            c2p_buf.close()
-        if p2c_buf:
-            p2c_buf.close()
+    def is_shutdown() -> bool:
+        return _shutdown
+
+    with SharedMemory(c2p_name, is_shutdown=is_shutdown) as c2p, SharedMemory(
+        p2c_name, is_shutdown=is_shutdown
+    ) as p2c:
+        print("Starting inference loop")
+        while not _shutdown:
+            msg = c2p.read()
+            if msg is None:
+                break
+            print(f"Received message: {msg}")
+            print(
+                f"Running inference for task {msg.task_id} with "
+                f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
+            )
+            model_pipeline.run_inference(
+                prompt_token_ids=msg.token_ids,
+                max_new_tokens=msg.max_tokens,
+                on_token=lambda tid: p2c.write_token(msg.task_id, tid),
+            )
+            print("Inference completed")
 
 
 def _fabric_config_for_num_procs(num_procs: int):
