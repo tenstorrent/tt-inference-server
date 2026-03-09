@@ -309,7 +309,7 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
         ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
         : 0;
-    const std::string task_id = request.task_id;
+    const std::string task_id = request.task_id.id;
     const std::string model = request.model.value_or("default");
 
     process_streaming_request(std::move(request),
@@ -354,10 +354,10 @@ void LLMService::process_streaming_request(
     assert(callback != nullptr);
 
     ZoneScopedN("LLMService::process_streaming_request");
-    if (request.task_id.empty()) {
+    if (request.task_id.id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
-    std::string task_id = request.task_id;
+    std::string task_id = request.task_id.id;
 
     pending_tasks_.fetch_add(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
@@ -375,7 +375,7 @@ void LLMService::process_streaming_request(
         }
 
         domain::PrefillRequest prefill_req;
-        prefill_req.task_id = task_id;
+        prefill_req.task_id = domain::TaskID(task_id);
         prefill_req.token_ids = token_ids;
         prefill_req.max_tokens = request.max_tokens;
 
@@ -421,7 +421,7 @@ std::optional<LLMService::StreamCallback> LLMService::detach_stream_callback(con
 
 void LLMService::submit_decode_continuation(
     domain::CompletionRequest request, StreamCallback callback) {
-    std::string task_id = request.task_id;
+    std::string task_id = request.task_id.id;
 
     pending_tasks_.fetch_add(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));

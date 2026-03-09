@@ -53,7 +53,7 @@ void SocketController::setup_prefill_mode_handlers() {
             request.max_tokens = 1;
 
             auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(message.token_ids);
-            std::string task_id = message.task_id;
+            std::string task_id = message.task_id.id;
 
             llm_service_->submit_streaming_request(std::move(request),
                 [this, task_id, token_ids_ptr, original_max_tokens]
@@ -69,7 +69,7 @@ void SocketController::setup_prefill_mode_handlers() {
                     int remaining_tokens = original_max_tokens - 1;
 
                     tt::sockets::PrefillResultMessage msg;
-                    msg.task_id = task_id;
+                    msg.task_id = domain::TaskID(task_id);
                     msg.generated_text = text;
                     msg.token_ids = *token_ids_ptr;
                     msg.remaining_tokens = remaining_tokens;
@@ -100,7 +100,7 @@ void SocketController::setup_decode_mode_handlers() {
         [this](const tt::sockets::PrefillResultMessage& msg) {
             std::cout << "[SocketController] Received prefill result " << msg.task_id << "\n" << std::flush;
 
-            auto taken = llm_service_->detach_stream_callback(msg.task_id);
+            auto taken = llm_service_->detach_stream_callback(msg.task_id.id);
             if (!taken.has_value()) {
                 std::cerr << "[SocketController] No callback for task_id: " << msg.task_id << "\n" << std::flush;
                 return;
@@ -108,7 +108,7 @@ void SocketController::setup_decode_mode_handlers() {
             auto callback = std::move(taken.value());
 
             domain::StreamingChunkResponse response;
-            response.id = msg.task_id;
+            response.id = msg.task_id.id;
             response.created = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
@@ -129,7 +129,7 @@ void SocketController::setup_decode_mode_handlers() {
                     std::move(request), std::move(callback));
             } else {
                 domain::StreamingChunkResponse final_response;
-                final_response.id = msg.task_id;
+                final_response.id = msg.task_id.id;
                 final_response.created = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()
                 ).count();
