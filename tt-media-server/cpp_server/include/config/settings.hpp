@@ -59,7 +59,7 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-/** Model type derived from MODEL_RUNNER (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
+/** Model type derived from RUNNER_TYPE (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
 ModelType model_type();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */

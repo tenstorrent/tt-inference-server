@@ -152,8 +152,8 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
-    // Select model-specific config based on MODEL_RUNNER env var
-    const char* v = std::getenv("MODEL_RUNNER");
+    // Select model-specific config based on RUNNER_TYPE env var
+    const char* v = std::getenv("RUNNER_TYPE");
     std::string backend = v ? std::string(v) : "mock";
 
     llm_engine::Config cfg;
@@ -176,7 +176,7 @@ llm_engine::Config llm_engine_config() {
 }
 
 ModelType model_type() {
-    return model_type_from_device_backend(env_string("MODEL_RUNNER", "mock"));
+    return model_type_from_device_backend(env_string("RUNNER_TYPE", "mock"));
 }
 
 LLMMode llm_mode() {

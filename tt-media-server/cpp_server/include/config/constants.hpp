@@ -39,7 +39,7 @@ enum class RunnerType {
     LLM_TEST,
 };
 
-/** String value for env MODEL_RUNNER (e.g. "llm_test"). */
+/** String value for env RUNNER_TYPE (e.g. "llm_test"). */
 inline std::string to_string(RunnerType r) {
     switch (r) {
         case RunnerType::LLM_TEST:
@@ -48,7 +48,7 @@ inline std::string to_string(RunnerType r) {
     }
 }
 
-/** Model type: drives tokenizer strategy + model-specific config. Derived from MODEL_RUNNER env var. */
+/** Model type: drives tokenizer strategy + model-specific config. Derived from RUNNER_TYPE env var. */
 enum class ModelType {
     DEEPSEEK_R1_0528,
     LLAMA_3_1_8B_INSTRUCT,
@@ -78,12 +78,12 @@ inline LLMMode llm_mode_from_string(const std::string& v) {
     return LLMMode::REGULAR;
 }
 
-/** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
+/** Parse RUNNER_TYPE; unknown -> LLM_TEST. */
 inline RunnerType runner_type_from_string(const std::string& /*v*/) {
     return RunnerType::LLM_TEST;
 }
 
-/** Map MODEL_RUNNER env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. */
+/** Map RUNNER_TYPE env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. */
 inline ModelType model_type_from_device_backend(const std::string& v) {
     if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
     return ModelType::DEEPSEEK_R1_0528;
