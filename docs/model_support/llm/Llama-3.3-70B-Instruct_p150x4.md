@@ -1,4 +1,4 @@
-# Llama-3.3-70B-Instruct Tenstorrent Support on BH QuietBox
+# Llama-3.3-70B-Instruct Tenstorrent Support on BH 4xP150
 
 Supported weights variants for this model implementation are:
 
@@ -11,7 +11,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 #### Useful links
 
-- [BH QuietBox details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH 4xP150 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -21,11 +21,26 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
 - [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
-## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH QuietBox
+## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH 4xP150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e \
+  --model Llama-3.3-70B-Instruct \
+  --tt-device p150x4
+```
 
 **via run.py command**
 
@@ -45,4 +60,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers) |
 | tt-metal Commit | `55fd115` |
 | vLLM Commit | `aa4ae1e` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e` |
