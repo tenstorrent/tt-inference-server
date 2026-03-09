@@ -13,7 +13,7 @@ namespace tt::utils::runner_factory {
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
     const runners::RunnerConfig& config,
-    llm_engine::TokenCallback on_token,
+    ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue) {
 
     switch (service) {
@@ -25,7 +25,7 @@ std::unique_ptr<runners::IRunner> create_runner(
         default: {
             std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
             auto& cfg = std::get<llm_engine::Config>(config);
-            return std::make_unique<tt::runners::LLMRunner>(cfg, std::move(on_token), task_queue);
+            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
         }
     }
 }

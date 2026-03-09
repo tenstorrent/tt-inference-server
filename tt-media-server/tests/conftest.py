@@ -418,20 +418,20 @@ if "models" not in sys.modules:
     sys.modules["models.demos.utils"] = utils_mock
     sys.modules["models.demos.utils.common_demo_utils"] = utils_mock.common_demo_utils
     sys.modules["models.experimental"] = experimental_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base"] = sdxl_base_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tests"] = sdxl_tests_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tests.test_common"] = (
+    sys.modules["models.demos.stable_diffusion_xl_base"] = sdxl_base_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tests"] = sdxl_tests_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tests.test_common"] = (
         sdxl_tests_mock.test_common
     )
-    sys.modules["models.experimental.stable_diffusion_xl_base.tt"] = sdxl_tt_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline"] = (
+    sys.modules["models.demos.stable_diffusion_xl_base.tt"] = sdxl_tt_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline"] = (
         sdxl_tt_mock.tt_sdxl_pipeline
     )
+    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline"] = (
+        sdxl_tt_mock.tt_sdxl_img2img_pipeline
+    )
     sys.modules[
-        "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline"
-    ] = sdxl_tt_mock.tt_sdxl_img2img_pipeline
-    sys.modules[
-        "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
+        "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
     ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
     sys.modules["models.tt_dit"] = tt_dit_mock
     sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel

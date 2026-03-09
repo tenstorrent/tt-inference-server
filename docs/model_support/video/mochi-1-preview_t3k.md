@@ -9,6 +9,8 @@
 `mochi-1-preview` is also supported on hardware:
 
 - [WH Galaxy](mochi-1-preview_galaxy.md)
+- [BH LoudBox](mochi-1-preview_p150x8.md)
+- [BH 4xP150](mochi-1-preview_p150x4.md)
 
 ## Quickstart - Deploy mochi-1-preview Inference Server on WH LoudBox/QuietBox
 

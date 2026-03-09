@@ -39,11 +39,15 @@ unsigned batch_timeout_ms();
 /** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH. Default: defaults::TT_PYTHON_PATH. */
 std::string python_path();
 
-/** Tokenizer path: tokenizers/tokenizer.json relative to executable. Empty if not found. */
+/** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_path();
+std::string tokenizer_path(ModelType model);
 
-/** Tokenizer config path: tokenizers/tokenizer_config.json relative to executable. Empty if not found. */
+/** Tokenizer config path: tokenizers/<model>/tokenizer_config.json relative to executable. Empty if not found.
+ *  No-arg overload uses the current model_type(). */
 std::string tokenizer_config_path();
+std::string tokenizer_config_path(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
@@ -55,8 +59,11 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-/** Socket role from SOCKET_ROLE. Default: defaults::SOCKET_ROLE (empty/NONE). */
-SocketRole socket_role();
+/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
+ModelType model_type();
+
+/** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
+LLMMode llm_mode();
 
 /** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
 std::string socket_host();

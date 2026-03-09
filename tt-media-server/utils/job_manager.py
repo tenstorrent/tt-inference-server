@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Callable, Dict, Optional
 from pathlib import Path
 from multiprocessing import Event
+from sqlite3 import IntegrityError
 
 from config.constants import JobTypes
 from config.settings import get_settings
@@ -39,10 +40,9 @@ class Job:
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
-    _start_event: Optional[Event] = None
-    _cancel_event: Optional[Event] = (
-        None  # multiprocessing.Event for cooperative cancellation
-    )
+    start_event: Optional[Event] = None
+    cancel_event: Optional[Event] = None
+    job_metrics: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
@@ -128,6 +128,7 @@ class JobManager:
         result_path: Optional[str] = None,
         start_event: Optional[Event] = None,
         cancel_event: Optional[Event] = None,
+        job_metrics: list = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -143,9 +144,11 @@ class JobManager:
             if result_path:
                 job.result_path = result_path
             if start_event:
-                job._start_event = start_event
+                job.start_event = start_event
             if cancel_event:
-                job._cancel_event = cancel_event
+                job.cancel_event = cancel_event
+            if job_metrics is not None:
+                job.job_metrics = job_metrics
 
             if self.db:
                 try:
@@ -200,6 +203,13 @@ class JobManager:
                 else:
                     return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
             return None
+
+    def get_job_metrics(self, job_id: str) -> Optional[list]:
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job.job_metrics
+        return None
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""
@@ -271,9 +281,46 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
+    async def _persist_job_metrics_to_db(self, job: Job):
+        # Only persist metrics for training jobs for now.
+        if job.job_type != JobTypes.TRAINING.value:
+            return
+
+        metrics_list = self.get_job_metrics(job.id)
+        if metrics_list is None:
+            return
+        last_seen = 0
+        while True:
+            current_len = len(metrics_list)
+            for i in range(last_seen, current_len):
+                metric = metrics_list[i]
+                try:
+                    self.db.insert_metric(
+                        job_id=job.id,
+                        global_step=metric["global_step"],
+                        epoch=metric["epoch"],
+                        metric_name=metric["metric_name"],
+                        value=metric["value"],
+                        timestamp=metric["timestamp"],
+                    )
+                except IntegrityError:
+                    self._logger.warning(
+                        f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
+                    )
+                except Exception as e:
+                    self._logger.error(
+                        f"Failed to persist metric for job {job.id}: {e}"
+                    )
+                    break  # we break the loop to avoid increasing last_seen and potentially losing the metric
+            else:
+                last_seen = current_len
+            if job.is_terminal():
+                break
+            await asyncio.sleep(1.0)
+
     async def _mark_job_in_progress(self, job: Job):
-        if job._start_event:
-            while not job._start_event.is_set():
+        if job.start_event:
+            while not job.start_event.is_set():
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
@@ -286,9 +333,14 @@ class JobManager:
                 )
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
+        metrics_persister = None
         try:
-            # jobs with a start_event need to be marked as in_progress by the runner
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
+
+            if self.db:
+                metrics_persister = asyncio.create_task(
+                    self._persist_job_metrics_to_db(job)
+                )
 
             result_path = await task_function(request)
 
@@ -363,6 +415,8 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
+            if metrics_persister and not metrics_persister.done():
+                await metrics_persister
             job._task = None
 
     def _start_cleanup_task(self):
@@ -434,9 +488,9 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            if job._cancel_event and not force:
+            if job.cancel_event and not force:
                 # runner handles cancellation
-                job._cancel_event.set()
+                job.cancel_event.set()
             else:
                 # runner does not handle cancellation, so we cancel the task ourselves
                 job._task.cancel()
@@ -469,6 +523,16 @@ class JobManager:
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
                 )
+
+                if db_job["job_type"] == JobTypes.TRAINING.value:
+                    try:
+                        metrics = self.db.get_metrics_flat(job.id)
+                        if metrics:
+                            job.job_metrics = metrics
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore metrics for job {job.id}: {e}"
+                        )
 
                 # If job was stuck, mark it as failed or cancelled and sync to database
                 if not job.is_terminal():

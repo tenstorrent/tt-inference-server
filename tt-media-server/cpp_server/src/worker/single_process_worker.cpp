@@ -11,29 +11,14 @@
 namespace tt::worker {
 
 SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
-    : cfg(move(cfg)) {
+    : cfg(std::move(cfg)) {
 
     pid = getpid();
     worker_id = cfg.worker_id;
-
-    on_token_ = [this](const llm_engine::TokenResult& result) {
-        auto token = ipc::SharedToken{
-            .token_index = 0,
-            .flags = static_cast<uint32_t>(result.finished.value_or(false) ? 1 : 0),
-            .token_id = result.token_id,
-            .task_id = {},
-            .padding = {},
-        };
-        strncpy(token.task_id, result.task_id.id.c_str(), sizeof(token.task_id) - 1);
-        token.task_id[sizeof(token.task_id) - 1] = '\0';
-        this->cfg.result_queue->push(token);
-    };
     is_ready = true;
 }
 
-SingleProcessWorker::~SingleProcessWorker() {
-    stop();
-}
+SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
     tracy_config::TracySetThreadName(
@@ -48,7 +33,7 @@ void SingleProcessWorker::start() {
         runner_ = tt::utils::runner_factory::create_runner(
             tt::config::model_service(),
             cfg.runner_config,
-            on_token_,
+            cfg.result_queue.get(),
             cfg.task_queue.get()
         );
     }
@@ -60,15 +45,15 @@ void SingleProcessWorker::stop() {
         runner_->stop();
     }
     if (pid > 0) {
-        kill(pid, SIGTERM);
+        killpg(pid, SIGTERM);
 
         int status;
         int wait_result = waitpid(pid, &status, WNOHANG);
         if (wait_result == 0) {
-            this_thread::sleep_for(chrono::milliseconds(100));
+            this_thread::sleep_for(chrono::milliseconds(500));
             wait_result = waitpid(pid, &status, WNOHANG);
             if (wait_result == 0) {
-                kill(pid, SIGKILL);
+                killpg(pid, SIGKILL);
                 waitpid(pid, &status, 0);
             }
         }

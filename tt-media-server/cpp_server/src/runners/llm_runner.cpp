@@ -2,12 +2,13 @@
 #include "runners/llm_runner/debug.hpp"
 
 #include <cassert>
+#include <iostream>
 
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* task_queue)
-    : config_(config), on_token_(std::move(on_token)) {
+LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
+    : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
   scheduler_ = std::make_unique<Scheduler>(config_, task_queue);
@@ -15,10 +16,8 @@ LLMRunner::LLMRunner(const Config& config, TokenCallback on_token, ITaskQueue* t
   auto decode_cb = [this](const TokenResult& result) {
     decode_queue_.push(result);
   };
+
   model_runner_ = make_model_runner(config_, std::move(decode_cb));
-  if (config_.eos < 0) {
-    config_.eos = 0;
-  }
 }
 
 LLMRunner::~LLMRunner() {
@@ -64,12 +63,39 @@ void LLMRunner::drain_decode_results() {
     assert(seq);
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
+    if (dr.is_error) {
+      LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
+      scheduler_->removeSequence(dr.task_id);
+      auto shared = ipc::SharedToken{
+          .token_index = 0,
+          .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
+                                         ipc::SharedToken::FLAG_ERROR),
+          .token_id = 0,
+          .task_id = {},
+          .padding = {},
+      };
+      strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+      result_queue_->push(shared);
+      continue;
+    }
+
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> token_ids = {static_cast<int64_t>(dr.token_id)};
     scheduler_->postprocess(seqs, token_ids);
 
     bool finished = seq->is_finished();
-    on_token_(TokenResult{dr.task_id, static_cast<uint64_t>(dr.token_id), finished});
+
+    auto shared = ipc::SharedToken{
+        .token_index = 0,
+        .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
+        .token_id = dr.token_id,
+        .task_id = {},
+        .padding = {},
+    };
+    strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+    shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+    result_queue_->push(shared);
 
     if (finished) {
       LLM_ENGINE_LOG("llm_engine") << "finished task_id=" << seq->task_id
@@ -79,4 +105,4 @@ void LLMRunner::drain_decode_results() {
   }
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners

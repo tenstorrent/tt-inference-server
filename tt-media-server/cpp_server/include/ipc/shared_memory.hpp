@@ -42,6 +42,8 @@ struct alignas(64) SharedToken {
 
 static_assert(sizeof(SharedToken) == 128, "SharedToken must be 128 bytes for cache alignment");
 
+struct SharedEmbedding {};
+
 /**
  * Shared memory ring buffer header.
  * Lives at the start of the shared memory region.
@@ -88,6 +90,11 @@ public:
 
         int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
         mode_t mode = S_IRUSR | S_IWUSR;
+
+        if (create) {
+            // Unlink existing shared memory to ensure clean state
+            shm_unlink(name.c_str());
+        }
 
         shm_fd_ = shm_open(name.c_str(), flags, mode);
         if (shm_fd_ < 0) {

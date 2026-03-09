@@ -153,7 +153,7 @@ struct ChatCompletionRequest: BaseRequest {
         CompletionRequest out;
         out.task_id = task_id;
         out.model = model;
-        out.prompt = tt::utils::Tokenizer::apply_chat_template(messages);
+        out.prompt = tt::utils::active_tokenizer().apply_chat_template(messages);
 
         out.echo = echo;
         out.max_tokens = max_tokens;

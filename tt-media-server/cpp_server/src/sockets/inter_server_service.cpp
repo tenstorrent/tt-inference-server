@@ -16,10 +16,10 @@ InterServerService::~InterServerService() {
 }
 
 bool InterServerService::initializeFromConfig() {
-    auto role = tt::config::socket_role();
+    auto mode = tt::config::llm_mode();
 
-    if (role == tt::config::SocketRole::NONE) {
-        std::cout << "[InterServerService] Socket communication disabled (SOCKET_ROLE not set)" << std::endl;
+    if (mode == tt::config::LLMMode::REGULAR) {
+        std::cout << "[InterServerService] Socket communication disabled (regular mode)" << std::endl;
         enabled_ = false;
         return false;
     }
@@ -29,10 +29,10 @@ bool InterServerService::initializeFromConfig() {
 
     bool success = false;
 
-    if (role == tt::config::SocketRole::SERVER) {
+    if (mode == tt::config::LLMMode::DECODE_ONLY) {
         std::cout << "[InterServerService] Initializing as server on port " << port << std::endl;
         success = socket_manager_.initializeAsServer(port);
-    } else if (role == tt::config::SocketRole::CLIENT) {
+    } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
         std::cout << "[InterServerService] Initializing as client to " << host << ":" << port << std::endl;
         success = socket_manager_.initializeAsClient(host, port);
     }
@@ -70,42 +70,29 @@ bool InterServerService::isEnabled() const {
     return enabled_;
 }
 
-bool InterServerService::forwardTask(const std::string& task_id,
+bool InterServerService::sendPrefillRequest(const std::string& task_id,
                                     const std::string& prompt,
-                                    int max_tokens,
-                                    float temperature,
-                                    const std::vector<std::string>& stop_sequences) {
+                                    const std::vector<int64_t>& token_ids,
+                                    int max_tokens) {
     if (!enabled_) {
         return false;
     }
 
-    TaskForwardMessage message;
+    PrefillRequestMessage message;
     message.task_id = task_id;
     message.prompt = prompt;
+    message.token_ids = token_ids;
     message.max_tokens = max_tokens;
-    message.temperature = temperature;
-    message.stop_sequences = stop_sequences;
 
-    return socket_manager_.sendObject("task_forward", message);
+    return socket_manager_.sendObject("prefill_request", message);
 }
 
-bool InterServerService::sendTaskResult(const std::string& task_id,
-                                       const std::string& result,
-                                       bool finished,
-                                       int tokens_generated,
-                                       double processing_time_ms) {
+bool InterServerService::sendPrefillResult(const PrefillResultMessage& message) {
     if (!enabled_) {
         return false;
     }
 
-    TaskResultMessage message;
-    message.task_id = task_id;
-    message.generated_text = result;
-    message.finished = finished;
-    message.tokens_generated = tokens_generated;
-    message.processing_time_ms = processing_time_ms;
-
-    return socket_manager_.sendObject("task_result", message);
+    return socket_manager_.sendObject("prefill_result", message);
 }
 
 bool InterServerService::sendHealthCheck(const std::string& server_id,
@@ -125,16 +112,20 @@ bool InterServerService::sendHealthCheck(const std::string& server_id,
     return socket_manager_.sendObject("health_check", message);
 }
 
-void InterServerService::setTaskForwardCallback(TaskCallback callback) {
-    task_forward_callback_ = callback;
+void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
+    prefill_requested_callback_ = callback;
 }
 
-void InterServerService::setTaskResultCallback(TaskCallback callback) {
-    task_result_callback_ = callback;
+void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
+    prefill_complete_callback_ = callback;
 }
 
 void InterServerService::setHealthCheckCallback(HealthCallback callback) {
     health_check_callback_ = callback;
+}
+
+void InterServerService::setConnectionLostCallback(std::function<void()> callback) {
+    socket_manager_.setConnectionLostCallback(std::move(callback));
 }
 
 bool InterServerService::isConnected() const {
@@ -149,23 +140,25 @@ std::string InterServerService::getStatus() const {
 }
 
 void InterServerService::setupMessageHandlers() {
-    // Handle incoming task forwards
-    socket_manager_.registerHandler<TaskForwardMessage>("task_forward",
-        [this](const TaskForwardMessage& message) {
-            std::cout << "[InterServerService] Received task forward: " << message.task_id
-                      << " - " << message.prompt.substr(0, 50) << "..." << std::endl;
-            if (task_forward_callback_) {
-                task_forward_callback_(message.task_id, message.prompt, false);
+    // Handle incoming prefill requests
+    socket_manager_.registerHandler<PrefillRequestMessage>("prefill_request",
+        [this](const PrefillRequestMessage& message) {
+            std::cout << "[InterServerService] Received prefill request: " << message.task_id
+                      << " (tokens: " << message.token_ids.size() << ")" << std::endl;
+            if (prefill_requested_callback_) {
+                prefill_requested_callback_(message);
             }
         });
 
-    // Handle incoming task results
-    socket_manager_.registerHandler<TaskResultMessage>("task_result",
-        [this](const TaskResultMessage& message) {
-            std::cout << "[InterServerService] Received task result: " << message.task_id
-                      << " - " << message.generated_text.substr(0, 50) << "..." << std::endl;
-            if (task_result_callback_) {
-                task_result_callback_(message.task_id, message.generated_text, message.finished);
+    // Handle incoming prefill results
+    socket_manager_.registerHandler<PrefillResultMessage>("prefill_result",
+        [this](const PrefillResultMessage& message) {
+            std::cout << "[InterServerService] Received prefill result: " << message.task_id
+                      << " - text: '" << message.generated_text.substr(0, 50)
+                      << "', remaining: " << message.remaining_tokens
+                      << ", token_ids: " << message.token_ids.size() << std::endl;
+            if (prefill_complete_callback_) {
+                prefill_complete_callback_(message);
             }
         });
 

@@ -4,7 +4,10 @@
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
+#include "ipc/shared_memory.hpp"
 #include <gtest/gtest.h>
+#include <atomic>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include "runners/llm_runner/in_memory_task_queue.hpp"
@@ -15,13 +18,8 @@ std::shared_ptr<ITaskQueue> make_queue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
-std::unique_ptr<Scheduler> make_scheduler(const Config& config,
-                                           ITaskQueue* task_queue) {
-  return std::make_unique<Scheduler>(config, task_queue);
-}
-
 Config make_engine_config(int num_blocks = 128, int block_size = 8,
-                          int eos = 0) {
+                          int eos = 32) {
   Config c;
   c.num_kvcache_blocks = num_blocks;
   c.kvcache_block_size = block_size;
@@ -42,18 +40,12 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
       {{7, 8, 9, 10, 11, 12}, 20},
   };
 
-  std::unordered_map<TaskID, std::vector<int64_t>> received_tokens;
-  int finished_count = 0;
   int total_requests = static_cast<int>(requests.size());
-
   auto task_queue = make_queue();
 
-  tt::runners::LLMRunner engine{config, [&](const TokenResult& result) {
-      received_tokens[result.task_id].push_back(result.token_id);
-      if (result.finished.value_or(false) && ++finished_count == total_requests) {
-        engine.stop();
-      }
-    }, task_queue.get()};
+  tt::ipc::TokenRingBuffer<65536> result_queue("/test_llm_runner_tokens", true);
+
+  tt::runners::LLMRunner engine{config, &result_queue, task_queue.get()};
 
   std::vector<TaskID> task_ids;
   for (const auto& req : requests) {
@@ -62,9 +54,28 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     task_ids.push_back(seq.task_id);
   }
 
-  engine.run();
+  std::unordered_map<TaskID, std::vector<int64_t>> received_tokens;
+  std::atomic<int> finished_count{0};
 
-  ASSERT_EQ(finished_count, total_requests);
+  std::thread consumer([&]() {
+    tt::ipc::SharedToken token;
+    while (finished_count.load() < total_requests) {
+      if (result_queue.pop(token)) {
+        TaskID tid;
+        tid.id = std::string(token.task_id);
+        received_tokens[tid].push_back(static_cast<int64_t>(token.token_id));
+        if (token.is_final()) {
+          finished_count.fetch_add(1);
+        }
+      }
+    }
+    engine.stop();
+  });
+
+  engine.run();
+  consumer.join();
+
+  ASSERT_EQ(finished_count.load(), total_requests);
 
   // 1st published token in the mocked prefill is always whitespace token id=223
   // The followed tokens using the mocked runner are increments of 223
@@ -90,6 +101,8 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   EXPECT_EQ(received_tokens[task_ids[0]], expected_seq0);
   EXPECT_EQ(received_tokens[task_ids[1]], expected_seq1);
   EXPECT_EQ(received_tokens[task_ids[2]], expected_seq2);
+
+  result_queue.shutdown();
 }
 
 }  // namespace
