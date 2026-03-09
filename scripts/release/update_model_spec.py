@@ -44,6 +44,23 @@ from workflows.model_spec import (
 )
 
 
+# Templates that should never be updated or included in doc generation,
+# identified by (impl_id, first_weight, frozenset of device names).
+SKIP_TEMPLATES = {
+    ("qwen3_32b_galaxy", "Qwen/Qwen3-32B", frozenset({"GALAXY"})),
+    ("llama3_70b_galaxy", "meta-llama/Llama-3.3-70B-Instruct", frozenset({"GALAXY"})),
+    ("tt_transformers", "meta-llama/Llama-3.1-8B", frozenset({"GALAXY", "GALAXY_T3K"})),
+}
+
+
+def is_skip_template(template):
+    """Check if a template matches any SKIP_TEMPLATES entry."""
+    weights = template.weights
+    devices = frozenset(spec.device.name for spec in template.device_model_specs)
+    key = (template.impl.impl_id, weights[0] if weights else "", devices)
+    return key in SKIP_TEMPLATES
+
+
 def map_perf_status_to_model_status(perf_status):
     """Map CI perf_status string to ModelStatusTypes enum value."""
     status_map = {
@@ -503,10 +520,11 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     sys.modules["model_spec_docs"] = model_spec_module
     spec.loader.exec_module(model_spec_module)
 
-    templates = model_spec_module.spec_templates
+    all_templates = model_spec_module.spec_templates
+    templates = [t for t in all_templates if not is_skip_template(t)]
     output_path = Path(output_dir)
 
-    print(f"Generating Model Support documentation from {len(templates)} templates")
+    print(f"Generating Model Support documentation from {len(templates)} templates (skipped {len(all_templates) - len(templates)} SKIP_TEMPLATES)")
     print(f"Output directory: {output_path}")
 
     # Note: docs/model_support/README.md is no longer generated.
@@ -589,7 +607,7 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     model_spec_module = importlib.util.module_from_spec(spec)
     sys.modules["model_spec_readme"] = model_spec_module
     spec.loader.exec_module(model_spec_module)
-    templates = model_spec_module.spec_templates
+    templates = [t for t in model_spec_module.spec_templates if not is_skip_template(t)]
 
     # Generate the model support content directly (no intermediate file)
     model_support_content = generate_directory_readme(templates)
@@ -750,14 +768,6 @@ def main():
     updates_made = 0
     update_records = []  # Track updates for markdown generation
 
-    # Templates that should never be updated by this script, identified by
-    # (impl_id, first_weight, frozenset of device names).
-    SKIP_TEMPLATES = {
-        ("qwen3_32b_galaxy", "Qwen/Qwen3-32B", frozenset({"GALAXY"})),
-        ("llama3_70b_galaxy", "meta-llama/Llama-3.3-70B-Instruct", frozenset({"GALAXY"})),
-        ("tt_transformers", "meta-llama/Llama-3.1-8B", frozenset({"GALAXY", "GALAXY_T3K"})),
-    }
-
     for template in spec_templates:
         # Log template being processed
         impl_name = template.impl.impl_name
@@ -769,12 +779,7 @@ def main():
         )
 
         # Check if this template is in the skip list
-        template_key = (
-            template.impl.impl_id,
-            weights[0] if weights else "",
-            frozenset(devices),
-        )
-        if template_key in SKIP_TEMPLATES:
+        if is_skip_template(template):
             print("  Template is in SKIP_TEMPLATES list. Skipping.")
             continue
 
