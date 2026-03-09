@@ -9,6 +9,8 @@ import os
 import re
 from typing import Any, AsyncGenerator, Dict, List
 
+from num2words import num2words
+
 import soundfile as sf
 import torch
 import ttnn
@@ -54,7 +56,7 @@ MAX_KV_STEPS = 800
 # Encoder sizes to warm-up and capture traces for.
 # 32/64 cover short texts; 128/256 cover typical chunked inputs.
 # 384 causes L1 OOM on N150 — max supported is 256.
-WARMUP_ENCODER_SIZES = [32, 64, 128, 256]
+WARMUP_ENCODER_SIZES = [32, 64, 128, 160, 192, 256]
 
 
 def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None) -> List[str]:
@@ -120,6 +122,44 @@ def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=No
         chunks.append(current)
 
     return chunks
+
+
+def normalize_text_for_tts(text: str) -> str:
+    """Normalize text for SpeechT5 by converting numbers to spoken-word form.
+
+    SpeechT5 was not trained robustly on digit tokens, so bare numbers like
+    "9" or "133.9" are often skipped or garbled. Converting them to words
+    ("nine", "one hundred and thirty-three point nine") gives the model tokens
+    it can pronounce reliably.
+
+    Handles: ordinals (1st, 2nd), decimals (133.9), number+unit (250cc),
+    and plain integers (9, 122).
+    """
+    # Ordinals first (e.g. "1st", "23rd") — before plain integers
+    def _ordinal(m):
+        return num2words(int(m.group(1)), to="ordinal")
+
+    text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", _ordinal, text, flags=re.IGNORECASE)
+
+    # Decimals (e.g. "133.9") — before plain integers so the dot isn't stranded
+    def _decimal(m):
+        return num2words(float(m.group(0)))
+
+    text = re.sub(r"\b\d+\.\d+\b", _decimal, text)
+
+    # Number+unit (e.g. "250cc") — split into "two hundred and fifty cc"
+    def _number_unit(m):
+        return num2words(int(m.group(1))) + " " + m.group(2)
+
+    text = re.sub(r"\b(\d+)([a-zA-Z]+)\b", _number_unit, text)
+
+    # Plain integers (e.g. "9", "122")
+    def _integer(m):
+        return num2words(int(m.group(0)))
+
+    text = re.sub(r"\b\d+\b", _integer, text)
+
+    return text
 
 
 class SpeechT5Constants:
@@ -373,13 +413,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         # First compile encoder and postnet kernels with dummy inputs
         self._warmup_encoder_and_postnet()
 
-        # Synthetic texts: token counts that pad to 32, 64, 128, 256 respectively.
+        # Synthetic texts: token counts that pad to 32, 64, 128, 160, 192, 256 respectively.
         # These are the same texts used in demo_ttnn.py's warm-up.
         warmup_texts_per_size = {
-            32:  "Hi.",              # ~5 tokens  -> pads to 32
-            64:  "A " * 17,          # ~35 tokens -> pads to 64
-            128: "A " * 35,          # ~71 tokens -> pads to 128
-            256: "A " * 65,          # ~131 tokens -> pads to 256
+            32:  "A " * 15,          # ~31 tokens -> pads to 32
+            64:  "A " * 31,          # ~63 tokens -> pads to 64
+            128: "A " * 63,          # ~127 tokens -> pads to 128
+            160: "A " * 79,          # ~159 tokens -> pads to 160
+            192: "A " * 95,          # ~191 tokens -> pads to 192
+            256: "A " * 127,         # ~255 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
@@ -405,12 +447,14 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         - This pre-compiles encoder kernels for both canonical shapes so any real
           input reuses the cached kernel → consistent TTFT on cold and warm cache.
         """
-        # Synthetic texts: produce token counts that pad to 32, 64, 128, 256 respectively
+        # Synthetic texts: produce token counts that pad to 32, 64, 128, 160, 192, 256 respectively
         warmup_texts_per_size = {
-            32:  "Hi.",              # ~5 tokens  -> pads to 32
-            64:  "A " * 17,          # ~35 tokens -> pads to 64
-            128: "A " * 35,          # ~71 tokens -> pads to 128
-            256: "A " * 65,          # ~131 tokens -> pads to 256
+            32:  "A " * 15,          # ~31 tokens -> pads to 32
+            64:  "A " * 31,          # ~63 tokens -> pads to 64
+            128: "A " * 63,          # ~127 tokens -> pads to 128
+            160: "A " * 79,          # ~159 tokens -> pads to 160
+            192: "A " * 95,          # ~191 tokens -> pads to 192
+            256: "A " * 127,         # ~255 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
@@ -434,7 +478,16 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 device=self.ttnn_device,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
-            _ = self.ttnn_encoder(dummy_ttnn_ids)
+            # Pass encoder self-attention mask during warmup so the same code path
+            # (with the ttnn.add for mask) is compiled as during real inference.
+            warmup_mask = None
+            if real_seq_len < padded_seq_len:
+                m = torch.zeros(1, 1, padded_seq_len, dtype=torch.float32)
+                m[:, :, real_seq_len:] = -1e9
+                warmup_mask = ttnn.from_torch(
+                    m, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device
+                )
+            _ = self.ttnn_encoder(dummy_ttnn_ids, attention_mask=warmup_mask)
             ttnn.deallocate(dummy_ttnn_ids)
             self.logger.info(
                 f"Device {self.device_id}: Encoder warm-up done for size {enc_size}"
@@ -504,15 +557,26 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
 
-        encoder_hidden_states = self.ttnn_encoder(ttnn_input_ids)[0]
+        # Build encoder self-attention mask so pad tokens cannot corrupt real token
+        # representations. Shape [1, 1, padded_seq_len] broadcasts over
+        # [batch*heads, seq_len, seq_len] inside each encoder attention layer.
+        encoder_self_attn_mask = None
+        if real_seq_len < padded_seq_len:
+            mask = torch.zeros(1, 1, padded_seq_len, dtype=torch.float32)
+            mask[:, :, real_seq_len:] = -1e9
+            encoder_self_attn_mask = ttnn.from_torch(
+                mask, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device
+            )
+
+        encoder_hidden_states = self.ttnn_encoder(ttnn_input_ids, attention_mask=encoder_self_attn_mask)[0]
 
         use_trace = self.generator is not None
 
-        # Scale max_steps by token count: ~3 mel frames per input token.
-        # Capped at MAX_KV_STEPS to stay within pre-allocated KV cache.
-        chunk_max_steps = min(
-            max(SpeechT5Constants.MAX_STEPS, real_seq_len * 3), MAX_KV_STEPS
-        )
+        # Always allow the full KV cache budget so the stop condition can fire naturally.
+        # The stop logits stay near zero throughout speech generation then spike sharply
+        # (e.g. sum_prob ~1e-5 during speech, then 0.99 at the natural end).
+        # Capping below MAX_KV_STEPS risks truncating before that spike occurs.
+        chunk_max_steps = MAX_KV_STEPS
 
         import time as _time
         if use_trace:
@@ -670,6 +734,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Generate audio with automatic chunking for long texts (matches demo_ttnn.py)."""
         try:
+            text = normalize_text_for_tts(text)
             chunks = chunk_text(text, processor=self.processor)
             if len(chunks) > 1:
                 self.logger.info(f"Long text ({len(text)} chars) split into {len(chunks)} chunks")
