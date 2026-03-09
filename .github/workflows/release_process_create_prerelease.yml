@@ -369,3 +369,78 @@ jobs:
           echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
           mkdir -p workflow_logs/docker_build_logs
           python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --push
+
+  get-tt-metal-commits-for-media-image-builds:
+    needs: [get-tt-inference-commit, create-prerelease]
+    runs-on: ubuntu-latest
+    outputs:
+      commits: ${{ steps.get-commits.outputs.commits }}
+    steps:
+      - name: Checkout tt-inference branch
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-inference-server
+          ref: ${{ needs.create-prerelease.outputs.branch_name }}
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Get tt-metal commits for media models
+        id: get-commits
+        run: |
+          python -c "
+          import sys, json
+          from pathlib import Path
+          sys.path.insert(0, str(Path('scripts/build_docker_images.py').resolve().parent.parent))
+          from workflows.model_spec import MODEL_SPECS
+
+          # Get unique tt-metal commits for media models (vllm_commit is None, no hardcoded docker_image)
+          commits = sorted(set(
+              config.tt_metal_commit
+              for config in MODEL_SPECS.values()
+              if config.vllm_commit is None and not config.skip_build and config.docker_image is None
+          ))
+          print(json.dumps(commits))
+          " > commits.json
+
+          echo "commits=$(cat commits.json)" >> $GITHUB_OUTPUT
+          echo "Found media model commits: $(cat commits.json)"
+
+  build-and-push-media-images:
+    needs: [get-tt-inference-commit, get-tt-metal-commits-for-media-image-builds, create-prerelease]
+    runs-on: tt-ubuntu-2204-large-stable
+    strategy:
+      fail-fast: false
+      matrix:
+        tt_metal_commit: ${{ fromJson(needs.get-tt-metal-commits-for-media-image-builds.outputs.commits) }}
+    steps:
+      - name: Checkout tt-inference branch
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-inference-server
+          ref: ${{ needs.create-prerelease.outputs.branch_name }}
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          registry: https://ghcr.io
+          username: vmaksimovicTT
+          password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      - name: Build media image for ${{ matrix.tt_metal_commit }}
+        run: |
+          IMAGE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          IMAGE_TAG="ghcr.io/tenstorrent/tt-media-inference-server:${IMAGE_VERSION}-${{ matrix.tt_metal_commit }}"
+          echo "Building media image: $IMAGE_TAG"
+
+          docker build --no-cache \
+            -t "$IMAGE_TAG" \
+            --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${{ matrix.tt_metal_commit }}" \
+            -f tt-media-server/Dockerfile .
+
+          docker push "$IMAGE_TAG"
+          echo "✓ Pushed: $IMAGE_TAG"
