@@ -123,7 +123,18 @@ jobs:
           ARTIFACTS_DIR="${{ steps.download.outputs.artifacts_dir }}"
 
           # Find tt-inference-server build metadata
+          echo "Searching for build metadata in: $ARTIFACTS_DIR"
+          echo "Directory contents:"
+          find "$ARTIFACTS_DIR" -type f | head -n 50
+
           TT_JSON=$(find "$ARTIFACTS_DIR" -path "*tt-inference-server-build-*/*.json" -type f | head -n 1)
+
+          if [ -z "$TT_JSON" ]; then
+            echo "❌ Error: No tt-inference-server build metadata JSON found in artifacts"
+            exit 1
+          fi
+
+          echo "✓ Found metadata file: $TT_JSON"
 
           if [ -n "$TT_JSON" ]; then
             TT_METAL_COMMIT=$(jq -r '.["tt-metal-commit"] // empty' "$TT_JSON")
