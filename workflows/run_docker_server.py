@@ -256,6 +256,9 @@ def generate_docker_run_command(
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
+    if runtime_config.disable_metal_timeout:
+        docker_command.extend(["-e", "DISABLE_METAL_OP_TIMEOUT=1"])
+
     docker_command.append(model_spec.docker_image)
     # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
