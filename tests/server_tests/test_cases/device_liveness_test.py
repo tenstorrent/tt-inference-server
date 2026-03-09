@@ -74,7 +74,7 @@ class DeviceLivenessTest(BaseTest):
                         raise Exception(
                             f"❌ Device count mismatch: Expected {expected_devices} ready devices, "
                             f"but found {ready_count} ready workers. "
-                            f"Ready workers: {ready_workers}"
+                            f"Ready workers: {ready_workers}\n"
                         )
 
                     # Additional check: ensure ready workers are also alive
