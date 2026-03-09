@@ -49,7 +49,7 @@ private:
      * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      */
     void handle_streaming(
-        domain::CompletionRequest request,
+        std::shared_ptr<domain::CompletionRequest> req_ptr,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         bool is_chat) const;
 
