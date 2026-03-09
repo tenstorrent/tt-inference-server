@@ -262,7 +262,7 @@ jobs:
           # Add metadata as HTML comment for tracking
           echo "<!--" > "$PR_BODY_FILE"
           echo "metadata:run_id=${{ inputs.release-candidate-run-id }}" >> "$PR_BODY_FILE"
-          echo "metadata:version=v${VERSION}" >> "$PR_BODY_FILE"
+          echo "metadata:version=v${{ steps.read-version.outputs.version }}" >> "$PR_BODY_FILE"
           echo "-->" >> "$PR_BODY_FILE"
           echo "# Summary of Changes" >> "$PR_BODY_FILE"
           echo "" >> "$PR_BODY_FILE"
