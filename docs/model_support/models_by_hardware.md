@@ -14,11 +14,13 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [stable-diffusion-3.5-large](image/stable-diffusion-3.5-large_galaxy.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_galaxy.md) |
+| 🟢 Complete | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_galaxy.md) |
+| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_galaxy.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_galaxy.md) |
 | 🟡 Functional | Image | [Qwen-Image](image/Qwen-Image_galaxy.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen2.5-72B](llm/Qwen2.5-72B_galaxy.md) |
-| 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_galaxy.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_galaxy.md) |
 | 🟡 Functional | LLM | [QwQ-32B](llm/QwQ-32B_galaxy.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_galaxy.md) |
@@ -28,6 +30,18 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_galaxy.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
+
+## [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300x2.md) |
+| 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_p300x2.md) |
+| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
+| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
+| 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
+| 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
 
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
@@ -51,17 +65,13 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
-## [p150](https://tenstorrent.com/hardware/blackhole)
+## [BH P300](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
 |--------|------|-------|
-| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
-
-## [p100](https://tenstorrent.com/hardware/blackhole)
-
-| Status | Type | Model |
-|--------|------|-------|
-| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300.md) |
+| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_p300.md) |
 
 ## [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox)
 
@@ -99,6 +109,18 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-32B-Instruct](vlm/Qwen2.5-VL-32B-Instruct_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen3-VL-32B-Instruct](vlm/Qwen3-VL-32B-Instruct_t3k.md) |
+
+## [p150](https://tenstorrent.com/hardware/blackhole)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
+
+## [p100](https://tenstorrent.com/hardware/blackhole)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
 
 ## [n300](https://tenstorrent.com/hardware/wormhole)
 

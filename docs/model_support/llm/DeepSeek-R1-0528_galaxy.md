@@ -12,21 +12,6 @@ See [prerequisites](../../prerequisites.md) for system software setup, e.g. for 
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
 
-**docker run command**
-
-```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_DeepSeek-R1-0528:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e3d97e5-a186bf4 \
-  --model DeepSeek-R1-0528 \
-  --tt-device galaxy
-```
-
 **via run.py command**
 
 ```bash
