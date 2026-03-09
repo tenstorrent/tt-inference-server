@@ -5,12 +5,18 @@
 
 #include <concepts>
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
 namespace tt::services {
+
+class QueueFullException : public std::runtime_error {
+public:
+    QueueFullException() : std::runtime_error("Request queue is full, please retry later") {}
+};
 
 struct WorkerInfo {
     std::string worker_id;

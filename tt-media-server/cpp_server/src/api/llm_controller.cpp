@@ -151,6 +151,15 @@ void LLMController::completions(
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto response = service_->submit_request(std::move(*request));
+        try {
+            response = service_->submit_request(std::move(*request));
+        } catch (const services::QueueFullException& e) {
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                error_json(e.what(), "rate_limit_exceeded"));
+            resp->setStatusCode(drogon::k429TooManyRequests);
+            callback(resp);
+            return;
+        }
         auto end_time = std::chrono::high_resolution_clock::now();
 
         response.id = "cmpl-" + response.id;
@@ -213,14 +222,6 @@ void LLMController::chat_completions(
         return;
     }
 
-    if (service_->is_queue_full()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
-        resp->setStatusCode(drogon::k429TooManyRequests);
-        callback(resp);
-        return;
-    }
-
     auto request = std::make_shared<domain::CompletionRequest>(chat_req.to_completion_request());
 
     if (request->stream) {
@@ -228,6 +229,15 @@ void LLMController::chat_completions(
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto completion = service_->submit_request(std::move(*request));
+        try {
+            completion = service_->submit_request(std::move(*request));
+        } catch (const services::QueueFullException& e) {
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(
+                error_json(e.what(), "rate_limit_exceeded"));
+            resp->setStatusCode(drogon::k429TooManyRequests);
+            callback(resp);
+            return;
+        }
         auto end_time = std::chrono::high_resolution_clock::now();
 
         completion.id = "chatcmpl-" + completion.id;
@@ -252,6 +262,14 @@ void LLMController::handle_streaming(
     bool is_chat) const {
 
     ZoneScopedN("API::handle_streaming");
+
+    if (service_->is_queue_full()) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
+        resp->setStatusCode(drogon::k429TooManyRequests);
+        callback(resp);
+        return;
+    }
 
     const std::string completion_id =
         (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id.id;
