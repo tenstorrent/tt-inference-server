@@ -152,28 +152,31 @@ std::string visible_devices_for_worker(size_t worker_index) {
 }
 
 llm_engine::Config llm_engine_config() {
+    // Select model-specific config based on RUNNER_TYPE env var
+    const char* v = std::getenv("RUNNER_TYPE");
+    std::string backend = v ? std::string(v) : "mock";
+
     llm_engine::Config cfg;
-    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
-    const char* v = std::getenv("LLM_DEVICE_BACKEND");
-    if (v) {
-        std::string s(v);
-        if (s == "ttrun") {
-            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
-        } else if (s == "llama") {
-            cfg.max_in_flight_count = 16;
-            cfg.max_num_seqs = 16;
-            cfg.kvcache_block_size = 32;
-            cfg.max_num_batched_tokens = 16384;
-            cfg.runner_type = llm_engine::ModelRunnerType::Llama;
-        } else {
-            cfg.runner_type = llm_engine::ModelRunnerType::Mock;
-        }
+
+    // Create config from model-specific profile
+    if (backend == "llama") {
+        cfg = llm_engine::LlamaConfig::create();
+    } else if (backend == "ttrun") {
+        cfg = llm_engine::DeepseekConfig::create();
+        cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+    } else {  // "mock" or default
+        cfg = llm_engine::DeepseekConfig::create();
+        cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
+
+    // Set model-specific stop tokens from tokenizer
+    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
+
     return cfg;
 }
 
 ModelType model_type() {
-    return model_type_from_device_backend(env_string("LLM_DEVICE_BACKEND", "mock"));
+    return model_type_from_device_backend(env_string("RUNNER_TYPE", "mock"));
 }
 
 LLMMode llm_mode() {

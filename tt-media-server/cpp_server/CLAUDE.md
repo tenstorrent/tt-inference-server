@@ -20,7 +20,7 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
 ```
 
-Model selection is at runtime via `LLM_DEVICE_BACKEND` env var (default: `mock` = DeepSeek V3; `llama` = Llama 3.1 8B Instruct).
+Model selection is at runtime via `RUNNER_TYPE` env var (default: `mock` = DeepSeek V3; `llama` = Llama 3.1 8B Instruct).
 
 ### Running the Server
 
@@ -94,7 +94,7 @@ The server operates in two modes via `MODEL_SERVICE` environment variable:
 
 ### Runner Types and Model Selection
 
-Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment variable. This selects the
+Runner type and tokenizer are selected via `RUNNER_TYPE` environment variable. This selects the
 tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
 the `Tokenizer` subclass hierarchy (`utils/tokenizer.hpp`):
 
@@ -108,7 +108,7 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `LLM_DEVICE_BACKEND`: `mock` or `ttrun` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
+- `RUNNER_TYPE`: `mock` or `ttrun` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
 - `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
@@ -164,7 +164,7 @@ per-model subdirectories under `tokenizers/`:
 - `tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json` + `tokenizer_config.json`
 - `tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json` + `tokenizer_config.json`
 
-The active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND`. To add a
+The active tokenizer is selected at runtime based on `RUNNER_TYPE`. To add a
 new model, manually download tokenizer files into `tokenizers/<org>/<model>/`.
 
 ## Performance Characteristics
