@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 
 from workflows.log_setup import clean_log_file
@@ -230,6 +231,17 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
+
+    # Mount the host HuggingFace cache into the container so that from_pretrained()
+    # can resolve cached weights without downloading from the network.
+    container_hf_home = f"{setup_config.containter_user_home}/hf_home"
+    if setup_config.host_hf_home and Path(setup_config.host_hf_home).is_dir():
+        docker_command.extend([
+            "--mount", f"type=bind,src={setup_config.host_hf_home},dst={container_hf_home},readonly"
+        ])
+        docker_env_vars["HF_HOME"] = container_hf_home
+        docker_env_vars["HF_HUB_OFFLINE"] = "1"
+        logger.info(f"Mounting HF cache: {setup_config.host_hf_home} -> {container_hf_home} (offline mode)")
 
     if args.interactive:
         docker_command.append("-itd")
