@@ -63,6 +63,12 @@ class StepSequence:
     current_pos: int
     prompt_len: int
     seed: int | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
 
 
 @dataclass
@@ -86,7 +92,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     - warmup_prefill=True (default) compiles operators and captures traces;
       skipping it causes "unsafe device buffer allocation" that corrupts output.
     - enable_trace=True for decode to match vLLM behaviour.
-    - Sampling is done on host from returned logits.
+    - Sampling is done on device using SamplingParams forwarded from C++.
     """
 
     def __init__(self, device_id: str):
@@ -112,6 +118,19 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         n = min(len(block_ids), max_blocks)
         page_table[0, :n] = torch.tensor(block_ids[:n], dtype=torch.int32)
         return page_table
+
+    def _build_sampling_params(self, seq: StepSequence) -> SamplingParams:
+        """Build SamplingParams from StepSequence sampling fields."""
+        return SamplingParams(
+            top_p=seq.top_p if seq.top_p is not None else 1.0,
+            top_k=seq.top_k if seq.top_k is not None else 0,
+            min_p=seq.min_p,
+            repetition_penalty=seq.repetition_penalty,
+            presence_penalty=seq.presence_penalty,
+            frequency_penalty=seq.frequency_penalty,
+            temperature=seq.temperature,
+            seed=seq.seed,
+        )
 
     def _allocate_kv_cache(self) -> None:
         import torch
@@ -217,13 +236,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         prompt_len = len(seq.token_ids)
         page_table = self._page_table_from_block_ids(seq.block_table, torch)
         tokens = torch.tensor([seq.token_ids], dtype=torch.int64)
-
-        sampling_params = SamplingParams(
-            top_p=1.0,
-            top_k=0,
-            temperature=seq.temperature,
-            seed=seq.seed,
-        )
+        sampling_params = self._build_sampling_params(seq)
 
         # When device sampling is enabled, returns (tokens, log_probs)
         output_tokens, _log_probs = self.model.prefill_forward(
@@ -250,13 +263,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         last_token = seq.token_ids[-1]
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         current_pos = torch.tensor([seq.current_pos], dtype=torch.int64)
-
-        sampling_params = SamplingParams(
-            top_p=1.0,
-            top_k=0,
-            temperature=seq.temperature,
-            seed=seq.seed,
-        )
+        sampling_params = self._build_sampling_params(seq)
 
         output_tokens, _log_probs = self.model.decode_forward(
             tokens,
@@ -298,12 +305,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
         # Use first sequence's sampling params for the batch
         # In batched mode, all sequences share the same sampling parameters
-        sampling_params = SamplingParams(
-            top_p=1.0,
-            top_k=0,
-            temperature=sequences[0].temperature,
-            seed=sequences[0].seed,
-        )
+        sampling_params = self._build_sampling_params(sequences[0])
 
         # When device sampling is enabled, returns (tokens, log_probs)
         output_tokens, _log_probs = self.model.decode_forward(
