@@ -353,6 +353,7 @@ python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K 
 
 Run server workflow in Docker bound to localhost only:
 
+```bash
     python3 run.py --model Llama-3.3-70B-Instruct --workflow server --device T3K --docker-server --bind-host 127.0.0.1
 
 Run with custom service port and additional workflow arguments:
