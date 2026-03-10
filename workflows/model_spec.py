@@ -254,7 +254,7 @@ tt_vllm_plugin_impl = ImplSpec(
 )
 cpp_server_impl = ImplSpec(
     impl_id="cpp_server",
-    impl_name="cpp_server",
+    impl_name="cpp-server",
     repo_url="https://github.com/tenstorrent/tt-media-server/tree/main/cpp_server",
     code_path="cpp_server",
 )
