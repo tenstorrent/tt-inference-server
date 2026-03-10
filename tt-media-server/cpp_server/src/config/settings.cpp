@@ -72,8 +72,7 @@ std::vector<std::string> parse_device_ids(const std::string& raw) {
 
 const std::vector<std::string>& device_ids_parsed() {
     static std::vector<std::string> cached;
-    const char* env = std::getenv("DEVICE_IDS");
-    std::string current = (env && *env) ? std::string(env) : std::string(defaults::DEVICE_IDS);
+    std::string current = env_string("DEVICE_IDS", defaults::DEVICE_IDS);
     static std::string last_env;
     if (current != last_env) {
         last_env = std::move(current);
