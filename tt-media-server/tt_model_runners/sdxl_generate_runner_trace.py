@@ -82,6 +82,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         )
 
         self._apply_request_settings(requests[0])
+        self._ensure_lora_state(requests[0])
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 

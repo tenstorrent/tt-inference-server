@@ -28,6 +28,8 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         self.tt_sdxl: TtSDXLPipeline = None
         self.batch_size = 0
         self.pipeline = None
+        self._current_lora_path: str | None = None
+        self._current_lora_scale: float | None = None
 
     def get_pipeline_device_params(self):
         device_params = {
@@ -200,6 +202,40 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         if request.timesteps is not None and request.sigmas is not None:
             raise ValueError("Cannot pass both timesteps and sigmas. Choose one.")
 
+    def _ensure_lora_state(self, request: ImageGenerateRequest) -> None:
+        requested_path = request.lora_path
+        requested_scale = request.lora_scale
+
+        needs_change = requested_path != self._current_lora_path or (
+            requested_path is not None and requested_scale != self._current_lora_scale
+        )
+        if not needs_change:
+            return
+
+        if self._current_lora_path is not None:
+            self.logger.info(
+                f"Device {self.device_id}: Unloading LoRA adapter: {self._current_lora_path}"
+            )
+            self.tt_sdxl.unload_lora_weights()
+            self._current_lora_path = None
+            self._current_lora_scale = None
+
+        if requested_path is not None:
+            try:
+                self.logger.info(
+                    f"Device {self.device_id}: Loading LoRA adapter: {requested_path} (scale={requested_scale})"
+                )
+                self.tt_sdxl.load_lora_weights(requested_path)
+                self.tt_sdxl.fuse_lora(requested_scale)
+                self._current_lora_path = requested_path
+                self._current_lora_scale = requested_scale
+            except Exception as e:
+                self._current_lora_path = None
+                self._current_lora_scale = None
+                raise RuntimeError(
+                    f"Failed to load LoRA adapter '{requested_path}': {e}"
+                ) from e
+
     def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []
         self.logger.info(f"Device {self.device_id}: Starting ttnn inference...")
@@ -234,4 +270,6 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             and request.sigmas == first_request.sigmas
             and request.prompt_2 == first_request.prompt_2
             and request.negative_prompt_2 == first_request.negative_prompt_2
+            and request.lora_path == first_request.lora_path
+            and request.lora_scale == first_request.lora_scale
         )
