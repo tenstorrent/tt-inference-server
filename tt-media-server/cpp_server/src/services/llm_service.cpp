@@ -6,6 +6,7 @@
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/config.hpp"
 #include "utils/tokenizer.hpp"
+#include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"
 #include "utils/mapper.hpp"
 #include <cassert>
@@ -61,8 +62,8 @@ LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
       tokenizer_(&tt::utils::active_tokenizer()) {
-    std::cout << "[LLMService] Initialized (mode=" << tt::config::to_string(mode_)
-              << ", workers=" << num_workers_ << ")\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
+                tt::config::to_string(mode_), num_workers_);
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
 
     socket_service_ = std::make_shared<tt::sockets::InterServerService>();
@@ -79,8 +80,8 @@ void LLMService::start() {
         return;  // Already running
     }
 
-    std::cout << "[LLMService] Starting (mode=" << tt::config::to_string(mode_)
-              << ", workers=" << num_workers_ << ")\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
+                tt::config::to_string(mode_), num_workers_);
 
     start_workers();
     tracy_config::TracyStartupSchedulerParent();
@@ -94,7 +95,7 @@ void LLMService::start() {
 
     is_ready_ = true;
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
-    std::cout << "[LLMService] Service started\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Service started");
 }
 
 bool LLMService::is_model_ready() const {
@@ -155,13 +156,13 @@ void LLMService::start_workers() {
             try {
                 exec_worker_process(i, cfg.env_vars);
             } catch (const std::exception& e) {
-                std::cerr << "[LLMService] Worker " << i << " failed: " << e.what() << "\n" << std::flush;
+                TT_LOG_ERROR("[LLMService] Worker {} failed: {}", i, e.what());
                 _exit(1);
             }
         }
         setpgid(pid, pid);
         worker->pid = pid;
-        std::cout << "[LLMService] Spawned worker " << i << " with PID " << pid << "\n" << std::flush;
+        TT_LOG_INFO("[LLMService] Spawned worker {} with PID {}", i, pid);
     }
 }
 
@@ -170,7 +171,7 @@ void LLMService::start_consumers() {
     for (size_t i = 0; i < num_workers_; i++) {
         consumer_threads_.emplace_back(&LLMService::consumer_loop_for_worker, this, i);
     }
-    std::cout << "[LLMService] Started " << num_workers_ << " consumer threads\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Started {} consumer threads", num_workers_);
 }
 
 void LLMService::stop() {
@@ -179,7 +180,7 @@ void LLMService::stop() {
         return;
     }
 
-    std::cout << "[LLMService] Stopping...\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Stopping...");
 
 
     // Wait for all consumer threads
@@ -203,7 +204,7 @@ void LLMService::stop() {
     }
 
     is_ready_ = false;
-    std::cout << "[LLMService] Stopped\n" << std::flush;
+    TT_LOG_INFO("[LLMService] Stopped");
     queue_manager_->clear();
 }
 
@@ -230,11 +231,11 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
     tracy_config::TracySetThreadName(
         ("Consumer-" + std::to_string(worker_idx)).c_str());
 
-    std::cout << "[Consumer-" << worker_idx << "] Started\n" << std::flush;
+    TT_LOG_INFO("[Consumer-{}] Started", worker_idx);
 
     auto* worker = workers_[worker_idx].get();
     if (!worker->cfg.result_queue) {
-        std::cout << "[Consumer-" << worker_idx << "] No token buffer, exiting\n" << std::flush;
+        TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", worker_idx);
         return;
     }
 
@@ -243,7 +244,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
 
     while (running_) {
         if (!check_worker_alive(worker_idx)) {
-            std::cerr << "[Consumer-" << worker_idx << "] Worker process died, exiting consumer\n" << std::flush;
+            TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer", worker_idx);
             break;
         }
 
@@ -294,7 +295,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         }
     }
 
-    std::cout << "[Consumer-" << worker_idx << "] Stopped\n" << std::flush;
+    TT_LOG_INFO("[Consumer-{}] Stopped", worker_idx);
 }
 
 domain::CompletionResponse LLMService::process_request(domain::CompletionRequest request) {
@@ -388,8 +389,8 @@ void LLMService::process_streaming_request(
             pending_tasks_.fetch_sub(1);
             throw std::runtime_error("Failed to send prefill request (not connected)");
         }
-        std::cout << "[LLMService:DECODE] Forwarded prefill request " << task_id
-                  << " (" << token_ids.size() << " tokens)\n" << std::flush;
+        TT_LOG_DEBUG("[LLMService:DECODE] Forwarded prefill request {} ({} tokens)",
+                     task_id, token_ids.size());
         return;
     }
 
@@ -440,13 +441,13 @@ void LLMService::submit_decode_continuation(
         tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
 
-    std::cout << "[LLMService:DECODE] Queued decode continuation for task " << task_id
-              << " (prompt_tokens=" << prompt.size()
-              << ", max_tokens=" << request.max_tokens << ")\n" << std::flush;
+    TT_LOG_DEBUG("[LLMService:DECODE] Queued decode continuation for task {} "
+                 "(prompt_tokens={}, max_tokens={})",
+                 task_id, prompt.size(), request.max_tokens);
 }
 
 void LLMService::handle_connection_lost() {
-    std::cerr << "[LLMService] Failing pending tasks due to connection loss\n" << std::flush;
+    TT_LOG_ERROR("[LLMService] Failing pending tasks due to connection loss");
 
     stream_callbacks_.for_each([](const std::string& task_id,
                                    std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {

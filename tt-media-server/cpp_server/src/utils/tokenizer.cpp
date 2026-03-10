@@ -5,11 +5,11 @@
 #include "utils/deepseek_tokenizer.hpp"
 #include "utils/llama_tokenizer.hpp"
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <iostream>
 
 namespace tt::utils {
 
@@ -48,7 +48,7 @@ Tokenizer::Tokenizer(const std::string& path) {
         cfg_ = get_tokenizer_config(config_path.string());
     }
 
-    std::cout << "[TokenizerUtil] Loaded tokenizer from: " << path << std::endl;
+    TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {}", path);
 }
 
 bool Tokenizer::is_loaded() const {
