@@ -30,7 +30,7 @@ class ImageGenerateRequest(BaseRequest):
 
     # LoRA adapter settings
     lora_path: Optional[str] = Field(default=None)
-    lora_scale: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    lora_scale: Optional[float] = Field(default=0.5, ge=0.0, le=2.0)
 
     # Image output settings
     image_return_format: Optional[str] = Field(default="JPEG")

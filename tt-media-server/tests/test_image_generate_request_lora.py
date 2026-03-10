@@ -11,10 +11,13 @@ from domain.image_edit_request import ImageEditRequest
 
 
 class TestImageGenerateRequestLoraFields:
-    def test_defaults_to_none(self):
+    def test_lora_path_defaults_to_none(self):
         req = ImageGenerateRequest(prompt="a cat", guidance_scale=5.0)
         assert req.lora_path is None
-        assert req.lora_scale is None
+
+    def test_lora_scale_defaults_to_half(self):
+        req = ImageGenerateRequest(prompt="a cat", guidance_scale=5.0)
+        assert req.lora_scale == 0.5
 
     def test_accepts_lora_fields(self):
         req = ImageGenerateRequest(
@@ -55,12 +58,12 @@ class TestImageToImageRequestLoraFields:
         assert req.lora_path == "/adapter.safetensors"
         assert req.lora_scale == 1.2
 
-    def test_defaults_to_none(self):
+    def test_defaults(self):
         req = ImageToImageRequest(
             prompt="a cat", guidance_scale=5.0, image="base64data"
         )
         assert req.lora_path is None
-        assert req.lora_scale is None
+        assert req.lora_scale == 0.5
 
 
 class TestImageEditRequestLoraFields:
@@ -76,7 +79,7 @@ class TestImageEditRequestLoraFields:
         assert req.lora_path == "/adapter.safetensors"
         assert req.lora_scale == 0.5
 
-    def test_defaults_to_none(self):
+    def test_defaults(self):
         req = ImageEditRequest(
             prompt="a cat",
             guidance_scale=5.0,
@@ -84,4 +87,4 @@ class TestImageEditRequestLoraFields:
             mask="maskdata",
         )
         assert req.lora_path is None
-        assert req.lora_scale is None
+        assert req.lora_scale == 0.5
