@@ -6,8 +6,8 @@
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
-#include <iostream>
 #include <memory>
 
 namespace tt::api {
@@ -19,7 +19,7 @@ SocketController::SocketController(
     , socket_service_(std::move(socket_service)) {
 
     if (!socket_service_ || !socket_service_->isEnabled()) {
-        std::cout << "[SocketController] Socket service not enabled, skipping handler setup\n" << std::flush;
+        TT_LOG_INFO("[SocketController] Socket service not enabled, skipping handler setup");
         return;
     }
 
@@ -33,13 +33,13 @@ SocketController::SocketController(
 
     setup_common_handlers();
 
-    std::cout << "[SocketController] Initialized for mode: " << tt::config::to_string(mode) << "\n" << std::flush;
+    TT_LOG_INFO("[SocketController] Initialized for mode: {}", tt::config::to_string(mode));
 }
 
 void SocketController::setup_prefill_mode_handlers() {
     socket_service_->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-            std::cout << "[SocketController] Received prefill request " << message.task_id << "\n" << std::flush;
+            TT_LOG_INFO("[SocketController] Received prefill request {}", message.task_id.id);
 
             domain::CompletionRequest request;
             request.task_id = message.task_id;
@@ -78,9 +78,8 @@ void SocketController::setup_prefill_mode_handlers() {
                     socket_service_->sendPrefillResult(msg);
 
                     if (is_final) {
-                        std::cout << "[SocketController] Completed prefill " << task_id
-                                  << " (remaining: " << remaining_tokens << ", token_ids: "
-                                  << token_ids_ptr->size() << ")\n" << std::flush;
+                        TT_LOG_INFO("[SocketController] Completed prefill {} (remaining: {}, token_ids: {})",
+                                    task_id, remaining_tokens, token_ids_ptr->size());
                     }
                 });
         });
@@ -98,11 +97,11 @@ void SocketController::setup_decode_mode_handlers() {
 
     socket_service_->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& msg) {
-            std::cout << "[SocketController] Received prefill result " << msg.task_id << "\n" << std::flush;
+            TT_LOG_INFO("[SocketController] Received prefill result {}", msg.task_id.id);
 
             auto taken = llm_service_->detach_stream_callback(msg.task_id.id);
             if (!taken.has_value()) {
-                std::cerr << "[SocketController] No callback for task_id: " << msg.task_id << "\n" << std::flush;
+                TT_LOG_WARN("[SocketController] No callback for task_id: {}", msg.task_id.id);
                 return;
             }
             auto callback = std::move(taken.value());
@@ -143,7 +142,7 @@ void SocketController::setup_decode_mode_handlers() {
         });
 
     socket_service_->setConnectionLostCallback([this]() {
-        std::cout << "[SocketController] Connection to prefill server lost\n" << std::flush;
+        TT_LOG_WARN("[SocketController] Connection to prefill server lost");
         llm_service_->handle_connection_lost();
     });
 }
@@ -151,8 +150,7 @@ void SocketController::setup_decode_mode_handlers() {
 void SocketController::setup_common_handlers() {
     socket_service_->setHealthCheckCallback(
         [](const std::string& server_id, double /*cpu*/, double /*memory*/, int tasks) {
-            std::cout << "[SocketController] Health check from " << server_id
-                      << " (active_tasks=" << tasks << ")\n" << std::flush;
+            TT_LOG_INFO("[SocketController] Health check from {} (active_tasks={})", server_id, tasks);
         });
 }
 

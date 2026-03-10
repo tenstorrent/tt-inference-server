@@ -7,6 +7,7 @@
 #include "domain/chat_completion_response.hpp"
 #include "domain/completion_response.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/logger.hpp"
 
 #include <memory>
 #include <random>
@@ -24,7 +25,7 @@ namespace tt::api {
 
 LLMController::LLMController() {
     if (!tt::config::is_llm_service_enabled()) {
-        std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
+        TT_LOG_INFO("[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)");
         return;
     }
 
@@ -33,7 +34,7 @@ LLMController::LLMController() {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
                                  "Ensure register_services() is called before Drogon starts.");
     }
-    std::cout << "[LLMController] Initialized (service already started)" << std::endl;
+    TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
 std::string LLMController::generate_completion_id() {
@@ -308,7 +309,7 @@ void LLMController::handle_streaming(
                                             if (total_duration.count() > 0) {
                                                 auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
                                                 usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
-                                                std::cout << "[DEBUG] Final TPS: " << usage.tps.value() << " tokens/sec" << std::endl;
+                                                TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec", usage.tps.value());
                                             }
                                         }
 

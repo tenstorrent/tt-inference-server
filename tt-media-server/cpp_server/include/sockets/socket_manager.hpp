@@ -19,6 +19,7 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <sstream>
+#include "utils/logger.hpp"
 
 namespace tt::sockets {
 
@@ -173,7 +174,7 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
 
         return sendRawData(data);
     } catch (const std::exception& e) {
-        std::cerr << "[SocketManager] Serialization error: " << e.what() << std::endl;
+        TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
         return false;
     }
 }
@@ -194,7 +195,7 @@ void SocketManager::registerHandler(const std::string& message_type,
 
             handler(message.payload);
         } catch (const std::exception& e) {
-            std::cerr << "[SocketManager] Deserialization error: " << e.what() << std::endl;
+            TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
         }
     };
 }
