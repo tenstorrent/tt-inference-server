@@ -82,6 +82,7 @@ struct CompletionRequest: BaseRequest {
     std::optional<std::vector<int>> allowed_token_ids;
     std::optional<int> prompt_logprobs;
     std::optional<int> truncate_prompt_tokens;
+    int prompt_tokens_count = 0;
 
     static CompletionRequest fromJson(const Json::Value& json) {
         CompletionRequest req;

@@ -3,12 +3,12 @@
 
 #include "runners/llama_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
+#include "utils/logger.hpp"
 
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
 #include <cstdlib>
-#include <iostream>
 #include <string>
 
 namespace py = pybind11;
@@ -50,14 +50,14 @@ bool LlamaModelRunner::initialize() {
     py::module_ asyncio = py::module_::import("asyncio");
     bool warmup_ok = asyncio.attr("run")(g_runner.attr("warmup")()).cast<bool>();
     if (!warmup_ok) {
-      std::cerr << "[LlamaModelRunner] Warmup failed\n";
+      TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
-      std::cout << "[LlamaModelRunner] Llama runner ready (in-process)\n";
+      TT_LOG_INFO("[LlamaModelRunner] Llama runner ready (in-process)");
       initialized_ = true;
       success = true;
     }
   } catch (const py::error_already_set& e) {
-    std::cerr << "[LlamaModelRunner] Python init error: " << e.what() << "\n";
+    TT_LOG_ERROR("[LlamaModelRunner] Python init error: {}", e.what());
   }
 
   PyEval_SaveThread();
@@ -111,13 +111,39 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
         int max_tokens = sp ? sp->max_tokens : 64;
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignore_eos = sp ? sp->ignore_eos : false;
+
         py::object seed = py::none();
         if (sp && sp->seed.has_value()) {
           seed = py::int_(*sp->seed);
         }
+
+        py::object top_p = py::none();
+        if (sp && sp->top_p.has_value()) {
+          top_p = py::float_(*sp->top_p);
+        }
+
+        py::object top_k = py::none();
+        if (sp && sp->top_k.has_value()) {
+          top_k = py::int_(*sp->top_k);
+        }
+
+        py::object min_p = py::none();
+        if (sp && sp->min_p.has_value()) {
+          min_p = py::float_(*sp->min_p);
+        }
+
+        py::object repetition_penalty = py::none();
+        if (sp && sp->repetition_penalty.has_value()) {
+          repetition_penalty = py::float_(*sp->repetition_penalty);
+        }
+
+        double presence_penalty = sp ? static_cast<double>(sp->presence_penalty) : 0.0;
+        double frequency_penalty = sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
+
         py_seqs.append(
             g_step_seq_class(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos,
-                            block_table, current_pos, prompt_len, seed));
+                            block_table, current_pos, prompt_len, seed, top_p, top_k, min_p,
+                            repetition_penalty, presence_penalty, frequency_penalty));
       }
 
       py::object results = g_runner.attr("run")(is_prefill, py_seqs);
@@ -130,13 +156,12 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
         std::string error = item.attr("error").cast<std::string>();
         if (!error.empty()) {
           dr.is_error = true;
-          std::cerr << "[LlamaModelRunner] sequence " << dr.task_id.id
-                    << " error: " << error << "\n";
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", dr.task_id.id, error);
         }
         decode_callback_(dr);
       }
     } catch (const py::error_already_set& e) {
-      std::cerr << "[LlamaModelRunner] Python error in run_step: " << e.what() << "\n";
+      TT_LOG_ERROR("[LlamaModelRunner] Python error in run_step: {}", e.what());
       had_error = true;
     }
   }
@@ -155,7 +180,7 @@ void LlamaModelRunner::exit() {
     g_step_seq_class = py::object();
   }
   initialized_ = false;
-  std::cout << "[LlamaModelRunner] Runner exited\n";
+  TT_LOG_INFO("[LlamaModelRunner] Runner exited");
 }
 
 std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
