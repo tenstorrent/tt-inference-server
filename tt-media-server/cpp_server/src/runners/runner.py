@@ -21,7 +21,6 @@ from pathlib import Path
 import ttnn
 from models.demos.deepseek_v3_b1.demo.model_pipeline import ModelPipeline
 from models.demos.deepseek_v3_b1.demo.pipeline import create_fabric_router_config
-
 from shared_memory import DECODE_MAX_TOKEN_IDS, PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
@@ -42,15 +41,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--cache-path",
         type=Path,
-        default=Path("/mnt/models/deepseek-ai/cache-mar3-2/"),
+        default=Path("/mnt/models/deepseek-ai/cache-2026-03-09"),
         help="Path to the weight cache directory (required for --weights real)",
     )
     parser.add_argument(
         "--weights",
         type=str,
         choices=("synthetic", "real"),
-        default="synthetic",
-        help="Use synthetic or real (cached) weights (default: synthetic)",
+        default="real",
+        help="Use synthetic or real (cached) weights (default: real)",
     )
     parser.add_argument(
         "--fabric-max-payload-bytes",
