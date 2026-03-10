@@ -70,9 +70,13 @@ if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     find_package(fmt REQUIRED)
     message(STATUS "Found fmt from tt-metal: ${fmt_VERSION}")
+    set(USE_EXTERNAL_FMT ON)
+else()
+    set(USE_EXTERNAL_FMT OFF)
+    message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
-# spdlog for logging - use tt-metal's fmt library
+# spdlog for logging - use tt-metal's fmt library when available
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
@@ -81,7 +85,7 @@ FetchContent_Declare(
 set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
-set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "" FORCE)
+set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(spdlog)
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
@@ -200,7 +204,11 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     endif()
     target_link_libraries(llm_engine PUBLIC pybind11::embed)
 endif()
-target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
@@ -320,7 +328,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE)
 
 # Link Drogon and llm_engine (used by LLMService)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
+endif()
 if(ENABLE_TRACY)
     target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
     target_sources(${PROJECT_NAME} PRIVATE
