@@ -58,6 +58,40 @@ The engine does **not** support chunked prefill: each request is prefilled in fu
 
 **Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
 
+### Choosing a Scheduling Policy
+
+The LLM engine supports two scheduling policies that trade off individual request latency vs. overall throughput:
+
+#### Prefill First (Default)
+**When to use:** Low to moderate request rates, latency-sensitive applications
+
+**Behavior:** Always prefills new requests when the prefill_queue has waiting requests. Decode is only attempted when nothing can be prefilled.
+
+**Advantages:**
+- **Better Time-To-First-Token (TTFT)** for individual requests
+- New requests get processed immediately without waiting for decode batches
+- Optimal for scenarios where user-perceived latency is critical
+
+**Trade-offs:**
+- Decode sequences may be interrupted when new requests arrive
+- Lower overall device occupancy during mixed workloads
+
+#### Max Occupancy
+**When to use:** High request rates, throughput-oriented applications
+
+**Behavior:** Keeps the device at full occupancy (`max_num_seqs`) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
+
+**Advantages:**
+- **Better average TTFT across all users** under high load
+- Maximizes device utilization and overall throughput
+- Decode batches run at full capacity for better efficiency
+
+**Trade-offs:**
+- Individual requests may wait longer for their first token
+- Decode sequences lose one decode step during each prefill batch
+
+**Configuration:** Set via `llm_engine::Config::scheduling_policy` (see `config/constants.hpp`). The policy is selected at compile time based on your workload characteristics.
+
 ### Run unit tests
 
 Run LLM engine unit tests (Google Test) from the `cpp_server` directory:

@@ -10,6 +10,10 @@ namespace llm_engine {
 /**
  * Always prefills when the prefill_queue has requests (original behaviour).
  * Decode is only attempted when nothing can be prefilled.
+ *
+ * Use for: Low to moderate request rates, latency-sensitive applications.
+ * Provides better Time-To-First-Token (TTFT) for individual requests by
+ * processing new requests immediately without waiting for decode batches.
  */
 class PrefillFirstScheduler : public Scheduler {
  public:

@@ -17,6 +17,10 @@ namespace llm_engine {
  *
  * Trade-off: decode sequences lose 1 decode step during each prefill
  * batch, but all subsequent decode steps run at full width.
+ *
+ * Use for: High request rates, throughput-oriented applications.
+ * Provides better average TTFT across all users under high load by
+ * maximizing device utilization and keeping decode batches at full capacity.
  */
 class MaxOccupancyScheduler : public Scheduler {
  public:
