@@ -108,12 +108,6 @@ bool LLMService::is_model_ready() const {
     return is_ready_.load();
 }
 
-void LLMService::validate() const {
-    if (pending_tasks_.load() >= max_queue_size_) {
-        throw QueueFullException{};
-    }
-}
-
 SystemStatus LLMService::get_system_status() const {
     SystemStatus status;
     status.model_ready = is_ready_.load();
@@ -373,6 +367,9 @@ void LLMService::process_streaming_request(
     assert(callback != nullptr);
 
     ZoneScopedN("LLMService::process_streaming_request");
+    if (pending_tasks_.load() >= max_queue_size_) {
+        throw QueueFullException{};
+    }
     if (request.task_id.id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }

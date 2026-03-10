@@ -138,19 +138,11 @@ void LLMController::completions(
         return;
     }
 
-    if (service_->is_queue_full()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Request queue is full, please retry later", "rate_limit_exceeded"));
-        resp->setStatusCode(drogon::k429TooManyRequests);
-        callback(resp);
-        return;
-    }
-
     if (request->stream) {
         handle_streaming(request, std::move(callback), false);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto response = service_->submit_request(std::move(*request));
+        domain::CompletionResponse response;
         try {
             response = service_->submit_request(std::move(*request));
         } catch (const services::QueueFullException& e) {
@@ -228,7 +220,7 @@ void LLMController::chat_completions(
         handle_streaming(request, std::move(callback), true);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto completion = service_->submit_request(std::move(*request));
+        domain::CompletionResponse completion;
         try {
             completion = service_->submit_request(std::move(*request));
         } catch (const services::QueueFullException& e) {
@@ -263,16 +255,6 @@ void LLMController::handle_streaming(
 
     ZoneScopedN("API::handle_streaming");
 
-    try {
-        service_->validate();
-    } catch (const services::QueueFullException& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json(e.what(), "rate_limit_exceeded"));
-        resp->setStatusCode(drogon::k429TooManyRequests);
-        callback(resp);
-        return;
-    }
-
     const std::string completion_id =
         (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id.id;
     const std::string model = req_ptr->model.value_or("default");
@@ -289,125 +271,149 @@ void LLMController::handle_streaming(
         ? std::make_shared<ConcurrentQueue<std::string>>()
         : nullptr;
 
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req_ptr, completion_id, model, created,
-         is_chat, include_usage, continuous_usage, accumulator](
-            drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-            auto completion_tokens = std::make_shared<std::atomic<int>>(0);
+    // Request handlers run on the IO thread, so we can capture the loop here.
+    trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
 
-            auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
-                std::chrono::high_resolution_clock::now());
-            auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
+    // Shared state. All accesses happen on the IO thread: token callbacks via
+    // queueInLoop, and the stream setup lambda via Drogon's async stream machinery.
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    // stream_ptr is null until the newAsyncStreamResponse lambda runs.
+    auto stream_ptr = std::make_shared<drogon::ResponseStreamPtr>();
+    // Events that arrive before stream_ptr is set are buffered here.
+    auto early_buffer = std::make_shared<std::vector<std::string>>();
+    auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
-            service_->submit_streaming_request(
-                *req_ptr,
-                [loop, stream_ptr, done, completion_id, model, created,
-                 is_chat, include_usage, continuous_usage, completion_tokens,
-                 start_time, first_token_time, second_token_time, first_content_chunk, req_ptr, accumulator](
-                    const domain::StreamingChunkResponse& chunk, bool is_final) {
-                    if (done->load() || !*stream_ptr) {
-                        return;
+    // Timing metrics for TTFT and TPS calculation
+    auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
+        std::chrono::high_resolution_clock::now());
+    auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
+    auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
+    auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
+
+    // Submit the streaming request before setting up the HTTP stream so that a full
+    // queue throws QueueFullException here, allowing us to return a proper 429.
+    try {
+        service_->submit_streaming_request(
+            *req_ptr,
+            [loop, stream_ptr, done, completion_id, model, created,
+             is_chat, include_usage, continuous_usage, completion_tokens,
+             start_time, first_token_time, second_token_time, first_content_chunk, req_ptr, accumulator](
+                const domain::StreamingChunkResponse& chunk, bool is_final) {
+                if (done->load() || !*stream_ptr) {
+                    return;
+                }
+                if (!chunk.choices.empty()) {
+                    const int current_tokens = completion_tokens->fetch_add(1) + 1;
+
+                    auto now = std::chrono::high_resolution_clock::now();
+                    if (!first_token_time->has_value()) {
+                        *first_token_time = now;
+                    } else if (current_tokens == 2 && !second_token_time->has_value()) {
+                        *second_token_time = now;
                     }
-                    if (!chunk.choices.empty()) {
-                        const int current_tokens = completion_tokens->fetch_add(1) + 1;
 
-                        auto now = std::chrono::high_resolution_clock::now();
-                        if (!first_token_time->has_value()) {
-                            *first_token_time = now;
-                        } else if (current_tokens == 2 && !second_token_time->has_value()) {
-                            *second_token_time = now;
+                    std::string sse;
+                    if (is_chat) {
+                        std::optional<domain::CompletionUsage> usage;
+                        if (continuous_usage) {
+                            usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, current_tokens, current_tokens, std::nullopt, std::nullopt};
                         }
-
-                        std::string sse;
-                        if (is_chat) {
-                            std::optional<domain::CompletionUsage> usage;
+                        auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+                            completion_id, model, created, chunk.choices[0], usage);
+                        if (first_content_chunk->exchange(false)) {
+                            std::optional<domain::CompletionUsage> initial_usage;
                             if (continuous_usage) {
-                                usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, current_tokens, current_tokens, std::nullopt, std::nullopt};
+                                initial_usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
                             }
-                            auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-                                completion_id, model, created, chunk.choices[0], usage);
-                            if (first_content_chunk->exchange(false)) {
-                                std::optional<domain::CompletionUsage> initial_usage;
-                                if (continuous_usage) {
-                                    initial_usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
-                                }
-                                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                                    completion_id, model, created, initial_usage);
-                                sse = initial_chunk.toSSE() + stream_chunk.toSSE();
-                            } else {
-                                sse = stream_chunk.toSSE();
-                            }
-                        } else if (!chunk.choices[0].text.empty() ||
-                                   !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out(req_ptr->task_id);
-                            out.id = completion_id;
-                            out.object = "text_completion";
-                            out.model = model;
-                            out.created = created;
-                            out.choices = chunk.choices;
-                            sse = out.toSSE();
+                            auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+                                completion_id, model, created, initial_usage);
+                            sse = initial_chunk.toSSE() + stream_chunk.toSSE();
+                        } else {
+                            sse = stream_chunk.toSSE();
                         }
-
-                        if (!sse.empty()) {
-                            sse_send(sse, loop, stream_ptr, accumulator);
-                        }
+                    } else if (!chunk.choices[0].text.empty() ||
+                               !chunk.choices[0].finish_reason.has_value()) {
+                        domain::StreamingChunkResponse out(req_ptr->task_id);
+                        out.id = completion_id;
+                        out.object = "text_completion";
+                        out.model = model;
+                        out.created = created;
+                        out.choices = chunk.choices;
+                        sse = out.toSSE();
                     }
-                    if (is_final) {
-                        loop->queueInLoop(
-                            [stream_ptr, done, is_chat, include_usage,
-                             completion_id, model, created, completion_tokens,
-                             start_time, first_token_time, second_token_time, req_ptr, accumulator]() {
-                                if (!done->exchange(true) && *stream_ptr) {
-                                    flush_accumulated(accumulator, stream_ptr);
-                                    if (include_usage) {
-                                        const int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{req_ptr->prompt_tokens_count, tokens, tokens, std::nullopt, std::nullopt};
 
-                                        if (first_token_time->has_value()) {
-                                            auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                first_token_time->value() - *start_time);
-                                            usage.ttft_ms = std::round(static_cast<double>(ttft_duration.count()) / 10.0) / 100.0;
-                                        }
+                    if (!sse.empty()) {
+                        sse_send(sse, loop, stream_ptr, accumulator);
+                    }
+                }
+                if (is_final) {
+                    loop->queueInLoop(
+                        [stream_ptr, done, is_chat, include_usage,
+                         completion_id, model, created, completion_tokens,
+                         start_time, first_token_time, second_token_time, req_ptr, accumulator]() {
+                            if (!done->exchange(true) && *stream_ptr) {
+                                flush_accumulated(accumulator, stream_ptr);
+                                if (include_usage) {
+                                    const int tokens = completion_tokens->load();
+                                    domain::CompletionUsage usage{req_ptr->prompt_tokens_count, tokens, tokens, std::nullopt, std::nullopt};
 
-                                        if (tokens > 1) {
-                                            auto final_time = std::chrono::high_resolution_clock::now();
-                                            auto base_time = second_token_time->has_value() ?
-                                                second_token_time->value() : first_token_time->value();
-                                            auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                final_time - base_time);
-                                            if (total_duration.count() > 0) {
-                                                auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
-                                                usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
-                                                TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec", usage.tps.value());
-                                            }
-                                        }
+                                    if (first_token_time->has_value()) {
+                                        auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                            first_token_time->value() - *start_time);
+                                        usage.ttft_ms = std::round(static_cast<double>(ttft_duration.count()) / 10.0) / 100.0;
+                                    }
 
-                                        if (is_chat) {
-                                            (*stream_ptr)->send(
-                                                domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                                    completion_id, model, created, usage).toSSE());
-                                        } else {
-                                            domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
-                                            usage_chunk.id = completion_id;
-                                            usage_chunk.object = "text_completion";
-                                            usage_chunk.model = model;
-                                            usage_chunk.created = created;
-                                            usage_chunk.usage = usage;
-                                            (*stream_ptr)->send(usage_chunk.toSSE());
+                                    if (tokens > 1) {
+                                        auto final_time = std::chrono::high_resolution_clock::now();
+                                        auto base_time = second_token_time->has_value() ?
+                                            second_token_time->value() : first_token_time->value();
+                                        auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                            final_time - base_time);
+                                        if (total_duration.count() > 0) {
+                                            auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
+                                            usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
+                                            TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec", usage.tps.value());
                                         }
                                     }
-                                    (*stream_ptr)->send("data: [DONE]\n\n");
-                                    (*stream_ptr)->close();
+
+                                    if (is_chat) {
+                                        (*stream_ptr)->send(
+                                            domain::ChatCompletionStreamChunk::makeUsageChunk(
+                                                completion_id, model, created, usage).toSSE());
+                                    } else {
+                                        domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
+                                        usage_chunk.id = completion_id;
+                                        usage_chunk.object = "text_completion";
+                                        usage_chunk.model = model;
+                                        usage_chunk.created = created;
+                                        usage_chunk.usage = usage;
+                                        (*stream_ptr)->send(usage_chunk.toSSE());
+                                    }
                                 }
-                            });
-                    }
-                });
+                                (*stream_ptr)->send("data: [DONE]\n\n");
+                                (*stream_ptr)->close();
+                            }
+                        });
+                }
+            });
+    } catch (const services::QueueFullException& e) {
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(
+            error_json(e.what(), "rate_limit_exceeded"));
+        resp->setStatusCode(drogon::k429TooManyRequests);
+        callback(resp);
+        return;
+    }
+
+    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+        [stream_ptr, early_buffer, done](drogon::ResponseStreamPtr stream) mutable {
+            *stream_ptr = std::move(stream);
+            for (const auto& event : *early_buffer) {
+                (*stream_ptr)->send(event);
+            }
+            early_buffer->clear();
+            if (done->load()) {
+                (*stream_ptr)->close();
+            }
         });
 
     resp->setContentTypeString("text/event-stream");

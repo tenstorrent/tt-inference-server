@@ -28,7 +28,6 @@ public:
     void start() override;
     void stop() override;
     bool is_model_ready() const override;
-    void validate() const override;
     SystemStatus get_system_status() const override;
 
 protected:
