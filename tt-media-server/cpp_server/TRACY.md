@@ -10,6 +10,33 @@ We use [Tenstorrent’s Tracy](https://github.com/tenstorrent/tracy) with the Tr
 - **Lock profiling** – Mutex hold/wait times for `TracyLockable(std::mutex, ...)` (scheduler, embedding service/controller, model runner). Lock events appear on the thread timeline; in the GUI, **Options → Locks** lists locks and **Draw locks** shows them on the timeline. Uncheck **Only contended** to see locks used by a single thread (otherwise only contended locks are shown).
 - **Multi-process** – Main process on port 8086 (Tracy started in `register_services()` via `TracyStartMainProcess()`). Workers are started by fork+exec and each starts Tracy on 8087, 8088, … (connect to each in the GUI).
 
+### Building with Tracy
+
+```bash
+./build.sh --tracy
+```
+
+This passes `-DENABLE_TRACY=ON` to CMake. The binary is at `./build/tt_media_server_cpp` as usual.
+
+### Capturing a Tracy profile
+
+```bash
+./tracy-capture.sh [SECONDS] [PORT]
+```
+
+- `SECONDS` – capture duration (default: 60)
+- `PORT` – Tracy port to connect to (default: 8086 = main process, 8087 = worker 0, 8088 = worker 1, …)
+
+Examples:
+
+```bash
+./tracy-capture.sh              # 60 seconds, main process (port 8086)
+./tracy-capture.sh 30           # 30 seconds, main process
+./tracy-capture.sh 10 8087      # 10 seconds, worker 0
+```
+
+The script builds the Tracy capture tool on first run (from the fetched Tracy source) and writes to `capture.tracy`. Open the file in the Tracy GUI to inspect offline.
+
 ### Building the Tracy GUI
 
 Build the **profiler** (GUI) from the [Tenstorrent Tracy repo](https://github.com/tenstorrent/tracy):
