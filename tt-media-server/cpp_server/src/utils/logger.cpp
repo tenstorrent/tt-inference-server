@@ -122,34 +122,6 @@ void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str) {
     }
 }
 
-template<typename... Args>
-void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str, Args&&... args) {
-    auto logger = get_logger();
-    auto runtime_fmt = fmt::runtime(fmt_str);
-    switch (level) {
-        case TRACE:
-            logger->trace(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case DEBUG:
-            logger->debug(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case INFO:
-            logger->info(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case WARN:
-            logger->warn(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case ERROR:
-            logger->error(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case CRITICAL:
-            logger->critical(runtime_fmt, std::forward<Args>(args)...);
-            break;
-        case OFF:
-            break;
-    }
-}
-
 ZeroOverheadLogger::Level ZeroOverheadLogger::parse_log_level(const std::string& level_str) {
     std::string lower_level = level_str;
     std::transform(lower_level.begin(), lower_level.end(), lower_level.begin(), ::tolower);

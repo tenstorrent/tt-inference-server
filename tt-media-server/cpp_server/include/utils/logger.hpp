@@ -5,11 +5,13 @@
 
 #include <string>
 #include <memory>
+#include <spdlog/spdlog.h>
 
-// Forward declarations to avoid including spdlog in header
-namespace spdlog {
-    class logger;
-}
+// Include fmt for template instantiation
+#ifdef USE_EXTERNAL_FMT
+    #include <fmt/core.h>
+    #include <fmt/format.h>
+#endif
 
 namespace tt::utils {
 
@@ -80,6 +82,42 @@ template<typename... Args>
 void ZeroOverheadLogger::log(Level level, Args&&... args) {
     if (level < level_) return;
     log_impl(level, std::forward<Args>(args)...);
+}
+
+// Template implementation for log_impl - must be in header for template instantiation
+template<typename... Args>
+void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str, Args&&... args) {
+    auto logger = get_logger();
+
+    // Use runtime format string - spdlog handles fmt internally
+    #ifdef USE_EXTERNAL_FMT
+    auto runtime_fmt = fmt::runtime(fmt_str);
+    #else
+    auto runtime_fmt = spdlog::fmt_lib::runtime(fmt_str);
+    #endif
+
+    switch (level) {
+        case TRACE:
+            logger->trace(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case DEBUG:
+            logger->debug(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case INFO:
+            logger->info(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case WARN:
+            logger->warn(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case ERROR:
+            logger->error(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case CRITICAL:
+            logger->critical(runtime_fmt, std::forward<Args>(args)...);
+            break;
+        case OFF:
+            break;
+    }
 }
 
 // Compile-time level checking for zero overhead
