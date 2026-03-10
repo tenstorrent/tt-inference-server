@@ -625,9 +625,6 @@ struct EmbeddingService::Impl {
 
         {
             std::lock_guard lock(queue_mutex_);
-            if (request_queue_.size() >= max_queue_size_) {
-                throw QueueFullException{};
-            }
             request_queue_.push(pending);
         }
         queue_cv_.notify_all();  // Wake all workers so they can compete for work
@@ -656,7 +653,9 @@ bool EmbeddingService::is_model_ready() const {
 }
 
 void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
-    // no-op
+    if (impl_->request_queue_.size() >= impl_->max_queue_size_) {
+        throw QueueFullException{};
+    }
 }
 
 void EmbeddingService::post_process(domain::EmbeddingResponse&) const {

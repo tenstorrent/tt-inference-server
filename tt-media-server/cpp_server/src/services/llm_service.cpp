@@ -126,6 +126,9 @@ SystemStatus LLMService::get_system_status() const {
 }
 
 void LLMService::pre_process(domain::CompletionRequest& request) const {
+    if (pending_tasks_.load() >= max_queue_size_) {
+        throw QueueFullException{};
+    }
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
         static auto cfg = tt::utils::get_tokenizer_config();
@@ -367,9 +370,6 @@ void LLMService::process_streaming_request(
     assert(callback != nullptr);
 
     ZoneScopedN("LLMService::process_streaming_request");
-    if (pending_tasks_.load() >= max_queue_size_) {
-        throw QueueFullException{};
-    }
     if (request.task_id.id.empty()) {
         throw std::runtime_error("task_id must be set before submitting request");
     }
