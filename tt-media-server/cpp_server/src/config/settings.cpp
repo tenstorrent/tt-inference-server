@@ -169,6 +169,7 @@ llm_engine::Config llm_engine_config() {
             cfg.runner_type = llm_engine::ModelRunnerType::Mock;
         }
     }
+    cfg.scheduling_policy = scheduling_policy();
     return cfg;
 }
 
@@ -179,6 +180,13 @@ ModelType model_type() {
 LLMMode llm_mode() {
     return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
 }
+
+llm_engine::SchedulingPolicy scheduling_policy() {
+    auto s = env_string("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY);
+    if (s == "max_occupancy") return llm_engine::SchedulingPolicy::MAX_OCCUPANCY;
+    return llm_engine::SchedulingPolicy::PREFILL_FIRST;
+}
+
 
 std::string socket_host() {
     return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
