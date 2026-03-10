@@ -20,6 +20,7 @@ from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
+from utils.lora_utils import resolve_lora_path
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
@@ -222,10 +223,11 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         if requested_path is not None:
             try:
+                local_path = resolve_lora_path(requested_path)
                 self.logger.info(
                     f"Device {self.device_id}: Loading LoRA adapter: {requested_path} (scale={requested_scale})"
                 )
-                self.tt_sdxl.load_lora_weights(requested_path)
+                self.tt_sdxl.load_lora_weights(local_path)
                 self.tt_sdxl.fuse_lora(requested_scale)
                 self._current_lora_path = requested_path
                 self._current_lora_scale = requested_scale
