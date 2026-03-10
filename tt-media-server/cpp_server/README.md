@@ -1,5 +1,4 @@
 # TT Media Server - C++ Drogon Implementation
-See [FMTLOG_PERFORMANCE.md](FMTLOG_PERFORMANCE.md) for detailed performance analysis and migration guide.
 
 ## LLM Engine
 
@@ -10,32 +9,33 @@ The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runn
 ## Logging
 
 ```cpp
-#include "utils/fmtlog_logger.hpp"
+#include "utils/logger.hpp"
 
-// Initialize once at startup
-tt::utils::FmtlogLogger::initialize();
+// Initialize once at startup (optional - auto-initializes on first use)
+tt::utils::initialize_logger();
 
 // High-performance macros with zero overhead when disabled
-TT_LOG_DEBUG_FMTLOG("Debug info: request_id={}, latency={}ms", id, latency);
-TT_LOG_INFO_FMTLOG("Server starting on port {}", port);
-TT_LOG_ERROR_FMTLOG("Connection failed: {}", error);
-
-// Shutdown at exit
-tt::utils::FmtlogLogger::shutdown();
+TT_LOG_DEBUG("Debug info: request_id={}, latency={}ms", id, latency);
+TT_LOG_INFO("Server starting on port {}", port);
+TT_LOG_ERROR("Connection failed: {}", error);
 ```
 
 #### Configuration
 
 ```bash
 # Environment variables
-export TT_LOG_LEVEL=info              # Runtime log level
-export TT_LOG_FILE=./logs/server.log  # Enable file logging
-
-# Compile-time optimization (eliminates debug logs completely)
-cmake -DFMTLOG_ACTIVE_LEVEL=FMTLOG_LEVEL_INF ..
+export TT_LOG_LEVEL=debug             # Runtime log level (trace, debug, info, warn, error, critical, off)
+export TT_LOG_FILE=./logs/server.log  # Enable file logging (optional)
 ```
 
-See [FMTLOG_PERFORMANCE.md](FMTLOG_PERFORMANCE.md) for detailed performance analysis and migration guide.
+Available log levels (from most to least verbose):
+- `trace` - Most detailed logging
+- `debug` - Debug information
+- `info` - Informational messages (default)
+- `warn` - Warning messages
+- `error` - Error messages only
+- `critical` - Critical errors only
+- `off` - Disable all logging
 
 ## LLM engine
 
@@ -575,11 +575,6 @@ The server includes tokenizer support for encode/decode:
    ```bash
    ./build.sh
    ```
-<<<<<<< HEAD
-4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
-   active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
-   [Runtime model selection](#runtime-model-selection) above).
-=======
 4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
    To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
@@ -596,7 +591,6 @@ Token generation timing:
 - Target: 120,000 tokens/second
 - Token interval: ~8.33 microseconds
 - Uses `std::chrono::high_resolution_clock` for precise timing
->>>>>>> dev
 
 ## Comparison with Python FastAPI
 
