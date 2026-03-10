@@ -60,6 +60,8 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "✅ Ruff checks passed!"
+
 PYTEST_PYTHON=""
 for env_bin in $TOOL_ENV_BINS; do
     candidate="$env_bin/python3"
@@ -88,4 +90,6 @@ else
     fi
 fi
 
-echo "✅ Ruff checks passed!"
+echo "✅ pytest passed!"
+
+echo "✅ All checks passed!"
