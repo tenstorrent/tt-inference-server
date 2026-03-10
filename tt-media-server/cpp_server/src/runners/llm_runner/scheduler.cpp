@@ -117,9 +117,9 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_batched_tokens = 0;
 
   int decode_count = static_cast<int>(decode_queue_.size());
-  bool prefill_first = !prefill_queue_->empty() && should_prefill_first(decode_count, max_num_seqs_);
+  bool should_prefill = !prefill_queue_->empty() && should_prefill_first(decode_count, max_num_seqs_);
 
-  if (prefill_first) {
+  if (should_prefill) {
     int seq_limit = max_prefill_seqs(decode_count, max_num_seqs_);
     if (seq_limit > 0 &&
         try_schedule_prefill(scheduled_seqs, num_seqs, num_batched_tokens, seq_limit)) {
