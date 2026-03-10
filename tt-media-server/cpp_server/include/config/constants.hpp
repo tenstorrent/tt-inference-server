@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 
+#include "runners/llm_runner/config.hpp"
+
 namespace tt::config {
 
 /**
@@ -29,7 +31,7 @@ inline std::string to_string(ModelService s) {
     }
 }
 
-/** Parse MODEL_SERVICE; empty or unknown -> LLM. */
+/** Parse MODEL_SERVICE; empty or unknown -> LLM. Expects lowercase input. */
 inline ModelService model_service_from_string(const std::string& v) {
     if (v == "embedding") return ModelService::EMBEDDING;
     return ModelService::LLM;
@@ -71,7 +73,7 @@ constexpr std::string_view to_string(LLMMode m) {
     return "unknown";
 }
 
-/** Parse LLM_MODE; empty or unknown -> REGULAR. */
+/** Parse LLM_MODE; empty or unknown -> REGULAR. Expects lowercase input. */
 inline LLMMode llm_mode_from_string(const std::string& v) {
     if (v == "prefill") return LLMMode::PREFILL_ONLY;
     if (v == "decode") return LLMMode::DECODE_ONLY;
@@ -83,10 +85,16 @@ inline RunnerType runner_type_from_string(const std::string& /*v*/) {
     return RunnerType::LLM_TEST;
 }
 
-/** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. */
+/** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. Expects lowercase input. */
 inline ModelType model_type_from_device_backend(const std::string& v) {
     if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
     return ModelType::DEEPSEEK_R1_0528;
+}
+
+/** Parse SCHEDULING_POLICY; empty or unknown -> PREFILL_FIRST. Expects lowercase input. */
+inline llm_engine::SchedulingPolicy scheduling_policy_from_string(const std::string& v) {
+    if (v == "max_occupancy") return llm_engine::SchedulingPolicy::MAX_OCCUPANCY;
+    return llm_engine::SchedulingPolicy::PREFILL_FIRST;
 }
 
 /**
@@ -103,6 +111,7 @@ namespace defaults {
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
     constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first" or "max_occupancy"
+    constexpr const char* LLM_DEVICE_BACKEND = "mock";
 }
 
 }  // namespace tt::config

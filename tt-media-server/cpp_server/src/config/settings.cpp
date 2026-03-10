@@ -5,6 +5,8 @@
 #include "runners/llm_runner/config.hpp"
 #include "utils/tokenizer.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstddef>
 #include <string>
@@ -15,9 +17,21 @@ namespace tt::config {
 
 namespace {
 
+/** Convert string to lowercase for case-insensitive environment variable parsing. */
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+
 std::string env_string(const char* name, const std::string& default_value) {
     const char* v = std::getenv(name);
     return v ? std::string(v) : default_value;
+}
+
+/** Read env string and convert to lowercase for case-insensitive parsing. */
+std::string env_string_lower(const char* name, const std::string& default_value) {
+    return to_lower(env_string(name, default_value));
 }
 
 unsigned long env_ulong(const char* name, unsigned long default_value) {
@@ -71,7 +85,7 @@ const std::vector<std::string>& device_ids_parsed() {
 }  // namespace
 
 ModelService model_service() {
-    return model_service_from_string(env_string("MODEL_SERVICE", defaults::MODEL_SERVICE));
+    return model_service_from_string(env_string_lower("MODEL_SERVICE", defaults::MODEL_SERVICE));
 }
 
 bool is_embedding_service() {
@@ -154,37 +168,32 @@ std::string visible_devices_for_worker(size_t worker_index) {
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
-    const char* v = std::getenv("LLM_DEVICE_BACKEND");
-    if (v) {
-        std::string s(v);
-        if (s == "ttrun") {
-            cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
-        } else if (s == "llama") {
-            cfg.max_in_flight_count = 16;
-            cfg.max_num_seqs = 16;
-            cfg.kvcache_block_size = 32;
-            cfg.max_num_batched_tokens = 16384;
-            cfg.runner_type = llm_engine::ModelRunnerType::Llama;
-        } else {
-            cfg.runner_type = llm_engine::ModelRunnerType::Mock;
-        }
+    std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
+    if (backend == "ttrun") {
+        cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+    } else if (backend == "llama") {
+        cfg.max_in_flight_count = 16;
+        cfg.max_num_seqs = 16;
+        cfg.kvcache_block_size = 32;
+        cfg.max_num_batched_tokens = 16384;
+        cfg.runner_type = llm_engine::ModelRunnerType::Llama;
+    } else {
+        cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
     cfg.scheduling_policy = scheduling_policy();
     return cfg;
 }
 
 ModelType model_type() {
-    return model_type_from_device_backend(env_string("LLM_DEVICE_BACKEND", "mock"));
+    return model_type_from_device_backend(env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
 }
 
 LLMMode llm_mode() {
-    return llm_mode_from_string(env_string("LLM_MODE", defaults::LLM_MODE));
+    return llm_mode_from_string(env_string_lower("LLM_MODE", defaults::LLM_MODE));
 }
 
 llm_engine::SchedulingPolicy scheduling_policy() {
-    auto s = env_string("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY);
-    if (s == "max_occupancy") return llm_engine::SchedulingPolicy::MAX_OCCUPANCY;
-    return llm_engine::SchedulingPolicy::PREFILL_FIRST;
+    return scheduling_policy_from_string(env_string_lower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
 }
 
 
