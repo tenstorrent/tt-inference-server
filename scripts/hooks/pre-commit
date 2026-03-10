@@ -3,13 +3,15 @@
 # Pre-commit hook: auto-format and lint staged Python files with ruff.
 # Install by running: scripts/setup-hooks.sh
 
-# Find ruff - check PATH first, then user's tt-metal python env
+# Find ruff - check PATH first, then project and user-specific environments
 RUFF=$(command -v ruff 2>/dev/null)
 if [ -z "$RUFF" ]; then
-    candidate="/localdev/$USER/tt-metal/python_env/bin/ruff"
-    if [ -x "$candidate" ]; then
-        RUFF="$candidate"
-    fi
+    for candidate in "./.pre-commit/bin/ruff" "./.venv/bin/ruff" "/localdev/$USER/tt-metal/python_env/bin/ruff"; do
+        if [ -x "$candidate" ]; then
+            RUFF="$candidate"
+            break
+        fi
+    done
 fi
 
 if [ -z "$RUFF" ]; then
