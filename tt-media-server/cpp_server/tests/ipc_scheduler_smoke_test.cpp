@@ -15,6 +15,7 @@
 #include "runners/llm_runner/config.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
@@ -82,7 +83,7 @@ int main() {
     config.eos = 0;
 
     auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
-    Scheduler sched(config, queue.get());
+    PrefillFirstScheduler sched(config, queue.get());
 
     auto [batch, is_prefill] = sched.schedule();
 
