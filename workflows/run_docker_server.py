@@ -163,11 +163,6 @@ def generate_docker_run_command(
         "--publish", f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
-        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
-        "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
-        "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
-        "--shm-size", "32G",
-        "--publish", f"{model_spec.cli_args.bind_host}:{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port to container port
     ]
 
     # setup_config-dependent mounts (cache_root volume)
