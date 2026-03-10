@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,6 +13,16 @@ sys.modules["utils.logger"].log_exception_chain = MagicMock()
 
 from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
+
+
+@pytest.fixture(autouse=True)
+def _passthrough_resolve_lora_path():
+    """Mock resolve_lora_path as identity so state-transition tests
+    don't need real files or HF network access."""
+    with patch(
+        "tt_model_runners.base_sdxl_runner.resolve_lora_path", side_effect=lambda p: p
+    ):
+        yield
 
 
 class _ConcreteSDXLRunner(BaseSDXLRunner):
