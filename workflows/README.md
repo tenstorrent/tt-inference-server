@@ -203,6 +203,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--local-server` | false | Run inference server on localhost. |
 | `-it`, `--interactive` | false | Run Docker in interactive mode. |
 | `--service-port` | `8000` | Service port. Also reads from `SERVICE_PORT` env var. |
+| `--bind-host` | `0.0.0.0` | Host interface for Docker port publishing. Use `127.0.0.1` for localhost-only access. |
 | `--no-auth` | false | Disable vLLM API key authorization (skips `JWT_SECRET` requirement). |
 | `--print-docker-cmd` | false | Print the Docker run command and exit without starting the server. |
 
@@ -224,10 +225,11 @@ Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be spec
 | `--dev-mode` | Enable developer mode (bind mounts source code into container). |
 | `--override-docker-image` | Override the Docker image used by `--docker-server`. |
 | `--device-id` | Tenstorrent device IDs, comma-separated PCI indices (e.g. `0` or `0,1,2`). |
-| `--override-tt-config` | Override TT config as JSON string (e.g., `'{"data_parallel": 16}'`). |
-| `--vllm-override-args` | Override vLLM arguments as JSON string (e.g., `'{"max_model_len": 4096}'`). |
+| `--override-tt-config` | Override TT config as JSON string (e.g., '{"data_parallel": 16}'). |
+| `--vllm-override-args` | Override vLLM arguments as JSON string (e.g., '{"max_model_len": 4096}'). |
 | `--disable-trace-capture` | Disable trace capture requests to speed up execution. |
-| `--workflow-args` | Additional workflow arguments (e.g., `'param1=value1 param2=value2'`). |
+| `--workflow-args` | Additional workflow arguments (e.g., 'param1=value1 param2=value2'). |
+
 
 ### Secrets
 
@@ -347,6 +349,12 @@ python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device 
 Run server workflow in Docker with interactive mode:
 ```bash
 python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
+```
+
+Run server workflow in Docker bound to localhost only:
+
+```bash
+python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --bind-host 127.0.0.1
 ```
 
 Run with custom service port and additional workflow arguments:
