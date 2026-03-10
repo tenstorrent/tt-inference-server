@@ -76,6 +76,7 @@ class PromptClient:
         cache_dir: Optional[Path] = None,
     ):
         self.env_config = env_config
+        self.model_spec = model_spec
         authorization = self._get_authorization()
         if authorization:
             self.headers = {"Authorization": f"Bearer {authorization}"}
@@ -260,21 +261,33 @@ class PromptClient:
 
         # Default input sizes if none provided
         if context_lens is None:
-            default_context_lens = {
-                (32, 4),
-                (64, 4),
-                (128, 4),
-                (256, 4),
-                (512, 4),
-                (1024, 4),
-                (2048, 4),
-                (3072, 4),
-                (4096, 4),
-                (8192, 4),
-                (16384, 4),
-            }
-            # ascending order of input sequence length
-            context_lens = sorted(default_context_lens)
+            # Get max_context from model_spec if available
+            if self.model_spec and hasattr(self.model_spec, "device_model_spec"):
+                max_context = self.model_spec.device_model_spec.max_context
+                # Use helper function to filter context lengths by max_context
+                context_lens = get_trace_context_lens(
+                    max_context=max_context, output_len=4
+                )
+                logger.info(
+                    f"Using trace context lengths filtered by max_context={max_context}: {context_lens}"
+                )
+            else:
+                # Fallback to hardcoded values if model_spec not available
+                default_context_lens = {
+                    (32, 4),
+                    (64, 4),
+                    (128, 4),
+                    (256, 4),
+                    (512, 4),
+                    (1024, 4),
+                    (2048, 4),
+                    (3072, 4),
+                    (4096, 4),
+                    (8192, 4),
+                    (16384, 4),
+                }
+                # ascending order of input sequence length
+                context_lens = sorted(default_context_lens)
 
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
