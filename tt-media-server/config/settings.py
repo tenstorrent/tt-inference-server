@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = False
+    download_weights_from_service: bool = True
 
     # Queue and batch settings
     max_queue_size: int = 5000
