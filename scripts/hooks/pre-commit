@@ -8,7 +8,7 @@ TOOL_ENV_BINS="./.pre-commit/bin ./.venv/bin /localdev/$USER/tt-metal/python_env
 
 RUFF=$(command -v ruff 2>/dev/null)
 if [ -z "$RUFF" ]; then
-    for candidate in "$TOOL_ENV_BINS"; do
+    for candidate in $TOOL_ENV_BINS; do
         if [ -x "$candidate" ]; then
             RUFF="$candidate"
             break
@@ -88,8 +88,7 @@ else
         echo "❌ pytest failed - fix errors above before committing"
         exit 1
     fi
+    echo "✅ pytest passed!"
 fi
 
-echo "✅ pytest passed!"
-
-echo "✅ All checks passed!"
+echo "✅ All pre-commit checks passed!"

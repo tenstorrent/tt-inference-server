@@ -13,6 +13,7 @@ __pycache__
 python_env
 .venv*
 .workflow_venvs*
+.pre-commit*
 
 # persistent storage volume
 persistent_volume
