@@ -66,8 +66,8 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
 LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
-      max_queue_size_(tt::config::max_queue_size()),
       tokenizer_(&tt::utils::active_tokenizer()) {
+    max_queue_size_ = tt::config::max_queue_size();
     TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
                 tt::config::to_string(mode_), num_workers_);
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
@@ -125,10 +125,12 @@ SystemStatus LLMService::get_system_status() const {
     return status;
 }
 
+size_t LLMService::current_queue_size() const {
+    return pending_tasks_.load();
+}
+
 void LLMService::pre_process(domain::CompletionRequest& request) const {
-    if (pending_tasks_.load() >= max_queue_size_) {
-        throw QueueFullException{};
-    }
+    BaseService::pre_process(request);
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
         static auto cfg = tt::utils::get_tokenizer_config();

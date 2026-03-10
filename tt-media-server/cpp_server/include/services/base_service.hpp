@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -55,8 +56,13 @@ public:
 
 protected:
     virtual ResponseType process_request(RequestType request) = 0;
-    virtual void pre_process(RequestType& request) const = 0;
+    virtual void pre_process(RequestType& /*request*/) const {
+        if (current_queue_size() >= max_queue_size_) throw QueueFullException{};
+    }
     virtual void post_process(ResponseType& response) const = 0;
+    virtual size_t current_queue_size() const = 0;
+
+    size_t max_queue_size_ = std::numeric_limits<size_t>::max();
 };
 
 } // namespace tt::services

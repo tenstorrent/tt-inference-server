@@ -636,7 +636,9 @@ struct EmbeddingService::Impl {
 // Public interface
 
 EmbeddingService::EmbeddingService()
-    : impl_(std::make_unique<Impl>()) {}
+    : impl_(std::make_unique<Impl>()) {
+    max_queue_size_ = impl_->max_queue_size_;
+}
 
 EmbeddingService::~EmbeddingService() = default;
 
@@ -652,10 +654,9 @@ bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
-    if (impl_->request_queue_.size() >= impl_->max_queue_size_) {
-        throw QueueFullException{};
-    }
+size_t EmbeddingService::current_queue_size() const {
+    std::lock_guard lock(impl_->queue_mutex_);
+    return impl_->request_queue_.size();
 }
 
 void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
@@ -677,7 +678,7 @@ SystemStatus EmbeddingService::get_system_status() const {
         status.queue_size = impl_->request_queue_.size();
     }
 
-    status.max_queue_size = impl_->max_queue_size_;
+    status.max_queue_size = max_queue_size_;
     status.device = "tenstorrent";
 
     for (size_t i = 0; i < impl_->num_workers_; ++i) {
