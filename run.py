@@ -140,6 +140,12 @@ def parse_arguments():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
+        "--bind-host",
+        type=str,
+        default="0.0.0.0",
+        help="Host interface to bind published docker service port to (default: 0.0.0.0)",
+    )
+    parser.add_argument(
         "--disable-trace-capture",
         action="store_true",
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
@@ -379,6 +385,7 @@ def format_cli_args_summary(runtime_config):
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
         f"  service_port:               {runtime_config.service_port}",
+        f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",
         f"  docker_interactive:         {runtime_config.interactive}",
         f"  device_id:                  {runtime_config.device_id}",
