@@ -2874,7 +2874,7 @@ embedding_templates = [
 cnn_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-4B"],
-        tt_metal_commit="2496be4",
+        tt_metal_commit="bfgrsddv",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
