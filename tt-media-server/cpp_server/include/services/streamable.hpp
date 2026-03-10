@@ -17,10 +17,10 @@ public:
     virtual ~Streamable() = default;
 
     void submit_streaming_request(
-        RequestType request,
+        RequestType& request,
         std::function<void(const ResponseType&, bool is_final)> callback
     ) {
-        streaming_pre_process(request);
+        pre_process(request);
         process_streaming_request(std::move(request),
             [this, cb = std::move(callback)](ResponseType& response, bool is_final) {
                 streaming_post_process(response);
@@ -34,7 +34,7 @@ protected:
         std::function<void(ResponseType&, bool is_final)> callback
     ) = 0;
 
-    virtual void streaming_pre_process(RequestType& request) const = 0;
+    virtual void pre_process(RequestType& request) const = 0;
     virtual void streaming_post_process(ResponseType& response) const = 0;
 };
 

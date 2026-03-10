@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 
 from workflows.log_setup import clean_log_file
@@ -22,7 +23,6 @@ from workflows.utils import (
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
-    ModelSource,
     ModelType,
     WorkflowType,
 )
@@ -35,16 +35,9 @@ def short_uuid():
 
 
 def get_media_server_docker_env_vars(model_spec):
-    """Get media server environment variables for Docker container.
-
-    Args:
-        model_spec: Model specification
-        args: CLI arguments
-
-    Returns:
-        Dictionary of media server environment variables
-    """
+    """Get media server environment variables for Docker container."""
     env_vars = {
+        "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }
@@ -86,20 +79,58 @@ def ensure_docker_image(image_name):
     return True
 
 
-def run_docker_server(model_spec, setup_config, json_fpath):
-    args = model_spec.cli_args
+def generate_docker_volume_name(model_spec) -> str:
+    """Generate consistent volume name for model weights/cache persistence.
+
+    The volume name excludes version to allow image upgrades without creating new volumes.
+    """
+    return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
+
+
+def format_docker_command(docker_command):
+    """Format a docker command list as a multi-line string with key-value pairs on the same line."""
+    lines = []
+    i = 0
+    if len(docker_command) >= 2 and not docker_command[1].startswith("-"):
+        lines.append(
+            f"{shlex.quote(docker_command[0])} {shlex.quote(docker_command[1])}"
+        )
+        i = 2
+    while i < len(docker_command):
+        quoted = shlex.quote(docker_command[i])
+        if (
+            docker_command[i].startswith("-")
+            and i + 1 < len(docker_command)
+            and not docker_command[i + 1].startswith("-")
+        ):
+            next_quoted = shlex.quote(docker_command[i + 1])
+            lines.append(f"{quoted} {next_quoted}")
+            i += 2
+        else:
+            lines.append(quoted)
+            i += 1
+    return " \\\n  ".join(lines)
+
+
+def generate_docker_run_command(
+    model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
+):
+    """Generate docker run command list.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object with CLI runtime state
+        setup_config: Optional SetupConfig object. When None, host-dependent
+            bind mounts (cache root, host weights) and their env vars are skipped.
+        json_fpath: Optional path to run config JSON file. When None, the
+            JSON bind mount and RUNTIME_MODEL_SPEC_JSON_PATH env var are skipped.
+        str_cmd: If True, return a formatted string instead of a list.
+
+    Returns:
+        Tuple of (docker_command: List[str], container_name: str)
+    """
     repo_root_path = get_repo_root_path()
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
-    ensure_readwriteable_dir(docker_log_file_dir)
-    server_prefix = (
-        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
-    )
-    docker_log_file_path = (
-        docker_log_file_dir
-        / f"{server_prefix}_{timestamp}_{args.model}_{args.device}_{args.workflow}.log"
-    )
-    device = DeviceTypes.from_string(args.device)
+    device = DeviceTypes.from_string(runtime_config.device)
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
@@ -112,36 +143,12 @@ def run_docker_server(model_spec, setup_config, json_fpath):
 
     # create device mapping string to pass to docker run
     device_path = "/dev/tenstorrent"
-    if not getattr(args, "device_id", None):
+    if not runtime_config.device_id:
         device_map_strs = ["--device", f"{device_path}:{device_path}"]
     else:
         device_map_strs = []
-        for d in args.device_id:
+        for d in runtime_config.device_id:
             device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
-
-    # ensure docker image is available
-    assert ensure_docker_image(model_spec.docker_image), (
-        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
-    )
-
-    docker_json_fpath = setup_config.container_model_spec_dir / json_fpath.name
-    # CACHE_ROOT needed for the docker container entrypoint
-    # TT_CACHE_PATH has host path
-    # TT_MODEL_SPEC_JSON_PATH has dynamic path
-    # MODEL_WEIGHTS_PATH has dynamic path
-    docker_env_vars = {
-        "CACHE_ROOT": setup_config.cache_root,
-        "TT_CACHE_PATH": setup_config.container_tt_metal_cache_dir / device_cache_dir,
-        "MODEL_WEIGHTS_PATH": setup_config.container_model_weights_path,
-        "TT_MODEL_SPEC_JSON_PATH": docker_json_fpath,
-    }
-
-    if (
-        model_spec.inference_engine == InferenceEngine.FORGE.value
-        or model_spec.inference_engine == InferenceEngine.MEDIA.value
-    ):
-        # Add environment variables for tt-media-server containers (forge and media)
-        docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -150,25 +157,98 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "run",
         "--rm",
         "--name", container_name,
+        *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--cap-add", "ALL",
+        "--ipc", "host",
+        "--publish", f"{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
-        # note: order of mounts matters, model_volume_root must be mounted before nested mounts
-        "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
-        "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
-        "--shm-size", "32G",
-        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
     ]
-    # mount model weights only if model source requires it
-    if setup_config.model_source != ModelSource.NOACTION.value:
+
+    # setup_config-dependent mounts (cache_root volume)
+    if setup_config:
+        if setup_config.host_model_volume_root:
+            docker_command.extend([
+                "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
+            ])
+        else:
+            volume_name = generate_docker_volume_name(model_spec)
+            docker_command.extend([
+                "--volume", f"{volume_name}:{setup_config.cache_root}",
+            ])
+
+    if setup_config and setup_config.host_model_weights_mount_dir:
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
 
-    if args.interactive:
+    if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
+
+    docker_env_vars = {}
+    if setup_config:
+        if (
+            setup_config.container_model_weights_path
+            and setup_config.host_model_weights_mount_dir
+        ):
+            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
+                setup_config.container_model_weights_path
+            )
+        if (
+            setup_config.host_model_volume_root
+            and setup_config.container_tt_metal_cache_dir
+        ):
+            docker_env_vars["TT_CACHE_PATH"] = (
+                setup_config.container_tt_metal_cache_dir / device_cache_dir
+            )
+
+    if (
+        model_spec.inference_engine == InferenceEngine.FORGE.value
+        or model_spec.inference_engine == InferenceEngine.MEDIA.value
+    ):
+        docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+
+    user_home_path = "/home/container_app_user"
+    if runtime_config.dev_mode:
+        if json_fpath:
+            container_model_spec_dir = Path(f"{user_home_path}/model_specs")
+            runtime_json_fpath = container_model_spec_dir / json_fpath.name
+            docker_command += [
+                "--mount",
+                f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
+            ]
+            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+        else:
+            logger.warning(
+                "No runtime model spec JSON path provided while in dev mode, using default model spec."
+            )
+
+        # fmt: off
+        docker_command += [
+            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
+            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
+            "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
+        ]
+        if (
+            model_spec.model_type in (
+                ModelType.CNN,
+                ModelType.IMAGE,
+                ModelType.EMBEDDING,
+                ModelType.VIDEO,
+                ModelType.TEXT_TO_SPEECH,
+                ModelType.AUDIO,
+            )
+        ):
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
+            ]
+        else:
+            docker_command += [
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+            ]
+        # fmt: on
 
     for key, value in docker_env_vars.items():
         if value:
@@ -176,61 +256,51 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
-    if args.dev_mode:
-        # development mounts
-        # Define the environment file path for the container.
-        user_home_path = "/home/container_app_user"
-        # fmt: off
-        if model_spec.model_type == ModelType.AUDIO:
-            # For audio models (tt-media-server containers), mount the tt-media-server directory
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            ]
-        elif (
-            model_spec.model_type == ModelType.CNN
-            or model_spec.model_type == ModelType.IMAGE
-            or model_spec.model_type == ModelType.EMBEDDING
-            or model_spec.model_type == ModelType.VIDEO
-            or model_spec.model_type == ModelType.TEXT_TO_SPEECH
-        ):
-            # For CNN, IMAGE, EMBEDDING, VIDEO, and TTS models (tt-media-server containers), mount the tt-media-server directory
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-            ]
-        else:
-            # For LLM models (vLLM containers), mount vLLM-related directories
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
-                "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-                "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
-                "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
-                "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
-            ]
-        # fmt: on
+    if runtime_config.disable_metal_timeout:
+        docker_command.extend(["-e", "DISABLE_METAL_OP_TIMEOUT=1"])
 
-    # add docker image at end
     docker_command.append(model_spec.docker_image)
-    if args.interactive:
-        docker_command.extend(["bash", "-c", "sleep infinity"])
-    logger.info(f"Docker run command:\n{shlex.join(docker_command)}\n")
+    # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
+    if model_spec.inference_engine == InferenceEngine.VLLM.value:
+        docker_command.extend(["--model", model_spec.hf_model_repo])
+        docker_command.extend(["--tt-device", runtime_config.device])
 
+    if runtime_config.no_auth:
+        docker_command.append("--no-auth")
+    if runtime_config.disable_trace_capture:
+        docker_command.append("--disable-trace-capture")
+    if runtime_config.service_port and str(runtime_config.service_port) != "8000":
+        docker_command.extend(["--service-port", str(runtime_config.service_port)])
+    if runtime_config.interactive:
+        docker_command.extend(["bash", "-c", "sleep infinity"])
+
+    if str_cmd:
+        return format_docker_command(docker_command), None
+
+    return docker_command, container_name
+
+
+def run_docker_command(
+    docker_command, container_name, runtime_config, model_spec, docker_log_file_path
+):
+    """Run a docker command and manage its lifecycle.
+
+    Args:
+        docker_command: List of strings forming the docker run command
+        container_name: Name assigned to the docker container
+        runtime_config: RuntimeConfig object
+        model_spec: ModelSpec object
+        docker_log_file_path: Path to the docker log file
+
+    Returns:
+        Dict with container_name, container_id, docker_log_file_path, service_port
+    """
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    # note: running without -d (detached mode) because logs from tt-metal cannot
-    # be accessed otherwise, e.g. via docker logs <container_id>
-    # this has added benefit of providing a docker run command users can run
-    # for debugging more easily
     _ = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
-    # poll for container to start
     TIMEOUT = 30  # seconds
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
@@ -256,13 +326,12 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         raise RuntimeError("Docker container failed to start.")
 
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
-    if WorkflowType.from_string(args.workflow) not in skip_workflows:
+    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
 
         def teardown_docker():
             logger.info("atexit: Stopping inference server Docker container ...")
             subprocess.run(["docker", "stop", container_name])
             docker_log_file.close()
-            # remove asci escape formating from log file
             clean_log_file(docker_log_file_path)
             logger.info("run_docker cleanup finished.")
 
@@ -270,8 +339,6 @@ def run_docker_server(model_spec, setup_config, json_fpath):
     else:
 
         def exit_log_messages():
-            # note: closing the file in this process does not stop the container from
-            # streaming output to the log file
             docker_log_file.close()
             logger.info(f"Created Docker container ID: {container_id}")
             logger.info(f"Access container logs via: docker logs -f {container_id}")
@@ -288,5 +355,39 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "container_name": container_name,
         "container_id": container_id,
         "docker_log_file_path": str(docker_log_file_path),
-        "service_port": args.service_port,
+        "service_port": runtime_config.service_port,
     }
+
+
+def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
+    """Orchestrate docker server: ensure image, generate command, run container.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object
+        setup_config: SetupConfig object from setup_host()
+        json_fpath: Path to run config JSON file
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
+    ensure_readwriteable_dir(docker_log_file_dir)
+    server_prefix = (
+        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
+    )
+    docker_log_file_path = (
+        docker_log_file_dir
+        / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    )
+
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
+
+    docker_command, container_name = generate_docker_run_command(
+        model_spec, runtime_config, setup_config, json_fpath
+    )
+    logger.info(f"Docker run command:\n{format_docker_command(docker_command)}\n")
+
+    return run_docker_command(
+        docker_command, container_name, runtime_config, model_spec, docker_log_file_path
+    )

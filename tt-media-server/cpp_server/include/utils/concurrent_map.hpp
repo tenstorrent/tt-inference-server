@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 #pragma once
 
 #include "profiling/tracy.hpp"
@@ -30,9 +32,33 @@ public:
         map_.erase(key);
     }
 
+    std::optional<Value> take(const Key& key) {
+        std::lock_guard lock(mutex_);
+        auto it = map_.find(key);
+        if (it == map_.end()) {
+            return std::nullopt;
+        }
+        auto value = std::move(it->second);
+        map_.erase(it);
+        return value;
+    }
+
     bool contains(const Key& key) {
         std::lock_guard lock(mutex_);
         return map_.find(key) != map_.end();
+    }
+
+    void clear() {
+        std::lock_guard lock(mutex_);
+        map_.clear();
+    }
+
+    template<typename Func>
+    void for_each(Func&& func) {
+        std::lock_guard lock(mutex_);
+        for (auto& [key, value] : map_) {
+            func(key, value);
+        }
     }
 
     ConcurrentMap(const ConcurrentMap&) = delete;

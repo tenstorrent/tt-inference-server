@@ -297,7 +297,7 @@ struct EmbeddingService::Impl {
             append_uint32(static_cast<uint32_t>(batch.size()));
 
             for (size_t i = 0; i < batch.size(); ++i) {
-                append_string(batch[i].task_id);
+                append_string(batch[i].task_id.id);
 
                 if (i < responses.size() && responses[i].error.empty()) {
                     response_buffer.push_back(0);  // has_error = false
@@ -578,7 +578,7 @@ struct EmbeddingService::Impl {
 
         for (uint32_t i = 0; i < num_responses && offset < response_buffer.size(); ++i) {
             domain::EmbeddingResponse resp;
-            resp.task_id = read_string();
+            resp.task_id = domain::TaskID(read_string());
             uint8_t has_error = response_buffer[offset++];
 
             if (has_error) {
@@ -589,7 +589,7 @@ struct EmbeddingService::Impl {
                 resp.model = read_string();
             }
 
-            response_map[resp.task_id] = std::move(resp);
+            response_map[resp.task_id.id] = std::move(resp);
         }
 
         auto t5 = std::chrono::steady_clock::now();
@@ -616,7 +616,7 @@ struct EmbeddingService::Impl {
 
         // Match responses to requests by task_id
         for (auto& pending : batch) {
-            auto it = response_map.find(pending->request.task_id);
+            auto it = response_map.find(pending->request.task_id.id);
             if (it != response_map.end()) {
                 pending->promise.set_value(std::move(it->second));
             } else {

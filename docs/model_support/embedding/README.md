@@ -10,6 +10,6 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 
 | Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- |
-| [BGE-Large-EN-v1.5](BGE-Large-EN-v1.5_galaxy.md) | [🛠️ Experimental](BGE-Large-EN-v1.5_galaxy.md) | [🛠️ Experimental](BGE-Large-EN-v1.5_t3k.md) | [🛠️ Experimental](BGE-Large-EN-v1.5_n150.md) |
+| [bge-large-en-v1.5](bge-large-en-v1.5_galaxy.md) | [🛠️ Experimental](bge-large-en-v1.5_galaxy.md) | [🛠️ Experimental](bge-large-en-v1.5_t3k.md) | [🛠️ Experimental](bge-large-en-v1.5_n150.md) |
 | [Qwen3-Embedding-4B](Qwen3-Embedding-4B_galaxy.md) | [🛠️ Experimental](Qwen3-Embedding-4B_galaxy.md) | [🛠️ Experimental](Qwen3-Embedding-4B_t3k.md) | [🛠️ Experimental](Qwen3-Embedding-4B_n150.md) |
 | [Qwen3-Embedding-8B](Qwen3-Embedding-8B_galaxy.md) | [🛠️ Experimental](Qwen3-Embedding-8B_galaxy.md) | [🛠️ Experimental](Qwen3-Embedding-8B_t3k.md) | [🛠️ Experimental](Qwen3-Embedding-8B_n150.md) |

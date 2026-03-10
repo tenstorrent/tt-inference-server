@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import argparse
 import json
 import logging
 import multiprocessing
@@ -9,8 +10,9 @@ import os
 import runpy
 import sys
 from pathlib import Path
-from pprint import pprint
+from typing import Optional
 
+from huggingface_hub import snapshot_download
 from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
@@ -18,7 +20,6 @@ from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
     create_model_symlink,
     get_encoded_api_key,
-    resolve_commit,
 )
 
 logging.basicConfig(
@@ -28,36 +29,349 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def handle_code_versions(model_spec_json):
-    tt_metal_home = os.getenv("TT_METAL_HOME")
-    vllm_dir = os.getenv("vllm_dir")
+def parse_args():
+    """Parse CLI arguments before any model loading.
 
-    tt_metal_sha = resolve_commit("HEAD", tt_metal_home)
-    logger.info(f"TT_METAL_HOME: {tt_metal_home}")
-    logger.info(f"commit SHA: {tt_metal_sha}")
+    Also removes --model and --device from sys.argv so they don't get passed
+    to vLLM's argument parser (which doesn't recognize --device).
+    """
+    parser = argparse.ArgumentParser(description="TT vLLM API Server")
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="HuggingFace model repo (e.g., meta-llama/Llama-3.1-8B)",
+    )
+    parser.add_argument(
+        "--tt-device",
+        type=str,
+        required=True,
+        help="Device type (e.g., n300, t3k, galaxy)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        help="Device type (e.g., n300, t3k, galaxy)",
+    )
+    parser.add_argument(
+        "--engine",
+        type=str,
+        choices=["vllm", "media", "forge"],
+        help="Inference engine override (vllm/media/forge).",
+    )
+    parser.add_argument(
+        "--impl",
+        type=str,
+        help="Implementation name override (e.g. tt-transformers).",
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help="Disable vLLM API key authorization (skips JWT_SECRET requirement)",
+    )
+    parser.add_argument(
+        "--disable-trace-capture",
+        action="store_true",
+        help="Disable automatic trace capture requests on server startup",
+    )
+    parser.add_argument(
+        "--service-port",
+        type=int,
+        default=None,
+        help="Service port for trace capture (defaults to vllm_args port or 8000)",
+    )
+    # Parse known args to allow vLLM args to pass through
+    args, remaining = parser.parse_known_args()
 
-    vllm_sha = resolve_commit("HEAD", vllm_dir)
-    logger.info(f"vllm_dir: {vllm_dir}")
-    logger.info(f"commit SHA: {vllm_sha}")
+    # Remove --model and --device from sys.argv so vLLM doesn't see them
+    # Keep sys.argv[0] (script name) and add remaining args
+    sys.argv = [sys.argv[0]] + remaining
+
+    return args
 
 
-def _load_model_spec_json():
-    """Load ModelSpec JSON from TT_MODEL_SPEC_JSON_PATH.
+# Device type name to mesh device string mapping
+# This maps the canonical device type names (used in model specs JSON) to
+# the mesh device strings used for cache paths
+DEVICE_TO_MESH_STR = {
+    "CPU": "CPU",
+    "E150": "E150",
+    "N150": "N150",
+    "P100": "P100",
+    "P150": "P150",
+    "P150X4": "P150x4",
+    "P150X8": "P150x8",
+    "N150X4": "N150x4",
+    "N300": "N300",
+    "P300": "P300",
+    "P300X2": "P300x2",
+    "T3K": "T3K",
+    "GALAXY": "TG",
+    "GALAXY_T3K": "T3K",
+    "DUAL_GALAXY": "DUAL",
+    "QUAD_GALAXY": "QUAD",
+    "GPU": "GPU",
+}
+
+
+def normalize_device_type(device_arg: str) -> str:
+    """Convert user-provided device string to canonical device type name.
+
+    Args:
+        device_arg: User-provided device type (e.g., "n300", "galaxy", "T3K")
 
     Returns:
-        dict: The loaded ModelSpec JSON.
+        Canonical device type name (e.g., "N300", "GALAXY", "T3K")
+    """
+    return device_arg.upper()
+
+
+def normalize_engine_type(engine_arg: Optional[str]) -> Optional[str]:
+    if not engine_arg:
+        return None
+    engine_map = {
+        "vllm": "vLLM",
+        "media": "media",
+        "forge": "forge",
+    }
+    return engine_map[engine_arg.lower()]
+
+
+def device_to_mesh_str(device_type: str) -> str:
+    """Convert device type name to mesh device string for cache paths.
+
+    Args:
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
+
+    Returns:
+        Mesh device string (e.g., "N300", "TG")
+    """
+    if device_type not in DEVICE_TO_MESH_STR:
+        raise ValueError(f"Unknown device type: {device_type}")
+    return DEVICE_TO_MESH_STR[device_type]
+
+
+def load_model_spec(
+    model_arg: Optional[str],
+    device_arg: Optional[str],
+    engine_arg: Optional[str] = None,
+    impl_arg: Optional[str] = None,
+) -> dict:
+    """Load and resolve a single model spec.
+
+    Resolution order:
+    1. Runtime mode: RUNTIME_MODEL_SPEC_JSON_PATH points to a pre-resolved spec
+       (produced by run.py --docker-server)
+    2. Catalog mode: MODEL_SPECS_JSON_PATH + --model/--tt-device/--device (+ optional
+       --engine/--impl) are used to resolve one spec from the built-in catalog.
+
+    Returns:
+        dict: The resolved single model spec.
 
     Raises:
-        RuntimeError: If TT_MODEL_SPEC_JSON_PATH environment variable is not set.
-        FileNotFoundError: If the specified file does not exist.
-        JSONDecodeError: If the file contains invalid JSON.
+        RuntimeError: If runtime path is not available and required CLI args are missing.
     """
-    model_spec_path = os.getenv("TT_MODEL_SPEC_JSON_PATH")
-    if model_spec_path is None:
-        raise RuntimeError("TT_MODEL_SPEC_JSON_PATH environment variable is not set")
+    runtime_path = os.getenv("RUNTIME_MODEL_SPEC_JSON_PATH")
+    if runtime_path:
+        runtime_path = Path(runtime_path)
+        if runtime_path.exists():
+            logger.info(
+                "Using pre-resolved runtime model spec from "
+                f"RUNTIME_MODEL_SPEC_JSON_PATH={runtime_path}"
+            )
+            logger.info(f"Loading runtime model spec from: {runtime_path}")
+            with open(runtime_path, "r") as f:
+                data = json.load(f)
+            return data.get("runtime_model_spec", data)
+        logger.warning(
+            f"RUNTIME_MODEL_SPEC_JSON_PATH={runtime_path} does not exist, "
+            "falling back to default model spec catalog."
+        )
 
-    with open(model_spec_path, "r") as f:
-        return json.load(f)
+    if not model_arg or not device_arg:
+        raise RuntimeError(
+            "Either set RUNTIME_MODEL_SPEC_JSON_PATH env var "
+            "(for 'python run.py --docker-server' workflow), or provide --model and "
+            "--tt-device/--device for direct docker run. "
+            "Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
+        )
+
+    # Catalog mode (default_model_spec.json built into image)
+    specs_path = os.getenv(
+        "MODEL_SPECS_JSON_PATH",
+        "/home/container_app_user/model_specs/default_model_spec.json",
+    )
+    logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
+    with open(specs_path, "r") as f:
+        all_specs = json.load(f)
+
+    device_type = normalize_device_type(device_arg)
+    model_spec = find_default_impl(
+        all_specs,
+        model_arg,
+        device_type,
+        engine_arg=engine_arg,
+        impl_arg=impl_arg,
+    )
+    logger.info(
+        f"Using default interface: found model spec for --model={model_arg}, "
+        f"--device={device_type}, --engine={engine_arg}, --impl={impl_arg}"
+    )
+    return model_spec
+
+
+def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
+    """Resolve model_arg to an hf_model_repo key in all_specs.
+
+    Tries exact match first, then falls back to matching the short model name
+    (last path segment) against all hf_model_repo keys.
+
+    Args:
+        all_specs: Nested model specs dict keyed by hf_model_repo at top level
+        model_arg: The --model argument (HuggingFace repo or model name)
+
+    Returns:
+        The matching hf_model_repo key
+
+    Raises:
+        ValueError: If no matching hf_model_repo is found
+    """
+    if model_arg in all_specs:
+        return model_arg
+
+    short_name = model_arg.split("/")[-1]
+    for hf_repo in all_specs:
+        if hf_repo.split("/")[-1] == short_name:
+            return hf_repo
+
+    raise ValueError(
+        f"No model spec found for model={model_arg}. "
+        f"Available models: {list(all_specs.keys())[:10]}..."
+    )
+
+
+def find_default_impl(
+    all_specs: dict,
+    model_arg: str,
+    device_type: str,
+    engine_arg: Optional[str] = None,
+    impl_arg: Optional[str] = None,
+) -> dict:
+    """Find the default implementation spec for a given model and device.
+
+    Navigates the nested model spec structure to find the spec with
+    default_impl=True for the given hf_model_repo and device_type.
+
+    Args:
+        all_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
+        model_arg: The --model argument (HuggingFace repo or model name)
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
+
+    Returns:
+        dict: The matching model spec with default_impl=True
+
+    Raises:
+        ValueError: If no matching spec is found
+    """
+    hf_repo = _resolve_hf_repo(all_specs, model_arg)
+    device_specs = all_specs[hf_repo].get(device_type)
+    if not device_specs:
+        available_devices = list(all_specs[hf_repo].keys())
+        raise ValueError(
+            f"No model spec found for model={model_arg}, device={device_type}. "
+            f"Available devices for {hf_repo}: {available_devices}"
+        )
+
+    if engine_arg:
+        device_specs = {engine_arg: device_specs.get(engine_arg, {})}
+
+    for engine_specs in device_specs.values():
+        for spec in engine_specs.values():
+            spec_impl_name = spec.get("impl", {}).get("impl_name")
+            if impl_arg and spec_impl_name != impl_arg:
+                continue
+            if spec.get("device_model_spec", {}).get("default_impl"):
+                return spec
+
+    for engine_specs in device_specs.values():
+        for spec in engine_specs.values():
+            spec_impl_name = spec.get("impl", {}).get("impl_name")
+            if impl_arg and spec_impl_name != impl_arg:
+                continue
+            return spec
+
+    raise ValueError(
+        f"No default_impl found for model={model_arg}, device={device_type}, "
+        f"engine={engine_arg}, impl={impl_arg}. "
+        f"Check that at least one impl has default_impl=True."
+    )
+
+
+def ensure_weights_available(model_spec: dict) -> Path:
+    """Ensure model weights are available, downloading if necessary.
+
+    If MODEL_WEIGHTS_DIR is already set (e.g. from --host-weights-dir bind mount),
+    uses that directory directly and skips downloading.
+
+    Args:
+        model_spec: The model specification dictionary
+
+    Returns:
+        Path: Path to the model weights directory
+    """
+    # If MODEL_WEIGHTS_DIR is already set, use it directly and skip downloading
+    model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
+    if model_weights_dir:
+        weights_path = Path(model_weights_dir)
+        if not weights_path.exists():
+            raise RuntimeError(
+                f"MODEL_WEIGHTS_DIR={model_weights_dir} does not exist. "
+                "Ensure the host directory is correctly bind-mounted."
+            )
+        if not any(weights_path.iterdir()):
+            raise RuntimeError(
+                f"MODEL_WEIGHTS_DIR={model_weights_dir} is empty. "
+                "Ensure the host directory contains model weight files."
+            )
+        logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
+        return weights_path
+
+    # Default: download weights into cache_root
+    cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+    model_name = model_spec["model_name"]
+    weights_path = cache_root / "weights" / model_name
+
+    if not weights_path.exists() or not any(weights_path.iterdir()):
+        hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+        logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
+        weights_path.mkdir(parents=True, exist_ok=True)
+        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+    else:
+        logger.info(f"Weights already exist at {weights_path}")
+
+    os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
+    return weights_path
+
+
+def set_cache_paths(model_spec: dict, device_type: str):
+    """Set TT_CACHE_PATH and MESH_DEVICE for model-specific cache directory.
+
+    Args:
+        model_spec: The model specification dictionary
+        device_type: Canonical device type name (e.g., "N300", "GALAXY")
+    """
+    cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+    model_name = model_spec["model_name"]
+    mesh_device = device_to_mesh_str(device_type)
+
+    # Set MESH_DEVICE env var for other components that need it
+    os.environ["MESH_DEVICE"] = mesh_device
+    logger.info(f"Set MESH_DEVICE to {mesh_device}")
+
+    # Preserve model/device-specific cache structure
+    tt_cache_path = cache_root / "tt_metal_cache" / f"cache_{model_name}" / mesh_device
+    tt_cache_path.mkdir(parents=True, exist_ok=True)
+    os.environ["TT_CACHE_PATH"] = str(tt_cache_path)
+    logger.info(f"Set TT_CACHE_PATH to {tt_cache_path}")
 
 
 def register_tt_models(impl_id=None):
@@ -73,8 +387,6 @@ def register_tt_models(impl_id=None):
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
-    elif impl_id == "llama2_70b":
-        os.environ["TT_LLAMA_TEXT_VER"] = "llama2_70b"
     else:  # default: tt_transformers
         os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
 
@@ -91,23 +403,17 @@ def register_tt_models(impl_id=None):
     )
 
 
-# Load model spec at import time for vLLM model registration
-_MODEL_SPEC = _load_model_spec_json()
-_IMPL_ID = _MODEL_SPEC.get("impl", {}).get("impl_id")
-register_tt_models(_IMPL_ID)
-
-
-def model_setup(model_spec_json, impl_id):
+def model_setup(model_spec_json):
     # step 1: validate env vars passed in
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
     symlinks_dir = cache_root / "model_file_symlinks_map"
     symlinks_dir.mkdir(parents=True, exist_ok=True)
 
-    logging.info(f"MODEL_WEIGHTS_PATH: {os.getenv('MODEL_WEIGHTS_PATH')}")
-    assert os.getenv("MODEL_WEIGHTS_PATH") is not None, "MODEL_WEIGHTS_PATH must be set"
-    weights_dir = Path(os.getenv("MODEL_WEIGHTS_PATH"))
-    assert weights_dir.exists(), f"MODEL_WEIGHTS_PATH: {weights_dir} does not exist"
+    logging.info(f"MODEL_WEIGHTS_DIR: {os.getenv('MODEL_WEIGHTS_DIR')}")
+    assert os.getenv("MODEL_WEIGHTS_DIR") is not None, "MODEL_WEIGHTS_DIR must be set"
+    weights_dir = Path(os.getenv("MODEL_WEIGHTS_DIR"))
+    assert weights_dir.exists(), f"MODEL_WEIGHTS_DIR: {weights_dir} does not exist"
 
     logging.info(f"TT_CACHE_PATH: {os.getenv('TT_CACHE_PATH')}")
     assert os.getenv("TT_CACHE_PATH") is not None, "TT_CACHE_PATH must be set"
@@ -118,36 +424,15 @@ def model_setup(model_spec_json, impl_id):
     logger.info(f"setting vllm logging config at: {config_path}")
     logger.info(f"setting vllm logging file at: {log_path}")
 
-    dynamic_env_vars = {
-        "VLLM_LOGGING_CONFIG": str(config_path),
-    }
-    model_env_vars = {}
-
     # set HF_MODEL environment variable for loading
     logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
     model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
     hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
-    model_env_vars["HF_MODEL"] = hf_dir
-    logging.info(f"HF_MODEL: {os.getenv('HF_MODEL')}")
 
-    if impl_id == "subdevices":
-        model_env_vars["LLAMA_VERSION"] = "subdevices"
-    elif impl_id == "llama2-t3000":
-        model_env_vars.update(
-            {
-                "meta-llama/Llama-3.1-70B-Instruct": {
-                    "LLAMA_VERSION": "llama3",
-                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-                },
-                "meta-llama/Llama-3.3-70B-Instruct": {
-                    "LLAMA_VERSION": "llama3",
-                    "LLAMA_DIR": os.getenv("MODEL_WEIGHTS_PATH"),
-                },
-            }.get(model_spec_json["hf_model_repo"], {})
-        )
-
-    # merge dynamic and model-specific env vars
-    dynamic_env_vars = {**dynamic_env_vars, **model_env_vars}
+    dynamic_env_vars = {
+        "VLLM_LOGGING_CONFIG": str(config_path),
+        "HF_MODEL": hf_dir,
+    }
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
@@ -162,8 +447,7 @@ def model_setup(model_spec_json, impl_id):
             del os.environ[key]
 
 
-def handle_secrets(model_spec_json):
-    # Check if HF_TOKEN is set
+def handle_secrets(no_auth=False):
     hf_token = os.getenv("HF_TOKEN")
     if hf_token:
         logger.info("HF_TOKEN is set")
@@ -172,8 +456,6 @@ def handle_secrets(model_spec_json):
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
 
-    # Check if --no-auth was passed via CLI args
-    no_auth = model_spec_json.get("cli_args", {}).get("no_auth", False)
     if no_auth:
         # Remove VLLM_API_KEY if present to disable authorization
         if "VLLM_API_KEY" in os.environ:
@@ -206,16 +488,74 @@ def handle_secrets(model_spec_json):
         )
 
 
-def runtime_settings(model_spec_json, impl_id):
+def runtime_settings(model_spec_json, no_auth=False):
     logger.info(f"using model: {model_spec_json['model_id']}")
-    handle_secrets(model_spec_json)
+    handle_secrets(no_auth=no_auth)
 
     # TODO: check HF repo access with HF_TOKEN supplied
-    model_setup(model_spec_json, impl_id)
+    model_setup(model_spec_json)
+
+
+def set_metal_timeout_env_vars():
+    """Set tt-metal operation timeout env vars for automatic hang detection.
+
+    When enabled (default), configures TT_METAL_OPERATION_TIMEOUT_SECONDS and
+    TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE so that tt-triage runs
+    automatically when an op dispatch hangs.
+
+    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set (via run.py --disable-metal-timeout).
+    """
+    if os.getenv("DISABLE_METAL_OP_TIMEOUT") == "1":
+        logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
+        return
+
+    tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
+    python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
+    log_dir = os.getenv("TT_METAL_LOGS_PATH", "/home/container_app_user/logs")
+
+    triage_new = Path(tt_metal_home) / "tools" / "triage" / "triage.py"
+    triage_old = Path(tt_metal_home) / "scripts" / "debugging_scripts" / "triage.py"
+    triage_script = str(triage_new if triage_new.exists() else triage_old)
+
+    timeout_cmd = (
+        f"{python_env_dir}/bin/python {triage_script} "
+        f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
+    )
+
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
+    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
 def set_runtime_env_vars(model_spec_json):
-    for key, value in model_spec_json["env_vars"].items():
+    """Set runtime environment variables from model spec.
+
+    Handles env_vars in two possible locations:
+    1. Top level: model_spec_json["env_vars"] (from ModelSpec.__post_init__ merge)
+    2. Nested: model_spec_json["device_model_spec"]["env_vars"] (raw JSON)
+
+    Both locations are checked and merged, with top-level taking precedence.
+    """
+    env_vars = {}
+
+    # Check nested location first (device_model_spec.env_vars)
+    device_model_spec = model_spec_json.get("device_model_spec", {})
+    if isinstance(device_model_spec, dict):
+        nested_env_vars = device_model_spec.get("env_vars", {})
+        if nested_env_vars:
+            env_vars.update(nested_env_vars)
+
+    # Check top-level location (takes precedence)
+    top_level_env_vars = model_spec_json.get("env_vars", {})
+    if top_level_env_vars:
+        env_vars.update(top_level_env_vars)
+
+    if not env_vars:
+        logger.info("No env_vars found in model spec")
+        return
+
+    for key, value in env_vars.items():
         if not isinstance(key, str):
             key = str(key)
             logger.warning(
@@ -236,63 +576,101 @@ def set_runtime_env_vars(model_spec_json):
         os.environ[key] = value
 
 
-def start_trace_capture(model_spec_json):
-    # Check if trace capture should be disabled
-    disable_trace_capture = model_spec_json.get("cli_args", {}).get(
-        "disable_trace_capture", False
-    )
-
-    if not disable_trace_capture:
-        # Start background trace capture process
-        service_port = model_spec_json.get("cli_args", {}).get(
-            "service_port", int(os.getenv("SERVICE_PORT", "8000"))
-        )
-        supported_modalities = model_spec_json.get("supported_modalities", ["text"])
-
-        # Get max_context from device_model_spec for trace calculation
-        max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
-        if max_context is None:
-            # Fallback to vllm_args if not in device_model_spec
-            max_model_len_str = (
-                model_spec_json.get("device_model_spec", {})
-                .get("vllm_args", {})
-                .get("max_model_len")
-            )
-            if max_model_len_str:
-                max_context = int(max_model_len_str)
-
-        logger.info("Starting background trace capture process...")
-        trace_process = multiprocessing.Process(
-            target=run_background_trace_capture,
-            args=(
-                model_spec_json["hf_model_repo"],
-                service_port,
-                supported_modalities,
-                max_context,
-            ),
-            daemon=True,
-            name="trace_capture",
-        )
-        trace_process.start()
+def start_trace_capture(
+    model_spec_json, disable_trace_capture=False, service_port=None
+):
+    # Models with builtin warmup handle their own trace capture internally
+    if not disable_trace_capture and model_spec_json.get("has_builtin_warmup", False):
+        disable_trace_capture = True
         logger.info(
-            f"Background trace capture process started (PID: {trace_process.pid}, "
-            f"max_context: {max_context})"
+            "Model has builtin warmup (has_builtin_warmup=True), "
+            "skipping background trace capture"
         )
-    else:
-        logger.info("Trace capture is disabled via cli_args.disable_trace_capture")
+
+    if disable_trace_capture:
+        logger.info("Trace capture is disabled via --disable-trace-capture")
+        return
+
+    if service_port is None:
+        service_port = int(os.getenv("SERVICE_PORT", "8000"))
+    supported_modalities = model_spec_json.get("supported_modalities", ["text"])
+
+    # Get max_context from device_model_spec for trace calculation
+    max_context = model_spec_json.get("device_model_spec", {}).get("max_context")
+    if max_context is None:
+        # Fallback to vllm_args if not in device_model_spec
+        max_model_len_str = (
+            model_spec_json.get("device_model_spec", {})
+            .get("vllm_args", {})
+            .get("max_model_len")
+        )
+        if max_model_len_str:
+            max_context = int(max_model_len_str)
+
+    logger.info("Starting background trace capture process...")
+    trace_process = multiprocessing.Process(
+        target=run_background_trace_capture,
+        args=(
+            model_spec_json["hf_model_repo"],
+            service_port,
+            supported_modalities,
+            max_context,
+        ),
+        daemon=True,
+        name="trace_capture",
+    )
+    trace_process.start()
+    logger.info(
+        f"Background trace capture process started (PID: {trace_process.pid}, "
+        f"max_context: {max_context})"
+    )
 
 
 def main():
-    set_runtime_env_vars(_MODEL_SPEC)
-    handle_code_versions(_MODEL_SPEC)
+    # Step 1: Parse --model argument (if provided)
+    args = parse_args()
+    args.device = args.tt_device or args.device
+    args.engine = normalize_engine_type(args.engine)
 
-    runtime_settings(_MODEL_SPEC, _IMPL_ID)
-    start_trace_capture(_MODEL_SPEC)
+    # Step 2: Load model spec
+    model_spec = load_model_spec(
+        model_arg=args.model,
+        device_arg=args.device,
+        engine_arg=args.engine,
+        impl_arg=args.impl,
+    )
+    device_type = model_spec.get("device_type")
+    if device_type:
+        device_type = normalize_device_type(device_type)
+    elif args.device:
+        device_type = normalize_device_type(args.device)
 
-    # vLLM CLI arguments
-    logger.info("vllm_args:")
-    pprint(_MODEL_SPEC["device_model_spec"]["vllm_args"])
-    for key, value in _MODEL_SPEC["device_model_spec"]["vllm_args"].items():
+    if device_type and not os.getenv("TT_CACHE_PATH"):
+        set_cache_paths(model_spec, device_type)
+    if not os.getenv("MODEL_WEIGHTS_DIR"):
+        ensure_weights_available(model_spec)
+
+    logger.info(f"Using model spec: {model_spec['model_id']}")
+
+    # Step 3: Register TT models (after lookup, with correct impl_id)
+    impl_id = model_spec.get("impl", {}).get("impl_id")
+    register_tt_models(impl_id)
+
+    # Step 4: Set runtime environment variables and run setup
+    set_metal_timeout_env_vars()
+    set_runtime_env_vars(model_spec)
+    runtime_settings(model_spec, no_auth=args.no_auth)
+    start_trace_capture(
+        model_spec,
+        disable_trace_capture=args.disable_trace_capture,
+        service_port=args.service_port,
+    )
+
+    # Step 5: Add vLLM CLI arguments
+    logger.info(
+        f"vllm_args: {json.dumps(model_spec['device_model_spec']['vllm_args'], indent=4)}"
+    )
+    for key, value in model_spec["device_model_spec"]["vllm_args"].items():
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):
@@ -301,6 +679,7 @@ def main():
             else:
                 sys.argv.extend(["--" + key, str(value)])
 
+    # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
 

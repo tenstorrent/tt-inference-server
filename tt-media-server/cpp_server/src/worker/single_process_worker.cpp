@@ -11,16 +11,14 @@
 namespace tt::worker {
 
 SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
-    : cfg(move(cfg)) {
+    : cfg(std::move(cfg)) {
 
     pid = getpid();
     worker_id = cfg.worker_id;
     is_ready = true;
 }
 
-SingleProcessWorker::~SingleProcessWorker() {
-    stop();
-}
+SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
     tracy_config::TracySetThreadName(
@@ -47,15 +45,15 @@ void SingleProcessWorker::stop() {
         runner_->stop();
     }
     if (pid > 0) {
-        kill(pid, SIGTERM);
+        killpg(pid, SIGTERM);
 
         int status;
         int wait_result = waitpid(pid, &status, WNOHANG);
         if (wait_result == 0) {
-            this_thread::sleep_for(chrono::milliseconds(100));
+            this_thread::sleep_for(chrono::milliseconds(500));
             wait_result = waitpid(pid, &status, WNOHANG);
             if (wait_result == 0) {
-                kill(pid, SIGKILL);
+                killpg(pid, SIGKILL);
                 waitpid(pid, &status, 0);
             }
         }

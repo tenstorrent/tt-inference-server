@@ -548,6 +548,33 @@ def generate_model_page_group_page(
             )
             lines.append("")
 
+        # docker run command
+        if target_template.inference_engine == InferenceEngine.VLLM.value:
+            docker_image = target_template.docker_image or generate_default_docker_link(
+                target_template.version,
+                target_template.tt_metal_commit,
+                target_template.vllm_commit,
+            )
+            lines.append("**docker run command**")
+            lines.append("")
+            lines.append("```bash")
+            lines.extend(
+                [
+                    "docker run \\",
+                    '  --env "HF_TOKEN=$HF_TOKEN" \\',
+                    "  --ipc host \\",
+                    "  --publish 8000:8000 \\",
+                    "  --device /dev/tenstorrent \\",
+                    "  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\",
+                    f"  --volume volume_id_{model_name}:/home/container_app_user/cache_root \\",
+                    f"  {docker_image} \\",
+                    f"  --model {model_name} \\",
+                    f"  --tt-device {device.name.lower()}",
+                ]
+            )
+            lines.append("```")
+            lines.append("")
+
         # run.py command
         lines.append("**via run.py command**")
         lines.append("")

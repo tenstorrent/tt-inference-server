@@ -38,6 +38,14 @@ endif()
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
+
+# pybind11 for embedding Python interpreter (in-process model runner calls)
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG        v2.13.6
+)
+FetchContent_MakeAvailable(pybind11)
 FetchContent_Declare(
     rapidjson
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
@@ -148,16 +156,16 @@ else()
     endif()
 endif()
 
-# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
-# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
+# LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
-    src/runners/llm_runner/device_backend.cpp
-    src/runners/llm_runner/mock_device_backend.cpp
+    src/runners/llm_runner/shared_memory.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/mock_model_runner.cpp
+    src/runners/llm_runner/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
@@ -165,7 +173,7 @@ set(LLM_ENGINE_SOURCES
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     list(APPEND LLM_ENGINE_SOURCES
-        src/runners/llm_runner/sockets_device_backend.cpp
+        src/runners/llama_model_runner.cpp
     )
     message(STATUS "LLM engine: building with tt-metal socket integration")
 else()
@@ -190,6 +198,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
         target_link_libraries(llm_engine PUBLIC tt_metal tt_stl fmt)
     endif()
+    target_link_libraries(llm_engine PUBLIC pybind11::embed)
 endif()
 target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -241,7 +250,7 @@ target_include_directories(sequence_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -263,7 +272,7 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -274,6 +283,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
@@ -281,6 +291,8 @@ set(SOURCES
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
+    src/utils/deepseek_tokenizer.cpp
+    src/utils/llama_tokenizer.cpp
     src/worker/single_process_worker.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
@@ -324,7 +336,7 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
