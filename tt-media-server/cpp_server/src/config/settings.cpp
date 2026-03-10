@@ -171,8 +171,8 @@ llm_engine::Config llm_engine_config() {
     if (backend == "ttrun") {
         cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
     } else if (backend == "llama") {
-        cfg.max_in_flight_count = 16;
-        cfg.max_num_seqs = 16;
+        cfg.max_in_flight_count = 32;
+        cfg.max_num_seqs = 32;
         cfg.kvcache_block_size = 32;
         cfg.max_num_batched_tokens = 16384;
         cfg.runner_type = llm_engine::ModelRunnerType::Llama;
