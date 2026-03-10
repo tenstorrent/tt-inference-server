@@ -1985,7 +1985,7 @@ llm_templates = [
                 default_impl=True,
             ),
         ],
-        has_builtin_warmup=True
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
