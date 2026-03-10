@@ -117,6 +117,10 @@ pip install -r tt-media-server/requirements.txt
 #### running pre-commit tests
 
 ```bash
+# option 1: use git pre-commit hooks direct
+. scripts/setup-hooks.sh
+
+# option 2: use pre-commit tool
 pre-commit install
 ```
 
