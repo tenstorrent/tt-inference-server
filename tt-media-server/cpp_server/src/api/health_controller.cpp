@@ -4,9 +4,9 @@
 #include "api/health_controller.hpp"
 #include "config/settings.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 
 #include <chrono>
-#include <iostream>
 #include "services/llm_service.hpp"
 #include "services/embedding_service.hpp"
 
@@ -14,8 +14,7 @@ namespace tt::api {
 
 HealthController::HealthController() {
     service_ = tt::utils::service_factory::get_configured_service();
-    std::cout << "[HealthController] Initialized (service="
-              << (service_ ? "yes" : "no") << ")\n" << std::flush;
+    TT_LOG_INFO("[HealthController] Initialized (service={})", (service_ ? "yes" : "no"));
 }
 
 void HealthController::health(

@@ -3,26 +3,12 @@
 
 #include "runners/embedding_runner.hpp"
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 #include <Python.h>
-#include <iostream>
 #include <sstream>
 
 namespace tt::runners {
-
-// Logging helper
-struct EmbedLog {
-    std::ostringstream ss;
-    const char* level;
-    EmbedLog(const char* l) : level(l) {}
-    ~EmbedLog() { std::cout << "[EmbeddingRunner][" << level << "] " << ss.str() << std::endl; }
-    template<typename T>
-    EmbedLog& operator<<(const T& v) { ss << v; return *this; }
-};
-
-#define EMBED_LOG_INFO EmbedLog("INFO")
-#define EMBED_LOG_ERROR EmbedLog("ERROR")
-#define EMBED_LOG_DEBUG EmbedLog("DEBUG")
 
 /**
  * Implementation details hidden from header.
@@ -62,7 +48,7 @@ struct EmbeddingRunner::Impl {
         if (!Py_IsInitialized()) {
             Py_Initialize();
             python_initialized = true;
-            EMBED_LOG_INFO << "Python interpreter initialized";
+            TT_LOG_INFO("[EmbeddingRunner] Python interpreter initialized");
         }
 
         std::string python_path = tt::config::python_path();
@@ -74,7 +60,7 @@ struct EmbeddingRunner::Impl {
                 // Insert at beginning to take precedence
                 PyList_Insert(sys_path, 0, path_str);
                 Py_DECREF(path_str);
-                EMBED_LOG_INFO << "Added to sys.path: " << python_path.c_str();
+                TT_LOG_INFO("[EmbeddingRunner] Added to sys.path: {}", python_path);
             }
             Py_XDECREF(sys_path);
             Py_DECREF(sys_module);
@@ -88,35 +74,35 @@ struct EmbeddingRunner::Impl {
         runner_module = PyImport_ImportModule("tt_model_runners.embedding_runner");
         if (!runner_module) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to import tt_model_runners.embedding_runner";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to import tt_model_runners.embedding_runner");
             return false;
         }
-        EMBED_LOG_INFO << "Imported tt_model_runners.embedding_runner";
+        TT_LOG_INFO("[EmbeddingRunner] Imported tt_model_runners.embedding_runner");
 
         // Get BGELargeENRunner class
         runner_class = PyObject_GetAttrString(runner_module, "BGELargeENRunner");
         if (!runner_class) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get BGELargeENRunner class";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get BGELargeENRunner class");
             return false;
         }
-        EMBED_LOG_INFO << "Got BGELargeENRunner class";
+        TT_LOG_INFO("[EmbeddingRunner] Got BGELargeENRunner class");
 
         // Import TextEmbeddingRequest for creating request objects
         request_module = PyImport_ImportModule("domain.text_embedding_request");
         if (!request_module) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to import domain.text_embedding_request";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to import domain.text_embedding_request");
             return false;
         }
 
         request_class = PyObject_GetAttrString(request_module, "TextEmbeddingRequest");
         if (!request_class) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get TextEmbeddingRequest class";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get TextEmbeddingRequest class");
             return false;
         }
-        EMBED_LOG_INFO << "Got TextEmbeddingRequest class";
+        TT_LOG_INFO("[EmbeddingRunner] Got TextEmbeddingRequest class");
 
         return true;
     }
@@ -129,10 +115,10 @@ struct EmbeddingRunner::Impl {
 
         if (!runner_instance) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to create BGELargeENRunner instance";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to create BGELargeENRunner instance");
             return false;
         }
-        EMBED_LOG_INFO << "Created BGELargeENRunner instance for device " << device_id;
+        TT_LOG_INFO("[EmbeddingRunner] Created BGELargeENRunner instance for device {}", device_id);
 
         return true;
     }
@@ -142,7 +128,7 @@ struct EmbeddingRunner::Impl {
         PyObject* set_device_method = PyObject_GetAttrString(runner_instance, "set_device");
         if (!set_device_method) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get set_device method";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get set_device method");
             return false;
         }
 
@@ -151,12 +137,12 @@ struct EmbeddingRunner::Impl {
 
         if (!result) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to call set_device()";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to call set_device()");
             return false;
         }
 
         Py_DECREF(result);
-        EMBED_LOG_INFO << "set_device() completed successfully";
+        TT_LOG_INFO("[EmbeddingRunner] set_device() completed successfully");
         return true;
     }
 
@@ -165,7 +151,7 @@ struct EmbeddingRunner::Impl {
         PyObject* warmup_method = PyObject_GetAttrString(runner_instance, "warmup");
         if (!warmup_method) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get warmup method";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get warmup method");
             return false;
         }
 
@@ -174,7 +160,7 @@ struct EmbeddingRunner::Impl {
         if (!asyncio) {
             Py_DECREF(warmup_method);
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to import asyncio";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to import asyncio");
             return false;
         }
 
@@ -184,7 +170,7 @@ struct EmbeddingRunner::Impl {
             Py_DECREF(asyncio);
             Py_DECREF(warmup_method);
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get asyncio.run";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get asyncio.run");
             return false;
         }
 
@@ -196,7 +182,7 @@ struct EmbeddingRunner::Impl {
             Py_DECREF(asyncio_run);
             Py_DECREF(asyncio);
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to call warmup()";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to call warmup()");
             return false;
         }
 
@@ -210,14 +196,14 @@ struct EmbeddingRunner::Impl {
 
         if (!result) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Warmup failed";
+            TT_LOG_ERROR("[EmbeddingRunner] Warmup failed");
             return false;
         }
 
         bool success = PyObject_IsTrue(result);
         Py_DECREF(result);
 
-        EMBED_LOG_INFO << "Warmup completed: " << (success ? "success" : "failed");
+        TT_LOG_INFO("[EmbeddingRunner] Warmup completed: {}", (success ? "success" : "failed"));
         return success;
     }
 
@@ -242,7 +228,7 @@ struct EmbeddingRunner::Impl {
 
             if (!py_request) {
                 PyErr_Print();
-                EMBED_LOG_ERROR << "Failed to create TextEmbeddingRequest";
+                TT_LOG_ERROR("[EmbeddingRunner] Failed to create TextEmbeddingRequest");
                 Py_DECREF(request_list);
                 return responses;
             }
@@ -254,7 +240,7 @@ struct EmbeddingRunner::Impl {
         PyObject* run_method = PyObject_GetAttrString(runner_instance, "run");
         if (!run_method) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "Failed to get run method";
+            TT_LOG_ERROR("[EmbeddingRunner] Failed to get run method");
             Py_DECREF(request_list);
             return responses;
         }
@@ -267,13 +253,13 @@ struct EmbeddingRunner::Impl {
 
         if (!result_list) {
             PyErr_Print();
-            EMBED_LOG_ERROR << "runner.run() failed";
+            TT_LOG_ERROR("[EmbeddingRunner] runner.run() failed");
             return responses;
         }
 
         // Parse results
         if (!PyList_Check(result_list)) {
-            EMBED_LOG_ERROR << "Expected list result from runner.run()";
+            TT_LOG_ERROR("[EmbeddingRunner] Expected list result from runner.run()");
             Py_DECREF(result_list);
             return responses;
         }
@@ -310,7 +296,7 @@ struct EmbeddingRunner::Impl {
 
         Py_DECREF(result_list);
 
-        EMBED_LOG_DEBUG << "Processed " << responses.size() << " embedding requests";
+        TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding requests", responses.size());
         return responses;
     }
 };
@@ -321,8 +307,8 @@ EmbeddingRunner::EmbeddingRunner(const std::string& device_id, int visible_devic
     : device_id_(device_id)
     , visible_device_(visible_device)
     , impl_(std::make_unique<Impl>(device_id)) {
-    EMBED_LOG_INFO << "EmbeddingRunner created for device " << device_id
-                   << " visible_device=" << visible_device_;
+    TT_LOG_INFO("[EmbeddingRunner] EmbeddingRunner created for device {} visible_device={}",
+                device_id, visible_device);
 }
 
 EmbeddingRunner::~EmbeddingRunner() {
@@ -330,7 +316,8 @@ EmbeddingRunner::~EmbeddingRunner() {
 }
 
 bool EmbeddingRunner::warmup() {
-    EMBED_LOG_INFO << "Starting warmup for device " << device_id_ << " visible_device=" << visible_device_;
+    TT_LOG_INFO("[EmbeddingRunner] Starting warmup for device {} visible_device={}",
+                device_id_, visible_device_);
 
     if (!impl_->init_python()) {
         return false;
@@ -353,7 +340,7 @@ bool EmbeddingRunner::warmup() {
         return false;
     }
 
-    EMBED_LOG_INFO << "Warmup complete for device " << device_id_;
+    TT_LOG_INFO("[EmbeddingRunner] Warmup complete for device {}", device_id_);
     return true;
 }
 
@@ -367,7 +354,7 @@ std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
     const std::vector<domain::EmbeddingRequest>& requests) {
 
     if (!impl_ || !impl_->runner_instance) {
-        EMBED_LOG_ERROR << "Runner not initialized";
+        TT_LOG_ERROR("[EmbeddingRunner] Runner not initialized");
         return {};
     }
 
@@ -381,7 +368,7 @@ void EmbeddingRunner::run() {
     if (!warmup()) {
         throw std::runtime_error("Failed to initialize EmbeddingRunner");
     }
-    EMBED_LOG_INFO << "EmbeddingRunner ready for requests on device " << device_id_;
+    TT_LOG_INFO("[EmbeddingRunner] EmbeddingRunner ready for requests on device {}", device_id_);
 }
 
 void EmbeddingRunner::stop() {

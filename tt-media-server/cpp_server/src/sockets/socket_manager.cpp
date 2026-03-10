@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "sockets/socket_manager.hpp"
-#include <iostream>
+#include "utils/logger.hpp"
 #include <cstring>
 #include <fcntl.h>
 #include <errno.h>
@@ -41,14 +41,14 @@ bool SocketManager::initializeAsServer(uint16_t port) {
 
     server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket_ < 0) {
-        std::cerr << "[SocketManager] Failed to create server socket: " << strerror(errno) << std::endl;
+        TT_LOG_ERROR("[SocketManager] Failed to create server socket: {}", strerror(errno));
         return false;
     }
 
     // Set socket options
     int opt = 1;
     if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        std::cerr << "[SocketManager] Failed to set SO_REUSEADDR: " << strerror(errno) << std::endl;
+        TT_LOG_ERROR("[SocketManager] Failed to set SO_REUSEADDR: {}", strerror(errno));
         close(server_socket_);
         return false;
     }
@@ -59,18 +59,18 @@ bool SocketManager::initializeAsServer(uint16_t port) {
     address.sin_port = htons(port_);
 
     if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        std::cerr << "[SocketManager] Failed to bind to port " << port_ << ": " << strerror(errno) << std::endl;
+        TT_LOG_ERROR("[SocketManager] Failed to bind to port {}: {}", port_, strerror(errno));
         close(server_socket_);
         return false;
     }
 
     if (listen(server_socket_, 1) < 0) {
-        std::cerr << "[SocketManager] Failed to listen: " << strerror(errno) << std::endl;
+        TT_LOG_ERROR("[SocketManager] Failed to listen: {}", strerror(errno));
         close(server_socket_);
         return false;
     }
 
-    std::cout << "[SocketManager] Server initialized on port " << port_ << std::endl;
+    TT_LOG_INFO("[SocketManager] Server initialized on port {}", port_);
     return true;
 }
 
@@ -79,7 +79,7 @@ bool SocketManager::initializeAsClient(const std::string& host, uint16_t port) {
     host_ = host;
     port_ = port;
 
-    std::cout << "[SocketManager] Client initialized to connect to " << host_ << ":" << port_ << std::endl;
+    TT_LOG_INFO("[SocketManager] Client initialized to connect to {}:{}", host_, port_);
     return true;
 }
 
@@ -130,12 +130,12 @@ void SocketManager::stop() {
         message_thread_.join();
     }
 
-    std::cout << "[SocketManager] Stopped" << std::endl;
+    TT_LOG_INFO("[SocketManager] Stopped");
 }
 
 void SocketManager::serverLoop() {
     while (running_) {
-        std::cout << "[SocketManager] Waiting for client connection..." << std::endl;
+        TT_LOG_INFO("[SocketManager] Waiting for client connection...");
 
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -143,7 +143,7 @@ void SocketManager::serverLoop() {
         int new_socket = accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
         if (new_socket < 0) {
             if (running_) {
-                std::cerr << "[SocketManager] Accept failed: " << strerror(errno) << std::endl;
+                TT_LOG_ERROR("[SocketManager] Accept failed: {}", strerror(errno));
             }
             break;
         }
@@ -156,8 +156,7 @@ void SocketManager::serverLoop() {
         peer_socket_ = new_socket;
         connected_ = true;
 
-        std::cout << "[SocketManager] Client connected from "
-                  << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(client_addr.sin_port) << std::endl;
+        TT_LOG_INFO("[SocketManager] Client connected from {}:{}", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
         // Wait until disconnected
         while (running_ && connected_) {
@@ -173,7 +172,7 @@ void SocketManager::serverLoop() {
             connection_lost_callback_();
         }
 
-        std::cout << "[SocketManager] Client disconnected" << std::endl;
+        TT_LOG_INFO("[SocketManager] Client disconnected");
     }
 }
 
@@ -181,7 +180,7 @@ void SocketManager::clientLoop() {
     while (running_) {
         client_socket_ = socket(AF_INET, SOCK_STREAM, 0);
         if (client_socket_ < 0) {
-            std::cerr << "[SocketManager] Failed to create client socket: " << strerror(errno) << std::endl;
+            TT_LOG_ERROR("[SocketManager] Failed to create client socket: {}", strerror(errno));
             std::this_thread::sleep_for(std::chrono::seconds(5));
             continue;
         }
@@ -191,16 +190,16 @@ void SocketManager::clientLoop() {
         server_addr.sin_port = htons(port_);
 
         if (inet_pton(AF_INET, host_.c_str(), &server_addr.sin_addr) <= 0) {
-            std::cerr << "[SocketManager] Invalid address: " << host_ << std::endl;
+            TT_LOG_ERROR("[SocketManager] Invalid address: {}", host_);
             close(client_socket_);
             std::this_thread::sleep_for(std::chrono::seconds(5));
             continue;
         }
 
-        std::cout << "[SocketManager] Attempting to connect to " << host_ << ":" << port_ << std::endl;
+        TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{}", host_, port_);
 
         if (connect(client_socket_, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-            std::cerr << "[SocketManager] Connection failed: " << strerror(errno) << std::endl;
+            TT_LOG_ERROR("[SocketManager] Connection failed: {}", strerror(errno));
             close(client_socket_);
             std::this_thread::sleep_for(std::chrono::seconds(5));
             continue;
@@ -214,7 +213,7 @@ void SocketManager::clientLoop() {
         peer_socket_ = client_socket_;
         connected_ = true;
 
-        std::cout << "[SocketManager] Connected to server" << std::endl;
+        TT_LOG_INFO("[SocketManager] Connected to server");
 
         // Wait until disconnected
         while (running_ && connected_) {
@@ -231,7 +230,7 @@ void SocketManager::clientLoop() {
             connection_lost_callback_();
         }
 
-        std::cout << "[SocketManager] Disconnected from server" << std::endl;
+        TT_LOG_INFO("[SocketManager] Disconnected from server");
 
         if (running_) {
             std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -252,7 +251,7 @@ void SocketManager::messageLoop() {
                 handleIncomingMessage(data);
             }
         } catch (const std::exception& e) {
-            std::cerr << "[SocketManager] Message loop error: " << e.what() << std::endl;
+            TT_LOG_ERROR("[SocketManager] Message loop error: {}", e.what());
             connected_ = false;
         }
 
@@ -337,7 +336,7 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // Non-blocking socket has no data yet, wait briefly and retry
                 if (++retry_count > max_retries) {
-                    std::cerr << "[SocketManager] Timeout waiting for message data" << std::endl;
+                    TT_LOG_ERROR("[SocketManager] Timeout waiting for message data");
                     connected_ = false;
                     return {};
                 }
@@ -369,10 +368,10 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
         if (it != handlers_.end()) {
             it->second(data);
         } else {
-            std::cout << "[SocketManager] No handler for message type: " << message_type << std::endl;
+            TT_LOG_DEBUG("[SocketManager] No handler for message type: {}", message_type);
         }
     } catch (const std::exception& e) {
-        std::cerr << "[SocketManager] Message handling error: " << e.what() << std::endl;
+        TT_LOG_ERROR("[SocketManager] Message handling error: {}", e.what());
     }
 }
 

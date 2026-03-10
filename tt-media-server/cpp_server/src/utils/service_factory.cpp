@@ -8,8 +8,7 @@
 #include "services/embedding_service.hpp"
 #include "config/constants.hpp"
 #include "api/socket_controller.hpp"
-
-#include <iostream>
+#include "utils/logger.hpp"
 
 namespace tt::utils::service_factory {
 
@@ -29,14 +28,14 @@ void register_services() {
         }
 
         register_service(std::move(llm));
-        std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
+        TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
     }
 
     if (tt::config::is_embedding_service()) {
         auto emb = std::make_shared<services::EmbeddingService>();
         emb->start();
         register_service(std::move(emb));
-        std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
+        TT_LOG_INFO("[ServiceFactory] Embedding service registered and started");
     }
 }
 

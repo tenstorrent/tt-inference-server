@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "ipc/boost_ipc_task_queue.hpp"
+#include "utils/logger.hpp"
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <boost/interprocess/errors.hpp>
-#include <iostream>
 
 namespace tt::ipc {
 
@@ -14,7 +14,7 @@ BoostIpcTaskQueue::~BoostIpcTaskQueue() {
   try {
     queue_.reset();
   } catch (const bi_ipc::interprocess_exception& e) {
-    std::cerr << "[BoostIpcTaskQueue] Destructor: " << e.what() << " (ignored)\n" << std::flush;
+    TT_LOG_WARN("[BoostIpcTaskQueue] Destructor: {} (ignored)", e.what());
   }
 }
 
