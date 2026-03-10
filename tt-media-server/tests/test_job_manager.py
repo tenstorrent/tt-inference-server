@@ -12,7 +12,12 @@ import pytest
 from multiprocessing import Event
 from config.constants import JobTypes
 from domain.base_request import BaseRequest
-from utils.job_manager import Job, JobManager, JobStatus, get_job_manager
+from utils.job_manager import (
+    Job,
+    JobManager,
+    JobStatus,
+    get_job_manager,
+)
 
 
 class TestJob:
@@ -1034,8 +1039,8 @@ class TestJobManager:
     async def test_cooperative_cancel_via_cancel_event(self, job_manager, mock_request):
         """Test cooperative cancellation where task checks cancel_event and returns normally."""
 
-        cancel_event = Event()
         start_event = Event()
+        cancel_event = Event()
 
         async def cooperative_task(req):
             start_event.set()
@@ -1086,8 +1091,8 @@ class TestJobManager:
         self, job_manager, mock_request
     ):
         """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
-        cancel_event = Event()
         start_event = Event()
+        cancel_event = Event()
 
         async def cooperative_task(req):
             start_event.set()
@@ -1119,14 +1124,14 @@ class TestJobManager:
         """When a running job is cancelled, the next queued job should start processing."""
 
         start_event_1 = Event()
+        cancel_event_1 = Event()
         start_event_2 = Event()
-        cancel_event = Event()
 
         runner_available = asyncio.Event()
 
         async def task_1(req):
             start_event_1.set()
-            while not cancel_event.is_set():
+            while not cancel_event_1.is_set():
                 await asyncio.sleep(0.05)
             runner_available.set()
             return "result_1.pt"
@@ -1145,7 +1150,7 @@ class TestJobManager:
             task_function=task_1,
             result_path="result_1.pt",
             start_event=start_event_1,
-            cancel_event=cancel_event,
+            cancel_event=cancel_event_1,
         )
 
         await asyncio.sleep(0.3)
@@ -1281,3 +1286,215 @@ class TestJobManager:
 
             finally:
                 await m2.shutdown()
+
+    # ------------------------------------------------------------------------------------------------
+    # metrics-related tests
+    def test_insert_metric_duplicate_raises_exception(self, job_manager):
+        """Test that inserting a metric with the same primary key raises an exception."""
+        if not job_manager.db:
+            assert True  # skip and assert True if persistence is disabled
+            return
+        job_manager.db.insert_job(
+            job_id="job-1",
+            job_type=JobTypes.TRAINING.value,
+            model="model-1",
+            request_parameters={},
+            status="in_progress",
+            created_at=1000,
+        )
+        job_manager.db.insert_metric(
+            job_id="job-1",
+            global_step=10,
+            epoch=1,
+            metric_name="loss",
+            value=0.5,
+            timestamp=1000,
+        )
+        with pytest.raises(Exception):
+            job_manager.db.insert_metric(
+                job_id="job-1",
+                global_step=10,
+                epoch=1,
+                metric_name="loss",
+                value=0.9,
+                timestamp=2000,
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_job_metrics_returns_correct_list(
+        self, job_manager, mock_request
+    ):
+        metrics_list = [
+            {
+                "global_step": 1,
+                "epoch": 1,
+                "metric_name": "loss",
+                "value": 0.5,
+                "timestamp": 1000,
+            }
+        ]
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="train-1",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            job_metrics=metrics_list,
+        )
+
+        result = job_manager.get_job_metrics("train-1")
+        assert result is metrics_list
+
+    @pytest.mark.asyncio
+    async def test_persist_metrics_to_db(self, job_manager, mock_request):
+        """Test that persisting metrics to the database works correctly."""
+        if not job_manager.db:
+            assert True  # skip and assert True if persistence is disabled
+            return
+
+        start_event = Event()
+        start_event.set()
+        metrics_list = []
+
+        async def task_func(req):
+            # Simulate appending metrics during "training"
+            metrics_list.append(
+                {
+                    "global_step": 1,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.5,
+                    "timestamp": 1000,
+                }
+            )
+            metrics_list.append(
+                {
+                    "global_step": 2,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.4,
+                    "timestamp": 1001,
+                }
+            )
+            await asyncio.sleep(1.5)  # let the persister poll at least once
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="train-persist",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            start_event=start_event,
+            job_metrics=metrics_list,
+        )
+
+        # Poll DB until getting both metrics
+        for _ in range(20):
+            db_metrics = job_manager.db.get_metrics_flat("train-persist")
+            if len(db_metrics) == 2:
+                break
+            await asyncio.sleep(0.3)
+
+        db_metrics = job_manager.db.get_metrics_flat("train-persist")
+        assert len(db_metrics) == 2
+        assert db_metrics[0]["value"] == 0.5
+        assert db_metrics[1]["value"] == 0.4
+
+    @pytest.mark.asyncio
+    async def test_restore_training_job_restores_metrics(self, job_manager):
+        """Test the full workflow from insert_metric, over restore, to get_job_metrics."""
+        if not job_manager.db:
+            assert True  # skip and assert True if persistence is disabled
+            return
+
+        db_path = job_manager.db.db_path
+
+        job_manager.db.insert_job(
+            job_id="train-1",
+            job_type=JobTypes.TRAINING.value,
+            model="m1",
+            request_parameters={},
+            status="completed",
+            created_at=1000,
+        )
+        # fmt: off
+        job_manager.db.insert_metric(job_id="train-1", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=1002)
+        job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
+        job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, timestamp=1001)
+        # fmt: on
+
+        import utils.job_manager
+
+        utils.job_manager._job_manager_instance = None
+
+        with patch("utils.job_manager.get_settings") as mock_settings:
+            mock_settings.return_value.enable_job_persistence = True
+            mock_settings.return_value.job_database_path = str(db_path)
+
+            m2 = JobManager()
+            try:
+                metrics = m2.get_job_metrics("train-1")
+                assert metrics is not None
+                assert len(metrics) == 3
+                # Verify get_metrics_flat ordering: metric_name ASC, global_step ASC
+                assert metrics[0]["metric_name"] == "accuracy"
+                assert metrics[1] == {
+                    "global_step": 10,
+                    "epoch": 1,
+                    "metric_name": "loss",
+                    "value": 0.5,
+                    "timestamp": 1000,
+                }
+                assert metrics[2] == {
+                    "global_step": 20,
+                    "epoch": 2,
+                    "metric_name": "loss",
+                    "value": 0.3,
+                    "timestamp": 1002,
+                }
+            finally:
+                await m2.shutdown()
+
+    def test_get_metrics_flat_sorted_by_metric_name_then_global_step(self, job_manager):
+        """Test that get_metrics_flat returns metrics sorted by metric_name ASC, then global_step ASC."""
+        if not job_manager.db:
+            assert True
+            return
+
+        job_manager.db.insert_job(
+            job_id="job-sort",
+            job_type=JobTypes.TRAINING.value,
+            model="model-1",
+            request_parameters={},
+            status="in_progress",
+            created_at=1000,
+        )
+
+        # fmt: off
+        # Insert metrics in deliberately unsorted order
+        job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="loss", value=0.1, timestamp=3000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="accuracy", value=0.7, timestamp=1000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=2000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=30, epoch=3, metric_name="accuracy", value=0.95, timestamp=3000)
+        job_manager.db.insert_metric(job_id="job-sort", global_step=20, epoch=2, metric_name="accuracy", value=0.85, timestamp=2000)
+        # fmt: on
+
+        results = job_manager.db.get_metrics_flat("job-sort")
+
+        assert len(results) == 6
+
+        metric_names = [r["metric_name"] for r in results]
+        global_steps = [r["global_step"] for r in results]
+        # fmt: off
+        assert metric_names == ["accuracy", "accuracy", "accuracy", "loss", "loss", "loss"]
+        assert global_steps == [10, 20, 30, 10, 20, 30]
+        # fmt: on

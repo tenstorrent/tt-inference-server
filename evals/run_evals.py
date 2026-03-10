@@ -190,10 +190,15 @@ def build_eval_command(
     if task.max_concurrent:
         optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
-    # newer lm-evals expect full completions api route
-    _base_url = (
-        base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
-    )
+    # lm-eval (text) expects full completions api route in base_url
+    # lmms-eval (vision) expects base_url WITHOUT the endpoint path
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_META,
+        WorkflowVenvType.EVALS_VISION,
+    ]:
+        _base_url = base_url
+    else:
+        _base_url = api_url
 
     # Set OPENAI_API_BASE for vision and audio models
     if task.workflow_venv_type in [
@@ -320,6 +325,16 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     disable_trace_capture = runtime_config.disable_trace_capture
+
+    # Automatically control trace capture based on has_builtin_warmup
+    # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
+    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
+        if model_spec.has_builtin_warmup:
+            disable_trace_capture = True
+            logger.info(
+                "Model has builtin warmup (has_builtin_warmup=True), "
+                "automatically disabling trace capture for evals workflow"
+            )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG

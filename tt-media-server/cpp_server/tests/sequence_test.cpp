@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+#include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
@@ -13,10 +14,10 @@ namespace {
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
   TaskID orig;
 
-  std::vector<char> buf = orig.serialize();
+  std::vector<char> buf = orig.ipc_serialize();
   ASSERT_EQ(buf.size(), 36);
 
-  TaskID restored = TaskID::deserialize(buf.data(), buf.size());
+  TaskID restored = TaskID::ipc_deserialize(buf.data(), buf.size());
   EXPECT_EQ(restored.id, orig.id);
 }
 
@@ -120,7 +121,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig({1, 2, 3, 4, 5}, params);
+  Sequence orig(256, {1, 2, 3, 4, 5}, params);
   orig.num_cached_tokens_ = 256;
   orig.block_table_ = {0, 1};
   orig.status_ = SequenceStatus::IN_FLIGHT;
@@ -156,7 +157,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig({}, SamplingParams{.max_tokens = 10});
+  Sequence orig(256, {}, SamplingParams{.max_tokens = 10});
   orig.task_id = TaskID();
   orig.last_token = 0;
 
@@ -173,7 +174,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig({10, 20}, SamplingParams{.max_tokens = 5});
+  Sequence orig(256, {10, 20}, SamplingParams{.max_tokens = 5});
   orig.append_token(30);
   orig.append_token(40);
   orig.num_cached_tokens_ = 256;

@@ -23,6 +23,7 @@ class TrainingService(BaseJobService):
 
         request._start_event = self._manager.Event()
         request._cancel_event = self._manager.Event()
+        request._training_metrics = self._manager.list()
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -33,4 +34,11 @@ class TrainingService(BaseJobService):
             result_path=request._output_model_path,
             start_event=request._start_event,
             cancel_event=request._cancel_event,
+            job_metrics=request._training_metrics,
         )
+
+    def get_job_metrics(self, job_id: str, after: int = 0) -> list:
+        metrics_list = super().get_job_metrics(job_id)
+        if metrics_list is None:
+            return []
+        return list(metrics_list[after:])

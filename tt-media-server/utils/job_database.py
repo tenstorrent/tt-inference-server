@@ -24,6 +24,7 @@ class JobDatabase:
         """Creates a fresh database connection for each operation."""
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row  # Access columns by name
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     @contextmanager
@@ -53,6 +54,19 @@ class JobDatabase:
                     completed_at INTEGER,
                     error_message TEXT,
                     result_path TEXT
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS metrics (
+                    job_id TEXT NOT NULL,
+                    global_step INTEGER NOT NULL,
+                    epoch INTEGER NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    value FLOAT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    
+                    PRIMARY KEY (job_id, global_step, metric_name), 
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
             """)
 
@@ -164,3 +178,38 @@ class JobDatabase:
             jobs.append(job_dict)
 
         return jobs
+
+    # ------------- METRICS -------------
+    def insert_metric(
+        self,
+        job_id: str,
+        global_step: int,
+        epoch: int,
+        metric_name: str,
+        value: float,
+        timestamp: float,
+    ) -> None:
+        """Insert a new metric into the database."""
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, global_step, epoch, metric_name, value, timestamp),
+            )
+
+    def get_metrics_flat(self, job_id: str) -> List[Dict[str, Any]]:
+        """Returns metrics as a flat list."""
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute(
+                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
+                (job_id,),
+            )
+            return [
+                {
+                    "global_step": r["global_step"],
+                    "epoch": r["epoch"],
+                    "metric_name": r["metric_name"],
+                    "value": r["value"],
+                    "timestamp": r["timestamp"],
+                }
+                for r in cursor.fetchall()
+            ]

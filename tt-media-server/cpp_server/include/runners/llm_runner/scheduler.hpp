@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 #include <unordered_map>
 
@@ -55,13 +56,16 @@ class Scheduler {
    */
   void postprocess(std::vector<Sequence*>& seqs,
                    const std::vector<int64_t>& token_ids);
-  
   void removeSequence(TaskID task_id);
 
+  bool is_stop_token(int64_t token_id) const { return stop_token_ids_.count(token_id) > 0; }
+
  private:
+  int block_size_;
   int max_num_seqs_;
   int max_num_batched_tokens_;
-  int eos_;
+  int max_in_flight_count_;
+  std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* waiting_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -129,10 +130,9 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loading tokenizer from: " << tokenizer_file_path << "\n";
-    Tokenizer tokenizer(tokenizer_file_path);
+    auto tokenizer = create_tokenizer(tt::config::model_type(), tokenizer_file_path);
 
-    // Check if tokenizer loaded successfully
-    if (!tokenizer.is_loaded()) {
+    if (!tokenizer->is_loaded()) {
         std::cerr << "Failed to load tokenizer from: " << tokenizer_file_path << "\n";
         std::cerr << "Usage: " << argv[0] << " [tokenizer_path]\n";
         std::cerr << "Example: " << argv[0] << " tokenizers/tokenizer.json\n";
@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
 
     for (size_t target : encode_targets) {
         std::string text = generate_text_with_tokens(target);
-        BenchmarkResult result = benchmark_encode(tokenizer, text);
+        BenchmarkResult result = benchmark_encode(*tokenizer, text);
         print_result(std::cout, result);
     }
 
@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
     print_header(std::cout, "DETOKENIZATION (tokens -> text)");
 
     for (size_t num_tokens : decode_targets) {
-        BenchmarkResult result = benchmark_decode(tokenizer, num_tokens);
+        BenchmarkResult result = benchmark_decode(*tokenizer, num_tokens);
         print_result(std::cout, result);
     }
 
