@@ -496,6 +496,38 @@ def runtime_settings(model_spec_json, no_auth=False):
     model_setup(model_spec_json)
 
 
+def set_metal_timeout_env_vars():
+    """Set tt-metal operation timeout env vars for automatic hang detection.
+
+    When enabled (default), configures TT_METAL_OPERATION_TIMEOUT_SECONDS and
+    TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE so that tt-triage runs
+    automatically when an op dispatch hangs.
+
+    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set (via run.py --disable-metal-timeout).
+    """
+    if os.getenv("DISABLE_METAL_OP_TIMEOUT") == "1":
+        logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
+        return
+
+    tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
+    python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
+    log_dir = os.getenv("TT_METAL_LOGS_PATH", "/home/container_app_user/logs")
+
+    triage_new = Path(tt_metal_home) / "tools" / "triage" / "triage.py"
+    triage_old = Path(tt_metal_home) / "scripts" / "debugging_scripts" / "triage.py"
+    triage_script = str(triage_new if triage_new.exists() else triage_old)
+
+    timeout_cmd = (
+        f"{python_env_dir}/bin/python {triage_script} "
+        f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
+    )
+
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
+    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
+
+
 def set_runtime_env_vars(model_spec_json):
     """Set runtime environment variables from model spec.
 
@@ -625,6 +657,7 @@ def main():
     register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and run setup
+    set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     start_trace_capture(
