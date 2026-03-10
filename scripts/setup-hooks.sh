@@ -9,6 +9,6 @@ if [ -z "$REPO_ROOT" ]; then
     exit 1
 fi
 
-mv "$REPO_ROOT/scripts/hooks/pre-commit" "$REPO_ROOT/.git/hooks/pre-commit"
+cp "$REPO_ROOT/scripts/hooks/pre-commit" "$REPO_ROOT/.git/hooks/pre-commit"
 chmod +x "$REPO_ROOT/.git/hooks/pre-commit"
 echo "✅ pre-commit hook installed"
