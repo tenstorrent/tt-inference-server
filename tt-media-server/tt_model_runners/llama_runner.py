@@ -29,9 +29,6 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from models.common.sampling import SamplingParams
-
-
 _tt_metal = os.environ.get("TT_METAL_HOME")
 if _tt_metal and _tt_metal not in sys.path:
     sys.path.insert(0, _tt_metal)
@@ -122,14 +119,45 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     def _build_sampling_params(self, seq: StepSequence) -> SamplingParams:
         """Build SamplingParams from StepSequence sampling fields."""
         return SamplingParams(
+            temperature=seq.temperature,
             top_p=seq.top_p if seq.top_p is not None else 1.0,
             top_k=seq.top_k if seq.top_k is not None else 0,
-            min_p=seq.min_p,
-            repetition_penalty=seq.repetition_penalty,
             presence_penalty=seq.presence_penalty,
             frequency_penalty=seq.frequency_penalty,
-            temperature=seq.temperature,
+            repetition_penalty=seq.repetition_penalty
+            if seq.repetition_penalty is not None
+            else 1.0,
             seed=seq.seed,
+        )
+
+    def _build_batch_sampling_params(
+        self, sequences: list[StepSequence]
+    ) -> SamplingParams:
+        """Build SamplingParams with list-valued fields for batched decode.
+
+        Each field is a list where element i corresponds to sequences[i].
+        This enables per-sequence sampling parameters in batched mode.
+        """
+        # Build lists for each parameter
+        temperatures = [seq.temperature for seq in sequences]
+        top_ps = [seq.top_p if seq.top_p is not None else 1.0 for seq in sequences]
+        top_ks = [seq.top_k if seq.top_k is not None else 0 for seq in sequences]
+        repetition_penalties = [
+            seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+            for seq in sequences
+        ]
+        presence_penalties = [seq.presence_penalty for seq in sequences]
+        frequency_penalties = [seq.frequency_penalty for seq in sequences]
+        seeds = [seq.seed for seq in sequences]
+
+        return SamplingParams(
+            temperature=temperatures,
+            top_p=top_ps,
+            top_k=top_ks,
+            presence_penalty=presence_penalties,
+            frequency_penalty=frequency_penalties,
+            repetition_penalty=repetition_penalties,
+            seed=seeds if any(s is not None for s in seeds) else None,
         )
 
     def _allocate_kv_cache(self) -> None:
@@ -277,9 +305,14 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
         """Batched decode when len(sequences) <= max_batch_size.
+
         tt-metal requires batch == max_batch_size. Fill unused slots by repeating
         real sequences so every slot points to valid KV blocks (no reserved
         block 0 needed). Results from repeated slots are discarded.
+
+        Per-sequence sampling parameters are supported: each sequence can have
+        different temperature, top_p, top_k, etc. Parameters are passed as
+        list-valued fields in SamplingParams.
         """
         B = self.max_batch_size
         if len(sequences) > B:
@@ -289,19 +322,21 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         tokens_list = []
         start_pos_list = []
         page_tables = []
+        padded_sequences = []
         for i in range(B):
             seq = sequences[i % n]
             tokens_list.append(seq.token_ids[-1])
             start_pos_list.append(seq.current_pos)
             page_tables.append(self._page_table_from_block_ids(seq.block_table, torch))
+            padded_sequences.append(seq)
 
         tokens_batch = torch.tensor([[t] for t in tokens_list], dtype=torch.int64)
         start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
         page_table_batch = torch.cat(page_tables, dim=0)
 
-        # Use first sequence's sampling params for the batch
-        # In batched mode, all sequences share the same sampling parameters
-        sampling_params = self._build_sampling_params(sequences[0])
+        # Build per-sequence sampling parameters for batched decode (including padded slots)
+        # Each field in SamplingParams is a list where element i corresponds to padded_sequences[i]
+        sampling_params = self._build_batch_sampling_params(padded_sequences)
 
         output_tokens, _log_probs = self.model.decode_forward(
             tokens_batch,
