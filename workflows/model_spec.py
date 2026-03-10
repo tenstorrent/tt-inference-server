@@ -1958,22 +1958,23 @@ llm_templates = [
         impl=cpp_server_impl,
         tt_metal_commit="3f72232",
         inference_engine=InferenceEngine.CPP_SERVER.value,
+        model_type=ModelType.LLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=1,
+                max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=1,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=4,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
             ),
@@ -1981,9 +1982,10 @@ llm_templates = [
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
             ),
         ],
+        has_builtin_warmup=True
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
