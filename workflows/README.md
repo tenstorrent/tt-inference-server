@@ -24,7 +24,7 @@ This project provides a command-line interface (CLI) to run various workflows re
 The inference server has two independent interfaces:
 
 1. **`run.py`** (host-side) -- optionally used to template the `docker run` command, validate the runtime, configure host setup, and run client-side workflows (`benchmarks`, `evals`).
-2. **Container interface** (`run_vllm_api_server.py`) -- can be used independently from `run.py` via a direct `docker run` command, accepting `--model` and `--tt-device` to self-resolve the model spec from a bundled JSON. See the [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run).
+2. **Container interface** (`run_vllm_api_server.py`) -- can be used independently from `run.py` via a direct `docker run` command, accepting `--model` and `--tt-device` to self-resolve the model spec from a bundled JSON. See the [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run).
 
 ```mermaid
 flowchart LR
@@ -169,7 +169,7 @@ Required dependencies are installed during the workflow setup process. Ensure yo
 ## run.py CLI Usage
 
 `run.py` is the host-side automation CLI. It can optionally be used to:
-1. Template the `docker run` command for the [container interface](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run)
+1. Template the `docker run` command for the [container interface](../vllm-tt-metal/README.md#container-interface-direct-docker-run)
 2. Validate the runtime environment
 3. Configure the host setup (weights download, volume creation)
 4. Run client-side workflows (`benchmarks`, `evals`)
@@ -364,7 +364,7 @@ python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --
 
 ## Container Interface
 
-The inference server container can be used independently from `run.py` via a direct `docker run` command. See the full [container interface documentation](../vllm-tt-metal-llama3/README.md#container-interface-direct-docker-run) for details, including CLI args, secrets, and persistent volume overrides.
+The inference server container can be used independently from `run.py` via a direct `docker run` command. See the full [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run) for details, including CLI args, secrets, and persistent volume overrides.
 
 ## Client Side Scripts
 
@@ -478,7 +478,7 @@ Each workflow run script receives the runtime model spec JSON path (`--runtime-m
 │   ├── workflow_venvs.py           # Virtual environment setup per workflow
 │   ├── utils.py                    # Utility functions (logging, directory checks, etc.)
 │   └── bootstrap_uv.py            # uv package manager bootstrap
-├── vllm-tt-metal-llama3/
+├── vllm-tt-metal/
 │   └── src/
 │       └── run_vllm_api_server.py  # Container entrypoint (independent from run.py)
 ├── benchmarking/
