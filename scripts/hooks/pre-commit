@@ -36,6 +36,7 @@ git add default_model_spec.json
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 
 if [ -z "$STAGED_FILES" ]; then
+    echo "✅ No staged Python files, skipping Ruff checks"
     exit 0
 fi
 
