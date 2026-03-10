@@ -1,5 +1,6 @@
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
+#include "profiling/tracy.hpp"
 
 #include <cassert>
 
@@ -73,12 +74,18 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   if (!scheduled_seqs.empty()) {
+    ZoneScopedN("Scheduler::schedule_prefill");
     LLM_ENGINE_LOG("scheduler") << "schedule prefill n=" << scheduled_seqs.size()
                              << " batched_tokens=" << num_batched_tokens << std::endl;
     return {scheduled_seqs, true};
   }
 
   // --- Decode: process running sequences ---
+  if (running_.empty()) {
+    return {scheduled_seqs, false};
+  }
+
+  ZoneScopedN("Scheduler::schedule_decode");
   while (!running_.empty() && num_seqs < max_num_seqs_ && in_flight_count_ < max_in_flight_count_) {
     Sequence* seq = running_.front();
     running_.pop_front();
@@ -109,6 +116,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 }
 
 void Scheduler::preempt(Sequence& seq) {
+  ZoneScopedN("Scheduler::preempt");
   LLM_ENGINE_LOG("scheduler") << "preempt task_id=" << seq.task_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
@@ -117,6 +125,7 @@ void Scheduler::preempt(Sequence& seq) {
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
                             const std::vector<int64_t>& token_ids) {
+  ZoneScopedN("Scheduler::postprocess");
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
     int64_t token_id = token_ids[i];

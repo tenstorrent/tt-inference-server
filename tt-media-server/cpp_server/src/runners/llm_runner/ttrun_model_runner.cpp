@@ -2,6 +2,7 @@
 #include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/fixed_reply_sequence.hpp"
 #include "runners/llm_runner/shared_memory.hpp"
+#include "profiling/tracy.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -52,10 +53,11 @@ class TtRunModelRunner : public IModelRunner {
   ~TtRunModelRunner() override { exit(); }
 
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override {
+    ZoneScopedN("TtRunModelRunner::run");
     LLM_ENGINE_LOG("model_runner:ttrun") << (is_prefill ? "prefill" : "decode")
                                          << " batch_size=" << seqs.size() << std::endl;
     if (is_prefill) {
-      // we write for prefill only, device will loop decode tokens on its own
+      ZoneScopedN("TtRunModelRunner::prefill_write");
       for (Sequence* seq : seqs) {
         LLM_ENGINE_LOG("model_runner:ttrun") << "Writing to device: task_id=" << seq->task_id.id
                                          << " num_tokens=" << seq->token_ids_.size()
@@ -74,10 +76,12 @@ class TtRunModelRunner : public IModelRunner {
 
  private:
   void reader_loop() {
+    tracy_config::TracySetThreadName("TtRun-Reader");
     std::vector<uint8_t> bytes;
     LLM_ENGINE_LOG("model_runner:ttrun") << "Reader loop started" << std::endl;
     while (!stop_.load(std::memory_order_relaxed)) {
       if (device_output_.try_read(bytes)) {
+        ZoneScopedN("TtRunModelRunner::read_token");
         LLM_ENGINE_LOG("model_runner:ttrun") << "Received message, size=" << bytes.size() << std::endl;
 
         // New format: max_tokens (4) + num_token_ids (4) + payload (task_id 36 + token_ids variable)

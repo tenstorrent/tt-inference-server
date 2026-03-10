@@ -1,5 +1,6 @@
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/debug.hpp"
+#include "profiling/tracy.hpp"
 
 namespace llm_engine {
 
@@ -13,13 +14,16 @@ class MockModelRunner : public IModelRunner {
       : config_(config), decode_callback_(std::move(callback)) {}
 
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override {
+    ZoneScopedN("MockModelRunner::run");
     LLM_ENGINE_LOG("model_runner:mock") << (is_prefill ? "prefill" : "decode")
                                         << " batch_size=" << seqs.size() << std::endl;
     if (is_prefill) {
+      ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
         decode_callback_({seq->task_id, kWhitespaceTokenId});
       }
     } else {
+      ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
         decode_callback_({seq->task_id, static_cast<uint64_t>(seq->last_token + 1)});
       }

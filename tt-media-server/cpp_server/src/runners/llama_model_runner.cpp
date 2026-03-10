@@ -3,6 +3,7 @@
 
 #include "runners/llama_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
+#include "profiling/tracy.hpp"
 
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
@@ -84,56 +85,68 @@ LlamaModelRunner::~LlamaModelRunner() {
 }
 
 void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) {
+  ZoneScopedN("LlamaModelRunner::run");
   if (stop_.load() || !initialized_) return;
 
   bool had_error = false;
   {
+    ZoneScopedN("LlamaModelRunner::gil_acquire");
     py::gil_scoped_acquire acquire;
     try {
       py::list py_seqs;
-      for (Sequence* seq : seqs) {
-        py::list token_ids;
-        if (is_prefill) {
-          for (int64_t t : seq->token_ids_) token_ids.append(t);
-        } else {
-          token_ids.append(seq->token_ids_.back());
-        }
+      {
+        ZoneScopedN("LlamaModelRunner::marshal_inputs");
+        for (Sequence* seq : seqs) {
+          py::list token_ids;
+          if (is_prefill) {
+            for (int64_t t : seq->token_ids_) token_ids.append(t);
+          } else {
+            token_ids.append(seq->token_ids_.back());
+          }
 
-        py::list block_table;
-        for (int bid : seq->block_table_) {
-          block_table.append(bid);
-        }
+          py::list block_table;
+          for (int bid : seq->block_table_) {
+            block_table.append(bid);
+          }
 
-        int current_pos = is_prefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
-        int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
+          int current_pos = is_prefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
+          int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
 
-        const SamplingParams* sp = seq->sampling_params.get();
-        int max_tokens = sp ? sp->max_tokens : 64;
-        double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
-        bool ignore_eos = sp ? sp->ignore_eos : false;
-        py::object seed = py::none();
-        if (sp && sp->seed.has_value()) {
-          seed = py::int_(*sp->seed);
+          const SamplingParams* sp = seq->sampling_params.get();
+          int max_tokens = sp ? sp->max_tokens : 64;
+          double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
+          bool ignore_eos = sp ? sp->ignore_eos : false;
+          py::object seed = py::none();
+          if (sp && sp->seed.has_value()) {
+            seed = py::int_(*sp->seed);
+          }
+          py_seqs.append(
+              g_step_seq_class(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos,
+                              block_table, current_pos, prompt_len, seed));
         }
-        py_seqs.append(
-            g_step_seq_class(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos,
-                            block_table, current_pos, prompt_len, seed));
       }
 
-      py::object results = g_runner.attr("run")(is_prefill, py_seqs);
+      py::object results;
+      {
+        ZoneScopedN("LlamaModelRunner::python_run");
+        results = g_runner.attr("run")(is_prefill, py_seqs);
+      }
 
-      for (size_t i = 0; i < seqs.size(); ++i) {
-        py::object item = results[py::int_(i)];
-        TokenResult dr;
-        dr.task_id.id = item.attr("task_id").cast<std::string>();
-        dr.token_id = item.attr("token_id").cast<int64_t>();
-        std::string error = item.attr("error").cast<std::string>();
-        if (!error.empty()) {
-          dr.is_error = true;
-          std::cerr << "[LlamaModelRunner] sequence " << dr.task_id.id
-                    << " error: " << error << "\n";
+      {
+        ZoneScopedN("LlamaModelRunner::extract_results");
+        for (size_t i = 0; i < seqs.size(); ++i) {
+          py::object item = results[py::int_(i)];
+          TokenResult dr;
+          dr.task_id.id = item.attr("task_id").cast<std::string>();
+          dr.token_id = item.attr("token_id").cast<int64_t>();
+          std::string error = item.attr("error").cast<std::string>();
+          if (!error.empty()) {
+            dr.is_error = true;
+            std::cerr << "[LlamaModelRunner] sequence " << dr.task_id.id
+                      << " error: " << error << "\n";
+          }
+          decode_callback_(dr);
         }
-        decode_callback_(dr);
       }
     } catch (const py::error_already_set& e) {
       std::cerr << "[LlamaModelRunner] Python error in run_step: " << e.what() << "\n";
