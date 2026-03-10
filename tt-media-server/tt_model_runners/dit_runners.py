@@ -18,8 +18,7 @@ def _log_import(msg):
 
 
 _log_import("dit_runners: importing ttnn...")
-_t = time.time()
-import ttnn  # noqa: E402
+_t = time.time()  # noqa: E402
 
 _log_import(f"dit_runners: ttnn imported in {time.time() - _t:.1f}s")
 
@@ -64,6 +63,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: _configure_fabric called with params: "
             f"{list(updated_device_params.keys())}"
         )
+        import ttnn
+
         t0 = time.time()
         try:
             fabric_config = updated_device_params.pop(
@@ -563,6 +564,8 @@ class TTWan22Runner(TTDiTRunner):
         return frames
 
     def get_pipeline_device_params(self):
+        import ttnn
+
         device_params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
