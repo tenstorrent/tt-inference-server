@@ -27,14 +27,14 @@ class Scheduler {
   explicit Scheduler(const Config& config, ITaskQueue* task_queue);
   virtual ~Scheduler() = default;
 
-  /** @return true if there are no waiting, running, or in-flight sequences. */
+  /** @return true if there are no prefill_queue, decode_queue, or in-flight sequences. */
   bool is_finished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
   Sequence& add_request(std::vector<int64_t> prompt,
                         const SamplingParams& params = SamplingParams());
 
-  /** Enqueues an externally-owned sequence for prefill (waiting queue). */
+  /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(Sequence& seq);
 
   /** Looks up a sequence by task_id. Returns nullptr if not found. */
@@ -49,7 +49,7 @@ class Scheduler {
   std::pair<std::vector<Sequence*>, bool> schedule();
 
   /**
-   * Moves a sequence from running back to waiting and frees its KV cache blocks.
+   * Moves a sequence from decode_queue back to prefill_queue and frees its KV cache blocks.
    */
   void preempt(Sequence& seq);
 
@@ -67,20 +67,18 @@ class Scheduler {
 
  protected:
   /**
-   * @param has_waiting  true when the waiting queue has at least one request.
-   * @param running_count  number of sequences currently in the running queue.
-   * @param max_num_seqs  maximum batch / running capacity.
+   * @param decode_count  number of sequences currently in the decode_queue.
+   * @param max_num_seqs  maximum batch / decode_queue capacity.
    * @return true if the scheduler should attempt prefill before decode.
    */
-  virtual bool should_prefill_first(bool has_waiting, int running_count,
-                                    int max_num_seqs) const = 0;
+  virtual bool should_prefill_first(int decode_count, int max_num_seqs) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
    * Default: max_num_seqs (full capacity). Override to limit prefill
-   * to available slots when running sequences should be preserved.
+   * to available slots when decode sequences should be preserved.
    */
-  virtual int max_prefill_seqs(int running_count, int max_num_seqs) const {
+  virtual int max_prefill_seqs(int decode_count, int max_num_seqs) const {
     return max_num_seqs;
   }
 
@@ -97,9 +95,9 @@ class Scheduler {
   int max_in_flight_count_;
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
-  ITaskQueue* waiting_;
+  ITaskQueue* prefill_queue_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
-  std::deque<Sequence*> running_;
+  std::deque<Sequence*> decode_queue_;
   int in_flight_count_ = 0;
 };
 

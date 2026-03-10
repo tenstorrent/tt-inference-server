@@ -8,7 +8,7 @@
 namespace llm_engine {
 
 /**
- * Always prefills when the waiting queue has requests (original behaviour).
+ * Always prefills when the prefill_queue has requests (original behaviour).
  * Decode is only attempted when nothing can be prefilled.
  */
 class PrefillFirstScheduler : public Scheduler {
@@ -16,9 +16,9 @@ class PrefillFirstScheduler : public Scheduler {
   using Scheduler::Scheduler;
 
  protected:
-  bool should_prefill_first(bool has_waiting, int /*running_count*/,
+  bool should_prefill_first(int /*decode_count*/,
                             int /*max_num_seqs*/) const override {
-    return has_waiting;
+    return true;
   }
 };
 
