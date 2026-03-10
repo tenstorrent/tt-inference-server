@@ -3,10 +3,12 @@
 # Pre-commit hook: auto-format and lint staged Python files with ruff.
 # Install by running: scripts/setup-hooks.sh
 
-# Find ruff - check PATH first, then project and user-specific environments
+# Common virtualenv bin directories used by this repo.
+TOOL_ENV_BINS="./.pre-commit/bin ./.venv/bin /localdev/$USER/tt-metal/python_env/bin"
+
 RUFF=$(command -v ruff 2>/dev/null)
 if [ -z "$RUFF" ]; then
-    for candidate in "./.pre-commit/bin/ruff" "./.venv/bin/ruff" "/localdev/$USER/tt-metal/python_env/bin/ruff"; do
+    for candidate in "$TOOL_ENV_BINS"; do
         if [ -x "$candidate" ]; then
             RUFF="$candidate"
             break
@@ -36,7 +38,7 @@ git add default_model_spec.json
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 
 if [ -z "$STAGED_FILES" ]; then
-    echo "✅ No staged Python files, skipping Ruff checks"
+    echo "✅ No staged Python files, skipping Ruff checks and pytest"
     exit 0
 fi
 
@@ -56,6 +58,34 @@ echo "$STAGED_FILES" | xargs "$RUFF" format --check
 if [ $? -ne 0 ]; then
     echo "❌ ruff format failed - should not happen after auto-format"
     exit 1
+fi
+
+PYTEST_PYTHON=""
+for env_bin in $TOOL_ENV_BINS; do
+    candidate="$env_bin/python3"
+    if [ -x "$candidate" ]; then
+        PYTEST_PYTHON="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTEST_PYTHON" ]; then
+    for env_bin in $TOOL_ENV_BINS; do
+        candidate="$env_bin/python"
+        if [ -x "$candidate" ]; then
+            PYTEST_PYTHON="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PYTEST_PYTHON" ]; then
+    echo "⚠️  No candidate virtualenv python found, skipping pytest"
+else
+    "$PYTEST_PYTHON" -m pytest -p no:warnings
+    if [ $? -ne 0 ]; then
+        echo "❌ pytest failed - fix errors above before committing"
+        exit 1
+    fi
 fi
 
 echo "✅ Ruff checks passed!"
