@@ -174,15 +174,12 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                 "model.allocate_kv_cache() failed silently"
             )
 
-        can_sample_on_device = True
-        non_greedy_decoding_on_device = True
-
         # Warmup prefill
         self.model.warmup_model_prefill(
             kv_cache=self._kv_cache,
             enable_trace=True,
-            can_sample_on_device=can_sample_on_device,
-            non_greedy_decoding_on_device=non_greedy_decoding_on_device,
+            can_sample_on_device=True,
+            non_greedy_decoding_on_device=True,
         )
 
         # Warmup decode
@@ -191,8 +188,8 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             enable_trace=True,
             max_batch_size=self.max_batch_size,
             num_blocks=self._max_num_blocks_per_seq,
-            can_sample_on_device=can_sample_on_device,
-            non_greedy_decoding_on_device=non_greedy_decoding_on_device,
+            can_sample_on_device=True,
+            non_greedy_decoding_on_device=True,
         )
 
         self.logger.info(
@@ -238,7 +235,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         tokens = torch.tensor([seq.token_ids], dtype=torch.int64)
         sampling_params = self._build_sampling_params(seq)
 
-        # When device sampling is enabled, returns (tokens, log_probs)
         output_tokens, _log_probs = self.model.prefill_forward(
             tokens,
             page_table=page_table,
@@ -307,7 +303,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         # In batched mode, all sequences share the same sampling parameters
         sampling_params = self._build_sampling_params(sequences[0])
 
-        # When device sampling is enabled, returns (tokens, log_probs)
         output_tokens, _log_probs = self.model.decode_forward(
             tokens_batch,
             start_pos_batch,
