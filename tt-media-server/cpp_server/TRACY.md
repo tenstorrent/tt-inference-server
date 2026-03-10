@@ -16,26 +16,7 @@ We use [Tenstorrent’s Tracy](https://github.com/tenstorrent/tracy) with the Tr
 ./build.sh --tracy
 ```
 
-This passes `-DENABLE_TRACY=ON` to CMake. The binary is at `./build/tt_media_server_cpp` as usual.
-
-### Capturing a Tracy profile
-
-```bash
-./tracy-capture.sh [SECONDS] [PORT]
-```
-
-- `SECONDS` – capture duration (default: 60)
-- `PORT` – Tracy port to connect to (default: 8086 = main process, 8087 = worker 0, 8088 = worker 1, …)
-
-Examples:
-
-```bash
-./tracy-capture.sh              # 60 seconds, main process (port 8086)
-./tracy-capture.sh 30           # 30 seconds, main process
-./tracy-capture.sh 10 8087      # 10 seconds, worker 0
-```
-
-The script builds the Tracy capture tool on first run (from the fetched Tracy source) and writes to `capture.tracy`. Open the file in the Tracy GUI to inspect offline.
+The binary is at `./build/tt_media_server_cpp` as usual.
 
 ### Building the Tracy GUI
 
@@ -75,13 +56,19 @@ Replace `/path/to/your/tracy.rb` with the path to your formula file (e.g. from y
 |----------|----------------|-------|
 | **Run C++ server with Tracy** | **C++ Server [CodeLLDB + Tracy]** | Builds `build-tracy/`, runs the server with Tracy enabled; connect GUI to localhost:8086 (and 8087 for workers). |
 | **Run C++ server without Tracy** | **C++ Server [CodeLLDB]** | Builds `build/`, runs the server with no Tracy instrumentation. |
-| **Capture Tracy to a file** | **Tracy: Capture to file** | Runs the Tracy **capture** tool: connects to port 8086 and writes a capture to `cpp_server/capture.tracy` for 60 seconds (`-s 60`). Use **-f** in the config to overwrite an existing file. Start the **C++ server with Tracy** first, then run this config; afterward open `capture.tracy` in the Tracy GUI. |
 
-Typical workflow for “capture to file”:
+### Capturing a profile
 
-1. Start **C++ Server [CodeLLDB + Tracy]** (server listening on 8086).
-2. Run **Tracy: Capture to file** (capture connects to 8086 and writes `capture.tracy`).
-3. Open `cpp_server/capture.tracy` in the Tracy GUI to inspect the capture offline.
+Start the server with Tracy enabled first, then capture using either method — both write to `capture.tracy` for offline viewing in the Tracy GUI.
+
+**Command line** (supports custom duration and port):
+
+```bash
+./tracy-capture.sh [SECONDS] [PORT]   # defaults: 60s, port 8086
+./tracy-capture.sh 10 8087            # 10 seconds, worker 0
+```
+
+**VS Code**: run the **Tracy: Capture to file** launch config (captures port 8086 for 60s).
 
 ### Tips
 
