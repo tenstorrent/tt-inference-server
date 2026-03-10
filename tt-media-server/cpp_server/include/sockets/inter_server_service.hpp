@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "domain/task_id.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 #include "config/settings.hpp"
@@ -70,7 +71,7 @@ public:
      * @param max_tokens Maximum tokens to generate
      * @return true if sent successfully
      */
-    bool sendPrefillRequest(const std::string& task_id,
+    bool sendPrefillRequest(const tt::domain::TaskID& task_id,
                     const std::string& prompt,
                     const std::vector<int64_t>& token_ids,
                     int max_tokens = 100);

@@ -145,6 +145,11 @@ def parse_arguments():
         help="Disables trace capture requests, use to speed up execution if inference server already runnning and traces captured.",
     )
     parser.add_argument(
+        "--disable-metal-timeout",
+        action="store_true",
+        help="Disable tt-metal operation timeout and auto-triage on hang.",
+    )
+    parser.add_argument(
         "--percentile-report",
         action="store_true",
         help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",

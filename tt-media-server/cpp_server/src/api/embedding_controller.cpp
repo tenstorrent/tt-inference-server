@@ -5,8 +5,8 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 
-#include <iostream>
 #include <chrono>
 #include <sstream>
 #include <random>
@@ -100,7 +100,7 @@ EmbeddingController::EmbeddingController() {
         throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
                                  "Ensure register_services() is called before Drogon starts.");
     }
-    std::cout << "[EmbeddingController] Initialized (service already started)\n" << std::flush;
+    TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }
 
 EmbeddingController::~EmbeddingController() = default;
@@ -138,7 +138,7 @@ void EmbeddingController::create_embedding(
 
     // Build request
     domain::EmbeddingRequest request = domain::EmbeddingRequest::from_json(*json);
-    request.task_id = generate_task_id();
+    request.task_id = domain::TaskID(generate_task_id());
 
     // Default model if not specified
     if (request.model.empty()) {
@@ -176,11 +176,8 @@ void EmbeddingController::create_embedding(
                 double wait_ms = std::chrono::duration<double, std::milli>(got_response_time - submit_time).count();
                 double build_ms = std::chrono::duration<double, std::milli>(built_json_time - got_response_time).count();
                 double total_ms = std::chrono::duration<double, std::milli>(built_json_time - start_time).count();
-                std::cout << "[CTRL] req=" << req_num
-                          << " parse=" << parse_ms << "ms"
-                          << " wait=" << wait_ms << "ms"
-                          << " build=" << build_ms << "ms"
-                          << " total=" << total_ms << "ms\n";
+                TT_LOG_DEBUG("[EmbeddingController] req={} parse={}ms wait={}ms build={}ms total={}ms",
+                            req_num, parse_ms, wait_ms, build_ms, total_ms);
             }
 
             callback(resp);
