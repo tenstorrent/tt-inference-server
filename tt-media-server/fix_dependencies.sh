@@ -8,8 +8,7 @@ uv pip uninstall xformers diffusers torch torchvision torchaudio
 # Install CPU-only versions
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-uv pip install diffusers==0.35.1
+# Install xformers withouth and CUDA sub-depts
+uv pip install xformers --no-deps
 
-# Re-sync torch ecosystem: diffusers may have upgraded torch without upgrading
-# torchvision to match, causing "operator torchvision::nms does not exist"
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+uv pip install diffusers
