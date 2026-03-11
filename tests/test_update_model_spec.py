@@ -478,3 +478,51 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
     assert diff_mock.call_args.kwargs["current_content"] == updated_content
     readme_mock.assert_called_once_with(model_spec_path, str(readme_path))
     export_mock.assert_called_once_with(model_spec_path, output_json_path)
+
+
+def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    model_spec_path.write_text("spec_templates = []\n")
+
+    input_dir = tmp_path / "external_ci"
+    input_dir.mkdir()
+    last_good_json_path = input_dir / "models_ci_last_good.json"
+    last_good_json_path.write_text("{}\n")
+
+    output_json_path = tmp_path / "default_model_spec.json"
+    release_output_dir = tmp_path / "release_logs" / "v0.10.0"
+
+    args = type(
+        "Args",
+        (),
+        {
+            "last_good_json": str(last_good_json_path),
+            "model_spec_path": str(model_spec_path),
+            "dry_run": False,
+            "output_json": str(output_json_path),
+            "output_only": False,
+            "readme_path": str(tmp_path / "README.md"),
+            "ignore_perf_status": False,
+            "models_ci_run_id": None,
+            "out_root": None,
+        },
+    )()
+
+    with patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch(
+        "scripts.release.update_model_spec.resolve_release_output_dir",
+        return_value=release_output_dir,
+    ) as resolve_mock, patch(
+        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
+    ) as export_mock, patch(
+        "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
+    ) as diff_mock:
+        main()
+
+    resolve_mock.assert_called_once_with(None)
+    export_mock.assert_called_once_with(model_spec_path, output_json_path)
+    assert diff_mock.call_args.args[1] == release_output_dir
+    assert diff_mock.call_args.kwargs["current_content"] == "spec_templates = []\n"
