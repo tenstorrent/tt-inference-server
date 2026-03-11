@@ -179,7 +179,7 @@ recompilation needed:
 
 | `LLM_DEVICE_BACKEND` | Model | Tokenizer |
 |----------------------|-------|-----------|
-| `mock` or `ttrun` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
+| `mock` or `pipeline` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
 | `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
 
 The runtime selection uses an OOP strategy pattern — see
@@ -227,7 +227,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 | `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `ttrun` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
+| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 | `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
 | `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
@@ -532,7 +532,7 @@ The server supports the following runner types, selected via the `LLM_DEVICE_BAC
 
 | Runner | Value | Description |
 |--------|-------|-------------|
-| Mock / TtRun | `mock` or `ttrun` (default when unset: `mock`) | Mock: no device. TtRun: TT device. Both use DeepSeek V3 tokenizer. |
+| Mock / Pipeline | `mock` or `pipeline` (default when unset: `mock`) | Mock: no device. Pipeline: TT device. Both use DeepSeek V3 tokenizer. |
 | Llama runner | `llama` | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
 
 ### LLM mock runner (default)

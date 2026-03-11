@@ -98,7 +98,7 @@ Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment vari
 tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
 the `Tokenizer` subclass hierarchy (`utils/tokenizer.hpp`):
 
-- **`mock`** or **`ttrun`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
+- **`mock`** or **`pipeline`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
 - **`llama`**: Python-based runner via pybind11, Llama 3.1 8B Instruct tokenizer strategy
 
 ## Configuration System
@@ -108,7 +108,7 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `LLM_DEVICE_BACKEND`: `mock` or `ttrun` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
+- `LLM_DEVICE_BACKEND`: `mock` or `pipeline` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
 - `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
