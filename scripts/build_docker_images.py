@@ -853,7 +853,7 @@ def build_dev_image(
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
     ]
 
