@@ -1032,8 +1032,11 @@ def main():
     )
     parser.add_argument(
         "--output-json",
-        default="model_spec.json",
-        help="Path to output JSON file with all model specs (default: model_spec.json)",
+        default="default_model_spec.json",
+        help=(
+            "Path to output JSON file with all model specs "
+            "(default: default_model_spec.json)"
+        ),
     )
     parser.add_argument(
         "--output-only",
