@@ -36,9 +36,8 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-int g_next_id = 0;
 TaskID next_id() {
-  return TaskID("task-" + std::to_string(++g_next_id));
+  return TaskID(TaskID::generate());
 }
 
 // --- make_scheduler factory tests ---

@@ -121,7 +121,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(TaskID("seq-roundtrip"), 256, {1, 2, 3, 4, 5}, params);
+  Sequence orig(TaskID(TaskID::generate()), 256, {1, 2, 3, 4, 5}, params);
   orig.num_cached_tokens_ = 256;
   orig.block_table_ = {0, 1};
   orig.status_ = SequenceStatus::IN_FLIGHT;

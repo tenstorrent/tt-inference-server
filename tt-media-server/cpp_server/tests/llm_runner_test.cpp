@@ -50,9 +50,8 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::vector<TaskID> task_ids;
   int id_counter = 0;
   for (const auto& req : requests) {
-    TaskID tid("runner-test-" + std::to_string(++id_counter));
     Sequence& seq =
-        engine.scheduler().add_request(std::move(tid), req.prompt, {.max_tokens = req.max_tokens});
+        engine.scheduler().add_request(std::move(TaskID(TaskID::generate())), req.prompt, {.max_tokens = req.max_tokens});
     task_ids.push_back(seq.task_id);
   }
 
