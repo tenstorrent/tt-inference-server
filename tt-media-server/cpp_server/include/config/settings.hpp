@@ -74,6 +74,9 @@ std::string socket_host();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socket_port();
 
+/** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default: defaults::ENABLE_ACCUMULATED_STREAMING. */
+bool enable_accumulated_streaming();
+
 /** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default: defaults::MAX_ACCUMULATED_TOKENS. */
 size_t max_accumulated_tokens();
 

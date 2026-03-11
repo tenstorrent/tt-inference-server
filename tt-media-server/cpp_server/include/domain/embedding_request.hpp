@@ -14,7 +14,9 @@ namespace tt::domain {
  * OpenAI-compatible embedding request.
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/create
  */
-struct EmbeddingRequest: BaseRequest {
+struct EmbeddingRequest : BaseRequest {
+    using BaseRequest::BaseRequest;
+
     // Required: Model to use for embedding
     std::string model;
 
@@ -25,27 +27,19 @@ struct EmbeddingRequest: BaseRequest {
     std::optional<std::string> user;
 
     /**
-     * Parse from JSON.
+     * Parse from JSON. task_id must be provided (e.g. from controller).
      */
-    static EmbeddingRequest from_json(const Json::Value& json) {
-        EmbeddingRequest req;
-
+    static EmbeddingRequest from_json(const Json::Value& json, TaskID task_id) {
+        EmbeddingRequest req(std::move(task_id));
         if (json.isMember("model")) {
             req.model = json["model"].asString();
         }
-
         if (json.isMember("input")) {
             req.input = json["input"].asString();
         }
-
         if (json.isMember("user")) {
             req.user = json["user"].asString();
         }
-
-        if (json.isMember("task_id")) {
-            req.task_id = TaskID(json["task_id"].asString());
-        }
-
         return req;
     }
 

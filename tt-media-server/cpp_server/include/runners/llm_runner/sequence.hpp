@@ -24,11 +24,16 @@ struct TokenResult {
   uint64_t token_id;
   std::optional<bool> finished;
   bool is_error = false;
+
+  TokenResult(TaskID task_id, uint64_t token_id,
+             std::optional<bool> finished = {}, bool is_error = false)
+      : task_id(std::move(task_id)), token_id(token_id),
+        finished(std::move(finished)), is_error(is_error) {}
 };
 
 class Sequence {
  public:
-  Sequence(const int block_size, std::vector<int64_t> token_ids,
+  Sequence(TaskID task_id, int block_size, std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;

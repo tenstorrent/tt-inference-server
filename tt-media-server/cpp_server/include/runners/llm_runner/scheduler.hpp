@@ -31,7 +31,7 @@ class Scheduler {
   bool is_finished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
-  Sequence& add_request(std::vector<int64_t> prompt,
+  Sequence& add_request(TaskID task_id, std::vector<int64_t> prompt,
                         const SamplingParams& params = SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */

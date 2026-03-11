@@ -11,10 +11,10 @@
 #include "utils/logger.hpp"
 
 #include <memory>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <chrono>
-#include <iostream>
 #include <cmath>
 #include <mutex>
 
@@ -81,10 +81,9 @@ void LLMController::completions(
 
     std::shared_ptr<domain::CompletionRequest> request;
     try {
+        domain::TaskID task_id(generate_completion_id());
         request = std::make_shared<domain::CompletionRequest>(
-            domain::CompletionRequest::fromJson(*json)
-        );
-        request->task_id = domain::TaskID(generate_completion_id());
+            domain::CompletionRequest::fromJson(*json, std::move(task_id)));
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
@@ -102,7 +101,11 @@ void LLMController::completions(
     }
 
     if (request->stream) {
-        handle_streaming(request, std::move(callback), false);
+        if (tt::config::enable_accumulated_streaming()) {
+            handle_streaming_accumulated(request, std::move(callback), false);
+        } else {
+            handle_streaming(request, std::move(callback), false);
+        }
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto response = service_->submit_request(std::move(*request));
@@ -137,10 +140,10 @@ void LLMController::chat_completions(
         return;
     }
 
-    domain::ChatCompletionRequest chat_req;
+    std::optional<domain::ChatCompletionRequest> chat_req_opt;
     try {
-        chat_req = domain::ChatCompletionRequest::fromJson(*json);
-        chat_req.task_id = domain::TaskID(generate_completion_id());
+        domain::TaskID task_id(generate_completion_id());
+        chat_req_opt = domain::ChatCompletionRequest::fromJson(*json, std::move(task_id));
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
@@ -148,6 +151,8 @@ void LLMController::chat_completions(
         callback(resp);
         return;
     }
+
+    domain::ChatCompletionRequest& chat_req = *chat_req_opt;
 
     if (chat_req.messages.empty()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
@@ -169,7 +174,11 @@ void LLMController::chat_completions(
     auto request = std::make_shared<domain::CompletionRequest>(chat_req.to_completion_request());
 
     if (request->stream) {
-        handle_streaming(request, std::move(callback), true);
+        if (tt::config::enable_accumulated_streaming()) {
+            handle_streaming_accumulated(request, std::move(callback), true);
+        } else {
+            handle_streaming(request, std::move(callback), true);
+        }
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto completion = service_->submit_request(std::move(*request));
@@ -428,7 +437,7 @@ void LLMController::handle_streaming_accumulated(
                             }
                         } else if (!chunk.choices[0].text.empty() ||
                                    !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out;
+                            domain::StreamingChunkResponse out(req_ptr->task_id);
                             out.id = completion_id;
                             out.object = "text_completion";
                             out.model = model;
@@ -495,7 +504,7 @@ void LLMController::handle_streaming_accumulated(
                                         } else {
                                             // For text completions, we need to send a usage chunk
                                             // The format should be similar but for text_completion object
-                                            domain::StreamingChunkResponse usage_chunk;
+                                            domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
                                             usage_chunk.id = completion_id;
                                             usage_chunk.object = "text_completion";
                                             usage_chunk.model = model;

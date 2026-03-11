@@ -66,10 +66,7 @@ bool LlamaModelRunner::initialize() {
 
 void LlamaModelRunner::fail_sequences(const std::vector<Sequence*>& seqs) {
   for (Sequence* seq : seqs) {
-    TokenResult dr;
-    dr.task_id = seq->task_id;
-    dr.token_id = 0;
-    dr.is_error = true;
+    TokenResult dr(seq->task_id, 0, {}, true);
     decode_callback_(dr);
   }
 }
@@ -150,14 +147,14 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TokenResult dr;
-        dr.task_id.id = item.attr("task_id").cast<std::string>();
-        dr.token_id = item.attr("token_id").cast<int64_t>();
+        TaskID dr_task_id(item.attr("task_id").cast<std::string>());
+        uint64_t dr_token_id = static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
-        if (!error.empty()) {
-          dr.is_error = true;
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", dr.task_id.id, error);
+        bool dr_is_error = !error.empty();
+        if (dr_is_error) {
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", dr_task_id.id, error);
         }
+        TokenResult dr(dr_task_id, dr_token_id, {}, dr_is_error);
         decode_callback_(dr);
       }
     } catch (const py::error_already_set& e) {

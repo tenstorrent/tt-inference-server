@@ -268,8 +268,7 @@ struct EmbeddingRunner::Impl {
         for (Py_ssize_t i = 0; i < num_results; ++i) {
             PyObject* py_resp = PyList_GetItem(result_list, i);  // Borrowed reference
 
-            domain::EmbeddingResponse resp;
-            resp.task_id = requests[i].task_id;
+            domain::EmbeddingResponse resp(requests[i].task_id);
             resp.model = requests[i].model;
 
             // Get embedding attribute

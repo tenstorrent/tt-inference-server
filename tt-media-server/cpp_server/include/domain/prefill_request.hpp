@@ -22,6 +22,8 @@ struct PrefillRequest {
     std::string prompt;
     std::vector<int64_t> token_ids;
     int max_tokens = 0;
+
+    explicit PrefillRequest(TaskID task_id) : task_id(std::move(task_id)) {}
 };
 
 } // namespace tt::domain

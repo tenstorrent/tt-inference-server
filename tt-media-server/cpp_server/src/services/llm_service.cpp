@@ -55,7 +55,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
         "/tt_tokens_" + std::to_string(worker_id), false);
     cfg.worker_id = worker_id;
     auto engine_cfg = tt::config::llm_engine_config();
-    if (engine_cfg.runner_type == llm_engine::ModelRunnerType::TtRun) {
+    if (engine_cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
         cfg.runner_config = tt::config::sp_pipeline_config();
     } else {
         cfg.runner_config = engine_cfg;
@@ -269,7 +269,8 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
                 pending_tasks_.fetch_sub(1);
             }
 
-            domain::StreamingChunkResponse response;
+            domain::StreamingChunkResponse response(
+                domain::TaskID(std::string(token.task_id)));
             response.id = std::string(token.task_id);
             response.created = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -339,7 +340,7 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     std::unique_lock<std::mutex> lock(mtx);
     cv.wait(lock, [&] { return done; });
 
-    domain::CompletionResponse response;
+    domain::CompletionResponse response{domain::TaskID(task_id)};
     response.id = task_id;
     response.model = model;
     response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -382,8 +383,7 @@ void LLMService::process_streaming_request(
             throw std::runtime_error("No prefill request callback configured");
         }
 
-        domain::PrefillRequest prefill_req;
-        prefill_req.task_id = domain::TaskID(task_id);
+        domain::PrefillRequest prefill_req{domain::TaskID(task_id)};
         prefill_req.token_ids = token_ids;
         prefill_req.max_tokens = request.max_tokens;
 
@@ -400,8 +400,8 @@ void LLMService::process_streaming_request(
     }
 
     auto sequence = std::make_unique<llm_engine::Sequence>(
+        llm_engine::TaskID(task_id),
         tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
-    sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
@@ -439,8 +439,8 @@ void LLMService::submit_decode_continuation(
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
 
     auto sequence = std::make_unique<llm_engine::Sequence>(
+        llm_engine::TaskID(task_id),
         tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
-    sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(
         tt::utils::mapper::map_sampling_params(request));
@@ -456,7 +456,7 @@ void LLMService::handle_connection_lost() {
 
     stream_callbacks_.for_each([](const std::string& task_id,
                                    std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
-        domain::StreamingChunkResponse error_response;
+        domain::StreamingChunkResponse error_response{domain::TaskID(task_id)};
         error_response.id = task_id;
         error_response.created = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()
