@@ -84,9 +84,7 @@ def _shm_write_prefill(
     struct.pack_into("<I", buf, msg_off + _MAX_TOKENS_OFF, max_tokens)
     struct.pack_into("<I", buf, msg_off + _NUM_TOKEN_IDS_OFF, len(token_ids))
 
-    buf[msg_off + _TASK_ID_OFF : msg_off + _TASK_ID_OFF + _TASK_ID_SIZE] = (
-        task_id_bytes
-    )
+    buf[msg_off + _TASK_ID_OFF : msg_off + _TASK_ID_OFF + _TASK_ID_SIZE] = task_id_bytes
 
     token_ids_off = msg_off + _TOKEN_IDS_OFF
     for i, tid in enumerate(token_ids):

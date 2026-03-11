@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from multiprocessing import shared_memory as _shm
 from typing import Callable
 
-
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
 
@@ -106,9 +105,7 @@ class SharedMemory:
         task_id = bytes(buf[task_id_off : task_id_off + self.TASK_ID_SIZE])
 
         token_ids_off = msg_off + self._TOKEN_IDS_OFF
-        token_ids = list(
-            struct.unpack_from(f"<{num_token_ids}q", buf, token_ids_off)
-        )
+        token_ids = list(struct.unpack_from(f"<{num_token_ids}q", buf, token_ids_off))
 
         struct.pack_into("<i", buf, state_off, self._FREE)
         self._pos = (self._pos + 1) % self.SLOTS
