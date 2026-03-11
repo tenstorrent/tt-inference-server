@@ -160,7 +160,7 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
-        "--publish", f"{runtime_config.service_port}:{runtime_config.service_port}",
+        "--publish", f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -246,7 +246,7 @@ def generate_docker_run_command(
             ]
         else:
             docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
         # fmt: on
 

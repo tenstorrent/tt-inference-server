@@ -3,13 +3,17 @@
 # Pre-commit hook: auto-format and lint staged Python files with ruff.
 # Install by running: scripts/setup-hooks.sh
 
-# Find ruff - check PATH first, then user's tt-metal python env
+# Common virtualenv bin directories used by this repo.
+TOOL_ENV_BINS="./.pre-commit/bin ./.venv/bin /localdev/$USER/tt-metal/python_env/bin"
+
 RUFF=$(command -v ruff 2>/dev/null)
 if [ -z "$RUFF" ]; then
-    candidate="/localdev/$USER/tt-metal/python_env/bin/ruff"
-    if [ -x "$candidate" ]; then
-        RUFF="$candidate"
-    fi
+    for candidate in $TOOL_ENV_BINS; do
+        if [ -x "$candidate" ]; then
+            RUFF="$candidate"
+            break
+        fi
+    done
 fi
 
 if [ -z "$RUFF" ]; then
@@ -23,9 +27,18 @@ if [ -z "$RUFF" ]; then
     echo "✅ ruff installed successfully"
 fi
 
+# update default_model_spec.json and stage it
+python3 -c 'from pathlib import Path; from workflows.model_spec import MODEL_SPECS, export_model_specs_json; export_model_specs_json(MODEL_SPECS, Path("default_model_spec.json"))'
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to update default_model_spec.json"
+    exit 1
+fi
+git add default_model_spec.json
+
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 
 if [ -z "$STAGED_FILES" ]; then
+    echo "✅ No staged Python files, skipping Ruff checks and pytest"
     exit 0
 fi
 
@@ -48,3 +61,34 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✅ Ruff checks passed!"
+
+PYTEST_PYTHON=""
+for env_bin in $TOOL_ENV_BINS; do
+    candidate="$env_bin/python3"
+    if [ -x "$candidate" ]; then
+        PYTEST_PYTHON="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTEST_PYTHON" ]; then
+    for env_bin in $TOOL_ENV_BINS; do
+        candidate="$env_bin/python"
+        if [ -x "$candidate" ]; then
+            PYTEST_PYTHON="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PYTEST_PYTHON" ]; then
+    echo "⚠️  No candidate virtualenv python found, skipping pytest"
+else
+    "$PYTEST_PYTHON" -m pytest -p no:warnings
+    if [ $? -ne 0 ]; then
+        echo "❌ pytest failed - fix errors above before committing"
+        exit 1
+    fi
+    echo "✅ pytest passed!"
+fi
+
+echo "✅ All pre-commit checks passed!"

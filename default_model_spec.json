@@ -76,7 +76,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -149,7 +150,8 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -261,7 +263,8 @@
             "env_vars": {
               "MESH_DEVICE": "(4, 8)",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -373,7 +376,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -484,7 +488,8 @@
             "env_vars": {
               "MESH_DEVICE": "(4, 8)",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -558,7 +563,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -630,7 +636,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -696,18 +703,17 @@
               "max_num_batched_tokens": "32768",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}"
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\"}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D"
             },
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -730,9 +736,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D"
           },
           "supported_modalities": [
@@ -740,7 +744,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -822,7 +826,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -931,7 +936,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1041,7 +1047,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1116,7 +1123,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1232,7 +1240,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1282,7 +1291,7 @@
           "model_name": "Qwen3-8B",
           "inference_engine": "vLLM",
           "device_type": "P300",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300",
             "max_concurrency": 32,
@@ -1304,15 +1313,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -1321,11 +1331,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "Qwen/Qwen3-8B",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -1333,9 +1342,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -1432,7 +1441,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -1557,7 +1567,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1671,7 +1682,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1747,7 +1759,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -1822,7 +1835,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -1879,7 +1893,7 @@
           "model_name": "Qwen3-32B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -1890,8 +1904,8 @@
               {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
+                "max_concurrency": 1,
+                "num_prompts": 8,
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
@@ -1902,19 +1916,19 @@
                   "functional": {
                     "ttft_ms": 460.0,
                     "tput_user": 3.7,
-                    "tput": 118.4,
+                    "tput": 3.7,
                     "tolerance": 0.0
                   },
                   "complete": {
                     "ttft_ms": 92.0,
                     "tput_user": 18.5,
-                    "tput": 592.0,
+                    "tput": 18.5,
                     "tolerance": 0.0
                   },
                   "target": {
                     "ttft_ms": 46.0,
                     "tput_user": 37.0,
-                    "tput": 1184.0,
+                    "tput": 37.0,
                     "tolerance": 0.0
                   }
                 },
@@ -1940,15 +1954,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -1958,11 +1973,10 @@
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "Qwen/Qwen3-32B",
           "param_count": 32,
           "min_disk_gb": 84,
@@ -1970,9 +1984,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -2061,7 +2075,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2132,7 +2147,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2204,7 +2220,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2317,7 +2334,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2431,7 +2449,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2510,7 +2529,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2667,7 +2687,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2822,7 +2843,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -2903,7 +2925,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3062,7 +3085,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3217,7 +3241,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3298,7 +3323,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3417,7 +3443,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3488,7 +3515,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150x4",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3600,7 +3628,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3671,7 +3700,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150x4",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -3827,7 +3857,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -3955,7 +3986,8 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4079,7 +4111,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4198,7 +4231,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4254,14 +4288,53 @@
           "model_name": "Llama-3.3-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
             "max_context": 131072,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "text",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 890.0,
+                    "tput_user": 1.7000000000000002,
+                    "tput": 1.7000000000000002,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 178.0,
+                    "tput_user": 8.5,
+                    "tput": 8.5,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 89.0,
+                    "tput_user": 17.0,
+                    "tput": 17.0,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "meta-llama/Llama-3.3-70B-Instruct",
               "block_size": "64",
@@ -4278,15 +4351,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -4295,11 +4369,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -4307,9 +4380,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -4366,7 +4439,8 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4537,7 +4611,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4665,7 +4740,8 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -4789,7 +4865,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "32768",
               "VLLM__MAX_MODEL_LENGTH": "131072",
               "VLLM__MIN_CONTEXT_LENGTH": "1024"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -4904,7 +4981,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5023,7 +5101,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5079,14 +5158,53 @@
           "model_name": "Llama-3.1-70B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
             "max_context": 131072,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "text",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 890.0,
+                    "tput_user": 1.7000000000000002,
+                    "tput": 1.7000000000000002,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 178.0,
+                    "tput_user": 8.5,
+                    "tput": 8.5,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 89.0,
+                    "tput_user": 17.0,
+                    "tput": 17.0,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "meta-llama/Llama-3.1-70B",
               "block_size": "64",
@@ -5103,15 +5221,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -5120,11 +5239,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5132,9 +5250,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -5191,7 +5309,8 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5362,7 +5481,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5490,7 +5610,8 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5614,7 +5735,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5733,7 +5855,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -5789,14 +5912,53 @@
           "model_name": "Llama-3.1-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
             "max_context": 131072,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "text",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 890.0,
+                    "tput_user": 1.7000000000000002,
+                    "tput": 1.7000000000000002,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 178.0,
+                    "tput_user": 8.5,
+                    "tput": 8.5,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 89.0,
+                    "tput_user": 17.0,
+                    "tput": 17.0,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "meta-llama/Llama-3.1-70B-Instruct",
               "block_size": "64",
@@ -5813,15 +5975,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -5830,11 +5993,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5842,9 +6004,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -5901,7 +6063,8 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6072,7 +6235,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6200,7 +6364,8 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6324,7 +6489,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6443,7 +6609,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6499,14 +6666,53 @@
           "model_name": "DeepSeek-R1-Distill-Llama-70B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
             "max_context": 131072,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "text",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 890.0,
+                    "tput_user": 1.7000000000000002,
+                    "tput": 1.7000000000000002,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 178.0,
+                    "tput_user": 8.5,
+                    "tput": 8.5,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 89.0,
+                    "tput_user": 17.0,
+                    "tput": 17.0,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
               "block_size": "64",
@@ -6523,15 +6729,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -6540,11 +6747,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -6552,9 +6758,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -6611,7 +6817,8 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -6698,7 +6905,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -6767,7 +6975,8 @@
             "override_tt_config": {},
             "env_vars": {
               "MESH_DEVICE": "DUAL"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -6835,7 +7044,8 @@
             "override_tt_config": {},
             "env_vars": {
               "MESH_DEVICE": "QUAD"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -6945,7 +7155,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7055,7 +7266,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7166,7 +7378,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7278,7 +7491,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7388,7 +7602,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7499,7 +7714,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7613,7 +7829,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7724,7 +7941,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7836,7 +8054,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -7947,7 +8166,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8060,7 +8280,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8173,7 +8394,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8284,7 +8506,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8394,7 +8617,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8505,7 +8729,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8616,7 +8841,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8768,7 +8994,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8839,7 +9066,8 @@
             "override_tt_config": {},
             "env_vars": {
               "MESH_DEVICE": "GPU"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -8948,7 +9176,8 @@
             "env_vars": {
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -9058,7 +9287,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -9170,7 +9400,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -9285,7 +9516,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -9343,7 +9575,7 @@
           "model_name": "Llama-3.1-8B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -9407,15 +9639,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -9424,11 +9657,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-8B",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -9436,9 +9668,94 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
-          "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "status": "FUNCTIONAL",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "override_tt_config": {
+            "sample_on_device_mode": "decode_only",
+            "trace_region_size": 56000000
+          },
+          "supported_modalities": [
+            "text"
+          ],
+          "subdevice_type": null,
+          "uses_tensor_model_cache": true,
+          "has_builtin_warmup": false,
+          "cli_args": {}
+        }
+      }
+    },
+    "P300": {
+      "vLLM": {
+        "tt_transformers": {
+          "model_id": "id_tt-transformers_Llama-3.1-8B_p300",
+          "impl": {
+            "impl_id": "tt_transformers",
+            "impl_name": "tt-transformers",
+            "repo_url": "https://github.com/tenstorrent/tt-metal",
+            "code_path": "models/tt_transformers"
+          },
+          "hf_model_repo": "meta-llama/Llama-3.1-8B",
+          "model_name": "Llama-3.1-8B",
+          "inference_engine": "vLLM",
+          "device_type": "P300",
+          "tt_metal_commit": "e867533",
+          "device_model_spec": {
+            "device": "P300",
+            "max_concurrency": 32,
+            "max_context": 131072,
+            "perf_targets_map": {},
+            "default_impl": true,
+            "perf_reference": [],
+            "vllm_args": {
+              "model": "meta-llama/Llama-3.1-8B",
+              "block_size": "64",
+              "max_model_len": "131072",
+              "max_num_seqs": "32",
+              "max_num_batched_tokens": "131072",
+              "max-log-len": "32",
+              "seed": "9472",
+              "override_tt_config": "{\"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 56000000}"
+            },
+            "override_tt_config": {
+              "sample_on_device_mode": "decode_only",
+              "trace_region_size": 56000000
+            },
+            "env_vars": {
+              "MESH_DEVICE": "P300",
+              "ARCH_NAME": "blackhole"
+            },
+            "system_requirements": null
+          },
+          "system_requirements": {
+            "firmware": {
+              "specifier": ">=19.2.0",
+              "mode": "STRICT"
+            },
+            "kmd": {
+              "specifier": ">=2.5.0",
+              "mode": "STRICT"
+            }
+          },
+          "env_vars": {
+            "VLLM_CONFIGURE_LOGGING": "1",
+            "VLLM_RPC_TIMEOUT": "900000",
+            "VLLM_TARGET_DEVICE": "tt",
+            "TORCHDYNAMO_DISABLE": "1",
+            "MESH_DEVICE": "P300",
+            "ARCH_NAME": "blackhole"
+          },
+          "vllm_commit": "22be241",
+          "hf_weights_repo": "meta-llama/Llama-3.1-8B",
+          "param_count": 8,
+          "min_disk_gb": 36,
+          "min_ram_gb": 20.0,
+          "model_type": "LLM",
+          "repacked": 0,
+          "version": "0.9.0",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "status": "FUNCTIONAL",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -9533,7 +9850,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -9621,7 +9939,8 @@
               "trace_region_size": 50000000,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -9746,7 +10065,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -9857,7 +10177,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10009,7 +10330,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10080,7 +10402,8 @@
             "override_tt_config": {},
             "env_vars": {
               "MESH_DEVICE": "GPU"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10189,7 +10512,8 @@
             "env_vars": {
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10299,7 +10623,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10411,7 +10736,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -10526,7 +10852,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -10584,7 +10911,7 @@
           "model_name": "Llama-3.1-8B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -10648,15 +10975,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -10665,11 +10993,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300x2",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -10677,9 +11004,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
-          "status": "COMPLETE",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "status": "FUNCTIONAL",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -10708,7 +11035,7 @@
           "model_name": "Llama-3.1-8B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300",
-          "tt_metal_commit": "1a6cf27",
+          "tt_metal_commit": "e867533",
           "device_model_spec": {
             "device": "P300",
             "max_concurrency": 32,
@@ -10733,15 +11060,16 @@
             "env_vars": {
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
-              "specifier": ">=18.12.0",
+              "specifier": ">=19.2.0",
               "mode": "STRICT"
             },
             "kmd": {
-              "specifier": ">=2.4.1",
+              "specifier": ">=2.5.0",
               "mode": "STRICT"
             }
           },
@@ -10750,11 +11078,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_USE_V1": "1",
             "MESH_DEVICE": "P300",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "88757f6",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -10762,9 +11089,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-1a6cf27-88757f6",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/1a6cf27/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -10859,7 +11186,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -10947,7 +11275,8 @@
               "trace_region_size": 50000000,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": {
             "firmware": {
@@ -11073,7 +11402,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11149,7 +11479,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11259,19 +11590,18 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D"
             },
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11294,9 +11624,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D"
           },
           "supported_modalities": [
@@ -11305,7 +11633,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11379,20 +11707,19 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D"
             },
             "env_vars": {
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11416,9 +11743,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D"
           },
           "supported_modalities": [
@@ -11427,7 +11752,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11503,19 +11828,18 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D"
             },
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11538,9 +11862,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D"
           },
           "supported_modalities": [
@@ -11549,7 +11871,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11623,20 +11945,19 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21448704, \"fabric_config\": \"FABRIC_1D\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21448704,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D"
             },
             "env_vars": {
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11660,9 +11981,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21448704,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D"
           },
           "supported_modalities": [
@@ -11671,7 +11990,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11747,13 +12066,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 51934848, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 51934848,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D",
               "sample_on_device_mode": "decode_only"
             },
@@ -11761,7 +12078,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11785,9 +12103,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 51934848,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D",
             "sample_on_device_mode": "decode_only"
           },
@@ -11797,7 +12113,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11832,13 +12148,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21921792, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21921792,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D",
               "sample_on_device_mode": "decode_only"
             },
@@ -11848,7 +12162,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -11874,9 +12189,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21921792,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D",
             "sample_on_device_mode": "decode_only"
           },
@@ -11886,7 +12199,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -11960,15 +12273,13 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 49544000, \"fabric_config\": \"FABRIC_1D_RING\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D_RING\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}",
               "data_parallel_size": 4,
               "disable_mm_preprocessor_cache": true
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 49544000,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D_RING",
               "sample_on_device_mode": "decode_only"
             },
@@ -11976,7 +12287,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12000,9 +12312,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 49544000,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D_RING",
             "sample_on_device_mode": "decode_only"
           },
@@ -12012,7 +12322,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -12088,13 +12398,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 51934848, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 51934848,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D",
               "sample_on_device_mode": "decode_only"
             },
@@ -12102,7 +12410,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12126,9 +12435,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 51934848,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D",
             "sample_on_device_mode": "decode_only"
           },
@@ -12138,7 +12445,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -12173,13 +12480,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 21921792, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}"
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 21921792,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D",
               "sample_on_device_mode": "decode_only"
             },
@@ -12189,7 +12494,8 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12215,9 +12521,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 21921792,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D",
             "sample_on_device_mode": "decode_only"
           },
@@ -12227,7 +12531,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -12301,15 +12605,13 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{\"l1_small_size\": 24576, \"worker_l1_size\": 1344544, \"trace_region_size\": 49544000, \"fabric_config\": \"FABRIC_1D_RING\", \"sample_on_device_mode\": \"decode_only\"}",
+              "override_tt_config": "{\"l1_small_size\": 4096, \"fabric_config\": \"FABRIC_1D_RING\", \"sample_on_device_mode\": \"decode_only\"}",
               "limit-mm-per-prompt": "{\"image\": 10}",
               "data_parallel_size": 4,
               "disable_mm_preprocessor_cache": true
             },
             "override_tt_config": {
-              "l1_small_size": 24576,
-              "worker_l1_size": 1344544,
-              "trace_region_size": 49544000,
+              "l1_small_size": 4096,
               "fabric_config": "FABRIC_1D_RING",
               "sample_on_device_mode": "decode_only"
             },
@@ -12317,7 +12619,8 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12341,9 +12644,7 @@
           "status": "EXPERIMENTAL",
           "code_link": "https://github.com/tenstorrent/tt-metal/tree/0b10c51/models/tt_transformers",
           "override_tt_config": {
-            "l1_small_size": 24576,
-            "worker_l1_size": 1344544,
-            "trace_region_size": 49544000,
+            "l1_small_size": 4096,
             "fabric_config": "FABRIC_1D_RING",
             "sample_on_device_mode": "decode_only"
           },
@@ -12353,7 +12654,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -12437,7 +12738,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12551,7 +12853,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12662,7 +12965,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12775,7 +13079,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -12888,7 +13193,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13004,7 +13310,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13120,7 +13427,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13236,7 +13544,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13347,7 +13656,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13460,7 +13770,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13571,7 +13882,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13685,7 +13997,8 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": 16
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13800,7 +14113,8 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": 16
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -13914,7 +14228,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14023,7 +14338,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14077,7 +14393,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "video",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 5400000.0,
+                    "tput_user": 0.00019,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 1080000.0,
+                    "tput_user": 0.00095,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 540000.0,
+                    "tput_user": 0.0019,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "genmo/mochi-1-preview",
               "block_size": "64",
@@ -14094,7 +14449,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14206,7 +14562,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14262,7 +14619,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "video",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 3300000.0,
+                    "tput_user": 0.00030000000000000003,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 660000.0,
+                    "tput_user": 0.0015,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 330000.0,
+                    "tput_user": 0.003,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "genmo/mochi-1-preview",
               "block_size": "64",
@@ -14279,7 +14675,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14392,7 +14789,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14501,7 +14899,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14555,7 +14954,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "video",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 5400000.0,
+                    "tput_user": 0.00010300000000000001,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 1080000.0,
+                    "tput_user": 0.000515,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 540000.0,
+                    "tput_user": 0.00103,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
               "block_size": "64",
@@ -14572,7 +15010,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14684,7 +15123,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14740,7 +15180,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "video",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 3300000.0,
+                    "tput_user": 0.000311,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 660000.0,
+                    "tput_user": 0.001555,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 330000.0,
+                    "tput_user": 0.00311,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
               "block_size": "64",
@@ -14757,7 +15236,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14869,7 +15349,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -14978,7 +15459,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15088,7 +15570,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15197,7 +15680,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15307,7 +15791,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15416,7 +15901,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15526,7 +16012,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15635,7 +16122,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15746,7 +16234,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15855,7 +16344,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -15965,7 +16455,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16035,7 +16526,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16106,7 +16598,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16176,7 +16669,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16287,7 +16781,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16396,7 +16891,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16504,7 +17000,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16558,7 +17055,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "image",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 110000.0,
+                    "tput_user": 0.0091,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 22000.0,
+                    "tput_user": 0.0455,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 11000.0,
+                    "tput_user": 0.091,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "black-forest-labs/FLUX.1-dev",
               "block_size": "64",
@@ -16573,7 +17109,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16681,7 +17218,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16789,7 +17327,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -16900,7 +17439,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17009,7 +17549,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17117,7 +17658,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17171,7 +17713,46 @@
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
-            "perf_reference": [],
+            "perf_reference": [
+              {
+                "isl": null,
+                "osl": null,
+                "max_concurrency": 1,
+                "num_prompts": null,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "task_type": "image",
+                "theoretical_ttft_ms": null,
+                "theoretical_tput_user": null,
+                "targets": {
+                  "functional": {
+                    "ttft_ms": 110000.0,
+                    "tput_user": 0.0091,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "complete": {
+                    "ttft_ms": 22000.0,
+                    "tput_user": 0.0455,
+                    "tput": null,
+                    "tolerance": 0.0
+                  },
+                  "target": {
+                    "ttft_ms": 11000.0,
+                    "tput_user": 0.091,
+                    "tput": null,
+                    "tolerance": 0.0
+                  }
+                },
+                "target_peak_perf": {
+                  "customer_functional": 0.1,
+                  "customer_complete": 0.5,
+                  "customer_sellable": 0.8
+                },
+                "num_inference_steps": null
+              }
+            ],
             "vllm_args": {
               "model": "black-forest-labs/FLUX.1-schnell",
               "block_size": "64",
@@ -17186,7 +17767,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17294,7 +17876,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17402,7 +17985,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17513,7 +18097,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17622,7 +18207,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17730,7 +18316,8 @@
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17799,7 +18386,8 @@
             "env_vars": {
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17872,7 +18460,8 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0",
               "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -17943,7 +18532,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18016,7 +18606,8 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0",
               "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18087,7 +18678,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18197,7 +18789,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18267,7 +18860,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18376,7 +18970,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18485,7 +19080,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18596,7 +19192,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18666,7 +19263,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18775,7 +19373,8 @@
             "env_vars": {
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18884,7 +19483,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -18995,7 +19595,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19104,7 +19705,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19221,7 +19823,8 @@
               "VLLM__MAX_NUM_SEQS": "8",
               "MAX_BATCH_SIZE": "8",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19342,7 +19945,8 @@
               "VLLM__MAX_NUM_SEQS": "16",
               "MAX_BATCH_SIZE": "16",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19464,7 +20068,8 @@
               "VLLM__MAX_NUM_SEQS": "16",
               "MAX_BATCH_SIZE": "16",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19586,7 +20191,8 @@
               "MAX_BATCH_SIZE": "8",
               "DEFAULT_THROTTLE_LEVEL": "0",
               "TT_METAL_INSPECTOR_RPC": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19707,7 +20313,8 @@
               "VLLM__MAX_MODEL_LENGTH": "1024",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "1"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19824,7 +20431,8 @@
               "VLLM__MAX_MODEL_LENGTH": "4096",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "2"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -19942,7 +20550,8 @@
               "VLLM__MAX_MODEL_LENGTH": "4096",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "2"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20059,7 +20668,8 @@
               "VLLM__MAX_MODEL_LENGTH": "1024",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "1"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20179,7 +20789,8 @@
               "VLLM__MAX_NUM_SEQS": "1",
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20300,7 +20911,8 @@
               "VLLM__MAX_NUM_SEQS": "1",
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20422,7 +21034,8 @@
               "VLLM__MAX_NUM_SEQS": "1",
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20543,7 +21156,8 @@
               "VLLM__MAX_NUM_SEQS": "1",
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20662,7 +21276,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20777,7 +21392,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -20891,7 +21507,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21000,7 +21617,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21111,7 +21729,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21220,7 +21839,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21331,7 +21951,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21440,7 +22061,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21551,7 +22173,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21660,7 +22283,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21771,7 +22395,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21880,7 +22505,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -21991,7 +22617,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -22100,7 +22727,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -22211,7 +22839,8 @@
             "env_vars": {
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
@@ -22320,7 +22949,8 @@
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
-            }
+            },
+            "system_requirements": null
           },
           "system_requirements": null,
           "env_vars": {
