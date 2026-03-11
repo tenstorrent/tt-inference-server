@@ -36,12 +36,11 @@ bool Scheduler::is_finished() const {
   return prefill_queue_->empty() && decode_queue_.empty() && in_flight_count_ == 0;
 }
 
-Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
+Sequence& Scheduler::add_request(TaskID task_id, std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(block_size_, std::move(prompt), params);
-  Sequence& ref = *seq;
+  auto seq = std::make_unique<Sequence>(std::move(task_id), block_size_, std::move(prompt), params);
   auto id = seq->task_id;
-  add(ref);
+  add(*seq);
   sequences_[id] = std::move(seq);
   return *sequences_[id].get();
 }

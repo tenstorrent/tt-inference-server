@@ -78,8 +78,7 @@ bool InterServerService::sendPrefillRequest(const tt::domain::TaskID& task_id,
         return false;
     }
 
-    PrefillRequestMessage message;
-    message.task_id = task_id;
+    PrefillRequestMessage message(task_id);
     message.prompt = prompt;
     message.token_ids = token_ids;
     message.max_tokens = max_tokens;

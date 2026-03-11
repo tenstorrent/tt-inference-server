@@ -2,18 +2,21 @@
 #include "runners/llm_runner/config.hpp"
 #include "llm_runner/sampling_params.hpp"
 #include <algorithm>
+#include <cassert>
 #include <stdexcept>
 
 namespace llm_engine {
 
-Sequence::Sequence(const int block_size, std::vector<int64_t> token_ids,
+Sequence::Sequence(TaskID task_id, int block_size,
+                   std::vector<int64_t> token_ids,
                    const SamplingParams& sampling_params)
-    : task_id(TaskID{}),
+    : task_id(std::move(task_id)),
       status_(SequenceStatus::WAITING),
       token_ids_(std::move(token_ids)),
       num_prompt_tokens_(token_ids_.size()),
       sampling_params(std::make_unique<SamplingParams>(sampling_params)),
       block_size_(block_size) {
+  assert(!this->task_id.id.empty() && "Sequence requires a non-empty task_id");
   if (!token_ids_.empty()) {
     last_token = token_ids_.back();
   }
@@ -61,13 +64,16 @@ void Sequence::serialize(std::ostream& os) const {
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
-  Config default_config;
-  Sequence* seq = new Sequence(default_config.kvcache_block_size, std::vector<int64_t>{});
-
   size_t task_id_size;
   is.read(reinterpret_cast<char*>(&task_id_size), sizeof(task_id_size));
-  seq->task_id.id.resize(task_id_size);
-  is.read(reinterpret_cast<char*>(seq->task_id.id.data()), task_id_size);
+  std::string task_id_str(task_id_size, '\0');
+  is.read(task_id_str.data(), task_id_size);
+
+  Config default_config;
+  Sequence* seq = new Sequence(TaskID(std::move(task_id_str)),
+                               default_config.kvcache_block_size,
+                               std::vector<int64_t>{});
+
   is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
   is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
   is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));
