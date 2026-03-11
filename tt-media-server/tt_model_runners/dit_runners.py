@@ -18,7 +18,6 @@ def _log_import(msg):
 
 
 from config.constants import ModelRunners, ModelServices, SupportedModels  # noqa: E402
-from config.settings import get_settings  # noqa: E402
 from domain.image_generate_request import ImageGenerateRequest  # noqa: E402
 from domain.video_generate_request import VideoGenerateRequest  # noqa: E402
 from telemetry.telemetry_client import TelemetryEvent  # noqa: E402
@@ -44,7 +43,6 @@ dit_runner_log_map = {
 
 class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
-        self.logger = logging.getLogger("TTLogger")
         self.logger.info(f"Device {device_id}: TTDiTRunner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
@@ -107,7 +105,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         """Get the device parameters for the pipeline"""
 
     @log_execution_time(
-        f"{dit_runner_log_map[get_settings().model_runner]} warmup",
+        "warmup",
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
@@ -206,7 +204,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         return True
 
     @log_execution_time(
-        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        "inference",
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
@@ -462,7 +460,7 @@ class TTMochi1Runner(TTDiTRunner):
             )
             raise
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time("Run inference")
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.info(
             f"Device {self.device_id}: Mochi run() called with {len(requests)} request(s)"
@@ -530,7 +528,7 @@ class TTWan22Runner(TTDiTRunner):
     def load_weights(self):
         return False
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time("Run inference")
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.info(
             f"Device {self.device_id}: Wan run() called with {len(requests)} request(s)"
