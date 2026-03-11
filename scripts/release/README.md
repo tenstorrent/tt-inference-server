@@ -40,6 +40,39 @@ Follow the git workflow for release described in the diagram below:
 
 ![../../docs/ttis-git-workflows-2026-03-09](../../docs/ttis-git-workflows-2026-03-09.png)
 
+## Release process summary
+
+```mermaid
+flowchart TD
+  start["Choose release target<br/>from `main`"] --> stable["Step 1: reset `stable` to chosen commit"]
+  stable --> cherry["Optional Step 1B:<br/>cherry-pick fixes onto `stable`"]
+  cherry --> modelSpec["Step 2: update `workflows/model_spec.py`<br/>from Nightly Models CI or manual edits"]
+  modelSpec --> outputOnly["Optional Step 2B:<br/>run `update_model_spec.py --output-only`<br/>after manual edits"]
+  outputOnly --> prereleaseArtifacts["Generate pre-release artifacts<br/>model diff JSON/MD, docs, `default_model_spec.json`"]
+  prereleaseArtifacts --> pushStable["Step 3: push `stable`"]
+  pushStable --> releaseCi["Step 4: run Release Models CI"]
+
+  releaseCi --> ciGate{"Release Models CI passes?"}
+  ciGate -->|"No"| retry["Repeat pre-release or apply hot-fix"]
+  retry --> stable
+  ciGate -->|"Yes"| releaseArtifacts["Step 5: run `generate_release_artifacts.py --release`"]
+
+  releaseArtifacts --> manualImages["Optional Step 5B:<br/>build missing manual release images"]
+  manualImages --> regenerate["Re-run artifact generation"]
+  regenerate --> branchRelease["Step 6: create `vx.y.z` branch"]
+  releaseArtifacts --> branchRelease
+  branchRelease --> githubRelease["Create GitHub release<br/>using generated release notes"]
+
+  githubRelease --> postBranch["Step 7: create `post-release-vx.y.z` from `main`"]
+  postBranch --> postRelease["Step 8: run `post_release.py`"]
+  postRelease --> carryForward["Carry release changes back to `main`:<br/>increment `VERSION`, update model specs, regenerate docs"]
+  carryForward --> prMain["Open PR back to `main`"]
+  prMain --> defaultBranch["Step 9: make `vx.y.z` the default branch"]
+
+  hotfix["Hot-fix path:<br/>fix on `main`, then cherry-pick to `stable`<br/>or `patch-vx.y.z` as needed"] --> cherry
+  olderPatch["Older release patch path:<br/>work from `patch-vx.y.z`, bump patch version,<br/>re-run artifact promotion, publish patch release"] --> githubRelease
+```
+
 
 ## Pre-requisites
 
@@ -83,7 +116,6 @@ git pull
 # Make local stable point to tip of main with chosen commit
 git branch -f stable <chosen tt-inference-server commit>
 git checkout stable
-# 
 ```
 
 ### [optional] Step 1B: cherry-pick any commits needed
