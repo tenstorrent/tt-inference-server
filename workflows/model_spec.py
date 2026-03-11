@@ -390,6 +390,7 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     has_builtin_warmup: bool = False
+    release_version: Optional[str] = None
 
     # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
     cli_args: Dict[str, str] = field(default_factory=dict)
@@ -808,6 +809,7 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
+    release_version: Optional[str] = None
 
     def __post_init__(self):
         self._validate_data()
@@ -903,6 +905,7 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
+                    release_version=self.release_version,
                 )
 
                 specs.append(spec)
