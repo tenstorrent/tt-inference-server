@@ -48,7 +48,7 @@
 │   │   └── pre-commit
 │   ├── release
 │   │   ├── generate_model_support_docs.py
-│   │   ├── make_release_image_artifacts.py
+│   │   ├── generate_release_artifacts.py
 │   │   ├── models_ci_reader.py
 │   │   ├── parse_workflow_logs.py
 │   │   ├── README.md
